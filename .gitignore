@@ -1,0 +1,7 @@
+db/*
+files/*
+__pycache__
+md/*
+inbox/*
+data/*
+whisper-*
