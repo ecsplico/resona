@@ -2,15 +2,16 @@ import numpy as np
 from decouple import config
 from faster_whisper import WhisperModel
 import logging # Import logging
-from ..db.utils import get_active_initial_prompts_string # Import the utility function from db utils
+from src.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
 
 log = logging.getLogger('uvicorn.test') # Get logger
 
 # Assuming MODEL_NAME is defined globally or passed differently
-MODEL_NAME: str = config("ASR_MODEL", cast=str)
+MODEL_NAME: str = config("DEFAULT_FASTWHISPER_MODEL", cast=str)
 
 class FastWhisperTranscriber:
-    def __init__(self, device: str = "cpu"):
+    def __init__(self, device: str = "cpu", modelname=MODEL_NAME):
+        self.modelname = modelname
         # Determine compute type based on device
         compute_type = "int8_float16" if device == "cuda" else "int8"
         # Consider lazy loading

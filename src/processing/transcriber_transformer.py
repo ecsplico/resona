@@ -2,14 +2,15 @@ import logging
 import numpy as np
 from decouple import config
 from transformers import pipeline
-from ..db.utils import get_active_initial_prompts_string # Import the utility function from db utils
+from src.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
 
 # Assuming MODEL_NAME is defined globally or passed differently
-MODEL_NAME: str = config("ASR_MODEL", cast=str)
+MODEL_NAME: str = config("DEFAULT_WHISPERTF_MODEL", cast=str)
 log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
 
 class TransformerTranscriber:
-    def __init__(self, device: str = "cpu"):
+    def __init__(self, device: str = "cpu", modelname=MODEL_NAME):
+        self.modelname = modelname
         # Consider lazy loading
         self.model = pipeline("automatic-speech-recognition", model=MODEL_NAME, device=device, chunk_length_s=30)
 

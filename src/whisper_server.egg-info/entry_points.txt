@@ -1,0 +1,2 @@
+[console_scripts]
+ws-cli = cli.main:app
