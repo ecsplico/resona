@@ -9,9 +9,11 @@ from decouple import config
 from sqlmodel import Session, select
 import secrets
 
-from ..model import Job, engine
-from .utils import run_asr, write_md_file
-from ..paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
+from ..db.models import Job
+from ..db.engine import engine
+from .utils import run_asr
+from .formatting import write_md_file
+from ..core.paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
 
 EXTENSIONS = ["wav", "webm", "flac", "mp3"]
 MODEL_NAME: str = config("ASR_MODEL")  # type: ignore
@@ -46,13 +48,8 @@ class ScanInboxTask(Thread):
             if self.shutdown_event.is_set():
                 break
             time.sleep(9)
-def segment_serializer(obj):
-    if isinstance(obj, Segment):
-        return {
-            text: obj.text,
 
-        }
-    return None
+# Removed unused/incomplete segment_serializer function
 
 class TranscribeTask(Thread):
     # Get a job from the database and transcribe it
@@ -74,7 +71,13 @@ class TranscribeTask(Thread):
                         result = run_asr(f"{FILE_PATH}/{job.filename}", markdown=True)
                         job.transcript = result["text"]
                         job.language = result["language"]
-                        job.segments = json.dumps([r._asdict() for r in result["segments"]])
+                        # Assuming result["segments"] is a list of objects with _asdict()
+                        # Handle potential errors if segments format is different
+                        try:
+                            job.segments = json.dumps([segment._asdict() for segment in result.get("segments", [])])
+                        except AttributeError:
+                             log.warning(f"Could not serialize segments for job {job.id}. Segments: {result.get('segments')}")
+                             job.segments = "[]" # Default to empty JSON array on error
                         job.transcribed = True
                         job.model = MODEL_NAME
                         filepath = f"{FILE_PATH}/{job.filename}"
@@ -86,7 +89,8 @@ class TranscribeTask(Thread):
                             os.remove(filepath)
                             job.filename=''
 
-                        job.md = result["md"]
+                        # Ensure 'md' key exists before accessing
+                        job.md = result.get("md", "")
 
                         job.processed = True
                         session.commit()
