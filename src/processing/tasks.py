@@ -9,9 +9,9 @@ from decouple import config
 from sqlmodel import Session, select
 import secrets
 
-from .model import Job, engine
+from ..model import Job, engine
 from .utils import run_asr, write_md_file
-from .paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
+from ..paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
 
 EXTENSIONS = ["wav", "webm", "flac", "mp3"]
 MODEL_NAME: str = config("ASR_MODEL")  # type: ignore
