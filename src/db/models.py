@@ -35,6 +35,11 @@ class Replacement(SQLModel, table=True):
     replacement: str
     active: bool = Field(default=True)
 
+class InitialPrompt(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    phrase: str = Field(index=True) # Index for potential lookups
+    active: bool = Field(default=True)
+
 # Removed metadata creation: SQLModel.metadata.create_all(engine)
 # Removed replacement population logic
 
