@@ -1,8 +1,9 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]  # Or ["setuptools>=61.0", "wheel"]
+build-backend = "hatchling.build" # Or "setuptools.build_meta"
+
 [project]
-name = "whisper-server"
+name = "whisper_server"
 version = "0.1.0"
 description = "A Server for transcribing german audio files"
 readme = "README.md"
@@ -25,7 +26,12 @@ dependencies = [
 ]
 
 [project.scripts]
-ws-cli = "cli.main:app"
+ws-cli = "ws_cli.main:app"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+# This explicitly tells Hatch to look inside the 'src/' directory
+# and include the specified package directories ('my_api', 'my_cli')
+# in the built wheel.
+# --- IMPORTANT: Replace 'my_api' and 'my_cli' below ---
+# --- with the actual names of your package folders inside src/ ---
+packages = ["src/ws_server", "src/ws_cli"]
