@@ -4,37 +4,10 @@ from sqlmodel import Session, select
 # Import necessary components from new locations
 from .engine import engine
 from .models import Job, Replacement, InitialPrompt # Add InitialPrompt here
-from ..core.replacements import replacements as default_replacements # Import the raw data
+from core.replacements import replacements as default_replacements # Import the raw data
 
 log = logging.getLogger(__name__)
 
-def populate_default_replacements():
-    """Checks if the Replacement table is empty and populates it with defaults."""
-    log.info("Checking database for default replacements...")
-    try:
-        with Session(engine) as session:
-            statement = select(Replacement)
-            existing_replacements = session.exec(statement).first() # Check if at least one exists
-
-            if existing_replacements is None:
-                log.info("No replacements found. Populating database with defaults...")
-                count = 0
-                for name, replacement_text in default_replacements:
-                    # Ensure replacement_text is a string, handle potential non-string data
-                    if isinstance(replacement_text, str):
-                         db_replacement = Replacement(name=name, replacement=replacement_text, active=True)
-                         session.add(db_replacement)
-                         count += 1
-                    else:
-                         log.warning(f"Skipping non-string replacement for '{name}': {replacement_text}")
-
-                session.commit()
-                log.info(f"Added {count} default replacements to the database.")
-            else:
-                log.info("Replacements table already populated.")
-    except Exception as e:
-        log.error(f"Error during replacement population check: {e}", exc_info=True)
-        # Depending on severity, you might want to raise this or handle it
 
 def register_job(filename: str, upload_name: str, keep: bool = True, translate: bool = False) -> dict:
     """

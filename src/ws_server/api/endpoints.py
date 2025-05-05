@@ -12,12 +12,12 @@ from fastapi.responses import StreamingResponse
 from .app import app
 
 # Import necessary components from other modules (adjusting paths)
-from ..db.models import Job
-from ..db.engine import engine # Assuming engine is defined in db/engine.py
+from core.db.models import Job
+from core.db.engine import engine # Assuming engine is defined in db/engine.py
+from core.db.utils import register_job # Assuming register_job is in db/utils.py
+from core.paths import FILE_PATH
 from ..processing.utils import run_asr # Assuming run_asr is in processing/utils.py
 from ..processing.formatting import write_result # Assuming write_result is in processing/formatting.py
-from ..db.utils import register_job # Assuming register_job is in db/utils.py
-from ..core.paths import FILE_PATH
 
 # Get logger and config
 logger = logging.getLogger(__name__)
