@@ -10,6 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from core.paths import FILE_PATH # Needed for static file mount
 from ..processing.tasks import TranscribeTask, ScanInboxTask
 
+# Import database initialization functions
+from core.db.engine import create_db_and_tables, populate_default_replacements, populate_initial_prompts
+
 # Basic logging setup (can be enhanced)
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('uvicorn.test') # Assuming uvicorn logger is used
@@ -37,6 +40,11 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+# Startup: Initialize database
+    log.info("Initializing database...")
+    create_db_and_tables()
+    populate_default_replacements() # Populate default data if needed
+    populate_initial_prompts() # Populate initial prompts if needed
     shutdown_event = Event() # type: ignore
     # Startup: Start background tasks
     log.info("Starting background tasks...")

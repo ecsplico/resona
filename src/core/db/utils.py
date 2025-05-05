@@ -4,7 +4,7 @@ from sqlmodel import Session, select
 # Import necessary components from new locations
 from .engine import engine
 from .models import Job, Replacement, InitialPrompt # Add InitialPrompt here
-from core.replacements import replacements as default_replacements # Import the raw data
+from core.presets import replacements as default_replacements # Import the raw data
 
 log = logging.getLogger(__name__)
 
