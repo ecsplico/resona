@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 # Import background tasks and paths from their new locations
+from core.paths import FILE_PATH # Needed for static file mount
 from ..processing.tasks import TranscribeTask, ScanInboxTask
-from ..core.paths import FILE_PATH # Needed for static file mount
 
 # Basic logging setup (can be enhanced)
 logging.basicConfig(level=logging.INFO)

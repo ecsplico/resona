@@ -2,7 +2,7 @@ import whisper
 import numpy as np
 from decouple import config
 import logging # Import logging
-from ..db.utils import get_active_initial_prompts_string # Import the utility function from db utils
+from core.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
 
 log = logging.getLogger('uvicorn.test') # Get logger
 

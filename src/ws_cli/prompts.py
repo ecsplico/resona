@@ -2,8 +2,8 @@ import typer
 from sqlmodel import Session, select, delete
 import logging
 
-from ws_server.db.engine import engine
-from ws_server.db.models import InitialPrompt
+from core.db.engine import engine
+from core.db.models import InitialPrompt
 
 log = logging.getLogger(__name__)
 
