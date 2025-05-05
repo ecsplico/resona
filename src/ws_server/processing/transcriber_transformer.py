@@ -2,7 +2,7 @@ import logging
 import numpy as np
 from decouple import config
 from transformers import pipeline
-from src.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
+from ..db.utils import get_active_initial_prompts_string # Import the utility function from db utils
 
 # Assuming MODEL_NAME is defined globally or passed differently
 MODEL_NAME: str = config("DEFAULT_WHISPERTF_MODEL", cast=str)

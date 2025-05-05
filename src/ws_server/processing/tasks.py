@@ -9,11 +9,11 @@ from decouple import config
 from sqlmodel import Session, select
 import secrets
 
-from src.db.models import Job
-from src.db.engine import engine
 from .utils import run_asr
 from .formatting import write_md_file
-from src.core.paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
+from ..db.models import Job
+from ..db.engine import engine
+from ..core.paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
 
 EXTENSIONS = ["wav", "webm", "flac", "mp3"]
 log = logging.getLogger("uvicorn.test")

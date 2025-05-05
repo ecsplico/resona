@@ -2,8 +2,8 @@ import typer
 from sqlmodel import Session, select
 import logging
 
-from db.engine import engine # Import engine directly
-from db.models import Replacement
+from ws_server.db.engine import engine # Import engine directly
+from ws_server.db.models import Replacement
 
 log = logging.getLogger(__name__)
 replacements_app = typer.Typer()

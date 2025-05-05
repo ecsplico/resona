@@ -2,7 +2,7 @@ import logging
 from sqlmodel import SQLModel, create_engine
 
 # Import DATABASE_URL from its new location
-from src.core.paths import DATABASE_URL
+from ..core.paths import DATABASE_URL
 
 log = logging.getLogger(__name__) # Use a logger specific to this module
 
