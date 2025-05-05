@@ -1,6 +1,10 @@
 import numpy as np
 from decouple import config
 from faster_whisper import WhisperModel
+import logging # Import logging
+from ..db.utils import get_active_initial_prompts_string # Import the utility function from db utils
+
+log = logging.getLogger('uvicorn.test') # Get logger
 
 # Assuming MODEL_NAME is defined globally or passed differently
 MODEL_NAME: str = config("ASR_MODEL", cast=str)
@@ -16,6 +20,17 @@ class FastWhisperTranscriber:
         return self.model
 
     def transcribe(self, audio: np.ndarray, **kwargs) -> dict:
+        # Get active initial prompts from the database
+        initial_prompt_str = get_active_initial_prompts_string()
+        if initial_prompt_str:
+            # Add the prompt string to the kwargs if it's not empty
+            kwargs["initial_prompt"] = initial_prompt_str
+            log.info(f"Using initial prompt: '{initial_prompt_str}'")
+        else:
+            # Remove initial_prompt if it exists but the DB fetch returned empty
+            kwargs.pop("initial_prompt", None)
+            log.info("No active initial prompts found or database error.")
+
         segments = []
         text = ""
         # Pass relevant kwargs like beam_size, language, task, etc.

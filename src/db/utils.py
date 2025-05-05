@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 
 # Import necessary components from new locations
 from .engine import engine
-from .models import Job, Replacement
+from .models import Job, Replacement, InitialPrompt # Add InitialPrompt here
 from ..core.replacements import replacements as default_replacements # Import the raw data
 
 log = logging.getLogger(__name__)
@@ -74,3 +74,19 @@ def register_job(filename: str, upload_name: str, keep: bool = True, translate: 
 
 # Note: The actual calls to populate_default_replacements() and create_db_and_tables()
 # should happen during application startup (e.g., in lifespan).
+def get_active_initial_prompts_string() -> str:
+    """
+    Fetches active initial prompt phrases from the database and returns them as a comma-separated string.
+    """
+    prompt_string = ""
+    try:
+        with Session(engine) as session:
+            # InitialPrompt is now imported at the top level
+            statement = select(InitialPrompt).where(InitialPrompt.active == True)
+            active_prompts = session.exec(statement).all()
+            phrases = [prompt.phrase for prompt in active_prompts]
+            prompt_string = ", ".join(phrases)
+            log.info(f"Fetched {len(phrases)} active initial prompts.")
+    except Exception as e:
+        log.error(f"Error fetching initial prompts from database: {e}", exc_info=True)
+    return prompt_string

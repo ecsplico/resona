@@ -10,6 +10,10 @@ import whisper # Keep for whisper.load_audio
 # Import necessary components from new locations
 from .transcriber_factory import getTranscriber
 from .formatting import toMarkdown # Needed for markdown conversion within run_asr
+# Removed database imports to break circular dependency
+# from ..db.engine import engine
+# from ..db.models import InitialPrompt
+# from sqlmodel import Session, select
 
 # Constants (consider moving to a config file or core module)
 SAMPLE_RATE = 16000
@@ -18,6 +22,9 @@ SAMPLE_RATE = 16000
 model_lock = Lock()
 
 log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
+
+
+# Moved get_active_initial_prompts_string to src/db/utils.py to resolve circular import
 
 
 def run_asr(file: Union[str, BinaryIO], markdown: bool = True, task: str = "transcribe", language: str = "de", **asr_options) -> dict:
