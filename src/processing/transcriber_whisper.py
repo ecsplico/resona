@@ -2,18 +2,19 @@ import whisper
 import numpy as np
 from decouple import config
 import logging # Import logging
-from ..db.utils import get_active_initial_prompts_string # Import the utility function from db utils
+from src.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
 
 log = logging.getLogger('uvicorn.test') # Get logger
 
 # Assuming MODEL_NAME is defined globally or passed differently
 # For now, getting it from config here
-MODEL_NAME: str = config("ASR_MODEL", cast=str)
+MODEL_NAME: str = config("DEFAULT_WHISPER_MODEL", cast=str)
 
 class WhisperTranscriber:
-    def __init__(self, device: str = "cpu"):
+    def __init__(self, device: str = "cpu", modelname=MODEL_NAME):
+        self.modelname = modelname
         # Consider lazy loading the model if startup time is critical
-        self.model = whisper.load_model(MODEL_NAME, device=device)
+        self.model = whisper.load_model(self.modelname, device=device)
 
     def get_model(self):
         return self.model

@@ -9,14 +9,13 @@ from decouple import config
 from sqlmodel import Session, select
 import secrets
 
-from ..db.models import Job
-from ..db.engine import engine
+from src.db.models import Job
+from src.db.engine import engine
 from .utils import run_asr
 from .formatting import write_md_file
-from ..core.paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
+from src.core.paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
 
 EXTENSIONS = ["wav", "webm", "flac", "mp3"]
-MODEL_NAME: str = config("ASR_MODEL")  # type: ignore
 log = logging.getLogger("uvicorn.test")
 
 class ScanInboxTask(Thread):
@@ -79,7 +78,7 @@ class TranscribeTask(Thread):
                              log.warning(f"Could not serialize segments for job {job.id}. Segments: {result.get('segments')}")
                              job.segments = "[]" # Default to empty JSON array on error
                         job.transcribed = True
-                        job.model = MODEL_NAME
+                        job.model = "???" # TODO: Save ASR_mode and model to database
                         filepath = f"{FILE_PATH}/{job.filename}"
 
                         if job.translate:
