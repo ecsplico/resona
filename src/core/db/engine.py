@@ -3,7 +3,8 @@ from sqlmodel import SQLModel, create_engine, select, Session
 
 # Import necessary components from new locations
 from .models import Job, Replacement, InitialPrompt # Add InitialPrompt here
-from core.replacements import replacements as default_replacements # Import the raw data
+from core.presets import replacements as default_replacements # Import the raw data
+from core.presets import initial_prompts # Import the initial prompts data
 # Import DATABASE_URL from its new location
 from core.paths import DATABASE_URL
 
@@ -58,5 +59,29 @@ def populate_default_replacements():
                 log.info("Replacements table already populated.")
     except Exception as e:
         log.error(f"Error during replacement population check: {e}", exc_info=True)
+        # Depending on severity, you might want to raise this or handle it
+def populate_initial_prompts():
+    """Checks if the InitialPrompt table is empty and populates it with defaults."""
+    log.info("Checking database for initial prompts...")
+    try:
+        with Session(engine) as session:
+            statement = select(InitialPrompt)
+            existing_prompts = session.exec(statement).first() # Check if at least one exists
+
+            if existing_prompts is None:
+                log.info("No initial prompts found. Populating database with defaults...")
+                count = 0
+                for prompt_text in initial_prompts:
+                    # InitialPrompt model uses 'phrase' field
+                    db_prompt = InitialPrompt(phrase=prompt_text, active=True) # Assuming an 'active' field similar to Replacement
+                    session.add(db_prompt)
+                    count += 1
+
+                session.commit()
+                log.info(f"Added {count} initial prompts to the database.")
+            else:
+                log.info("Initial prompts table already populated.")
+    except Exception as e:
+        log.error(f"Error during initial prompt population check: {e}", exc_info=True)
         # Depending on severity, you might want to raise this or handle it
 

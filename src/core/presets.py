@@ -25,3 +25,16 @@ replacements = [
     ("Nele", "Neele"),
     ("Mele", "Neele")
 ]
+
+initial_prompts = [
+    "wach",
+    "bewusstseinsklar",
+    "zu allen Qualitäten passend orientiert",
+    "Im Kontakt zugewand",
+    "berichtet geordent",
+    "Denk- oder Wahrnehmungsstörungen",
+    "Ich-Grenzen", 
+    "manifeste Angst-oder Zwangssymptomatik",
+    "Suizidalität"
+
+]
