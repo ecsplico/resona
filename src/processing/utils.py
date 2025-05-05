@@ -15,8 +15,8 @@ from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassifica
 from datetime import datetime
 
 from sqlmodel import Field, Session, create_engine, select
-from .model import Job, engine, Replacement
-from .paths import DATA_PATH, MD_PATH
+from ..model import Job, engine, Replacement
+from ..paths import DATA_PATH, MD_PATH
 
 SAMPLE_RATE=16000
 MODEL_NAME: str = config("ASR_MODEL", cast=str)  # type: ignore

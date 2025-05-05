@@ -1,6 +1,6 @@
 import uvicorn
 from decouple import config
-from src.app import app
+from src.api.app import app
 
 loglevel = config("LOGLEVEL", default="info")
 

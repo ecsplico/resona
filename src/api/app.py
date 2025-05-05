@@ -15,10 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, create_engine, select
 from fastapi.responses import RedirectResponse, StreamingResponse, Response
 
-from .model import Job, engine
-from .BackgroundTasks import TranscribeTask, ScanInboxTask
-from .utils import run_asr, load_audio, write_result, register_job
-from .paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
+from ..model import Job, engine
+from ..processing.tasks import TranscribeTask, ScanInboxTask
+from ..processing.utils import run_asr, load_audio, write_result, register_job
+from ..paths import DATA_PATH, MD_PATH, INBOX_PATH, FILE_PATH
 
 MODE = config("ASR_MODE")
 
