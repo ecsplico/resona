@@ -8,7 +8,7 @@ from core.presets import initial_prompts # Import the initial prompts data
 # Import DATABASE_URL from its new location
 from core.paths import DATABASE_URL
 
-log = logging.getLogger(__name__) # Use a logger specific to this module
+log = logging.getLogger("uvicorn.test") # Use a logger specific to this module
 
 log.info(f"Creating database engine for URL: {DATABASE_URL}")
 # Create the database engine instance
