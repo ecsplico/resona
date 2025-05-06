@@ -110,7 +110,6 @@ class MicRecApp(App):
         Binding("q", "quit_recording", "Quit App", show=True, priority=True),
         Binding("space", "toggle_record_pause", "Record/Pause", show=True, priority=True),
         Binding("d", "discard_recording", "Discard", show=True), # Added discard binding
-        Binding("s", "save_and_new_recording", "Save", show=True), # Added save binding
         Binding("ctrl+c", "request_quit_app", "Force Quit", show=False) # Handle Ctrl+C
     ]
 
@@ -465,3 +464,42 @@ class MicRecApp(App):
         """Helper to update status message from audio callback thread."""
         self.status_message = message
 
+
+if __name__ == "__main__":
+    import asyncio # Required for await asyncio.sleep(0.1)
+    # Pre-flight checks
+    if not os.path.exists(OUTPUT_DIR):
+        try:
+            os.makedirs(OUTPUT_DIR)
+            print(f"Created output directory: {OUTPUT_DIR}")
+        except Exception as e:
+            print(f"Error: Could not create output directory {OUTPUT_DIR}: {e}", file=sys.stderr)
+            print("Please check permissions or create it manually.", file=sys.stderr)
+            sys.exit(1)
+
+    try:
+        # Check if default microphone is available
+        sd.check_input_settings(device=DEVICE, samplerate=SAMPLE_RATE, channels=CHANNELS)
+    except Exception as e:
+        print(f"Error initializing audio input: {e}", file=sys.stderr)
+        print("Please ensure a microphone is connected and configured.", file=sys.stderr)
+        print("Available devices:", file=sys.stderr)
+        try:
+            print(sd.query_devices(), file=sys.stderr)
+        except Exception as dev_e:
+            print(f"Could not query devices: {dev_e}", file=sys.stderr)
+        sys.exit(1)
+
+    app = MicRecApp()
+    app.run(inline=True)
+
+    # Clean up, though daemon thread should allow exit
+    if recording_thread and recording_thread.is_alive():
+        print("Main exit: Signaling recording thread to stop...", file=sys.stderr)
+        stop_event.set()
+        recording_thread.join(timeout=2) # Wait a bit for thread to finish
+        if recording_thread.is_alive():
+            print("Main exit: Recording thread still alive after timeout.", file=sys.stderr)
+        else:
+            print("Main exit: Recording thread finished.", file=sys.stderr)
+    print("MicRec exited.", file=sys.stderr)
