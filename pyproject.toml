@@ -32,7 +32,7 @@ dependencies = [
 
 [project.scripts]
 ws-cli = "ws_cli.main:app"
-ws-rec = "recorder.micrec:MicRecApp"
+ws-rec = "recorder.micrec:run_mic_rec_app"
 
 [tool.hatch.build.targets.wheel]
 # This explicitly tells Hatch to look inside the 'src/' directory

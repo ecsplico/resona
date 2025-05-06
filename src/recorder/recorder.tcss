@@ -2,7 +2,7 @@ Screen:inline {
     border: none;
     &:inline {
         border: none;
-        height: 10;
+        height: 8;
         Digits {
             color: $success;
         }
@@ -16,7 +16,7 @@ Header {
 
 Header #title {
     width: auto;
-    margin-right: 2;
+    margin-right: 1;
 }
 
 Horizontal#header_info_container {
@@ -28,14 +28,14 @@ Horizontal#header_info_container {
 }
 
 .header_info_element {
-    margin-left: 2; /* Space between status and time */
+    margin-left: 1; /* Space between status and time */
     height: auto;
     width: auto;
 }
 
 Horizontal#controls_container {
     layout: horizontal;
-    height: 10;
+    height: 5;
     width: 100%;
     padding: 0;
     margin: 0;
