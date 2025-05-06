@@ -1,16 +1,79 @@
 from pathlib import Path
-from decouple import config
+from decouple import config, UndefinedValueError
 
-DATA_PATH: str= config("DATA_PATH", default="./data") # type: ignore
-INBOX_PATH: str = config("INBOX_PATH", default=f"{DATA_PATH}/inbox")  # type: ignore
-FILE_PATH:str = config("FILE_PATH", default=f"{DATA_PATH}/files") # type: ignore
-MD_PATH:str = config("MD_PATH", default=f"{DATA_PATH}/md") # type: ignore
-DB_PATH:str = config("MD_PATH", default=f"{DATA_PATH}/db") # type: ignore
+# Determine the project root directory.
+# __file__ is src/core/paths.py -> .parent is src/core -> .parent.parent is src -> .parent.parent.parent is project root.
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
-DATABASE_URL = config("DATABASE_URL", default=f"sqlite:///{DB_PATH}/jjobs.sqlite")
+def _resolve_path(
+    env_var_key: str,
+    default_relative_to_base: str,
+    base_path_for_default: Path,
+    project_root_for_env_relative: Path
+) -> Path:
+    """
+    Resolves a path based on an environment variable or a default.
+    - If env_var_key is set:
+        - If absolute, it's used directly.
+        - If relative, it's resolved against project_root_for_env_relative.
+    - If env_var_key is not set, default_relative_to_base is resolved against base_path_for_default.
+    """
+    try:
+        path_str = config(env_var_key)
+        configured_path = Path(path_str)
+        if configured_path.is_absolute():
+            return configured_path
+        else:
+            return project_root_for_env_relative / configured_path
+    except UndefinedValueError:
+        return base_path_for_default / default_relative_to_base
 
-Path(DATA_PATH).mkdir(parents=True, exist_ok=True)
-Path(INBOX_PATH).mkdir(parents=True, exist_ok=True)
-Path(FILE_PATH).mkdir(parents=True, exist_ok=True)
-Path(MD_PATH).mkdir(parents=True, exist_ok=True)
-Path(DB_PATH).mkdir(parents=True, exist_ok=True)
+# --- Path Definitions using the helper function ---
+
+DATA_PATH: Path = _resolve_path(
+    env_var_key="DATA_PATH",
+    default_relative_to_base="data",
+    base_path_for_default=PROJECT_ROOT,
+    project_root_for_env_relative=PROJECT_ROOT
+)
+
+INBOX_PATH: Path = _resolve_path(
+    env_var_key="INBOX_PATH",
+    default_relative_to_base="inbox",
+    base_path_for_default=DATA_PATH,
+    project_root_for_env_relative=PROJECT_ROOT
+)
+
+FILE_PATH: Path = _resolve_path(
+    env_var_key="FILE_PATH",
+    default_relative_to_base="files",
+    base_path_for_default=DATA_PATH,
+    project_root_for_env_relative=PROJECT_ROOT
+)
+
+MD_PATH: Path = _resolve_path(
+    env_var_key="MD_PATH",
+    default_relative_to_base="md",
+    base_path_for_default=DATA_PATH,
+    project_root_for_env_relative=PROJECT_ROOT
+)
+
+DB_PATH: Path = _resolve_path(
+    env_var_key="DB_PATH",  # Corrected key
+    default_relative_to_base="db",
+    base_path_for_default=DATA_PATH,
+    project_root_for_env_relative=PROJECT_ROOT
+)
+
+# --- DATABASE_URL Configuration ---
+# Defaults to a sqlite file within the resolved DB_PATH.
+DATABASE_URL_DEFAULT: str = f"sqlite:///{DB_PATH / 'jjobs.sqlite'}"
+DATABASE_URL: str = config("DATABASE_URL", default=DATABASE_URL_DEFAULT)
+
+# --- Create Directories ---
+# Ensure all configured paths exist.
+DATA_PATH.mkdir(parents=True, exist_ok=True)
+INBOX_PATH.mkdir(parents=True, exist_ok=True)
+FILE_PATH.mkdir(parents=True, exist_ok=True)
+MD_PATH.mkdir(parents=True, exist_ok=True)
+DB_PATH.mkdir(parents=True, exist_ok=True)

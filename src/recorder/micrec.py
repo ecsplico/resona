@@ -8,6 +8,7 @@ import queue # For passing audio data from recording thread to main/saving logic
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
+import asyncio
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
@@ -211,7 +212,7 @@ class MicRecApp(App):
 
 
     async def action_save_and_new_recording(self) -> None:
-        """Saves the current recording and immediately starts a new one."""
+        """Saves the current recording and stops."""
         if not self.is_recording or self._is_saving_and_restarting:
             return
 
@@ -221,24 +222,41 @@ class MicRecApp(App):
         self.query_one("#record_pause_button", Button).disabled = True
 
 
-        global stop_event, recording_thread, save_finished_event
+        global stop_event, recording_thread, save_finished_event, audio_queue
         save_finished_event.clear()
         stop_event.set() # Signal current recording thread to stop and save
 
         # Wait for the recording thread to finish saving
-        # This needs to be done carefully to avoid blocking the UI thread for too long
-        # Using a timer to check the event
         await self.wait_for_save_completion()
 
-        # Reset for new recording (after save is confirmed)
+        # Ensure thread has finished
         if recording_thread and recording_thread.is_alive():
-            recording_thread.join(timeout=1.0) # Give it a moment to exit
+            recording_thread.join(timeout=2.0) # Give it a bit more time
 
-        # Start a new recording
-        self.status_message = "Starting new recording..."
-        self.start_recording_action() # This will set is_recording to True, etc.
-        self._update_record_pause_button_ui()
-        self.query_one("#record_pause_button", Button).disabled = False
+
+        # Reset state to initial (ready to record)
+        self.is_recording = False
+        self.is_paused = False
+        self.start_time = 0.0
+        self._current_paused_duration = 0.0
+        self.elapsed_time_str = "00:00:00"
+        # status message is set by the record_audio_thread after saving
+        self.can_exit_now = True # Ready to exit if needed
+
+        # Clear the queue for good measure, though thread should have consumed it
+        while not audio_queue.empty():
+            try:
+                audio_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        # Clear events for next recording
+        stop_event.clear()
+        pause_event.clear()
+        save_finished_event.clear()
+
+        self._update_record_pause_button_ui() # Update button states
+        self.query_one("#record_pause_button", Button).disabled = False # Re-enable record button
         self._is_saving_and_restarting = False
 
 
@@ -465,8 +483,8 @@ class MicRecApp(App):
         self.status_message = message
 
 
-if __name__ == "__main__":
-    import asyncio # Required for await asyncio.sleep(0.1)
+def run_mic_rec_app():
+    """Initializes and runs the MicRecApp application."""
     # Pre-flight checks
     if not os.path.exists(OUTPUT_DIR):
         try:
@@ -491,6 +509,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     app = MicRecApp()
+    # Import asyncio here as it's needed by app.run and potentially by logic within MicRecApp
+    # that might be triggered by app.run, especially if run_sync is used internally by Textual for inline mode.
     app.run(inline=True)
 
     # Clean up, though daemon thread should allow exit
@@ -503,3 +523,6 @@ if __name__ == "__main__":
         else:
             print("Main exit: Recording thread finished.", file=sys.stderr)
     print("MicRec exited.", file=sys.stderr)
+
+if __name__ == "__main__":
+    run_mic_rec_app()
