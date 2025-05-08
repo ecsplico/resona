@@ -43,8 +43,8 @@ class TransformerTranscriber:
         batch_size = options_dict.get("batch_size", 1)
         return_timestamps = options_dict.get("return_timestamps", True) # Keep original default
 
-        # TODO: Get initial prompts working with transformer models, check if the PR is in mainstream...
-        output = self.model(audio, batch_size=batch_size, return_timestamps=return_timestamps)
+        # Pass generate_kwargs to the pipeline call
+        output = self.model(audio, batch_size=batch_size, return_timestamps=return_timestamps, initial_prompt=initial_prompt_str)#, generate_kwargs=generate_kwargs)
 
         log.info(f"Transformer Output: {output}")
         # Adapt the output format to be consistent with other transcribers if necessary
