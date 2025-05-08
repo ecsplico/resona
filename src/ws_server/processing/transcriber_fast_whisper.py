@@ -7,15 +7,16 @@ from core.db.utils import get_active_initial_prompts_string # Import the utility
 log = logging.getLogger('uvicorn.test') # Get logger
 
 # Assuming MODEL_NAME is defined globally or passed differently
-MODEL_NAME: str = config("DEFAULT_FASTWHISPER_MODEL", cast=str)
+DEFAULT_MODEL_NAME: str = config("DEFAULT_FASTWHISPER_MODEL", cast=str)
 
 class FastWhisperTranscriber:
-    def __init__(self, device: str = "cpu", modelname=MODEL_NAME):
+    def __init__(self, device: str = "cpu", modelname=DEFAULT_MODEL_NAME):
         self.modelname = modelname
         # Determine compute type based on device
         compute_type = "int8_float16" if device == "cuda" else "int8"
         # Consider lazy loading
-        self.model = WhisperModel(MODEL_NAME, device=device, compute_type=compute_type)
+        log.info(f"Loading FastWhisper model: {DEFAULT_MODEL_NAME} on {device} with compute type: {compute_type}...")
+        self.model = WhisperModel(DEFAULT_MODEL_NAME, device=device, compute_type=compute_type)
 
     def get_model(self):
         return self.model
@@ -26,11 +27,11 @@ class FastWhisperTranscriber:
         if initial_prompt_str:
             # Add the prompt string to the kwargs if it's not empty
             kwargs["initial_prompt"] = initial_prompt_str
-            log.info(f"Using initial prompt: '{initial_prompt_str}'")
+            # log.info(f"Using initial prompt: '{initial_prompt_str}'")
         else:
             # Remove initial_prompt if it exists but the DB fetch returned empty
             kwargs.pop("initial_prompt", None)
-            log.info("No active initial prompts found or database error.")
+            # log.info("No active initial prompts found or database error.")
 
         segments = []
         text = ""

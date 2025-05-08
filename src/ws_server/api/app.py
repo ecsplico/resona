@@ -8,7 +8,8 @@ from fastapi.staticfiles import StaticFiles
 
 # Import background tasks and paths from their new locations
 from core.paths import FILE_PATH # Needed for static file mount
-from ..processing.tasks import TranscribeTask, ScanInboxTask
+from ..processing.tasks_transcribe import TranscribeTask
+from ..processing.task_scan_inbox import ScanInboxTask
 
 # Import database initialization functions
 from core.db.engine import create_db_and_tables, populate_default_replacements, populate_initial_prompts

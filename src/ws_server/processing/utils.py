@@ -79,8 +79,8 @@ def run_asr(file: Union[str, BinaryIO], markdown: bool = True, task: str = "tran
 
     except Exception as e:
         log.error(f"Error during ASR processing: {e}", exc_info=True)
-        # Return a dictionary indicating error, or re-raise
-        return {"error": str(e), "text": "", "segments": [], "language": language}
+        # Re-raise as a RuntimeError to be caught by the calling task processor
+        raise RuntimeError(f"ASR processing failed: {e}") from e
 
 
 def load_audio(file: BinaryIO, encode=True, sr: int = SAMPLE_RATE):

@@ -9,7 +9,6 @@ def _resolve_path(
     env_var_key: str,
     default_relative_to_base: str,
     base_path_for_default: Path,
-    project_root_for_env_relative: Path
 ) -> Path:
     """
     Resolves a path based on an environment variable or a default.
@@ -22,9 +21,11 @@ def _resolve_path(
         path_str = config(env_var_key)
         configured_path = Path(path_str)
         if configured_path.is_absolute():
-            return configured_path
+            used_path = configured_path
         else:
-            return project_root_for_env_relative / configured_path
+            used_path = PROJECT_ROOT / configured_path
+        used_path.mkdir(parents=True, exist_ok=True)
+        return used_path
     except UndefinedValueError:
         return base_path_for_default / default_relative_to_base
 
@@ -34,46 +35,33 @@ DATA_PATH: Path = _resolve_path(
     env_var_key="DATA_PATH",
     default_relative_to_base="data",
     base_path_for_default=PROJECT_ROOT,
-    project_root_for_env_relative=PROJECT_ROOT
 )
 
 INBOX_PATH: Path = _resolve_path(
     env_var_key="INBOX_PATH",
     default_relative_to_base="inbox",
     base_path_for_default=DATA_PATH,
-    project_root_for_env_relative=PROJECT_ROOT
 )
 
 FILE_PATH: Path = _resolve_path(
     env_var_key="FILE_PATH",
     default_relative_to_base="files",
     base_path_for_default=DATA_PATH,
-    project_root_for_env_relative=PROJECT_ROOT
 )
 
 MD_PATH: Path = _resolve_path(
     env_var_key="MD_PATH",
     default_relative_to_base="md",
     base_path_for_default=DATA_PATH,
-    project_root_for_env_relative=PROJECT_ROOT
 )
 
 DB_PATH: Path = _resolve_path(
     env_var_key="DB_PATH",  # Corrected key
     default_relative_to_base="db",
     base_path_for_default=DATA_PATH,
-    project_root_for_env_relative=PROJECT_ROOT
 )
 
 # --- DATABASE_URL Configuration ---
 # Defaults to a sqlite file within the resolved DB_PATH.
 DATABASE_URL_DEFAULT: str = f"sqlite:///{DB_PATH / 'jjobs.sqlite'}"
 DATABASE_URL: str = config("DATABASE_URL", default=DATABASE_URL_DEFAULT)
-
-# --- Create Directories ---
-# Ensure all configured paths exist.
-DATA_PATH.mkdir(parents=True, exist_ok=True)
-INBOX_PATH.mkdir(parents=True, exist_ok=True)
-FILE_PATH.mkdir(parents=True, exist_ok=True)
-MD_PATH.mkdir(parents=True, exist_ok=True)
-DB_PATH.mkdir(parents=True, exist_ok=True)
