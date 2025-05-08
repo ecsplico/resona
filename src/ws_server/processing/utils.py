@@ -1,7 +1,11 @@
+import json
 import logging
 from threading import Lock
-from typing import BinaryIO, Union
+from typing import BinaryIO, Union, Dict
 from timeit import default_timer as timer
+from decouple import config
+
+from core.db.models import Job # Import Job model for type hinting
 
 import ffmpeg
 import numpy as np
@@ -9,7 +13,6 @@ import whisper # Keep for whisper.load_audio
 
 # Import necessary components from new locations
 from .transcriber_factory import getTranscriber
-from .formatting import toMarkdown # Needed for markdown conversion within run_asr
 # Removed database imports to break circular dependency
 # from .db.engine import engine
 # from .db.models import InitialPrompt
@@ -27,14 +30,12 @@ log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
 # Moved get_active_initial_prompts_string to src/db/utils.py to resolve circular import
 
 
-def run_asr(file: Union[str, BinaryIO], markdown: bool = True, task: str = "transcribe", language: str = "de", **asr_options) -> dict:
+def run_asr(file: Union[str, BinaryIO], task: str = "transcribe", language: str = "de", **asr_options) -> dict:
     """
-    Loads audio, runs transcription using the configured ASR model,
-    and optionally converts the result to markdown.
+    Loads audio and runs transcription using the configured ASR model.
 
     Args:
         file: Path to the audio file or a binary file object.
-        markdown: Whether to convert the result text to markdown.
         task: The ASR task ('transcribe' or 'translate').
         language: The language code for ASR.
         **asr_options: Additional options passed directly to the transcriber's transcribe method.
@@ -42,7 +43,7 @@ def run_asr(file: Union[str, BinaryIO], markdown: bool = True, task: str = "tran
     Returns:
         A dictionary containing the transcription result.
     """
-    log.info(f"Running ASR: task='{task}', language='{language}', markdown={markdown}")
+    log.info(f"Running ASR: task='{task}', language='{language}'")
     try:
         # Load audio
         if isinstance(file, str):
@@ -66,14 +67,7 @@ def run_asr(file: Union[str, BinaryIO], markdown: bool = True, task: str = "tran
             duration = timer() - start
             log.info(f"ASR finished in {duration:.2f} seconds. Language: {result.get('language', 'N/A')}")
 
-            # Optional Markdown conversion
-            if markdown and "text" in result:
-                log.info("Converting result text to markdown...")
-                result["md"] = toMarkdown(result["text"])
-                log.info("Markdown conversion complete.")
-            elif markdown:
-                 log.warning("Markdown conversion requested, but no 'text' found in result.")
-
+            # Markdown conversion is now handled by a separate post-processing step.
 
         return result
 
@@ -111,3 +105,34 @@ def load_audio(file: BinaryIO, encode=True, sr: int = SAMPLE_RATE):
     waveform = np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
     log.info(f"Audio loaded successfully. Shape: {waveform.shape}, Sample Rate: {sr}")
     return waveform
+
+
+def update_job_attributes_from_result(job: Job, result_data: Dict):
+    """
+    Updates the attributes of a Job object based on the ASR and post-processing result.
+
+    Args:
+        job: The Job object to update.
+        result_data: A dictionary containing the processed transcription data.
+                     Expected keys include "text", "language", "segments", "md".
+    """
+    job.transcript = result_data.get("text", "")
+    job.language = result_data.get("language", "")
+    
+    try:
+        job.segments = json.dumps([segment._asdict() for segment in result_data.get("segments", [])])
+    except AttributeError:
+        log.warning(f"Could not serialize segments for job {job.id}. Segments: {result_data.get('segments')}")
+        job.segments = "[]"  # Default to empty JSON array on error
+    except Exception as e:
+        log.error(f"Unexpected error serializing segments for job {job.id}: {e}", exc_info=True)
+        job.segments = "[]"
+
+    job.transcribed = True
+    # TODO: The ASR model and specific ASR options should ideally be stored
+    # when the ASR is run, or be part of the job's initial configuration.
+    # For now, using a general config value.
+    job.model = config("ASR_MODEL_NAME", default="unknown")
+    job.md = result_data.get("md", "")
+    
+    log.info(f"Updated attributes for job {job.id} from result data.")
