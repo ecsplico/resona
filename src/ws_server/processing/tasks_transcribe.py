@@ -6,8 +6,9 @@ from threading import Thread
 from decouple import config
 from sqlmodel import Session, select
 
-from .utils import run_asr
+from .utils import run_asr, update_job_attributes_from_result # Import the new utility function
 from .formatting import write_md_file
+from .postprocessing import apply_postprocessing_steps # Import the new postprocessing function
 from core.db.models import Job
 from core.db.engine import engine
 from core.paths import FILE_PATH
@@ -26,36 +27,44 @@ class TranscribeTask(Thread):
         while True:
             # get Jobs from database and transcribe them
             with Session(engine) as session:
-                statement = select(Job).where(Job.processed == False).order_by(Job.id=='asc')
+                statement = select(Job).where(Job.processed == False).order_by(Job.id.asc()) # Corrected order_by
                 job = session.exec(statement).first()
                 if job is not None:
                     log.info(f"Starting transcription for job {job.id}")
                     try:
-                        result = run_asr(f"{FILE_PATH}/{job.filename}", markdown=True)
-                        job.transcript = result["text"]
-                        job.language = result["language"]
-                        # Assuming result["segments"] is a list of objects with _asdict()
-                        # Handle potential errors if segments format is different
-                        try:
-                            job.segments = json.dumps([segment._asdict() for segment in result.get("segments", [])])
-                        except AttributeError:
-                             log.warning(f"Could not serialize segments for job {job.id}. Segments: {result.get('segments')}")
-                             job.segments = "[]" # Default to empty JSON array on error
-                        job.transcribed = True
-                        job.model = "???" # TODO: Save ASR_mode and model to database
-                        filepath = f"{FILE_PATH}/{job.filename}"
+                        # Run ASR without internal markdown processing
+                        asr_result = run_asr(f"{FILE_PATH}/{job.filename}")
+                        
+                        # Apply postprocessing steps
+                        # For now, assume 'markdown' is always desired. This could be dynamic.
+                        postprocessing_config = getattr(job, 'postprocessing_steps', ['markdown']) # Example: get from job or default
+                        if not isinstance(postprocessing_config, list): # Basic validation
+                            log.warning(f"Job {job.id}: postprocessing_steps is not a list, defaulting to ['markdown']. Value: {postprocessing_config}")
+                            postprocessing_config = ['markdown']
+                        
+                        processed_result = apply_postprocessing_steps(asr_result, postprocessing_config)
+
+                        # Update job attributes using the utility function
+                        update_job_attributes_from_result(job, processed_result)
+                        
+                        filepath = f"{FILE_PATH}/{job.filename}" # Still need filepath for potential removal
 
                         if job.translate:
+                            # Translation would also be a postprocessing step if implemented
+                            # If translation modifies the result, ensure update_job_attributes_from_result
+                            # is called *after* translation or can handle intermediate results.
                             pass
 
+                        # File removal logic (can be part of post-transcription tasks)
                         if not job.keepfile and os.path.exists(filepath):
-                            os.remove(filepath)
-                            job.filename=''
-
-                        # Ensure 'md' key exists before accessing
-                        job.md = result.get("md", "")
- 
-                        log.info(f"Job {job.id}: All ASR processing complete. About to set processed = True.")
+                            if job.filename: # Ensure filename is not already empty
+                                os.remove(filepath)
+                                job.filename='' # Clear filename in DB
+                                log.info(f"Removed audio file for job {job.id}: {filepath}")
+                            else:
+                                log.warning(f"Job {job.id}: 'keepfile' is false, but filename is already empty. Skipping removal.")
+                        
+                        log.info(f"Job {job.id}: ASR, postprocessing, and attribute updates complete. About to set processed = True.")
                         job.processed = True
                         session.commit()
                         log.info(f"Job {job.id}: Committed job state with processed = True.")
