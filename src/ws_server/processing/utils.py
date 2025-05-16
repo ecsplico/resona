@@ -120,7 +120,12 @@ def update_job_attributes_from_result(job: Job, result_data: Dict):
     job.language = result_data.get("language", "")
     
     try:
-        job.segments = json.dumps([segment._asdict() for segment in result_data.get("segments", [])])
+        segments = result_data.get("segments", [])
+        serializable_segments = [
+            segment if isinstance(segment, dict) else segment._asdict()
+            for segment in segments
+        ]
+        job.segments = json.dumps(serializable_segments)
     except AttributeError:
         log.warning(f"Could not serialize segments for job {job.id}. Segments: {result_data.get('segments')}")
         job.segments = "[]"  # Default to empty JSON array on error

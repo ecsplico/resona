@@ -34,6 +34,7 @@ class TranscribeTask(Thread):
                     try:
                         # Run ASR without internal markdown processing
                         asr_result = run_asr(f"{FILE_PATH}/{job.filename}")
+                        log.info(f"Job {job.id}: Raw ASR result: {asr_result}")
                         
                         # Apply postprocessing steps
                         # For now, assume 'markdown' is always desired. This could be dynamic.
@@ -43,6 +44,7 @@ class TranscribeTask(Thread):
                             postprocessing_config = ['markdown']
                         
                         processed_result = apply_postprocessing_steps(asr_result, postprocessing_config)
+                        log.info(f"Job {job.id}: Post-processed result: {processed_result}")
 
                         # Update job attributes using the utility function
                         update_job_attributes_from_result(job, processed_result)
