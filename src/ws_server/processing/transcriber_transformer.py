@@ -22,37 +22,50 @@ class TransformerTranscriber:
         return self.model
 
     def transcribe(self, audio: np.ndarray, **options_dict):
-        # Note: options_dict is not directly used by the pipeline call itself,
-        # but we check it for consistency or potential future use.
-        # We will use generate_kwargs for passing prompts if applicable.
-
+        # Construct generate_kwargs for the pipeline
         generate_kwargs = {}
+        
         # Get active initial prompts from the database
         initial_prompt_str = get_active_initial_prompts_string()
         if initial_prompt_str:
-            # Add the prompt string to generate_kwargs if it's not empty
-            # This might work if the underlying model supports it (e.g., Whisper)
+            # generate_kwargs["initial_prompt"] = initial_prompt_str
+            # TODO: initial_prompt is not directly supported by pipeline generate in this way. 
+            # Needs to be converted to tokens or handled differently.
             pass
-            generate_kwargs["initial_prompt"] = initial_prompt_str
         else:
             log.info("No active initial prompts found or database error.")
 
+        # Extract language and task from options_dict
+        language = options_dict.get("language")
+        task = options_dict.get("task")
+
+        if language:
+            generate_kwargs["language"] = language
+        if task:
+            generate_kwargs["task"] = task
 
         # Consider adding batch_size and return_timestamps from options_dict if needed
         batch_size = options_dict.get("batch_size", 1)
         return_timestamps = options_dict.get("return_timestamps", True) # Keep original default
 
-        # TODO: Get initial prompts working with transformer models, check if the PR is in mainstream...
-        output = self.model(audio, batch_size=batch_size, return_timestamps=return_timestamps)
+        # Pass generate_kwargs to the pipeline
+        output = self.model(
+            audio, 
+            batch_size=batch_size, 
+            return_timestamps=return_timestamps, 
+            generate_kwargs=generate_kwargs
+        )
 
         log.info(f"Transformer Output: {output}")
-        # Adapt the output format to be consistent with other transcribers if necessary
-        # Determine language - pipeline might return it, otherwise default or use options_dict
-        language = output.get("language", options_dict.get("language", "de")) # Example logic
-
+        
+        # Determine language - pipeline might return it in chunks or we rely on what we passed/detected
+        # If we passed language, we can assume it was used. If detecting, pipeline typically doesn't return 
+        # a top-level language key in this return format easily unless checking chunks.
+        # But 'output' from pipeline usually has 'text' and 'chunks'. 
+        
         result = {
-            "language": language,
-            "segments": output.get("chunks", []), # Use .get for safety
-            "text": output.get("text", ""), # Use .get for safety
+            "language": language if language else "unknown", # Best effort or need to parse from output if not provided
+            "segments": output.get("chunks", []),
+            "text": output.get("text", ""),
         }
         return result
