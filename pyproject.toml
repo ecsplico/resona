@@ -35,6 +35,7 @@ dependencies = [
 [project.scripts]
 ws-cli = "ws_cli.main:app"
 ws-rec = "recorder.micrec:run_mic_rec_app"
+ws-ui = "ws_ui.main:main"
 
 [tool.hatch.build.targets.wheel]
 # This explicitly tells Hatch to look inside the 'src/' directory
@@ -42,7 +43,7 @@ ws-rec = "recorder.micrec:run_mic_rec_app"
 # in the built wheel.
 # --- IMPORTANT: Replace 'my_api' and 'my_cli' below ---
 # --- with the actual names of your package folders inside src/ ---
-packages = ["src/ws_server", "src/ws_cli"]
+packages = ["src/ws_server", "src/ws_cli", "src/ws_ui", "src/recorder", "src/core"]
 
 [[tool.uv.index]]
 name = "pytorch-nightly"
