@@ -1,9 +1,8 @@
 import logging
 import numpy as np
 from decouple import config
-from transformers import pipeline
+from transformers import pipeline, AutoProcessor
 from core.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
-
 print("DEBUG: transcriber_transformer.py module is being loaded.") # ADD THIS
 # Assuming MODEL_NAME is defined globally or passed differently
 log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
