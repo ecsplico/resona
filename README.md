@@ -1,6 +1,40 @@
-# ASR Service
+# Whisper Server - ASR Service
 
-This service provides an API for performing Automatic Speech Recognition (ASR) on audio files. It supports both synchronous and asynchronous processing, multiple input formats, and various output options.
+A secure, production-ready API for Automatic Speech Recognition (ASR) using OpenAI's Whisper models. Features API key authentication, job status tracking, and both synchronous and asynchronous processing.
+
+## Quick Start
+
+1. **Install dependencies**:
+   ```bash
+   uv sync
+   ```
+
+2. **Configure environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and set your API_KEY
+   ```
+
+3. **Run the server**:
+   ```bash
+   uv run python run.py
+   ```
+
+## Security
+
+### API Authentication
+
+All API endpoints require authentication using an API key. Set your API key in the `.env` file:
+
+```bash
+API_KEY=your_secure_api_key_here
+```
+
+Include the API key in all requests using the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: your_api_key" http://localhost:8000/jobs/
+```
 
 ## Project Structure
 
@@ -81,16 +115,37 @@ Key components:
 *   `toMarkdown`: A function that converts the ASR transcript to markdown, applying text replacement rules from the database.
 *   `register_job`: A function that registers a job in the database.
 
+## Features
+
+- **🔒 Secure**: API key authentication on all endpoints
+- **📊 Job Tracking**: Detailed status tracking (PENDING, PROCESSING, COMPLETED, FAILED)
+- **⚡ Async Processing**: Upload files and retrieve results later
+- **🔍 Error Tracking**: Detailed error messages stored for failed jobs
+- **🛡️ Input Validation**: Filename sanitization and file type validation
+- **⏱️ Timestamps**: Automatic created_at and updated_at tracking
+
+## Job Status Lifecycle
+
+Jobs progress through the following states:
+
+1. **PENDING**: Job created, waiting to be processed
+2. **PROCESSING**: Currently being transcribed
+3. **COMPLETED**: Successfully transcribed, results available
+4. **FAILED**: Error occurred, check `error_message` field
+
 ## Usage
 
-1.  **Upload an audio file** to the `/asr` endpoint for synchronous processing or the `/asr-async` endpoint for asynchronous processing.
-2.  **For asynchronous processing**, retrieve the job ID from the response.
-3.  **Use the job ID** to retrieve the result from the `/job/{id}` endpoint.
+1.  **Upload an audio file** to the `/asr-async` endpoint for asynchronous processing
+2.  **Retrieve the job ID** from the response
+3.  **Poll `/job/{id}`** to check status and retrieve results when completed
 
 ## Endpoints
 
+**Note**: All endpoints require the `X-API-Key` header.
+
 *   **/asr**: Processes an audio file synchronously and returns the transcription.
     *   Method: POST
+    *   Headers: `X-API-Key: <your_api_key>`
     *   Request body: `audio_file` (audio file to transcribe)
     *   Query parameters:
         *   `encode` (boolean, default: True): Encode audio first through ffmpeg
@@ -102,8 +157,9 @@ Key components:
         *   `markdown` (boolean, default: True): Convert the result to markdown
         *   `output` (string, default: "txt", enum: ["txt", "vtt", "srt", "tsv", "json"]): Output format
     *   Response: StreamingResponse containing the transcription in the specified format.
-*   **/asr-async**: Processes an audio file asynchronously and returns a job ID.
+*   **/asr-async**: Processes audio files asynchronously and returns job IDs.
     *   Method: POST
+    *   Headers: `X-API-Key: <your_api_key>`
     *   Request body: `audio_files` (list of audio files to transcribe)
     *   Form parameters:
         *   `keep` (boolean, default: True): Keep the audio file after processing
@@ -111,12 +167,30 @@ Key components:
     *   Response: JSON array containing job objects with `id`, `file`, and `result` URLs.
 *   **/asr-registerfile**: Registers an existing file for processing.
     *   Method: POST
+    *   Headers: `X-API-Key: <your_api_key>`
     *   Request body: `filename` (string, the name of the file to register)
     *   Response: JSON object containing job information.
 *   **/job/{id}**: Retrieves the result of an asynchronous processing job.
     *   Method: GET
-    *   Parameters: `id` (string, the ID of the job)
-    *   Response: JSON object containing the job details, including the transcription.
+    *   Headers: `X-API-Key: <your_api_key>`
+    *   Parameters: `id` (integer, the ID of the job)
+    *   Response: JSON object containing the job details, including status, transcription, and error_message if failed.
 *   **/jobs**: Retrieves all jobs.
     *   Method: GET
+    *   Headers: `X-API-Key: <your_api_key>`
     *   Response: JSON array containing all job objects.
+
+## Testing
+
+Run the test suite:
+
+```bash
+uv run pytest
+```
+
+Run specific test files:
+
+```bash
+uv run pytest tests/test_api.py
+uv run pytest tests/test_security.py
+```

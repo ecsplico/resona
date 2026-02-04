@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 # Import background tasks and paths from their new locations
-from core.paths import FILE_PATH # Needed for static file mount
+from core.paths import FILE_PATH
 from ..processing.tasks_transcribe import TranscribeTask
 from ..processing.task_scan_inbox import ScanInboxTask
 
@@ -16,8 +16,8 @@ from core.db.engine import create_db_and_tables, populate_default_replacements, 
 
 # Basic logging setup (can be enhanced)
 logging.basicConfig(level=logging.INFO)
-log = logging.getLogger('uvicorn.test') # Assuming uvicorn logger is used
-log.setLevel(logging.DEBUG) # Or use level from config
+log = logging.getLogger('uvicorn.test')
+log.setLevel(logging.DEBUG)
 
 tags_metadata = [
     {
@@ -33,41 +33,65 @@ tags_metadata = [
         "description": "Audio Speech Recognition.",
     },
      {
-        "name": "Endpoints", # Keep this if endpoints.py uses it
+        "name": "Endpoints",
         "description": "Direct ASR processing.",
     },
 ]
 
+# Module-level variables for background tasks
+transcribe_task = None
+scan_task = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-# Startup: Initialize database
+    global transcribe_task, scan_task
+    
+    # Startup: Initialize database
     log.info("Initializing database...")
     create_db_and_tables()
-    populate_default_replacements() # Populate default data if needed
-    populate_initial_prompts() # Populate initial prompts if needed
-    shutdown_event = Event() # type: ignore
+    populate_default_replacements()
+    populate_initial_prompts()
+    
+    shutdown_event = Event()  # type: ignore
+    
     # Startup: Start background tasks
     log.info("Starting background tasks...")
-    t = TranscribeTask(shutdown_event)
-    t.start()
-    s = ScanInboxTask(shutdown_event)
-    s.start()
+    transcribe_task = TranscribeTask(shutdown_event)
+    transcribe_task.start()
+    scan_task = ScanInboxTask(shutdown_event)
+    scan_task.start()
+    
     yield
-    # Shutdown: Signal tasks to stop
+    
+    # Shutdown: Signal tasks to stop and wait for completion
     log.info("Shutting down background tasks...")
     shutdown_event.set()
-    # Note: Consider adding t.join() and s.join() here if needed for graceful shutdown
+    
+    if transcribe_task:
+        transcribe_task.join(timeout=10)
+        log.info("Transcribe task stopped")
+    
+    if scan_task:
+        scan_task.join(timeout=10)
+        log.info("Scan task stopped")
+
 
 # Initialize FastAPI app
 app = FastAPI(openapi_tags=tags_metadata, lifespan=lifespan)
 
 # Serve javascript frontend (assuming 'webapp' is in the root directory)
-# If 'webapp' is elsewhere, adjust the path accordingly.
-app.mount("/", StaticFiles(directory='webapp', html=True), name="app")
+# Mount webapp for UI if it exists
+try:
+    app.mount("/", StaticFiles(directory='webapp', html=True), name="app")
+except RuntimeError:
+    log.warning("webapp directory not found, skipping UI mount")
 
-# Serve the uploaded files
-app.mount("/files/", StaticFiles(directory=FILE_PATH), name="files")
+# SECURITY NOTE: Removed public /files/ mount
+# Files should be accessed through authenticated endpoints only
+# If you need to serve files, create a protected endpoint with auth
 
 # Import and register the API endpoints
-from . import endpoints
+from .endpoints import router
+app.include_router(router)
+
