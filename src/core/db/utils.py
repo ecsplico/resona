@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 
 # Import necessary components from new locations
 from .engine import engine
-from .models import Job, Replacement, InitialPrompt # Add InitialPrompt here
+from .models import Job, Replacement, InitialPrompt, JobStatus # Add JobStatus import
 from core.presets import replacements as default_replacements # Import the raw data
 
 log = logging.getLogger(__name__)
@@ -15,18 +15,24 @@ def register_job(filename: str, upload_name: str, keep: bool = True, translate: 
 
     Args:
         filename: The unique filename assigned for storage.
-        upload_name: The original uploaded filename (for reference, though not stored in Job model currently).
+        upload_name: The original uploaded filename (for reference).
         keep: Whether to keep the audio file after processing.
         translate: Whether the job includes translation.
 
     Returns:
         A dictionary containing the new job's ID and related API paths.
     """
-    log.info(f"Registering job: filename='{filename}', keep={keep}, translate={translate}")
+    log.info(f"Registering job: filename='{filename}', upload_name='{upload_name}', keep={keep}, translate={translate}")
     try:
         with Session(engine) as session:
-            # Create a new Job instance
-            job = Job(filename=filename, keepfile=keep, translate=translate)
+            # Create a new Job instance with upload_name and status
+            job = Job(
+                filename=filename,
+                upload_name=upload_name,
+                keepfile=keep,
+                translate=translate,
+                status=JobStatus.PENDING
+            )
             session.add(job)
             session.commit()
             session.refresh(job) # Refresh to get the assigned ID

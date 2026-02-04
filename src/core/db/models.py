@@ -1,14 +1,29 @@
 import logging
 from typing import Optional
-from sqlmodel import Field, SQLModel # Keep Session if needed for type hints, remove create_engine
+from datetime import datetime
+from enum import Enum
+from sqlmodel import Field, SQLModel, Column
+from sqlalchemy import DateTime
 
 logger = logging.getLogger(__name__)
+
+
+class JobStatus(str, Enum):
+    """Status of a transcription job."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 
 class Job(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     filename: Optional[str] = Field(default='')
+    upload_name: Optional[str] = Field(default='')  # Original filename from upload
     transcribed: bool = Field(default=False)
     processed: bool = Field(default=False)
+    status: JobStatus = Field(default=JobStatus.PENDING)  # New status field
+    error_message: Optional[str] = Field(default=None)  # Track errors
     language: Optional[str] = Field(default=None)
     segments: Optional[str] = Field(default='') # Consider JSON type if DB supports
     transcript: Optional[str] = Field(default='')
@@ -22,6 +37,15 @@ class Job(SQLModel, table=True):
     md: Optional[str] = Field(default='')
     done: bool = Field(default=False) # Is this used? Consider removing if not.
     translate: bool = Field(default=False)
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime, nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime, nullable=False, onupdate=datetime.utcnow)
+    )
+
 
 class Replacement(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

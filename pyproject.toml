@@ -54,3 +54,9 @@ explicit = true
 torch = [{ index = "pytorch-nightly" }]
 torchaudio = [{ index = "pytorch-nightly" }]
 triton = [{ index = "pytorch-nightly" }]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+]
