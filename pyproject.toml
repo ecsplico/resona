@@ -30,12 +30,15 @@ dependencies = [
     "transformers>=4.48.1",
     "typer>=0.15.3",
     "uvicorn>=0.34.0",
+    "websockets>=16.0",
 ]
 
 [project.scripts]
+ws-server = "ws_server.run:main"
 ws-cli = "ws_cli.main:app"
 ws-rec = "recorder.micrec:run_mic_rec_app"
 ws-ui = "ws_ui.main:main"
+
 
 [tool.hatch.build.targets.wheel]
 # This explicitly tells Hatch to look inside the 'src/' directory

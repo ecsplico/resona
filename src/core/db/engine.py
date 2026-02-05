@@ -1,4 +1,7 @@
 import logging
+import os
+import sys
+from pathlib import Path
 from sqlmodel import SQLModel, create_engine, select, Session
 
 # Import necessary components from new locations
@@ -6,13 +9,78 @@ from .models import Job, Replacement, InitialPrompt # Add InitialPrompt here
 from core.presets import replacements as default_replacements # Import the raw data
 from core.presets import initial_prompts # Import the initial prompts data
 # Import DATABASE_URL from its new location
-from core.paths import DATABASE_URL
+from core.paths import DATABASE_URL, DB_PATH
 
 log = logging.getLogger("uvicorn.test") # Use a logger specific to this module
+
+def validate_database_directory():
+    """
+    Validates that the database directory exists and is writable.
+    Provides clear error messages if validation fails.
+    """
+    db_dir = Path(DB_PATH)
+    
+    # Check if directory exists
+    if not db_dir.exists():
+        try:
+            log.info(f"Creating database directory: {db_dir}")
+            db_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            error_msg = (
+                f"\n{'='*60}\n"
+                f"ERROR: Cannot create database directory\n"
+                f"{'='*60}\n"
+                f"Location: {db_dir}\n"
+                f"Reason: Permission denied\n\n"
+                f"Solution: Run one of the following commands:\n"
+                f"  sudo mkdir -p {db_dir}\n"
+                f"  sudo chown $USER:$USER {db_dir}\n"
+                f"\nOr set a different DB_PATH in your .env file.\n"
+                f"{'='*60}\n"
+            )
+            log.error(error_msg)
+            print(error_msg, file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            error_msg = (
+                f"\n{'='*60}\n"
+                f"ERROR: Cannot create database directory\n"
+                f"{'='*60}\n"
+                f"Location: {db_dir}\n"
+                f"Reason: {str(e)}\n\n"
+                f"Solution: Check the path and permissions.\n"
+                f"{'='*60}\n"
+            )
+            log.error(error_msg)
+            print(error_msg, file=sys.stderr)
+            sys.exit(1)
+    
+    # Check if directory is writable
+    if not os.access(db_dir, os.W_OK):
+        error_msg = (
+            f"\n{'='*60}\n"
+            f"ERROR: Database directory is not writable\n"
+            f"{'='*60}\n"
+            f"Location: {db_dir}\n"
+            f"Reason: Insufficient permissions\n\n"
+            f"Solution: Run the following command:\n"
+            f"  sudo chown $USER:$USER {db_dir}\n"
+            f"\nOr set a different DB_PATH in your .env file.\n"
+            f"{'='*60}\n"
+        )
+        log.error(error_msg)
+        print(error_msg, file=sys.stderr)
+        sys.exit(1)
+    
+    log.info(f"Database directory validated: {db_dir}")
+
+# Validate directory before creating engine
+validate_database_directory()
 
 log.info(f"Creating database engine for URL: {DATABASE_URL}")
 # Create the database engine instance
 engine = create_engine(DATABASE_URL) # echo=True for SQL logging
+
 
 def create_db_and_tables():
     """Creates all tables defined by SQLModel metadata."""

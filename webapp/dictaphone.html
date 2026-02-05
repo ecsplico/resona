@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>🎤 Diktiergerät</title>
+    <link rel="manifest" href="/manifest.json">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/dictaphone-db.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 80px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px 20px 0 0;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #1F2937;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .status-badge.online {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .status-badge.offline {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .recorder-section {
+            background: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        .timer {
+            font-size: 3em;
+            font-weight: 700;
+            color: #1F2937;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            font-size: 2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-record {
+            background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+            color: white;
+        }
+
+        .btn-record.recording {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 4px 30px rgba(239, 68, 68, 0.8);
+            }
+        }
+
+        .btn-pause {
+            background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+            color: white;
+            width: 60px;
+            height: 60px;
+            font-size: 1.5em;
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+            color: white;
+            width: 60px;
+            height: 60px;
+            font-size: 1.5em;
+        }
+
+        .metadata-section {
+            background: white;
+            padding: 20px;
+            border-top: 1px solid #E5E7EB;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #374151;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #E5E7EB;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4F46E5;
+        }
+
+        .recordings-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 0 0 20px 20px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .recordings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .recordings-header h2 {
+            color: #1F2937;
+            font-size: 1.2em;
+        }
+
+        .storage-info {
+            font-size: 0.8em;
+            color: #6B7280;
+        }
+
+        .recording-card {
+            background: linear-gradient(135deg, #F9FAFB 0%, #FFFFFF 100%);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .recording-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .recording-title {
+            font-weight: 700;
+            color: #1F2937;
+            font-size: 1.1em;
+        }
+
+        .recording-date {
+            color: #6B7280;
+            font-size: 0.85em;
+        }
+
+        .recording-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 0.85em;
+            color: #6B7280;
+            margin-bottom: 10px;
+        }
+
+        .recording-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-action {
+            border: none;
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-action:active {
+            transform: scale(0.95);
+        }
+
+        .btn-play {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+
+        .btn-upload {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .btn-delete {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+
+        .btn-action:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #9CA3AF;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .upload-badge {
+            display: inline-block;
+            background: #D1FAE5;
+            color: #065F46;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+
+        .install-prompt {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .install-prompt button {
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" x-data="dictaphoneApp()">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <span>🎤</span>
+                <span>Diktiergerät</span>
+            </h1>
+            <div class="status-badge" :class="serverOnline ? 'online' : 'offline'">
+                <div class="status-dot"></div>
+                <span x-text="serverOnline ? 'Online' : 'Offline'"></span>
+            </div>
+        </div>
+
+        <!-- Recording Section -->
+        <div class="recorder-section">
+            <div class="timer" x-text="formatTime(recordingTime)">00:00</div>
+
+            <div class="controls">
+                <button class="btn btn-record" :class="{ 'recording': isRecording && !isPaused }"
+                    @click="toggleRecording" :disabled="isRecording && !isPaused && !canPause">
+                    <span x-show="!isRecording">⚫</span>
+                    <span x-show="isRecording && isPaused">▶️</span>
+                    <span x-show="isRecording && !isPaused">⏸️</span>
+                </button>
+
+                <button class="btn btn-stop" @click="stopRecording" x-show="isRecording" :disabled="!isRecording">
+                    ⏹️
+                </button>
+            </div>
+        </div>
+
+        <!-- Metadata Section -->
+        <div class="metadata-section">
+            <div class="form-group">
+                <label for="title">Titel</label>
+                <input type="text" id="title" x-model="currentTitle" placeholder="z.B. Besprechungsnotizen..."
+                    :disabled="isRecording">
+            </div>
+            <div class="form-group">
+                <label for="date">Datum</label>
+                <input type="date" id="date" x-model="currentDate" :disabled="isRecording">
+            </div>
+        </div>
+
+        <!-- Recordings List -->
+        <div class="recordings-section">
+            <div class="recordings-header">
+                <h2>📝 Aufnahmen (<span x-text="recordings.length"></span>)</h2>
+                <div class="storage-info" x-text="formatStorage(storageSize)"></div>
+            </div>
+
+            <template x-if="recordings.length === 0">
+                <div class="empty-state">
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                            d="M10 3a.75.75 0 01.55.24l3.25 3.5a.75.75 0 11-1.1 1.02L10 4.852 7.3 7.76a.75.75 0 01-1.1-1.02l3.25-3.5A.75.75 0 0110 3z" />
+                    </svg>
+                    <p>Keine Aufnahmen vorhanden</p>
+                    <p style="font-size: 0.9em; margin-top: 5px;">Drücke auf ⚫ um zu starten</p>
+                </div>
+            </template>
+
+            <template x-for="recording in recordings" :key="recording.id">
+                <div class="recording-card">
+                    <div class="recording-header">
+                        <div class="recording-title" x-text="recording.title"></div>
+                        <span x-show="recording.uploaded" class="upload-badge">✓ Hochgeladen</span>
+                    </div>
+                    <div class="recording-meta">
+                        <span>📅 <span x-text="formatDate(recording.date)"></span></span>
+                        <span>⏱️ <span x-text="formatDuration(recording.duration)"></span></span>
+                    </div>
+                    <div class="recording-actions">
+                        <button class="btn-action btn-play" @click="playRecording(recording)">
+                            ▶️ Abspielen
+                        </button>
+                        <button class="btn-action btn-upload" @click="uploadRecording(recording)"
+                            x-show="serverOnline && !recording.uploaded" :disabled="uploading">
+                            <span x-show="!uploading">☁️ Upload</span>
+                            <span x-show="uploading">⏳ Upload...</span>
+                        </button>
+                        <button class="btn-action btn-delete" @click="deleteRecording(recording.id)">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Install Prompt -->
+        <div class="install-prompt" x-show="showInstallPrompt">
+            <div>
+                <strong>📱 Als App installieren</strong>
+                <p style="font-size: 0.85em; color: #6B7280; margin-top: 5px;">
+                    Nutze das Diktiergerät auch offline
+                </p>
+            </div>
+            <button @click="installPWA">Installieren</button>
+        </div>
+    </div>
+
+    <script>
+        function dictaphoneApp() {
+            return {
+                // Database
+                db: null,
+
+                // Recording state
+                isRecording: false,
+                isPaused: false,
+                canPause: false,
+                recordingTime: 0,
+                mediaRecorder: null,
+                audioChunks: [],
+                timerInterval: null,
+
+                // Current recording metadata
+                currentTitle: '',
+                currentDate: new Date().toISOString().split('T')[0],
+
+                // Recordings list
+                recordings: [],
+                storageSize: 0,
+
+                // Server status
+                serverOnline: false,
+                uploading: false,
+
+                // PWA install
+                showInstallPrompt: false,
+                deferredPrompt: null,
+
+                async init() {
+                    // Initialize database
+                    this.db = new DictaphoneDB();
+                    await this.db.init();
+                    await this.loadRecordings();
+
+                    // Check server status
+                    this.checkServerStatus();
+                    setInterval(() => this.checkServerStatus(), 30000);
+
+                    // Register service worker
+                    if ('serviceWorker' in navigator) {
+                        try {
+                            await navigator.serviceWorker.register('/dictaphone-sw.js');
+                            console.log('Service Worker registered');
+                        } catch (error) {
+                            console.error('Service Worker registration failed:', error);
+                        }
+                    }
+
+                    // PWA install prompt
+                    window.addEventListener('beforeinstallprompt', (e) => {
+                        e.preventDefault();
+                        this.deferredPrompt = e;
+                        this.showInstallPrompt = true;
+                    });
+                },
+
+                async toggleRecording() {
+                    if (!this.isRecording) {
+                        await this.startRecording();
+                    } else if (this.isPaused) {
+                        this.resumeRecording();
+                    } else {
+                        this.pauseRecording();
+                    }
+                },
+
+                async startRecording() {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        this.mediaRecorder = new MediaRecorder(stream);
+                        this.audioChunks = [];
+
+                        this.mediaRecorder.ondataavailable = (event) => {
+                            this.audioChunks.push(event.data);
+                        };
+
+                        this.mediaRecorder.onstop = async () => {
+                            await this.saveRecording();
+                        };
+
+                        this.mediaRecorder.start();
+                        this.isRecording = true;
+                        this.isPaused = false;
+                        this.recordingTime = 0;
+                        this.canPause = true;
+
+                        this.timerInterval = setInterval(() => {
+                            if (!this.isPaused) {
+                                this.recordingTime++;
+                            }
+                        }, 1000);
+
+                    } catch (error) {
+                        alert('Fehler beim Zugriff auf das Mikrofon: ' + error.message);
+                    }
+                },
+
+                pauseRecording() {
+                    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                        this.mediaRecorder.pause();
+                        this.isPaused = true;
+                    }
+                },
+
+                resumeRecording() {
+                    if (this.mediaRecorder && this.mediaRecorder.state === 'paused') {
+                        this.mediaRecorder.resume();
+                        this.isPaused = false;
+                    }
+                },
+
+                stopRecording() {
+                    if (this.mediaRecorder) {
+                        this.mediaRecorder.stop();
+                        this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                        clearInterval(this.timerInterval);
+                        this.isRecording = false;
+                        this.isPaused = false;
+                        this.canPause = false;
+                    }
+                },
+
+                async saveRecording() {
+                    const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                    const recording = {
+                        id: Date.now(),
+                        title: this.currentTitle || 'Aufnahme ' + new Date().toLocaleTimeString('de-DE'),
+                        date: this.currentDate,
+                        blob: blob,
+                        duration: this.recordingTime,
+                        uploaded: false,
+                        createdAt: Date.now()
+                    };
+
+                    await this.db.saveRecording(recording);
+                    await this.loadRecordings();
+
+                    // Reset for next recording
+                    this.currentTitle = '';
+                    this.recordingTime = 0;
+                },
+
+                async loadRecordings() {
+                    this.recordings = await this.db.getAllRecordings();
+                    this.recordings.sort((a, b) => b.createdAt - a.createdAt);
+                    this.storageSize = await this.db.getStorageSize();
+                },
+
+                async deleteRecording(id) {
+                    if (confirm('Aufnahme wirklich löschen?')) {
+                        await this.db.deleteRecording(id);
+                        await this.loadRecordings();
+                    }
+                },
+
+                playRecording(recording) {
+                    const url = URL.createObjectURL(recording.blob);
+                    const audio = new Audio(url);
+                    audio.play();
+                },
+
+                async uploadRecording(recording) {
+                    if (!this.serverOnline) {
+                        alert('Server ist nicht erreichbar');
+                        return;
+                    }
+
+                    this.uploading = true;
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('audio_files', recording.blob, `${recording.title}.webm`);
+                        formData.append('keep', 'true');
+
+                        const apiKey = localStorage.getItem('api_key') || prompt('Bitte API-Key eingeben:');
+                        if (apiKey) {
+                            localStorage.setItem('api_key', apiKey);
+                        }
+
+                        const response = await fetch('/asr-async', {
+                            method: 'POST',
+                            headers: {
+                                'X-API-Key': apiKey
+                            },
+                            body: formData
+                        });
+
+                        if (response.ok) {
+                            recording.uploaded = true;
+                            await this.db.updateRecording(recording);
+                            await this.loadRecordings();
+                            alert('Upload erfolgreich!');
+                        } else {
+                            alert('Upload fehlgeschlagen: ' + response.statusText);
+                        }
+                    } catch (error) {
+                        alert('Upload-Fehler: ' + error.message);
+                    } finally {
+                        this.uploading = false;
+                    }
+                },
+
+                async checkServerStatus() {
+                    try {
+                        const response = await fetch('/jobs/', {
+                            method: 'GET',
+                            headers: {
+                                'X-API-Key': localStorage.getItem('api_key') || 'test'
+                            }
+                        });
+                        this.serverOnline = response.status === 200 || response.status === 401;
+                    } catch {
+                        this.serverOnline = false;
+                    }
+                },
+
+                async installPWA() {
+                    if (this.deferredPrompt) {
+                        this.deferredPrompt.prompt();
+                        const { outcome } = await this.deferredPrompt.userChoice;
+                        this.deferredPrompt = null;
+                        this.showInstallPrompt = false;
+                    }
+                },
+
+                formatTime(seconds) {
+                    const mins = Math.floor(seconds / 60);
+                    const secs = seconds % 60;
+                    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                },
+
+                formatDuration(seconds) {
+                    const mins = Math.floor(seconds / 60);
+                    const secs = seconds % 60;
+                    if (mins > 0) {
+                        return `${mins}m ${secs}s`;
+                    }
+                    return `${secs}s`;
+                },
+
+                formatDate(dateStr) {
+                    const date = new Date(dateStr);
+                    return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                },
+
+                formatStorage(bytes) {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

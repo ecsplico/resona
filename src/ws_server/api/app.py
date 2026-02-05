@@ -3,7 +3,7 @@ from threading import Event
 from contextlib import asynccontextmanager
 
 from decouple import config
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
 # Import background tasks and paths from their new locations
@@ -80,18 +80,73 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI app
 app = FastAPI(openapi_tags=tags_metadata, lifespan=lifespan)
 
+# CRITICAL: Register WebSocket endpoint FIRST to avoid auth conflicts
+from .ws_transcribe import transcribe_websocket
+
+log.info("=" * 60)
+log.info("REGISTERING TEST WEBSOCKET: /ws/test")
+log.info("=" * 60)
+
+@app.websocket("/ws/test")
+async def test_websocket(websocket: WebSocket):
+    """Minimal test WebSocket - absolutely no dependencies."""
+    log.info("🧪 TEST WebSocket called!")
+    await websocket.accept()
+    await websocket.send_text("Hello from test WebSocket!")
+    await websocket.close()
+    log.info("🧪 TEST WebSocket completed")
+
+log.info("✅ TEST WebSocket registered")
+
+log.info("=" * 60)
+log.info("REGISTERING WEBSOCKET ROUTE FIRST: /ws/transcribe")
+log.info("=" * 60)
+
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for live transcription - NO AUTH REQUIRED."""
+    log.info("🎤 WebSocket endpoint CALLED - connection attempt detected")
+    log.info(f"WebSocket client: {websocket.client}")
+    try:
+        await transcribe_websocket(websocket)
+    except Exception as e:
+        log.error(f"❌ WebSocket error: {e}", exc_info=True)
+        raise
+
+log.info("✅ WebSocket route registered FIRST")
+
+# NOW register the API endpoints AFTER WebSocket
+from .endpoints import router
+log.info("Registering API router (with auth)...")
+app.include_router(router)
+
+log.info("✅ WebSocket route registered successfully")
+log.info("=" * 60)
+
+# DEBUG: List all registered routes
+log.info("📋 Listing ALL registered routes:")
+for route in app.routes:
+    log.info(f"  - {route.path} ({type(route).__name__})")
+log.info("=" * 60)
+
 # Serve javascript frontend (assuming 'webapp' is in the root directory)
-# Mount webapp for UI if it exists
+# Mount webapp on /static to avoid interfering with API/WebSocket routes
+# IMPORTANT: This must come AFTER all API and WebSocket routes
 try:
-    app.mount("/", StaticFiles(directory='webapp', html=True), name="app")
+    app.mount("/static", StaticFiles(directory='webapp', html=True), name="static")
+    log.info("Mounted static files at /static")
 except RuntimeError:
     log.warning("webapp directory not found, skipping UI mount")
+
+# Add a root redirect to the main app
+from fastapi.responses import RedirectResponse
+
+@app.get("/")
+async def root():
+    """Redirect root to static index or dictaphone."""
+    return RedirectResponse(url="/static/dictaphone.html")
 
 # SECURITY NOTE: Removed public /files/ mount
 # Files should be accessed through authenticated endpoints only
 # If you need to serve files, create a protected endpoint with auth
-
-# Import and register the API endpoints
-from .endpoints import router
-app.include_router(router)
 
