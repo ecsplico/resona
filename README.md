@@ -17,7 +17,14 @@ A secure, production-ready API for Automatic Speech Recognition (ASR) using Open
 
 3. **Run the server**:
    ```bash
+   # Using the CLI tool
+   uv run ws-server
+   
+   # Or using Python directly
    uv run python run.py
+   
+   # Or using ws-cli serve command
+   uv run ws-cli serve --port 7000
    ```
 
 ## Security
@@ -35,6 +42,101 @@ Include the API key in all requests using the `X-API-Key` header:
 ```bash
 curl -H "X-API-Key: your_api_key" http://localhost:8000/jobs/
 ```
+
+## CLI Commands
+
+The whisper-server provides several CLI tools for different purposes:
+
+### 1. `ws-server` - Start the API Server
+
+Starts the FastAPI server for ASR processing.
+
+```bash
+uv run ws-server
+```
+
+This runs the server on `0.0.0.0:7000` by default.
+
+### 2. `ws-cli` - Server and Database Management
+
+Manage the server, database replacements, and initial prompts.
+
+#### Server Commands
+
+```bash
+# Start server with custom options
+uv run ws-cli serve --host 0.0.0.0 --port 7000 --log-level info
+```
+
+#### Replacement Management
+
+Manage text replacement rules for markdown conversion:
+
+```bash
+# Add a replacement rule
+uv run ws-cli replacements add "Dr." "Doctor"
+
+# List all replacements
+uv run ws-cli replacements list
+
+# Delete a replacement
+uv run ws-cli replacements delete "Dr."
+```
+
+#### Prompt Management
+
+Manage initial prompts for transcription:
+
+```bash
+# Add a new prompt
+uv run ws-cli prompts add "This is a medical transcription."
+
+# List all prompts
+uv run ws-cli prompts list
+
+# Activate a specific prompt by ID
+uv run ws-cli prompts activate 1
+
+# Deactivate a prompt
+uv run ws-cli prompts deactivate 1
+
+# Remove a prompt
+uv run ws-cli prompts remove 1
+```
+
+### 3. `ws-rec` - Terminal Audio Recorder
+
+Text-based UI (TUI) for recording audio directly to the inbox.
+
+```bash
+uv run ws-rec
+```
+
+**Features**:
+- 🎤 Record audio from microphone
+- ⏸️ Pause/Resume recording
+- 💾 Save recordings to inbox
+- 🗑️ Discard unwanted recordings
+- ⏱️ Real-time elapsed time display
+
+**Keyboard Shortcuts**:
+- `Space` - Record/Pause/Resume
+- `S` - Save recording
+- `D` - Discard recording
+- `Q` - Quit
+
+### 4. `ws-ui` - Graphical Audio Recorder
+
+GUI-based audio recorder with visual interface.
+
+```bash
+uv run ws-ui
+```
+
+**Features**:
+- Full graphical interface
+- Audio visualization
+- Recording management
 
 ## Project Structure
 
