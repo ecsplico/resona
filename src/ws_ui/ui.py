@@ -1,22 +1,60 @@
 import os
+
+# --- Suppress C-level and Library Warnings to prevent TUI interference ---
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["GLOG_minloglevel"] = "3"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["HF_HUB_VERBOSITY"] = "error"
+
+import sys
+import logging
 import threading
 import queue
 import time
+import datetime
+import warnings
+
+# Filter Python warnings
+warnings.simplefilter("ignore")
+
 from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
 from textual.containers import Container, Horizontal
 from textual.message import Message
 from recorder.micrec import MicRecApp
-class TranscriptionFinished(Message):
-    """Message sent when transcription is finished."""
-    def __init__(self, filename: str, result: dict) -> None:
-        self.filename = filename
-        self.result = result
+
+from core.db.engine import create_db_and_tables
+from core.db.utils import register_job
+from core.db.models import Job, JobStatus
+from ws_server.processing.tasks_transcribe import TranscribeTask
+from sqlmodel import Session, select
+from core.db.engine import engine
+from core.paths import MD_PATH
+
+
+class _TextualLogHandler(logging.Handler):
+    """Routes Python logging records into the TUI's log tab."""
+    def __init__(self, app: 'WSUIApp'):
         super().__init__()
+        self._app = app
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record)
+            self._app.call_from_thread(self._app.log_msg, msg)
+        except Exception:
+            pass  # Don't let logging errors crash the app
+
+
 
 class WSUIApp(MicRecApp):
     CSS_PATH = "css/style.tcss"
     TITLE = "🎤 WS-UI - Record & Transcribe"
+
+    BINDINGS = [
+        ("w", "close_tab", "Close Tab"),
+    ]
 
 
     def compose(self) -> ComposeResult:
@@ -33,6 +71,7 @@ class WSUIApp(MicRecApp):
                 yield Button("Save", id="save_button", variant="success", disabled=True, classes="control_element")
                 yield Button("Discard", id="discard_button", variant="error", disabled=True, classes="control_element")
                 yield Button("📋 Copy", id="copy_button", variant="primary", disabled=True, classes="control_element") # Global copy button
+                yield Button("💾 Save MD", id="save_md_button", variant="success", disabled=True, classes="control_element") # NEW: Save MD button
                 yield Button("🗑️ Results", id="clear_results_button", variant="warning", classes="control_element")
                 yield Button("🗑️ Logs", id="clear_logs_button", variant="warning", classes="control_element")
 
@@ -45,9 +84,25 @@ class WSUIApp(MicRecApp):
 
     async def on_mount(self) -> None:
         super().on_mount()
-        self.log_msg("Initializing Transcriber (loading model in background)...")
-        self.transcription_thread = threading.Thread(target=self.transcription_worker, daemon=True)
-        self.transcription_thread.start()
+
+        # Install a logging handler that routes to our log tab
+        self._tui_log_handler = _TextualLogHandler(self)
+        self._tui_log_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self._tui_log_handler)
+        # Capture all levels
+        if root_logger.level > logging.DEBUG:
+            root_logger.setLevel(logging.DEBUG)
+
+        self.log_msg("Initializing database...")
+        create_db_and_tables()
+        
+        self.log_msg("Starting TranscribeTask (background)...")
+        self.transcription_task = TranscribeTask(self.stop_transcription_event)
+        self.transcription_task.start()
+
+        # Start a timer to poll for completed jobs
+        self.set_interval(2.0, self.check_for_completed_jobs)
 
     async def action_save_and_new_recording(self) -> None:
         # Capture filename before it gets reset by super()
@@ -57,8 +112,14 @@ class WSUIApp(MicRecApp):
         await super().action_save_and_new_recording()
         
         if saved_filename and os.path.exists(saved_filename):
-            self.log_msg(f"Queuing {os.path.basename(saved_filename)} for transcription...")
-            self.transcribe_queue.put(saved_filename)
+            basename = os.path.basename(saved_filename)
+            self.log_msg(f"Registering job for {basename}...")
+            # Register job in DB
+            try:
+                register_job(filename=basename, upload_name=basename, keep=True, translate=False)
+                self.log_msg(f"Job registered for {basename}")
+            except Exception as e:
+                self.log_msg(f"Error registering job: {e}")
         else:
             self.log_msg("Save failed or cancelled (or no file), skipping transcription.")
 
@@ -71,58 +132,70 @@ class WSUIApp(MicRecApp):
         except Exception:
             pass
 
-    def transcription_worker(self):
-        self.call_from_thread(self.log_msg, "Worker thread started.")
+    def check_for_completed_jobs(self):
+        """Poll the database for completed jobs created after session start."""
         try:
-            from ws_server.processing.transcriber_factory import getTranscriber
-            import whisper
-            
-            # Check environment or config availability
-            self.call_from_thread(self.log_msg, "Initializing Transcriber (checking .env for ASR_MODE)...")
-            self.transcriber = getTranscriber()
-            self.call_from_thread(self.log_msg, f"Transcriber loaded: {self.transcriber.modelname}")
+            with Session(engine) as session:
+                statement = (
+                    select(Job)
+                    .where(Job.status == JobStatus.COMPLETED)
+                    .where(Job.created_at >= self.session_start_time)
+                    .order_by(Job.updated_at.desc())
+                    .limit(10)
+                )
+                jobs = session.exec(statement).all()
+                
+                for job in jobs:
+                    basename = job.filename
+                    safe_basename = basename.replace(".", "_").replace(" ", "_")
+                    tab_id = f"tab_{safe_basename}"
+                    
+                    if tab_id not in self.results_map and tab_id not in self.closed_tab_ids:
+                        self.log_msg(f"Found completed job {job.id} for {basename}")
+                        content = job.md if job.md else "*No content found in DB*"
+                        self.add_result_tab(basename, content, tab_id)
+
+        except Exception:
+            pass
+
+    def add_result_tab(self, basename: str, text: str, tab_id: str):
+        """Add a closable tab for the result."""
+        try:
+            tabs = self.query_one(TabbedContent)
+            if tab_id in self.results_map:
+                return
+
+            self.results_map[tab_id] = text
+            content = Static(text, classes="transcription_result", expand=True)
+            pane = TabPane(basename, content, id=tab_id)
+            tabs.add_pane(pane)
+            tabs.active = tab_id
         except Exception as e:
-            self.call_from_thread(self.log_msg, f"Error loading transcriber: {e}")
-            import traceback
-            traceback.print_exc()
-            return
+            self.log_msg(f"Error adding tab: {e}")
 
-        while not self.stop_transcription_event.is_set():
-            try:
-                filename = self.transcribe_queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-
-            basename = os.path.basename(filename)
-            self.call_from_thread(self.log_msg, f"Processing {basename}...")
-            
-            try:
-                # Transcribe
-                start_t = time.time()
-                
-                # Load audio using openai-whisper utilities to ensure np.ndarray compatible with all transcribers
-                self.call_from_thread(self.log_msg, f"Loading audio {basename}...")
-                audio = whisper.load_audio(filename)
-                
-                self.call_from_thread(self.log_msg, f"Transcribing {basename} with {type(self.transcriber).__name__}...")
-                result = self.transcriber.transcribe(audio, language="de") 
-                duration = time.time() - start_t
-                
-                self.call_from_thread(self.log_msg, f"Transcription finished for {basename} ({duration:.2f}s)")
-                self.post_message(TranscriptionFinished(filename, result))
-                
-            except Exception as e:
-                self.call_from_thread(self.log_msg, f"Error transcribing {basename}: {e}")
-                import traceback
-                traceback.print_exc()
+    def action_close_tab(self) -> None:
+        """Close the currently active result tab (not the Logs tab)."""
+        try:
+            tabs = self.query_one(TabbedContent)
+            active_id = tabs.active
+            if active_id == "tab_logs":
+                self.notify("Cannot close the Logs tab.", title="Info")
+                return
+            if active_id in self.results_map:
+                del self.results_map[active_id]
+                self.closed_tab_ids.add(active_id)
+                tabs.remove_pane(active_id)
+                self.notify("Tab closed.", title="Closed", timeout=1.5)
+        except Exception as e:
+            self.log_msg(f"Error closing tab: {e}")
 
     def __init__(self):
         super().__init__()
-        self.transcribe_queue = queue.Queue()
-        self.transcriber = None
         self.stop_transcription_event = threading.Event()
-        self.transcription_thread = None
+        self.transcription_task = None
         self.results_map = {} # Map tab ID to text content
+        self.closed_tab_ids = set() # Track closed tabs so they don't reappear
+        self.session_start_time = datetime.datetime.utcnow()  # Only show jobs after this
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop() # Stop propagation to prevent double-handling
@@ -135,6 +208,8 @@ class WSUIApp(MicRecApp):
             self.action_discard_recording()
         elif button_id == "copy_button":
             self.action_copy_transcription()
+        elif button_id == "save_md_button":
+            self.action_save_md()
         elif button_id == "clear_results_button":
             self.action_clear_results()
         elif button_id == "clear_logs_button":
@@ -148,6 +223,7 @@ class WSUIApp(MicRecApp):
             for tab_id in list(self.results_map.keys()):
                 try:
                     tabs.remove_pane(tab_id)
+                    self.closed_tab_ids.add(tab_id)
                 except Exception:
                     pass # Maybe already removed
             
@@ -159,8 +235,9 @@ class WSUIApp(MicRecApp):
             except Exception:
                 pass
             
-            # Update Copy button (will likely be disabled by on_tabbed_content_tab_activated)
+            # Update Copy/Save buttons (will likely be disabled by on_tabbed_content_tab_activated)
             self.query_one("#copy_button", Button).disabled = True
+            self.query_one("#save_md_button", Button).disabled = True
             
             self.notify("All transcription results cleared.", title="Cleared")
         except Exception as e:
@@ -176,17 +253,21 @@ class WSUIApp(MicRecApp):
             self.notify(f"Error clearing logs: {e}", title="Error", severity="error")
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
-        """Handle tab switching to update Copy button state."""
+        """Handle tab switching to update Copy/Save button state."""
         try:
             active_id = event.pane.id
             copy_btn = self.query_one("#copy_button", Button)
+            save_md_btn = self.query_one("#save_md_button", Button)
             
             if active_id == "tab_logs":
                 copy_btn.disabled = True
+                save_md_btn.disabled = True
             elif active_id in self.results_map:
                 copy_btn.disabled = False
+                save_md_btn.disabled = False
             else:
                 copy_btn.disabled = True
+                save_md_btn.disabled = True
         except Exception:
             pass
 
@@ -245,6 +326,56 @@ class WSUIApp(MicRecApp):
         except Exception as e:
             self.notify(f"Failed to copy: {e}", title="Error", severity="error")
     
+    def action_save_md(self):
+        """Save the current transcription result to a Markdown file in MD_PATH."""
+        try:
+            tabs = self.query_one(TabbedContent)
+            active_id = tabs.active
+            
+            if active_id == "tab_logs" or active_id not in self.results_map:
+                return
+
+            text = self.results_map.get(active_id)
+            if not text:
+                self.notify("No content to save.", title="Info")
+                return
+
+            # Get the pane (and label) to determine filename
+            try:
+                # Need to iterate or find the pane by ID. TabbedContent methods aren't exhaustive for lookup.
+                # However, tabs.get_pane(active_id) exists in recent Textual versions.
+                # If not, we might need traverse children.
+                # Actually, TabPane has id=active_id.
+                pane = self.query_one(f"#{active_id}", TabPane)
+                # The label is cleaner but strictly speaking it's a Text/Renderable.
+                # Usually pane.title or label exists. In older Textual it's `title`.
+                # Wait, add_pane(pane) uses pane(title, content).
+                # So pane.title is the basename.
+                # Let's clean it up to be safe.
+                filename_base = str(pane.title).strip()
+            except Exception:
+                # Fallback if query fails
+                filename_base = active_id.replace("tab_", "")
+            
+            if not filename_base.endswith(".md"):
+                filename_base += ".md"
+            
+            # Ensure MD path exists
+            os.makedirs(MD_PATH, exist_ok=True)
+            
+            full_path = os.path.join(MD_PATH, filename_base)
+            
+            self.log_msg(f"Saving processing result to {full_path}")
+            
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(text)
+                
+            self.notify(f"Saved to {filename_base}", title="Success")
+            
+        except Exception as e:
+            self.notify(f"Failed to save MD: {e}", title="Error", severity="error")
+            self.log_msg(f"Error saving MD: {e}")
+            
     # Debounce control
     _last_toggle_time = 0.0
 
@@ -260,53 +391,15 @@ class WSUIApp(MicRecApp):
         
         await super().action_toggle_record_pause()
 
-    def on_transcription_finished(self, message: TranscriptionFinished) -> None:
-        try:
-            basename = os.path.basename(message.filename)
-            text = message.result.get("text", "")
-            
-            tabs = self.query_one(TabbedContent)
-            
-            # Use basename based ID to prevent duplicates
-            safe_basename = basename.replace(".", "_").replace(" ", "_")
-            tab_id = f"tab_{safe_basename}"
-            
-            # Check if tab already exists
-            # We can check if we have text for it
-            if tab_id in self.results_map:
-                self.log_msg(f"Tab for {basename} already exists, updating text.")
-                # Update text and switch?
-                # For now just return or update. Let's update map and maybe content if we could query it easily.
-                self.results_map[tab_id] = text 
-                # If we wanted to update content we'd need to find the Static widget.
-                # simpler: just ignore or delete old? 
-                # Let's just return to avoid visual duplicate, assuming it's same content.
-                return
-
-            # Store text for this tab
-            self.results_map[tab_id] = text
-
-            # Create layout
-            content = Static(text, classes="transcription_result", expand=True)
-            
-            # Just content in the pane now, no internal toolbar
-            pane = TabPane(basename, content, id=tab_id)
-            tabs.add_pane(pane)
-            
-            # Switch to the new tab
-            tabs.active = tab_id
-            
-            # Manually trigger button update because switching tab might happen before event propagates?
-            # Or reliance on on_tabbed_content_tab_activated is enough.
-            
-        except Exception as e:
-            self.log_msg(f"Error updating UI: {e}")
-            import traceback
-            traceback.print_exc()
+    # on_transcription_finished removed (handled by polling)
 
     # Ensure clean exit
     def exit(self, *args, **kwargs):
         self.stop_transcription_event.set()
-        if self.transcription_thread and self.transcription_thread.is_alive():
-            self.transcription_thread.join(timeout=1.0)
+        if self.transcription_task and self.transcription_task.is_alive():
+            self.transcription_task.join(timeout=1.0)
+            
+        # Remove our log handler
+        if hasattr(self, '_tui_log_handler'):
+            logging.getLogger().removeHandler(self._tui_log_handler)
         super().exit(*args, **kwargs)

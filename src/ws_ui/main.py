@@ -3,13 +3,13 @@ import os
 from dotenv import load_dotenv
 import sounddevice as sd
 from ws_ui.ui import WSUIApp
-from core.paths import INBOX_PATH
+from core.paths import INBOX_PATH, FILE_PATH
 
 def main():
     load_dotenv()
     
     # Pre-flight checks
-    OUTPUT_DIR = INBOX_PATH
+    OUTPUT_DIR = FILE_PATH
     SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 44100))
     CHANNELS = int(os.getenv("CHANNELS", 1))
     DEVICE = None

@@ -82,6 +82,7 @@ app = FastAPI(openapi_tags=tags_metadata, lifespan=lifespan)
 
 # CRITICAL: Register WebSocket endpoint FIRST to avoid auth conflicts
 from .ws_transcribe import transcribe_websocket
+from .ws_live import live_transcribe_websocket
 
 log.info("=" * 60)
 log.info("REGISTERING TEST WEBSOCKET: /ws/test")
@@ -114,6 +115,19 @@ async def websocket_transcribe_endpoint(websocket: WebSocket):
         raise
 
 log.info("✅ WebSocket route registered FIRST")
+
+# Register live transcription WebSocket
+@app.websocket("/ws/live")
+async def websocket_live_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for live transcription with VAD - NO AUTH REQUIRED."""
+    log.info("🎙️ Live WebSocket endpoint CALLED")
+    try:
+        await live_transcribe_websocket(websocket)
+    except Exception as e:
+        log.error(f"❌ Live WebSocket error: {e}", exc_info=True)
+        raise
+
+log.info("✅ Live WebSocket route registered")
 
 # NOW register the API endpoints AFTER WebSocket
 from .endpoints import router

@@ -1,0 +1,126 @@
+/* CSS for ws-live TUI */
+
+Header {
+    layout: horizontal;
+    align: center middle;
+    dock: top;
+}
+
+Header #title {
+    width: auto;
+    margin-right: 1;
+}
+
+Horizontal#header_info_container {
+    layout: horizontal;
+    width: auto;
+    height: auto;
+    padding: 0;
+    align: right middle;
+    dock: top;
+}
+
+.header_info_element {
+    margin-left: 1;
+    height: auto;
+    width: auto;
+}
+
+Container#main_container {
+    height: auto;
+    dock: top;
+}
+
+Horizontal#controls_container {
+    layout: horizontal;
+    height: 5;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    align: center middle;
+}
+
+.control_element {
+    margin: 0 1;
+    height: 3;
+    width: auto;
+}
+
+#status_display {
+    min-width: 15;
+}
+
+#elapsed_display {
+    min-width: 8;
+}
+
+#record_pause_button {
+    width: auto;
+}
+
+#record_pause_button.primary {
+    background: $error;
+    color: $text;
+}
+
+#record_pause_button.warning {
+    background: $warning;
+    color: $text;
+}
+
+#record_pause_button.success {
+    background: $success;
+    color: $text;
+}
+
+#save_button {
+    width: auto;
+}
+
+#save_button.primary {
+    background: $primary;
+    color: $text;
+}
+
+#discard_button {
+    width: auto;
+    background: $error;
+    color: $text;
+}
+
+/* Tabs and content */
+
+TabbedContent {
+    height: 1fr;
+}
+
+RichLog {
+    height: 1fr;
+    border: solid $secondary;
+}
+
+#live_display {
+    border: solid $accent;
+}
+
+.tab_toolbar {
+    height: auto;
+    dock: top;
+    margin-bottom: 0;
+    background: $boost;
+    padding: 1;
+}
+
+.copy_button {
+    width: auto;
+}
+
+.tab_content_container {
+    height: 1fr;
+    layout: vertical;
+}
+
+.transcription_result {
+    height: 1fr;
+    overflow-y: scroll;
+}

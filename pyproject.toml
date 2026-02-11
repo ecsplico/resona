@@ -38,6 +38,7 @@ ws-server = "ws_server.run:main"
 ws-cli = "ws_cli.main:app"
 ws-rec = "recorder.micrec:run_mic_rec_app"
 ws-ui = "ws_ui.main:main"
+ws-live = "ws_live.main:main"
 
 
 [tool.hatch.build.targets.wheel]
@@ -46,7 +47,7 @@ ws-ui = "ws_ui.main:main"
 # in the built wheel.
 # --- IMPORTANT: Replace 'my_api' and 'my_cli' below ---
 # --- with the actual names of your package folders inside src/ ---
-packages = ["src/ws_server", "src/ws_cli", "src/ws_ui", "src/recorder", "src/core"]
+packages = ["src/ws_server", "src/ws_cli", "src/ws_ui", "src/ws_live", "src/recorder", "src/core"]
 
 [[tool.uv.index]]
 name = "pytorch-nightly"
