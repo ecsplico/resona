@@ -16,9 +16,10 @@ from textual.widgets import Header, Footer, Static, Label, Button
 from textual.reactive import reactive
 from textual.binding import Binding # Added for key bindings
 
-from core.paths import INBOX_PATH
+import secrets
+from core.paths import FILE_PATH
 
-OUTPUT_DIR = INBOX_PATH # Use INBOX_PATH from core.paths
+OUTPUT_DIR = FILE_PATH # Default to FILE_PATH
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 44100))
 CHANNELS = int(os.getenv("CHANNELS", 1))
 DEVICE = None # Default system microphone
@@ -286,8 +287,10 @@ class MicRecApp(App):
             except queue.Empty:
                 break
 
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_filename = os.path.join(OUTPUT_DIR, f"recording_{timestamp}.wav")
+        # Generate a random hex filename (server-compatible)
+        # 20 chars hex = 10 bytes seems reasonable, server uses secrets.token_hex(10)
+        name_new = f"{secrets.token_hex(10)}.wav"
+        self.output_filename = os.path.join(OUTPUT_DIR, name_new)
 
         self.is_recording = True
         self.is_paused = False

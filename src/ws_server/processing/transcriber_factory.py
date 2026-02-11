@@ -21,14 +21,14 @@ def getTranscriber():
     log.info(f'Using {MODE} Mode. Using {device} device.')
     if MODE == "faster-whisper":
         MODEL = config("DEFAULT_FASTWHISPER_MODEL")
-        print (f"Loaded DEFAULT_FASTWHISPER_MODEL: {MODEL}")
+        log.info(f"Loaded DEFAULT_FASTWHISPER_MODEL: {MODEL}")
         t = FastWhisperTranscriber(device=device)
     elif MODE == "whisper-tf": # Assuming 'whisper-tf' corresponds to TransformerTranscriber
         MODEL = config("DEFAULT_TRANSFORMER_MODEL")
-        print (f"Loaded DEFAULT_TRANSFORMER_MODEL: {MODEL}")
+        log.info(f"Loaded DEFAULT_TRANSFORMER_MODEL: {MODEL}")
         t = TransformerTranscriber(device=device)
     else: # Default to standard Whisper
         MODEL = config("DEFAULT_WHISPER_MODEL")
-        print (f"Loaded DEFAULT_WHISPER_MODEL: {MODEL}")  # Log the loaded value
+        log.info(f"Loaded DEFAULT_WHISPER_MODEL: {MODEL}")  # Log the loaded value
         t = WhisperTranscriber(device=device)
     return t
