@@ -34,10 +34,10 @@ MIN_NEW_AUDIO_SECONDS = 0.5  # Minimum new audio before signalling readiness
 
 class TranscriptionResult(NamedTuple):
     """Result of a live transcription step."""
-    confirmed: str   # Stable/confirmed text (won't change)
-    partial: str     # Unstable/partial text (may change on next chunk)
-    language: str    # Detected language
-
+    confirmed: str        # Full accumulated confirmed text (stable, won't change)
+    partial: str          # Unstable/partial text (may change on next chunk)
+    language: str         # Detected language
+    confirmed_delta: str = ""  # Only the newly confirmed words in this cycle
 
 # Shared thread pool for transcription (avoids blocking asyncio loop)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="live-asr")
@@ -60,8 +60,8 @@ class LiveTranscriber:
         self._lock = Lock()
         self._transcriber = None  # Lazy-loaded
         self._prev_text = ""      # Previous transcription for local agreement
-        self._confirmed_text = "" # Accumulated confirmed text
-        self._overlap_text = ""   # Text corresponding to retained 10s audio
+        self._confirmed_text = "" # Full accumulated confirmed text (for callers)
+        self._emitted_word_count = 0  # Words already emitted; skip these on next cycle
         # Event-driven wakeup: set whenever enough new audio arrives
         self._audio_event: asyncio.Event = asyncio.Event()
         self._audio_event_sync: threading.Event = threading.Event()
@@ -202,31 +202,9 @@ class LiveTranscriber:
         full_confirmed_str = " ".join(confirmed_words)
         partial_str = " ".join(partial_words)
         
-        # 1. Deduplicate Emission
-        text_to_emit = full_confirmed_str
-        
-        if self._overlap_text:
-            overlap_words = self._overlap_text.split()
-            skip_count = len(overlap_words)
-            
-            # Check for simple prefix match (strict) or normalized match
-            # We prefer normalized match to handle punctuation changes
-            match_len = self._find_stable_word_count(overlap_words, confirmed_words)
-            
-            # If match_len is close to overlap length (e.g. all words match), use match_len
-            # In the duplication case, match_len was likely 0 because of punctuation.
-            # Now with normalization, it should be len(overlap_words).
-            
-            if match_len > 0:
-                 # Trust the new version of text (which might have updated punctuation)
-                 # Skip the matched part
-                 text_to_emit = " ".join(confirmed_words[match_len:])
-            else:
-                 # No normalized match found?
-                 # If we have overlap text but ZERO match, it means the text changed completely.
-                 # This is rare if buffer is same.
-                 # Should we emit everything? Yes.
-                 text_to_emit = full_confirmed_str
+        # Deduplicate: skip words already emitted in previous cycles
+        text_to_emit = " ".join(confirmed_words[self._emitted_word_count:])
+        self._emitted_word_count = len(confirmed_words)
 
         # Accumulate confirmed text
         if text_to_emit:
@@ -261,38 +239,35 @@ class LiveTranscriber:
                 else:
                     self.buffer = np.array([], dtype=np.float32)
 
-            # 3. Update State for Next Turn
-            # _overlap_text: confirmed text corresponding to KEPT audio
+            # Update state for next turn
             retained_confirmed = [w.word.strip() for w in confirmed_words_objs if w.start >= t_actual_cut]
-            self._overlap_text = " ".join(retained_confirmed)
-            
-            # _prev_text: All text (confirmed + partial) corresponding to KEPT audio
             retained_all = [w.word.strip() for w in all_words if w.start >= t_actual_cut]
             self._prev_text = " ".join(retained_all)
-            
+            # After trimming, the next call will re-see retained_confirmed words;
+            # set _emitted_word_count to skip them.
+            self._emitted_word_count = len(retained_confirmed)
+
         else:
-            # No new confirmation. Buffer unchanged (except potential max cap).
-            # _prev_text is the full current text for next comparison
+            # No new confirmation. Buffer unchanged.
             self._prev_text = curr_text
-            # _overlap_text remains valid (matches start of buffer)
-            pass
 
         return TranscriptionResult(
             confirmed=self._confirmed_text,
             partial=partial_str,
             language=result.get("language", self.language),
+            confirmed_delta=text_to_emit,
         )
-
     async def flush(self) -> Optional[TranscriptionResult]:
         """Process any remaining audio in the buffer (final call)."""
         # Logic remains mostly similar but we treat everything as final
         with self._lock:
             if len(self.buffer) < 16000 * 0.1: # Minimal audio
-                 return TranscriptionResult(
-                        confirmed=self._confirmed_text,
-                        partial="",
-                        language=self.language,
-                    )
+                return TranscriptionResult(
+                       confirmed=self._confirmed_text,
+                       partial="",
+                       language=self.language,
+                       confirmed_delta="",
+                )
 
             audio_chunk = self.buffer.copy()
             self.buffer = np.array([], dtype=np.float32)
@@ -322,6 +297,7 @@ class LiveTranscriber:
             confirmed=self._confirmed_text,
             partial="",
             language=language or self.language,
+            confirmed_delta=final_text,
         )
 
     def get_full_transcript(self) -> str:
@@ -334,7 +310,7 @@ class LiveTranscriber:
             self.buffer = np.array([], dtype=np.float32)
         self._prev_text = ""
         self._confirmed_text = ""
-        self._overlap_text = ""
+        self._emitted_word_count = 0
         self._last_processed_buffer_end = 0.0
         self._audio_event.clear()
         self._audio_event_sync.clear()
