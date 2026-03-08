@@ -50,6 +50,8 @@ class WSLiveApp(MicRecApp):
         self._audio_queue: queue.Queue = queue.Queue()
         self._full_transcript = ""
         self._last_confirmed_len = 0
+        self._displayed_confirmed = ""  # Accumulated confirmed text shown
+        self._last_confirmed_text = ""  # Store previous confirmed to detect resets
         self.results_map = {}  # For copy support
 
     def compose(self) -> ComposeResult:
@@ -182,6 +184,8 @@ class WSLiveApp(MicRecApp):
             live_display = self.query_one("#live_display", Static)
             live_display.update("")
             self._last_confirmed_len = 0
+            self._displayed_confirmed = ""
+            self._last_confirmed_text = ""
         except Exception:
             pass
 
@@ -329,25 +333,34 @@ class WSLiveApp(MicRecApp):
             # Extract only the newly confirmed portion (delta)
             confirmed_delta = ""
             if confirmed:
-                if len(confirmed) > self._last_confirmed_len:
-                    confirmed_delta = confirmed[self._last_confirmed_len:].strip()
+                # Check if we're seeing a completely new text (reset)
+                if confirmed == self._last_confirmed_text:
+                    # Same text, no new content
+                    confirmed_delta = ""
+                elif confirmed.startswith(self._last_confirmed_text):
+                    # New text extends previous confirmed
+                    confirmed_delta = confirmed[len(self._last_confirmed_text):]
                 else:
-                    # Reset or wrap-around case (full re-display)
+                    # Different prefix (reset scenario)
                     confirmed_delta = confirmed
                     self._last_confirmed_len = 0
 
-            partial = result.partial if result else ""
-            
+                # Accumulate delta into displayed confirmed text
+                if confirmed_delta:
+                    self._displayed_confirmed += confirmed_delta
+
+            # Build display parts
             parts = []
-            if confirmed_delta:
-                parts.append(confirmed_delta)
+            if self._displayed_confirmed:
+                parts.append(self._displayed_confirmed)
             if partial:
                 parts.append(f"[dim]{partial}[/dim]")
             live_display.update("\n".join(parts))
 
             # Track for next cycle
-            self._last_confirmed_len = len(confirmed)
-
+            if confirmed:
+                self._last_confirmed_len = len(confirmed)
+                self._last_confirmed_text = confirmed
             if is_final:
                 self._full_transcript = confirmed
                 self.log_msg("Transcription finalized")
@@ -386,6 +399,8 @@ class WSLiveApp(MicRecApp):
             live_display = self.query_one("#live_display", Static)
             live_display.update("")
             self._last_confirmed_len = 0
+            self._displayed_confirmed = ""
+            self._last_confirmed_text = ""
             self._full_transcript = ""
             self.results_map.pop("tab_live", None)
             self.query_one("#copy_button", Button).disabled = True
