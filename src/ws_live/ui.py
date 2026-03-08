@@ -49,9 +49,7 @@ class WSLiveApp(MicRecApp):
         self._live_stop_event = threading.Event()
         self._audio_queue: queue.Queue = queue.Queue()
         self._full_transcript = ""
-        self._last_confirmed_len = 0
-        self._displayed_confirmed = ""  # Accumulated confirmed text shown
-        self._last_confirmed_text = ""  # Store previous confirmed to detect resets
+        self._displayed_confirmed = ""  # Accumulated confirmed text for display
         self.results_map = {}  # For copy support
 
     def compose(self) -> ComposeResult:
@@ -183,9 +181,7 @@ class WSLiveApp(MicRecApp):
         try:
             live_display = self.query_one("#live_display", Static)
             live_display.update("")
-            self._last_confirmed_len = 0
             self._displayed_confirmed = ""
-            self._last_confirmed_text = ""
         except Exception:
             pass
 
@@ -298,7 +294,7 @@ class WSLiveApp(MicRecApp):
                 # Post the result to the UI thread
                 self.call_from_thread(
                     self._update_live_display,
-                    result.confirmed,
+                    result.confirmed_delta,
                     result.partial,
                     False,
                 )
@@ -315,41 +311,30 @@ class WSLiveApp(MicRecApp):
                 finally:
                     loop.close()
 
-                if result and result.confirmed:
+                if result and (result.confirmed_delta or result.confirmed):
                     self.call_from_thread(
                         self._update_live_display,
-                        result.confirmed,
+                        result.confirmed_delta,
                         "",
                         True,
+                        result.confirmed,
                     )
             except Exception as e:
                 self.call_from_thread(self.log_msg, f"Flush error: {e}")
 
-    def _update_live_display(self, confirmed: str, partial: str, is_final: bool):
+    def _update_live_display(self, confirmed_delta: str, partial: str, is_final: bool, full_confirmed: str = ""):
         """Update the live transcription display (called from UI thread)."""
         try:
             live_display = self.query_one("#live_display", Static)
 
-            # Extract only the newly confirmed portion (delta)
-            confirmed_delta = ""
-            if confirmed:
-                # Check if we're seeing a completely new text (reset)
-                if confirmed == self._last_confirmed_text:
-                    # Same text, no new content
-                    confirmed_delta = ""
-                elif confirmed.startswith(self._last_confirmed_text):
-                    # New text extends previous confirmed
-                    confirmed_delta = confirmed[len(self._last_confirmed_text):]
+            # Append newly confirmed words to the display
+            if confirmed_delta:
+                if self._displayed_confirmed:
+                    self._displayed_confirmed += " " + confirmed_delta.strip()
                 else:
-                    # Different prefix (reset scenario)
-                    confirmed_delta = confirmed
-                    self._last_confirmed_len = 0
+                    self._displayed_confirmed = confirmed_delta.strip()
 
-                # Accumulate delta into displayed confirmed text
-                if confirmed_delta:
-                    self._displayed_confirmed += confirmed_delta
-
-            # Build display parts
+            # Build display: accumulated confirmed + current partial
             parts = []
             if self._displayed_confirmed:
                 parts.append(self._displayed_confirmed)
@@ -357,18 +342,14 @@ class WSLiveApp(MicRecApp):
                 parts.append(f"[dim]{partial}[/dim]")
             live_display.update("\n".join(parts))
 
-            # Track for next cycle
-            if confirmed:
-                self._last_confirmed_len = len(confirmed)
-                self._last_confirmed_text = confirmed
             if is_final:
-                self._full_transcript = confirmed
+                self._full_transcript = full_confirmed or self._displayed_confirmed
                 self.log_msg("Transcription finalized")
 
-            # Enable copy button when there's content
+            # Enable copy button when there's confirmed content
             try:
                 copy_btn = self.query_one("#copy_button", Button)
-                copy_btn.disabled = not bool(confirmed)
+                copy_btn.disabled = not bool(self._displayed_confirmed)
             except Exception:
                 pass
 
@@ -398,9 +379,7 @@ class WSLiveApp(MicRecApp):
         try:
             live_display = self.query_one("#live_display", Static)
             live_display.update("")
-            self._last_confirmed_len = 0
             self._displayed_confirmed = ""
-            self._last_confirmed_text = ""
             self._full_transcript = ""
             self.results_map.pop("tab_live", None)
             self.query_one("#copy_button", Button).disabled = True

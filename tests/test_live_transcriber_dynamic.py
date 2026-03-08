@@ -60,11 +60,10 @@ class TestDynamicRetention:
         expected_samples = int(3.5 * SAMPLE_RATE)
         assert len(lt.buffer) == expected_samples
         
-        # 3. Overlap Text
-        # Since we kept everything (start=0.0), and confirmed "Hello" (end=0.5).
-        # "Hello" is confirmed and overlaps the buffer.
-        # So _overlap_text should be "Hello".
-        assert lt._overlap_text == "Hello"
+        # 3. Emitted word count
+        # Since we kept everything (start=0.0), retained_confirmed = ["Hello"].
+        # So _emitted_word_count should be 1.
+        assert lt._emitted_word_count == 1
 
     def test_retention_slice_over_10s(self, mock_transcriber_factory):
         from ws_server.processing.live_transcriber import LiveTranscriber, SAMPLE_RATE
@@ -110,12 +109,9 @@ class TestDynamicRetention:
         expected_samples = int((20.0 - 5.0) * SAMPLE_RATE)
         assert abs(len(lt.buffer) - expected_samples) < 1000
         
-        # 3. Overlap text
-        # Consists of confirmed words starting >= 5.0.
-        # i.e. W5 to W14.
-        assert lt._overlap_text.startswith("W5")
-        assert lt._overlap_text.endswith("W14")
-        assert "W4" not in lt._overlap_text
+        # 3. Emitted word count
+        # Retained words are W5..W14 (10 words).
+        assert lt._emitted_word_count == 10
 
     def test_deduplication_emit(self, mock_transcriber_factory):
         from ws_server.processing.live_transcriber import LiveTranscriber
@@ -125,7 +121,7 @@ class TestDynamicRetention:
         
         # Step 1: Pre-condition - we have overlap "Hello world"
         lt = LiveTranscriber()
-        lt._overlap_text = "Hello world"
+        lt._emitted_word_count = 2  # "Hello world" already emitted
         lt._confirmed_text = "Already committed Hello world" # Simulating history
         
         # Step 2: Input continues
@@ -166,12 +162,10 @@ class TestDynamicRetention:
         assert result.confirmed.lower().endswith("this is new")
         assert result.confirmed.lower().count("hello world") == 1 # Only the one in history
         
-        # 2. Overlap check
-        # Last end = 2.5s.
-        # target = max(0, 2.5 - 10) = 0.
-        # Keep everything.
-        # Overlap text should now include "this is new" as well.
-        assert lt._overlap_text == "Hello world this is new"
+        # 2. Emitted word count check
+        # Last end = 2.5s. target = max(0, 2.5 - 10) = 0 -> keep everything.
+        # All 5 words retained, so _emitted_word_count = 5.
+        assert lt._emitted_word_count == 5
 
     def test_deduplication_punctuation_ignored(self, mock_transcriber_factory):
         from ws_server.processing.live_transcriber import LiveTranscriber
@@ -181,7 +175,7 @@ class TestDynamicRetention:
         
         # Preattempt: Overlap is "Hello." (with period)
         lt = LiveTranscriber()
-        lt._overlap_text = "Hello."
+        lt._emitted_word_count = 1  # "Hello." already emitted
         lt._confirmed_text = "Hello."
         
         # New input: "Hello, world" (comma instead of period)
