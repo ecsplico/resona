@@ -14,6 +14,7 @@ import logging
 import asyncio
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+import threading
 from threading import Lock
 from typing import Optional, NamedTuple
 
@@ -25,9 +26,10 @@ log = logging.getLogger(__name__)
 SAMPLE_RATE = 16000
 
 # Chunking config
-MIN_CHUNK_SECONDS = 1.5     # Minimum audio before attempting transcription
+MIN_CHUNK_SECONDS = 3       # Minimum audio before attempting transcription
 MAX_BUFFER_SECONDS = 30.0   # Cap buffer to prevent memory growth
 OVERLAP_SECONDS = 1.0       # Overlap between chunks for context
+MIN_NEW_AUDIO_SECONDS = 0.5  # Minimum new audio before signalling readiness
 
 
 class TranscriptionResult(NamedTuple):
@@ -59,6 +61,12 @@ class LiveTranscriber:
         self._transcriber = None  # Lazy-loaded
         self._prev_text = ""      # Previous transcription for local agreement
         self._confirmed_text = "" # Accumulated confirmed text
+        self._overlap_text = ""   # Text corresponding to retained 10s audio
+        # Event-driven wakeup: set whenever enough new audio arrives
+        self._audio_event: asyncio.Event = asyncio.Event()
+        self._audio_event_sync: threading.Event = threading.Event()
+        # Track how far into the buffer we have already processed
+        self._last_processed_buffer_end: float = 0.0  # seconds
 
     def _get_transcriber(self):
         """Lazy-load the transcriber (expensive model init)."""
@@ -73,8 +81,13 @@ class LiveTranscriber:
             # Cap buffer size
             max_samples = int(MAX_BUFFER_SECONDS * SAMPLE_RATE)
             if len(self.buffer) > max_samples:
-                # Keep the most recent audio
                 self.buffer = self.buffer[-max_samples:]
+
+            # Signal consumers only when meaningful new audio has accumulated
+            current_end = len(self.buffer) / SAMPLE_RATE
+            if current_end - self._last_processed_buffer_end >= MIN_NEW_AUDIO_SECONDS:
+                self._audio_event.set()
+                self._audio_event_sync.set()
 
     def buffer_duration(self) -> float:
         """Current buffer duration in seconds."""
@@ -103,11 +116,16 @@ class LiveTranscriber:
         )
 
     @staticmethod
+    def _normalize_word(word: str) -> str:
+        """Normalize word for comparison (lower, strip punctuation)."""
+        return word.lower().strip(" .,?!:;\"'")
+
+    @staticmethod
     def _find_stable_word_count(prev_words: list[str], curr_words: list[str]) -> int:
         """Find the number of common prefix words between two transcriptions."""
         common_len = 0
         for pw, cw in zip(prev_words, curr_words):
-            if pw == cw:
+            if LiveTranscriber._normalize_word(pw) == LiveTranscriber._normalize_word(cw):
                 common_len += 1
             else:
                 break
@@ -117,6 +135,10 @@ class LiveTranscriber:
         """Process current buffer and return transcription result."""
         if not self.has_enough_audio():
             return None
+
+        # Mark how far we have processed so add_audio() won't fire prematurely
+        with self._lock:
+            self._last_processed_buffer_end = len(self.buffer) / SAMPLE_RATE
 
         with self._lock:
             # Transcribe the ENTIRE buffer (we'll slice it later based on results)
@@ -173,48 +195,87 @@ class LiveTranscriber:
         
         confirmed_count = self._find_stable_word_count(prev_words_str, curr_words_str)
         
+        confirmed_words_objs = all_words[:confirmed_count] if all_words else []
         confirmed_words = curr_words_str[:confirmed_count]
         partial_words = curr_words_str[confirmed_count:]
         
-        confirmed_new_str = " ".join(confirmed_words)
+        full_confirmed_str = " ".join(confirmed_words)
         partial_str = " ".join(partial_words)
         
-        # CRITICAL FIX: With dynamic buffering, the next iteration starts with the 
-        # audio corresponding to 'partial_str'. So _prev_text must be 'partial_str'.
-        self._prev_text = partial_str
+        # 1. Deduplicate Emission
+        text_to_emit = full_confirmed_str
+        
+        if self._overlap_text:
+            overlap_words = self._overlap_text.split()
+            skip_count = len(overlap_words)
+            
+            # Check for simple prefix match (strict) or normalized match
+            # We prefer normalized match to handle punctuation changes
+            match_len = self._find_stable_word_count(overlap_words, confirmed_words)
+            
+            # If match_len is close to overlap length (e.g. all words match), use match_len
+            # In the duplication case, match_len was likely 0 because of punctuation.
+            # Now with normalization, it should be len(overlap_words).
+            
+            if match_len > 0:
+                 # Trust the new version of text (which might have updated punctuation)
+                 # Skip the matched part
+                 text_to_emit = " ".join(confirmed_words[match_len:])
+            else:
+                 # No normalized match found?
+                 # If we have overlap text but ZERO match, it means the text changed completely.
+                 # This is rare if buffer is same.
+                 # Should we emit everything? Yes.
+                 text_to_emit = full_confirmed_str
 
         # Accumulate confirmed text
-        if confirmed_new_str:
+        if text_to_emit:
             if self._confirmed_text:
-                self._confirmed_text += " " + confirmed_new_str
+                self._confirmed_text += " " + text_to_emit
             else:
-                self._confirmed_text = confirmed_new_str
+                self._confirmed_text = text_to_emit
 
-            # DYNAMIC BUFFER SLICING
-            # We found 'confirmed_count' stable words.
-            # We need to find the timestamp of the last confirmed word.
-            if all_words and confirmed_count > 0:
-                # The index in all_words corresponds to confirmed_count - 1
-                last_confirmed_word = all_words[confirmed_count - 1]
-                cut_timestamp = last_confirmed_word.end
-                
-                # Convert to samples
-                cut_samples = int(cut_timestamp * SAMPLE_RATE)
-                
-                # Add a small safety margin? (e.g. 0.1s)
-                # Maybe strictly cutting at end is safe if next word starts after.
-                # Let's trust the timestamp.
-                
-                with self._lock:
-                    # Remove the confirmed audio from the buffer
-                    if cut_samples < len(self.buffer):
-                        self.buffer = self.buffer[cut_samples:]
-                    else:
-                        self.buffer = np.array([], dtype=np.float32)
-            else:
-                # Fallback if no words objects: we can't safely cut.
-                # We assume the buffer just grows until MAX_BUFFER or valid words appear.
-                pass
+        # 2. Update Buffer & Context (10s Retention)
+        if confirmed_words_objs:
+            last_confirmed_word = confirmed_words_objs[-1]
+            t_end = last_confirmed_word.end
+            
+            # Keep 10 seconds of verified audio context (Safety Overlap)
+            # This ensures we don't cut words at boundaries and provides context
+            t_target = max(0.0, t_end - 10.0)
+            
+            # Snap t_target to the nearest word start to avoid cutting words
+            t_actual_cut = 0.0
+            for w in all_words:
+                if w.end > t_target:
+                    # Found the first word that effectively crosses or starts the retention zone
+                    t_actual_cut = w.start
+                    break
+            
+            # Slice buffer
+            cut_samples = int(t_actual_cut * SAMPLE_RATE)
+            
+            with self._lock:
+                if cut_samples < len(self.buffer):
+                    self.buffer = self.buffer[cut_samples:]
+                else:
+                    self.buffer = np.array([], dtype=np.float32)
+
+            # 3. Update State for Next Turn
+            # _overlap_text: confirmed text corresponding to KEPT audio
+            retained_confirmed = [w.word.strip() for w in confirmed_words_objs if w.start >= t_actual_cut]
+            self._overlap_text = " ".join(retained_confirmed)
+            
+            # _prev_text: All text (confirmed + partial) corresponding to KEPT audio
+            retained_all = [w.word.strip() for w in all_words if w.start >= t_actual_cut]
+            self._prev_text = " ".join(retained_all)
+            
+        else:
+            # No new confirmation. Buffer unchanged (except potential max cap).
+            # _prev_text is the full current text for next comparison
+            self._prev_text = curr_text
+            # _overlap_text remains valid (matches start of buffer)
+            pass
 
         return TranscriptionResult(
             confirmed=self._confirmed_text,
@@ -273,3 +334,7 @@ class LiveTranscriber:
             self.buffer = np.array([], dtype=np.float32)
         self._prev_text = ""
         self._confirmed_text = ""
+        self._overlap_text = ""
+        self._last_processed_buffer_end = 0.0
+        self._audio_event.clear()
+        self._audio_event_sync.clear()

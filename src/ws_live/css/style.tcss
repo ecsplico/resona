@@ -99,8 +99,14 @@ RichLog {
     border: solid $secondary;
 }
 
-#live_display {
+#live_scroll {
+    height: 1fr;
     border: solid $accent;
+}
+
+#live_display {
+    height: auto;
+    padding: 1 2;
 }
 
 .tab_toolbar {

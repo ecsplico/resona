@@ -15,7 +15,7 @@ import numpy as np
 
 from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.message import Message
 
 from recorder.micrec import MicRecApp
@@ -69,7 +69,8 @@ class WSLiveApp(MicRecApp):
 
         with TabbedContent(id="results_tabs"):
             with TabPane("Live", id="tab_live"):
-                yield RichLog(id="live_display", wrap=True, markup=True)
+                with VerticalScroll(id="live_scroll"):
+                    yield Static("", id="live_display", markup=True)
             with TabPane("Logs", id="tab_logs"):
                 yield RichLog(id="log_display", wrap=True)
 
@@ -175,8 +176,8 @@ class WSLiveApp(MicRecApp):
 
         # Clear the live display
         try:
-            live_display = self.query_one("#live_display", RichLog)
-            live_display.clear()
+            live_display = self.query_one("#live_display", Static)
+            live_display.update("")
         except Exception:
             pass
 
@@ -260,7 +261,14 @@ class WSLiveApp(MicRecApp):
         import asyncio
 
         while not self._live_stop_event.is_set():
-            time.sleep(0.8)  # Process interval
+            # Wait for new audio or stop signal (up to 1s to stay responsive)
+            if self._live_transcriber is not None:
+                signalled = self._live_transcriber._audio_event_sync.wait(timeout=1.0)
+                if signalled:
+                    self._live_transcriber._audio_event_sync.clear()
+            else:
+                self._live_stop_event.wait(timeout=0.1)
+                continue
 
             if self._live_transcriber is None:
                 continue
@@ -312,13 +320,14 @@ class WSLiveApp(MicRecApp):
     def _update_live_display(self, confirmed: str, partial: str, is_final: bool):
         """Update the live transcription display (called from UI thread)."""
         try:
-            live_display = self.query_one("#live_display", RichLog)
-            live_display.clear()
+            live_display = self.query_one("#live_display", Static)
 
+            parts = []
             if confirmed:
-                live_display.write(f"[bold]{confirmed}[/bold]")
+                parts.append(confirmed)
             if partial:
-                live_display.write(f"[dim italic]{partial}[/dim italic]")
+                parts.append(f"[dim]{partial}[/dim]")
+            live_display.update("\n".join(parts))
 
             if is_final:
                 self._full_transcript = confirmed
@@ -355,8 +364,8 @@ class WSLiveApp(MicRecApp):
     def action_clear_live(self):
         """Clear the live transcription display."""
         try:
-            live_display = self.query_one("#live_display", RichLog)
-            live_display.clear()
+            live_display = self.query_one("#live_display", Static)
+            live_display.update("")
             self._full_transcript = ""
             self.results_map.pop("tab_live", None)
             self.query_one("#copy_button", Button).disabled = True

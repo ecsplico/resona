@@ -28,9 +28,6 @@ from ..processing.live_transcriber import LiveTranscriber, SAMPLE_RATE
 
 logger = logging.getLogger(__name__)
 
-# How often to attempt transcription (seconds)
-PROCESS_INTERVAL = 0.8
-
 
 async def live_transcribe_websocket(websocket: WebSocket):
     """Handle a WebSocket connection for live transcription."""
@@ -47,9 +44,18 @@ async def live_transcribe_websocket(websocket: WebSocket):
     processing = True
 
     async def process_loop():
-        """Periodically process buffered audio and send results."""
+        """Wait for audio signal, then process buffered audio and send results."""
         while processing:
-            await asyncio.sleep(PROCESS_INTERVAL)
+            # Wait for new audio (or timeout to check the `processing` flag)
+            try:
+                await asyncio.wait_for(
+                    transcriber._audio_event.wait(),
+                    timeout=1.0,
+                )
+            except asyncio.TimeoutError:
+                continue
+            transcriber._audio_event.clear()
+
             if not transcriber.has_enough_audio():
                 continue
             try:
