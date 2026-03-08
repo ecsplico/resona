@@ -49,6 +49,7 @@ class WSLiveApp(MicRecApp):
         self._live_stop_event = threading.Event()
         self._audio_queue: queue.Queue = queue.Queue()
         self._full_transcript = ""
+        self._last_confirmed_len = 0
         self.results_map = {}  # For copy support
 
     def compose(self) -> ComposeResult:
@@ -107,6 +108,8 @@ class WSLiveApp(MicRecApp):
         if not hasattr(micrec_module, "_original_audio_callback"):
             micrec_module._original_audio_callback = micrec_module.audio_callback
 
+
+        # Track last confirmed length to show only deltas
             def intercepted_callback(indata, frames, time, status, app_ref):
                 # Always call original for saving/status logic
                 micrec_module._original_audio_callback(indata, frames, time, status, app_ref)
@@ -178,6 +181,7 @@ class WSLiveApp(MicRecApp):
         try:
             live_display = self.query_one("#live_display", Static)
             live_display.update("")
+            self._last_confirmed_len = 0
         except Exception:
             pass
 
@@ -322,12 +326,27 @@ class WSLiveApp(MicRecApp):
         try:
             live_display = self.query_one("#live_display", Static)
 
-            parts = []
+            # Extract only the newly confirmed portion (delta)
+            confirmed_delta = ""
             if confirmed:
-                parts.append(confirmed)
+                if len(confirmed) > self._last_confirmed_len:
+                    confirmed_delta = confirmed[self._last_confirmed_len:].strip()
+                else:
+                    # Reset or wrap-around case (full re-display)
+                    confirmed_delta = confirmed
+                    self._last_confirmed_len = 0
+
+            partial = result.partial if result else ""
+            
+            parts = []
+            if confirmed_delta:
+                parts.append(confirmed_delta)
             if partial:
                 parts.append(f"[dim]{partial}[/dim]")
             live_display.update("\n".join(parts))
+
+            # Track for next cycle
+            self._last_confirmed_len = len(confirmed)
 
             if is_final:
                 self._full_transcript = confirmed
@@ -366,6 +385,7 @@ class WSLiveApp(MicRecApp):
         try:
             live_display = self.query_one("#live_display", Static)
             live_display.update("")
+            self._last_confirmed_len = 0
             self._full_transcript = ""
             self.results_map.pop("tab_live", None)
             self.query_one("#copy_button", Button).disabled = True
