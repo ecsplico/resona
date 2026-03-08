@@ -21,10 +21,12 @@ def mock_live_transcriber():
     with patch("ws_server.api.ws_live.LiveTranscriber") as MockLT:
         mock_instance = MagicMock()
 
-        # Mock the async methods
-        from ws_server.processing.live_transcriber import TranscriptionResult
+        # Provide a real asyncio.Event so process_loop's wait_for works correctly.
+        # Left unset so process_loop blocks on wait() and yields control;
+        # the stop message arrives, cancels the task cleanly.
         import asyncio
-
+        from ws_server.processing.live_transcriber import TranscriptionResult
+        mock_instance._audio_event = asyncio.Event()
         async def mock_process():
             return TranscriptionResult(
                 confirmed="Hello world",

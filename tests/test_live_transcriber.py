@@ -91,7 +91,7 @@ class TestLiveTranscriberProcess:
     def test_process_returns_result_with_enough_audio(self, mock_transcriber):
         from ws_server.processing.live_transcriber import LiveTranscriber
         lt = LiveTranscriber()
-        lt.add_audio(make_audio(2.0))
+        lt.add_audio(make_audio(3.5))
 
         result = asyncio.get_event_loop().run_until_complete(lt.process())
         assert result is not None
@@ -106,7 +106,7 @@ class TestLiveTranscriberProcess:
         lt = LiveTranscriber()
 
         # First pass
-        lt.add_audio(make_audio(2.0))
+        lt.add_audio(make_audio(3.5))
         result1 = asyncio.get_event_loop().run_until_complete(lt.process())
         assert result1 is not None
 
@@ -134,3 +134,69 @@ class TestLiveTranscriberProcess:
 
         transcript = lt.get_full_transcript()
         assert "Hello world this is a test" in transcript
+
+
+
+class TestLiveTranscriberEvents:
+    """Tests for event-driven wakeup mechanism."""
+
+    def test_event_not_set_initially(self, mock_transcriber):
+        from ws_server.processing.live_transcriber import LiveTranscriber
+        lt = LiveTranscriber()
+        assert not lt._audio_event.is_set()
+        assert not lt._audio_event_sync.is_set()
+
+    def test_event_set_after_enough_audio(self, mock_transcriber):
+        from ws_server.processing.live_transcriber import LiveTranscriber, MIN_NEW_AUDIO_SECONDS
+        lt = LiveTranscriber()
+        lt.add_audio(make_audio(MIN_NEW_AUDIO_SECONDS + 0.1))
+        assert lt._audio_event.is_set()
+        assert lt._audio_event_sync.is_set()
+
+    def test_event_not_set_for_tiny_chunk(self, mock_transcriber):
+        from ws_server.processing.live_transcriber import LiveTranscriber, MIN_NEW_AUDIO_SECONDS
+        lt = LiveTranscriber()
+        lt.add_audio(make_audio(MIN_NEW_AUDIO_SECONDS - 0.1))
+        assert not lt._audio_event.is_set()
+
+    def test_event_set_after_multiple_small_chunks(self, mock_transcriber):
+        """Multiple small chunks that together exceed threshold must fire event."""
+        from ws_server.processing.live_transcriber import LiveTranscriber, MIN_NEW_AUDIO_SECONDS
+        lt = LiveTranscriber()
+        chunk = make_audio(MIN_NEW_AUDIO_SECONDS / 3 + 0.01)
+        lt.add_audio(chunk)
+        assert not lt._audio_event.is_set()
+        lt.add_audio(chunk)
+        assert not lt._audio_event.is_set()
+        lt.add_audio(chunk)
+        # Three chunks together exceed threshold
+        assert lt._audio_event.is_set()
+
+    def test_reset_clears_events(self, mock_transcriber):
+        from ws_server.processing.live_transcriber import LiveTranscriber
+        lt = LiveTranscriber()
+        lt.add_audio(make_audio(2.0))
+        assert lt._audio_event.is_set()
+        lt.reset()
+        assert not lt._audio_event.is_set()
+        assert not lt._audio_event_sync.is_set()
+
+    def test_last_processed_updated_on_process(self, mock_transcriber):
+        from ws_server.processing.live_transcriber import LiveTranscriber
+        lt = LiveTranscriber()
+        lt.add_audio(make_audio(3.5))
+        assert lt._last_processed_buffer_end == 0.0
+        asyncio.get_event_loop().run_until_complete(lt.process())
+        assert lt._last_processed_buffer_end > 0.0
+
+    def test_no_spurious_event_after_process(self, mock_transcriber):
+        """After processing, adding a tiny chunk must not re-fire the event."""
+        from ws_server.processing.live_transcriber import LiveTranscriber, MIN_NEW_AUDIO_SECONDS
+        lt = LiveTranscriber()
+        lt.add_audio(make_audio(3.5))
+        asyncio.get_event_loop().run_until_complete(lt.process())
+        lt._audio_event.clear()
+        lt._audio_event_sync.clear()
+        # Add tiny chunk (less than threshold since last process)
+        lt.add_audio(make_audio(MIN_NEW_AUDIO_SECONDS / 2))
+        assert not lt._audio_event.is_set()
