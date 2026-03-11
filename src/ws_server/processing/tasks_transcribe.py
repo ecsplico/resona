@@ -14,7 +14,7 @@ from core.db.models import Job, JobStatus
 from core.db.engine import engine
 from core.paths import FILE_PATH
 
-log = logging.getLogger("uvicorn.test")
+log = logging.getLogger(__name__)
 
 
 class TranscribeTask(Thread):
@@ -31,10 +31,10 @@ class TranscribeTask(Thread):
                 self._process_next_job()
             except Exception as e:
                 log.error(f"Unexpected error in TranscribeTask main loop: {e}", exc_info=True)
-            
-            # Sleep before checking for next job
-            time.sleep(1)
-        
+
+            # Use wait() instead of sleep() so shutdown is immediate
+            self.shutdown_event.wait(timeout=1.0)
+
         log.info("TranscribeTask stopped")
 
     def _process_next_job(self):

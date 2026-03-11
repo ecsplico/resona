@@ -1,26 +1,30 @@
-FROM python:3.9-slim
+FROM python:3.12-slim AS base
 
-RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -qq update \
-    && apt-get -qq install --no-install-recommends \
-    ffmpeg \
-    git \
+RUN apt-get -qq update \
+    && apt-get -qq install --no-install-recommends ffmpeg git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install pipenv
-
-RUN mkdir -p /app
-COPY Pipfile* /app/
-
-RUN cd /app && pipenv requirements > requirements.txt
-RUN pip install -r /app/requirements.txt
+# Install uv for fast dependency resolution
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-COPY . /app/
+# Copy dependency files first for layer caching
+COPY pyproject.toml uv.lock ./
 
-ENV ASR_MODEL small
+# Install dependencies (frozen from lockfile)
+RUN uv sync --frozen --no-dev --no-editable
 
-VOLUME /app/files
+# Copy application code
+COPY src/ src/
+COPY .env.example .env
 
-CMD  [ "python", "./run.py" ]
+# Create data directories
+RUN mkdir -p data/files data/inbox data/md data/db
+
+EXPOSE 7000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7000/health')" || exit 1
+
+CMD ["uv", "run", "ws-server"]

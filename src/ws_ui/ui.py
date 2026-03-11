@@ -123,15 +123,6 @@ class WSUIApp(MicRecApp):
         else:
             self.log_msg("Save failed or cancelled (or no file), skipping transcription.")
 
-    def log_msg(self, msg: str) -> None:
-        """Write to the log tab."""
-        try:
-            log_display = self.query_one("#log_display", RichLog)
-            timestamp = time.strftime("%H:%M:%S")
-            log_display.write(f"[{timestamp}] {msg}")
-        except Exception:
-            pass
-
     def check_for_completed_jobs(self):
         """Poll the database for completed jobs created after session start."""
         try:
@@ -243,15 +234,6 @@ class WSUIApp(MicRecApp):
         except Exception as e:
             self.notify(f"Error clearing results: {e}", title="Error", severity="error")
 
-    def action_clear_logs(self):
-        """Clear the log display."""
-        try:
-            log_display = self.query_one("#log_display", RichLog)
-            log_display.clear()
-            self.notify("Logs cleared.", title="Cleared")
-        except Exception as e:
-            self.notify(f"Error clearing logs: {e}", title="Error", severity="error")
-
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         """Handle tab switching to update Copy/Save button state."""
         try:
@@ -270,29 +252,6 @@ class WSUIApp(MicRecApp):
                 save_md_btn.disabled = True
         except Exception:
             pass
-
-    def manual_copy_fallback(self, text: str) -> bool:
-        """Try to copy to clipboard using system tools (xclip, xsel, wl-copy)."""
-        import subprocess
-        import shutil
-
-        # List of commands to try: (command, args)
-        commands = [
-            ("wl-copy", []),
-            ("xclip", ["-selection", "clipboard"]),
-            ("xsel", ["-b", "-i"]),
-        ]
-
-        for cmd, args in commands:
-            if shutil.which(cmd):
-                try:
-                    process = subprocess.Popen([cmd] + args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-                    process.communicate(input=text.encode('utf-8'))
-                    if process.returncode == 0:
-                        return True
-                except Exception:
-                    continue
-        return False
 
     def action_copy_transcription(self):
         try:
@@ -376,30 +335,14 @@ class WSUIApp(MicRecApp):
             self.notify(f"Failed to save MD: {e}", title="Error", severity="error")
             self.log_msg(f"Error saving MD: {e}")
             
-    # Debounce control
-    _last_toggle_time = 0.0
-
-    async def action_toggle_record_pause(self) -> None:
-        """Override with debounce to prevent double-triggering."""
-        now = time.monotonic()
-        if now - self._last_toggle_time < 0.5: # 500ms debounce
-            self.log_msg("Debounced toggle action (too fast).")
-            return
-        self._last_toggle_time = now
-
-        self.log_msg(f"Toggle Record/Pause. Current: Recording={self.is_recording}, Paused={self.is_paused}")
-        
-        await super().action_toggle_record_pause()
-
-    # on_transcription_finished removed (handled by polling)
-
-    # Ensure clean exit
     def exit(self, *args, **kwargs):
         self.stop_transcription_event.set()
         if self.transcription_task and self.transcription_task.is_alive():
-            self.transcription_task.join(timeout=1.0)
-            
-        # Remove our log handler
+            self.transcription_task.join(timeout=2.0)
+        # Ensure recording session thread is joined
+        if self._session is not None:
+            self._session.stop()
+            self._session.join(timeout=2.0)
         if hasattr(self, '_tui_log_handler'):
             logging.getLogger().removeHandler(self._tui_log_handler)
         super().exit(*args, **kwargs)

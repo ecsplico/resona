@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from core.db.models import Replacement
 from core.db.engine import engine
 
-log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
+log = logging.getLogger(__name__)
 
 def process_markdown(result: dict) -> dict:
     """

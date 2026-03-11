@@ -24,7 +24,7 @@ SAMPLE_RATE = 16000
 # Global lock for model access (if needed across different functions)
 model_lock = Lock()
 
-log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
+log = logging.getLogger(__name__)
 
 
 # Moved get_active_initial_prompts_string to src/db/utils.py to resolve circular import
