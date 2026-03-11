@@ -97,15 +97,6 @@ class WSLiveApp(MicRecApp):
 
         self.log_msg("WS-Live ready. Press Record to start live transcription.")
 
-    def log_msg(self, msg: str) -> None:
-        """Write to the log tab."""
-        try:
-            log_display = self.query_one("#log_display", RichLog)
-            timestamp = time.strftime("%H:%M:%S")
-            log_display.write(f"[{timestamp}] {msg}")
-        except Exception:
-            pass
-
     # ── Recording overrides ──────────────────────────────────────────
 
     def start_recording_action(self):
@@ -361,36 +352,6 @@ class WSLiveApp(MicRecApp):
         except Exception as e:
             self.notify(f"Error: {e}", title="Error", severity="error")
 
-    def action_clear_logs(self):
-        """Clear the log display."""
-        try:
-            log_display = self.query_one("#log_display", RichLog)
-            log_display.clear()
-            self.notify("Logs cleared.", title="Cleared")
-        except Exception as e:
-            self.notify(f"Error: {e}", title="Error", severity="error")
-
-    def manual_copy_fallback(self, text: str) -> bool:
-        """Try clipboard with system tools."""
-        import subprocess
-        import shutil
-
-        commands = [
-            ("wl-copy", []),
-            ("xclip", ["-selection", "clipboard"]),
-            ("xsel", ["-b", "-i"]),
-        ]
-        for cmd, args in commands:
-            if shutil.which(cmd):
-                try:
-                    process = subprocess.Popen([cmd] + args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-                    process.communicate(input=text.encode('utf-8'))
-                    if process.returncode == 0:
-                        return True
-                except Exception:
-                    continue
-        return False
-
     def action_copy_transcription(self):
         """Copy the current transcript to clipboard."""
         text = self._full_transcript or self.results_map.get("tab_live", "")
@@ -427,20 +388,18 @@ class WSLiveApp(MicRecApp):
         except Exception:
             pass
 
-    # Debounce control
-    _last_toggle_time = 0.0
-
-    async def action_toggle_record_pause(self) -> None:
-        """Override with debounce."""
-        now = time.monotonic()
-        if now - self._last_toggle_time < 0.5:
-            return
-        self._last_toggle_time = now
-        self.log_msg(f"Toggle Record/Pause. Recording={self.is_recording}, Paused={self.is_paused}")
-        await super().action_toggle_record_pause()
-
     def exit(self, *args, **kwargs):
+        # Stop live transcription cleanly before exiting
         self._live_stop_event.set()
+        if self._audio_feed_timer is not None:
+            self._audio_feed_timer.stop()
+            self._audio_feed_timer = None
+        if self._session is not None:
+            self._session.remove_audio_observer(self._on_audio_chunk)
         if self._live_thread and self._live_thread.is_alive():
-            self._live_thread.join(timeout=2.0)
+            self._live_thread.join(timeout=3.0)
+        # Ensure recording session thread is joined
+        if self._session is not None:
+            self._session.stop()
+            self._session.join(timeout=2.0)
         super().exit(*args, **kwargs)

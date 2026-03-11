@@ -4,7 +4,7 @@ from decouple import config
 import logging # Import logging
 from core.db.utils import get_active_initial_prompts_string # Import the utility function from db utils
 
-log = logging.getLogger('uvicorn.test') # Get logger
+log = logging.getLogger(__name__)
 
 # Assuming MODEL_NAME is defined globally or passed differently
 # For now, getting it from config here

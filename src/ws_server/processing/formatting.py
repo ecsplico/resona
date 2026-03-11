@@ -10,7 +10,7 @@ from core.db.models import Replacement
 from core.db.engine import engine # Assuming engine is defined in db/engine.py
 from core.paths import MD_PATH # Assuming MD_PATH is defined in core/paths.py
 
-log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
+log = logging.getLogger(__name__)
 
 def write_result(
         result: dict, file: TextIO, output: Union[str, None]

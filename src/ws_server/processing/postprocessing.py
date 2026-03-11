@@ -4,7 +4,7 @@ from typing import Callable, Dict, List
 # Import postprocessing functions
 from .postprocessing_markdown import process_markdown
 
-log = logging.getLogger('uvicorn.test')
+log = logging.getLogger(__name__)
 
 # Registry of available postprocessors
 # The key is the name used in configuration, value is the function itself.

@@ -1,35 +1,29 @@
-FROM nvidia/cuda:11.8.0-base-ubuntu22.04
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04 AS base
 
-ENV PYTHON_VERSION=3.9
-
-RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -qq update \
+RUN apt-get -qq update \
     && apt-get -qq install --no-install-recommends \
-    python${PYTHON_VERSION} \
-    python${PYTHON_VERSION}-venv \
-    python3-pip \
-    ffmpeg \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+        python3.12 python3.12-venv python3.12-dev \
+        ffmpeg git \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python
 
-RUN ln -s -f /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
-    ln -s -f /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
-    ln -s -f /usr/bin/pip3 /usr/bin/pip
-
-RUN pip install pipenv
-
-RUN mkdir -p /app
-COPY Pipfile* /app/
-
-RUN cd /app && pipenv requirements > requirements.txt
-RUN pip install -r /app/requirements.txt
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-COPY . /app/
+COPY pyproject.toml uv.lock ./
 
-ENV ASR_MODEL small
+RUN uv sync --frozen --no-dev --no-editable
 
-VOLUME /app/files
+COPY src/ src/
+COPY .env.example .env
 
-CMD  [ "python", "./run.py" ]
+RUN mkdir -p data/files data/inbox data/md data/db
+
+EXPOSE 7000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7000/health')" || exit 1
+
+CMD ["uv", "run", "ws-server"]

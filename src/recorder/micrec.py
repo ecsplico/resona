@@ -260,13 +260,6 @@ class MicRecApp(App):
         discard_button.label = "\U0001f5d1\ufe0f Discard"
         discard_button.variant = "error"
 
-    async def action_toggle_record_pause(self) -> None:
-        if not self.is_recording:
-            self.start_recording_action()
-        else:
-            self.action_pause_resume_recording()
-        self._update_record_pause_button_ui()
-
     async def action_save_and_new_recording(self) -> None:
         if not self.is_recording or self._is_saving_and_restarting:
             return
@@ -462,33 +455,88 @@ class MicRecApp(App):
     def set_status_from_callback(self, message: str):
         self.status_message = message
 
+    # ── Shared utilities for subclasses (ws_live, ws_ui) ─────────────
+
+    def log_msg(self, msg: str) -> None:
+        """Write a timestamped message to the #log_display RichLog widget."""
+        try:
+            from textual.widgets import RichLog
+            log_display = self.query_one("#log_display", RichLog)
+            timestamp = time.strftime("%H:%M:%S")
+            log_display.write(f"[{timestamp}] {msg}")
+        except Exception:
+            pass
+
+    def action_clear_logs(self) -> None:
+        """Clear the log display."""
+        try:
+            from textual.widgets import RichLog
+            log_display = self.query_one("#log_display", RichLog)
+            log_display.clear()
+            self.notify("Logs cleared.", title="Cleared")
+        except Exception as e:
+            self.notify(f"Error: {e}", title="Error", severity="error")
+
+    def manual_copy_fallback(self, text: str) -> bool:
+        """Try to copy *text* to clipboard using system tools."""
+        import subprocess
+        import shutil
+
+        commands = [
+            ("wl-copy", []),
+            ("xclip", ["-selection", "clipboard"]),
+            ("xsel", ["-b", "-i"]),
+        ]
+        for cmd, args in commands:
+            if shutil.which(cmd):
+                try:
+                    proc = subprocess.Popen(
+                        [cmd] + args, stdin=subprocess.PIPE, stderr=subprocess.PIPE,
+                    )
+                    proc.communicate(input=text.encode("utf-8"))
+                    if proc.returncode == 0:
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    # Debounce for record/pause toggle (shared across subclasses)
+    _last_toggle_time: float = 0.0
+
+    async def action_toggle_record_pause(self) -> None:
+        now = time.monotonic()
+        if now - self._last_toggle_time < 0.5:
+            return
+        self._last_toggle_time = now
+
+        if not self.is_recording:
+            self.start_recording_action()
+        else:
+            self.action_pause_resume_recording()
+        self._update_record_pause_button_ui()
+
 
 def run_mic_rec_app():
     """Initializes and runs the MicRecApp application."""
+    import logging as _logging
+    _logging.root.handlers.clear()
+    _logging.root.addHandler(_logging.NullHandler())
+
     if not os.path.exists(OUTPUT_DIR):
         try:
             os.makedirs(OUTPUT_DIR)
-            print(f"Created output directory: {OUTPUT_DIR}")
         except Exception as e:
-            print(f"Error: Could not create output directory {OUTPUT_DIR}: {e}", file=sys.stderr)
-            print("Please check permissions or create it manually.", file=sys.stderr)
+            sys.stderr.write(f"Error: Could not create output directory {OUTPUT_DIR}: {e}\n")
             sys.exit(1)
 
     try:
         sd.check_input_settings(device=DEVICE, samplerate=SAMPLE_RATE, channels=CHANNELS)
     except Exception as e:
-        print(f"Error initializing audio input: {e}", file=sys.stderr)
-        print("Please ensure a microphone is connected and configured.", file=sys.stderr)
-        print("Available devices:", file=sys.stderr)
-        try:
-            print(sd.query_devices(), file=sys.stderr)
-        except Exception as dev_e:
-            print(f"Could not query devices: {dev_e}", file=sys.stderr)
+        sys.stderr.write(f"Error initializing audio input: {e}\n")
         sys.exit(1)
 
     app = MicRecApp()
     app.run(inline=True)
-    print("MicRec exited.", file=sys.stderr)
 
 
 if __name__ == "__main__":

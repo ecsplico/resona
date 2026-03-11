@@ -11,7 +11,7 @@ from core.presets import initial_prompts # Import the initial prompts data
 # Import DATABASE_URL from its new location
 from core.paths import DATABASE_URL, DB_PATH
 
-log = logging.getLogger("uvicorn.test") # Use a logger specific to this module
+log = logging.getLogger(__name__)
 
 def validate_database_directory():
     """
@@ -77,9 +77,8 @@ def validate_database_directory():
 # Validate directory before creating engine
 validate_database_directory()
 
-log.info(f"Creating database engine for URL: {DATABASE_URL}")
 # Create the database engine instance
-engine = create_engine(DATABASE_URL) # echo=True for SQL logging
+engine = create_engine(DATABASE_URL)
 
 
 def create_db_and_tables():

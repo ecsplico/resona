@@ -9,7 +9,7 @@ from .transcriber_fast_whisper import FastWhisperTranscriber
 
 # Get config values
 MODE: str = config("ASR_MODE")
-log = logging.getLogger('uvicorn.test') # Or use a dedicated logger
+log = logging.getLogger(__name__)
 
 def getTranscriber():
     """
