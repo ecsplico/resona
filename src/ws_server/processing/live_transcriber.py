@@ -131,46 +131,18 @@ class LiveTranscriber:
                 break
         return common_len
 
-    async def process(self) -> Optional[TranscriptionResult]:
-        """Process current buffer and return transcription result."""
-        if not self.has_enough_audio():
-            return None
+    def _process_result(self, result: dict) -> Optional[TranscriptionResult]:
+        """Shared logic for processing a transcription result dict.
 
-        # Mark how far we have processed so add_audio() won't fire prematurely
-        with self._lock:
-            self._last_processed_buffer_end = len(self.buffer) / SAMPLE_RATE
-
-        with self._lock:
-            # Transcribe the ENTIRE buffer (we'll slice it later based on results)
-            # buffer is already capped by add_audio
-            audio_chunk = self.buffer.copy()
-
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(_executor, self._transcribe_sync, audio_chunk)
-        except Exception as e:
-            log.error(f"Live transcription error: {e}", exc_info=True)
-            return None
-
-        # Flatten segments to words
-        # result is a tuple (segments_generator, info)
-        # But _transcribe_sync consumes the generator and returns a dict (in transcriber_fast_whisper.py)
-        # Wait, transcriber_fast_whisper.py currently returns:
-        # { "language": ..., "segments": [segment_objs], "text": ... }
-        # faster_whisper segments have .words list if word_timestamps=True
-        
+        Used by both the sync and async ``process`` entry-points.
+        """
         segments = result.get("segments", [])
         all_words = []
         for seg in segments:
             if hasattr(seg, 'words') and seg.words:
                 all_words.extend(seg.words)
-            else:
-                # Fallback if no word timestamps (shouldn't happen with word_timestamps=True)
-                # Ensure we handle this gracefully
-                pass
 
         # Reconstruct text from words to ensure alignment
-        curr_text_from_words = " ".join([w.word.strip() for w in all_words])
         curr_words_str = [w.word.strip() for w in all_words]
 
         # Use the raw text if no words (fallback)
@@ -178,30 +150,28 @@ class LiveTranscriber:
             curr_text = result.get("text", "").strip()
             curr_words_str = curr_text.split()
         else:
-            curr_text = curr_text_from_words
+            curr_text = " ".join(curr_words_str)
 
         # Hallucination filter
         if curr_text.lower().strip('.!') in ["vielen dank", "untertitel", "thank you"]:
-             curr_text = ""
-             curr_words_str = []
-             all_words = []
+            curr_text = ""
+            curr_words_str = []
+            all_words = []
 
         if not curr_text:
             return None
 
         # Local agreement on WORDS
-        # prev_text needs to be stored as words too ideally, but string splitting is usually fine
         prev_words_str = self._prev_text.split()
-        
+
         confirmed_count = self._find_stable_word_count(prev_words_str, curr_words_str)
-        
+
         confirmed_words_objs = all_words[:confirmed_count] if all_words else []
         confirmed_words = curr_words_str[:confirmed_count]
         partial_words = curr_words_str[confirmed_count:]
-        
-        full_confirmed_str = " ".join(confirmed_words)
+
         partial_str = " ".join(partial_words)
-        
+
         # Deduplicate: skip words already emitted in previous cycles
         text_to_emit = " ".join(confirmed_words[self._emitted_word_count:])
         self._emitted_word_count = len(confirmed_words)
@@ -213,26 +183,24 @@ class LiveTranscriber:
             else:
                 self._confirmed_text = text_to_emit
 
-        # 2. Update Buffer & Context (10s Retention)
+        # Update Buffer & Context (10s Retention)
         if confirmed_words_objs:
             last_confirmed_word = confirmed_words_objs[-1]
             t_end = last_confirmed_word.end
-            
+
             # Keep 10 seconds of verified audio context (Safety Overlap)
-            # This ensures we don't cut words at boundaries and provides context
             t_target = max(0.0, t_end - 10.0)
-            
+
             # Snap t_target to the nearest word start to avoid cutting words
             t_actual_cut = 0.0
             for w in all_words:
                 if w.end > t_target:
-                    # Found the first word that effectively crosses or starts the retention zone
                     t_actual_cut = w.start
                     break
-            
+
             # Slice buffer
             cut_samples = int(t_actual_cut * SAMPLE_RATE)
-            
+
             with self._lock:
                 if cut_samples < len(self.buffer):
                     self.buffer = self.buffer[cut_samples:]
@@ -257,16 +225,117 @@ class LiveTranscriber:
             language=result.get("language", self.language),
             confirmed_delta=text_to_emit,
         )
-    async def flush(self) -> Optional[TranscriptionResult]:
-        """Process any remaining audio in the buffer (final call)."""
-        # Logic remains mostly similar but we treat everything as final
+
+    # ── Synchronous entry-points (for background threads) ────────────
+
+    def process_sync(self) -> Optional[TranscriptionResult]:
+        """Process current buffer synchronously.  Call from a background thread."""
+        if not self.has_enough_audio():
+            return None
+
         with self._lock:
-            if len(self.buffer) < 16000 * 0.1: # Minimal audio
+            self._last_processed_buffer_end = len(self.buffer) / SAMPLE_RATE
+            audio_chunk = self.buffer.copy()
+
+        try:
+            result = self._transcribe_sync(audio_chunk)
+        except Exception as e:
+            log.error(f"Live transcription error: {e}", exc_info=True)
+            return None
+
+        return self._process_result(result)
+
+    def flush_sync(self) -> Optional[TranscriptionResult]:
+        """Process remaining buffer synchronously.  Call from a background thread."""
+        with self._lock:
+            if len(self.buffer) < int(SAMPLE_RATE * 0.1):
                 return TranscriptionResult(
-                       confirmed=self._confirmed_text,
-                       partial="",
-                       language=self.language,
-                       confirmed_delta="",
+                    confirmed=self._confirmed_text,
+                    partial="",
+                    language=self.language,
+                    confirmed_delta="",
+                )
+            audio_chunk = self.buffer.copy()
+            self.buffer = np.array([], dtype=np.float32)
+
+        try:
+            result = self._transcribe_sync(audio_chunk)
+        except Exception as e:
+            log.error(f"Live transcription flush error: {e}", exc_info=True)
+            return None
+
+        # Extract words for deduplication
+        segments = result.get("segments", [])
+        all_words = []
+        for seg in segments:
+            if hasattr(seg, 'words') and seg.words:
+                all_words.extend(seg.words)
+
+        if all_words:
+            flush_words = [w.word.strip() for w in all_words]
+        else:
+            raw = result.get("text", "").strip()
+            flush_words = raw.split() if raw else []
+
+        language = result.get("language", self.language)
+
+        # Hallucination filter
+        flush_text = " ".join(flush_words)
+        if flush_text.lower().strip('.!') in ["vielen dank", "untertitel", "thank you"]:
+            flush_words = []
+
+        # Deduplicate: skip words already emitted during process() cycles
+        new_words = flush_words[self._emitted_word_count:]
+        text_to_emit = " ".join(new_words)
+
+        if text_to_emit:
+            if self._confirmed_text:
+                self._confirmed_text += " " + text_to_emit
+            else:
+                self._confirmed_text = text_to_emit
+
+        return TranscriptionResult(
+            confirmed=self._confirmed_text,
+            partial="",
+            language=language or self.language,
+            confirmed_delta=text_to_emit,
+        )
+
+    # ── Async entry-points (for WebSocket / event-loop callers) ──────
+
+    async def process(self) -> Optional[TranscriptionResult]:
+        """Process current buffer and return transcription result."""
+        if not self.has_enough_audio():
+            return None
+
+        with self._lock:
+            self._last_processed_buffer_end = len(self.buffer) / SAMPLE_RATE
+            audio_chunk = self.buffer.copy()
+
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(_executor, self._transcribe_sync, audio_chunk)
+        except Exception as e:
+            log.error(f"Live transcription error: {e}", exc_info=True)
+            return None
+
+        return self._process_result(result)
+
+    async def flush(self) -> Optional[TranscriptionResult]:
+        """Process any remaining audio in the buffer (final call).
+
+        The buffer still contains ~10s of already-confirmed audio (retention
+        window), so we must deduplicate against ``_emitted_word_count`` just
+        like ``process()`` does – otherwise the retained words get appended a
+        second time.
+        """
+        with self._lock:
+            if len(self.buffer) < int(SAMPLE_RATE * 0.1):  # Minimal audio
+                return TranscriptionResult(
+                    confirmed=self._confirmed_text,
+                    partial="",
+                    language=self.language,
+                    confirmed_delta="",
                 )
 
             audio_chunk = self.buffer.copy()
@@ -279,25 +348,41 @@ class LiveTranscriber:
             log.error(f"Live transcription flush error: {e}", exc_info=True)
             return None
 
-        final_text = result.get("text", "").strip()
+        # Extract words (same logic as process())
+        segments = result.get("segments", [])
+        all_words = []
+        for seg in segments:
+            if hasattr(seg, 'words') and seg.words:
+                all_words.extend(seg.words)
+
+        if all_words:
+            flush_words = [w.word.strip() for w in all_words]
+        else:
+            raw = result.get("text", "").strip()
+            flush_words = raw.split() if raw else []
+
         language = result.get("language", self.language)
 
-        if final_text.lower().strip('.!') in ["vielen dank", "untertitel", "thank you"]:
-             final_text = ""
-        
-        # Since _confirmed_text contains everything UP TO this buffer,
-        # and this buffer produced final_text, we just append it.
-        if final_text:
-             if self._confirmed_text:
-                 self._confirmed_text += " " + final_text
-             else:
-                 self._confirmed_text = final_text
+        # Hallucination filter
+        flush_text = " ".join(flush_words)
+        if flush_text.lower().strip('.!') in ["vielen dank", "untertitel", "thank you"]:
+            flush_words = []
+
+        # Deduplicate: skip words already emitted during process() cycles
+        new_words = flush_words[self._emitted_word_count:]
+        text_to_emit = " ".join(new_words)
+
+        if text_to_emit:
+            if self._confirmed_text:
+                self._confirmed_text += " " + text_to_emit
+            else:
+                self._confirmed_text = text_to_emit
 
         return TranscriptionResult(
             confirmed=self._confirmed_text,
             partial="",
             language=language or self.language,
-            confirmed_delta=final_text,
+            confirmed_delta=text_to_emit,
         )
 
     def get_full_transcript(self) -> str:

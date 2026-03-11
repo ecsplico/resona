@@ -16,26 +16,23 @@ import numpy as np
 from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
 from textual.containers import Container, Horizontal, VerticalScroll
-from textual.message import Message
 
 from recorder.micrec import MicRecApp
 from ws_server.processing.live_transcriber import LiveTranscriber, SAMPLE_RATE as ASR_SAMPLE_RATE
-
-import sounddevice as sd
 
 # Audio capture settings (must match recorder defaults)
 MIC_SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 44100))
 MIC_CHANNELS = int(os.getenv("CHANNELS", 1))
 MIC_BLOCK_SIZE = 1024
 
-
-class LiveTranscriptionMessage(Message):
-    """Message posted from the transcription thread to the UI."""
-    def __init__(self, confirmed: str, partial: str, is_final: bool = False):
-        super().__init__()
-        self.confirmed = confirmed
-        self.partial = partial
-        self.is_final = is_final
+# Pre-build resampler once if sample rates differ
+_resampler = None
+if MIC_SAMPLE_RATE != ASR_SAMPLE_RATE:
+    try:
+        import torchaudio
+        _resampler = torchaudio.transforms.Resample(MIC_SAMPLE_RATE, ASR_SAMPLE_RATE)
+    except ImportError:
+        pass  # Will fall back to per-chunk import in _feed_audio_to_transcriber
 
 
 class WSLiveApp(MicRecApp):
@@ -48,6 +45,7 @@ class WSLiveApp(MicRecApp):
         self._live_thread: threading.Thread | None = None
         self._live_stop_event = threading.Event()
         self._audio_queue: queue.Queue = queue.Queue()
+        self._audio_feed_timer = None  # Textual interval timer reference
         self._full_transcript = ""
         self._displayed_confirmed = ""  # Accumulated confirmed text for display
         self.results_map = {}  # For copy support
@@ -78,8 +76,6 @@ class WSLiveApp(MicRecApp):
         yield Footer()
 
     async def on_mount(self) -> None:
-        # Call grandparent's on_mount (MicRecApp), skip the recording-specific init
-        # We only need the output dir check from MicRecApp
         super().on_mount()
 
         # Connect Python logging to the TUI Logs tab
@@ -88,41 +84,16 @@ class WSLiveApp(MicRecApp):
             def __init__(self, app_instance):
                 super().__init__()
                 self.app_instance = app_instance
-            
+
             def emit(self, record):
                 msg = self.format(record)
                 self.app_instance.call_from_thread(self.app_instance.log_msg, f"[dim]{record.name}:[/dim] {msg}")
 
-        # Configure root logger to output to TUI
         root_logger = logging.getLogger()
         handler = TUILogHandler(self)
         handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
         root_logger.addHandler(handler)
         root_logger.setLevel(logging.INFO)
-
-        # Monkey-patch the audio callback to intercept audio for live transcription
-        # This prevents the race condition of peeking at the save queue
-        import recorder.micrec as micrec_module
-        
-        # Store original if not already patched (basic check)
-        if not hasattr(micrec_module, "_original_audio_callback"):
-            micrec_module._original_audio_callback = micrec_module.audio_callback
-
-
-        # Track last confirmed length to show only deltas
-            def intercepted_callback(indata, frames, time, status, app_ref):
-                # Always call original for saving/status logic
-                micrec_module._original_audio_callback(indata, frames, time, status, app_ref)
-                
-                # If this is our app (WSLiveApp), feed our local queue
-                if isinstance(app_ref, WSLiveApp):
-                    if app_ref.is_recording and not app_ref.is_paused:
-                        # Put a COPY into our local queue
-                        app_ref._audio_queue.put(indata.copy())
-
-            # Apply patch
-            micrec_module.audio_callback = intercepted_callback
-            self.log_msg("Audio callback intercepted for live transcription.")
 
         self.log_msg("WS-Live ready. Press Record to start live transcription.")
 
@@ -162,6 +133,11 @@ class WSLiveApp(MicRecApp):
 
     # ── Live Transcription Logic ─────────────────────────────────────
 
+    def _on_audio_chunk(self, chunk: np.ndarray) -> None:
+        """Audio observer callback – receives each chunk from RecordingSession."""
+        if self.is_recording and not self.is_paused:
+            self._audio_queue.put(chunk)
+
     def _start_live_transcription(self):
         """Initialize and start the live transcription pipeline."""
         self.log_msg("Starting live transcription...")
@@ -169,7 +145,7 @@ class WSLiveApp(MicRecApp):
         # Clear previous state
         self._full_transcript = ""
         self._live_stop_event.clear()
-        
+
         # Drain the local queue
         while not self._audio_queue.empty():
             try:
@@ -185,6 +161,10 @@ class WSLiveApp(MicRecApp):
         except Exception:
             pass
 
+        # Register as audio observer on the current recording session
+        if self._session is not None:
+            self._session.add_audio_observer(self._on_audio_chunk)
+
         # Create a fresh transcriber
         self._live_transcriber = LiveTranscriber(language="de")
 
@@ -196,7 +176,7 @@ class WSLiveApp(MicRecApp):
         self._live_thread.start()
 
         # Start a timer to feed audio from the recorder's queue to our transcriber
-        self.set_interval(0.05, self._feed_audio_to_transcriber, name="audio_feed_timer")
+        self._audio_feed_timer = self.set_interval(0.05, self._feed_audio_to_transcriber)
 
         self.log_msg("Live transcription started")
 
@@ -205,11 +185,13 @@ class WSLiveApp(MicRecApp):
         self._live_stop_event.set()
 
         # Stop the audio feed timer
-        try:
-            for timer in self.query("Timer"):
-                pass  # Textual doesn't expose named timer removal easily
-        except Exception:
-            pass
+        if self._audio_feed_timer is not None:
+            self._audio_feed_timer.stop()
+            self._audio_feed_timer = None
+
+        # Unregister audio observer
+        if self._session is not None:
+            self._session.remove_audio_observer(self._on_audio_chunk)
 
         if self._live_thread and self._live_thread.is_alive():
             self._live_thread.join(timeout=3.0)
@@ -230,9 +212,7 @@ class WSLiveApp(MicRecApp):
         while not self._audio_queue.empty() and chunks_processed < 50:
             try:
                 chunk = self._audio_queue.get_nowait()
-                
-                # Note: We rely on the callback to only sending us data when not paused
-                # But we can check is_paused here too just in case
+
                 if not self.is_paused:
                     # Handle stereo -> mono if needed
                     if chunk.shape[1] > 1:
@@ -241,29 +221,32 @@ class WSLiveApp(MicRecApp):
                     # Chunk is already float32 [-1, 1] from sounddevice (dtype='float32')
                     audio_float = chunk.flatten().astype(np.float32)
 
-                    # Resample using torchaudio for high quality
-                    if MIC_SAMPLE_RATE != ASR_SAMPLE_RATE:
+                    # Resample if sample rates differ
+                    if _resampler is not None:
+                        import torch
+                        audio_resampled = _resampler(torch.from_numpy(audio_float)).numpy()
+                    elif MIC_SAMPLE_RATE != ASR_SAMPLE_RATE:
+                        # Fallback: use torchaudio functional if transforms unavailable
                         import torch
                         import torchaudio.functional as F
-                        
-                        # Convert to tensor
-                        audio_tensor = torch.from_numpy(audio_float)
-                        # Resample
-                        resampled_tensor = F.resample(audio_tensor, MIC_SAMPLE_RATE, ASR_SAMPLE_RATE)
-                        audio_resampled = resampled_tensor.numpy()
+                        audio_resampled = F.resample(
+                            torch.from_numpy(audio_float), MIC_SAMPLE_RATE, ASR_SAMPLE_RATE,
+                        ).numpy()
                     else:
                         audio_resampled = audio_float
 
                     self._live_transcriber.add_audio(audio_resampled)
-                
+
                 chunks_processed += 1
             except queue.Empty:
                 break
 
     def _live_transcription_worker(self):
-        """Background thread: periodically process audio and post results to UI."""
-        import asyncio
+        """Background thread: periodically process audio and post results to UI.
 
+        Uses the synchronous ``process_sync`` / ``flush_sync`` entry-points so
+        we don't need to create and destroy asyncio event loops each cycle.
+        """
         while not self._live_stop_event.is_set():
             # Wait for new audio or stop signal (up to 1s to stay responsive)
             if self._live_transcriber is not None:
@@ -281,12 +264,7 @@ class WSLiveApp(MicRecApp):
                 continue
 
             try:
-                # Run the async process() in a new event loop (we're in a thread)
-                loop = asyncio.new_event_loop()
-                try:
-                    result = loop.run_until_complete(self._live_transcriber.process())
-                finally:
-                    loop.close()
+                result = self._live_transcriber.process_sync()
 
                 if result is None:
                     continue
@@ -305,11 +283,7 @@ class WSLiveApp(MicRecApp):
         # Final flush
         if self._live_transcriber:
             try:
-                loop = asyncio.new_event_loop()
-                try:
-                    result = loop.run_until_complete(self._live_transcriber.flush())
-                finally:
-                    loop.close()
+                result = self._live_transcriber.flush_sync()
 
                 if result and (result.confirmed_delta or result.confirmed):
                     self.call_from_thread(

@@ -1,9 +1,9 @@
 import os
 import sys
 import time
-import datetime
 import threading
-import queue # For passing audio data from recording thread to main/saving logic
+import queue
+from typing import Callable
 
 import sounddevice as sd
 import soundfile as sf
@@ -12,107 +12,169 @@ import asyncio
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widgets import Header, Footer, Static, Label, Button
+from textual.widgets import Header, Footer, Static, Button
 from textual.reactive import reactive
-from textual.binding import Binding # Added for key bindings
+from textual.binding import Binding
 
 import secrets
 from core.paths import FILE_PATH
 
-OUTPUT_DIR = FILE_PATH # Default to FILE_PATH
+OUTPUT_DIR = FILE_PATH
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 44100))
 CHANNELS = int(os.getenv("CHANNELS", 1))
-DEVICE = None # Default system microphone
-BLOCK_SIZE = 1024 # Samples per block
+DEVICE = None  # Default system microphone
+BLOCK_SIZE = 1024  # Samples per block
 
-# Threading control
-stop_event = threading.Event()
-pause_event = threading.Event() # When set, recording is paused
-audio_queue = queue.Queue()
-recording_thread = None
-save_finished_event = threading.Event() # New event to signal save completion
+# Type alias for audio observer callbacks
+AudioObserver = Callable[[np.ndarray], None]
 
-# Global app instance reference for the recording thread
-_app_instance_ref = None
 
-def record_audio_thread(filename: str, app_ref: 'MicRecApp'):
+class RecordingSession:
+    """Encapsulates all state for a single recording session.
+
+    Replaces the previous module-level globals (stop_event, pause_event,
+    audio_queue, etc.) so that each session is self-contained and testable.
+    Supports an observer pattern: external code can register callbacks that
+    receive a copy of each audio chunk as it arrives from the microphone.
     """
-    Records audio and puts frames into audio_queue.
-    Saves to filename when stop_event is set.
-    """
-    global audio_queue, stop_event, pause_event
 
-    app_ref.status_message = "Initializing stream..."
-    try:
-        with sd.InputStream(samplerate=SAMPLE_RATE,
-                             device=DEVICE,
-                             channels=CHANNELS,
-                             blocksize=BLOCK_SIZE,
-                             dtype='float32', # SoundFile prefers float32 or int16
-                             callback=lambda indata, frames, time, status: audio_callback(indata, frames, time, status, app_ref)):
-            app_ref.status_message = "🔴 Recording..."
-            app_ref.is_recording = True
-            app_ref.is_paused = False
-            pause_event.clear() # Ensure not paused at start
+    def __init__(self, filename: str, sample_rate: int = SAMPLE_RATE,
+                 channels: int = CHANNELS, device=DEVICE,
+                 block_size: int = BLOCK_SIZE):
+        self.filename = filename
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.device = device
+        self.block_size = block_size
 
-            while not stop_event.is_set():
-                if pause_event.is_set():
+        self.stop_event = threading.Event()
+        self.pause_event = threading.Event()
+        self.save_finished_event = threading.Event()
+        self.audio_queue: queue.Queue = queue.Queue()
+        self.thread: threading.Thread | None = None
+
+        # Observer list – called with a copy of each audio chunk (np.ndarray)
+        self._audio_observers: list[AudioObserver] = []
+
+    def add_audio_observer(self, callback: AudioObserver) -> None:
+        """Register *callback* to receive each audio chunk during recording."""
+        self._audio_observers.append(callback)
+
+    def remove_audio_observer(self, callback: AudioObserver) -> None:
+        """Un-register a previously added observer."""
+        try:
+            self._audio_observers.remove(callback)
+        except ValueError:
+            pass
+
+    # ── Audio callback (called from sounddevice thread) ──────────────
+
+    def _audio_callback(self, indata: np.ndarray, frames: int,
+                        time_info, status_flags, app_ref: 'MicRecApp'):
+        if status_flags:
+            app_ref.call_from_thread(
+                app_ref.set_status_from_callback, f"Audio Status: {status_flags}",
+            )
+        if not self.pause_event.is_set() and app_ref.is_recording:
+            chunk = indata.copy()
+            self.audio_queue.put(chunk)
+            # Notify observers
+            for obs in self._audio_observers:
+                try:
+                    obs(chunk)
+                except Exception:
+                    pass  # Don't let a failing observer break recording
+
+    # ── Recording thread entry-point ─────────────────────────────────
+
+    def run(self, app_ref: 'MicRecApp'):
+        """Main recording loop – meant to be run in a daemon thread."""
+        app_ref.status_message = "Initializing stream..."
+        try:
+            with sd.InputStream(
+                samplerate=self.sample_rate,
+                device=self.device,
+                channels=self.channels,
+                blocksize=self.block_size,
+                dtype='float32',
+                callback=lambda indata, frames, t, status: self._audio_callback(
+                    indata, frames, t, status, app_ref,
+                ),
+            ):
+                app_ref.status_message = "\U0001f534 Recording..."
+                app_ref.is_recording = True
+                app_ref.is_paused = False
+                self.pause_event.clear()
+
+                while not self.stop_event.is_set():
                     time.sleep(0.1)
-                    continue
-                time.sleep(0.1) # Keep the thread alive and responsive
 
-    except Exception as e:
-        app_ref.status_message = f"Error: {e}"
-    finally:
-        app_ref.status_message = "Finishing up..."
-        frames_data = []
-        while not audio_queue.empty():
+        except Exception as e:
+            app_ref.status_message = f"Error: {e}"
+        finally:
+            app_ref.status_message = "Finishing up..."
+            frames_data = []
+            while not self.audio_queue.empty():
+                try:
+                    frames_data.append(self.audio_queue.get_nowait())
+                except queue.Empty:
+                    break
+
+            if frames_data:
+                audio_data = np.concatenate(frames_data, axis=0)
+                try:
+                    os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+                    sf.write(self.filename, audio_data, self.sample_rate)
+                    app_ref.status_message = f"\u2705 Saved: {os.path.basename(self.filename)}"
+                    self.save_finished_event.set()
+                except Exception as e:
+                    app_ref.status_message = f"Error saving: {e}"
+                    self.save_finished_event.set()
+            else:
+                app_ref.status_message = "No audio data to save."
+                self.save_finished_event.set()
+
+            app_ref.can_exit_now = True
+
+    def start(self, app_ref: 'MicRecApp'):
+        """Start the recording in a daemon thread."""
+        self.thread = threading.Thread(target=self.run, args=(app_ref,), daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        """Signal the recording thread to stop."""
+        self.stop_event.set()
+
+    def join(self, timeout: float = 2.0):
+        """Wait for the recording thread to finish."""
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=timeout)
+
+    def drain_queue(self):
+        """Discard remaining audio in the queue."""
+        while not self.audio_queue.empty():
             try:
-                frames_data.append(audio_queue.get_nowait())
+                self.audio_queue.get_nowait()
             except queue.Empty:
-                break # Should not happen if audio_queue.empty() is checked
+                break
 
-        if frames_data:
-            audio_data = np.concatenate(frames_data, axis=0)
-            try:
-                os.makedirs(os.path.dirname(filename), exist_ok=True)
-                sf.write(filename, audio_data, SAMPLE_RATE)
-                app_ref.status_message = f"✅ Saved: {os.path.basename(filename)}"
-                save_finished_event.set() # Signal that saving is done
-            except Exception as e:
-                app_ref.status_message = f"Error saving: {e}"
-                save_finished_event.set() # Also signal if error during save to unblock
-        else:
-            app_ref.status_message = "No audio data to save."
-            save_finished_event.set() # Signal if no data to unblock
-
-        # These states will be reset by start_recording_action or quit
-        # app_ref.is_recording = False
-        # app_ref.is_paused = False
-        app_ref.can_exit_now = True # Signal that the app can exit if quitting
-
-
-def audio_callback(indata: np.ndarray, frames: int, time_info, status_flags, app_ref: 'MicRecApp'):
-    """
-    This is called by sounddevice for each new block of audio data.
-    """
-    if status_flags:
-        # Use app_ref.call_from_thread for UI updates from thread
-        app_ref.call_from_thread(app_ref.set_status_from_callback, f"Audio Status: {status_flags}")
-    if not pause_event.is_set() and app_ref.is_recording:
-        audio_queue.put(indata.copy())
+    def reset_events(self):
+        """Clear all events for potential reuse (prefer creating a new session)."""
+        self.stop_event.clear()
+        self.pause_event.clear()
+        self.save_finished_event.clear()
 
 
 class MicRecApp(App):
-    TITLE = "🎤 MicRec - CLI Audio Recorder"
+    TITLE = "\U0001f3a4 MicRec - CLI Audio Recorder"
     CSS_PATH = "recorder.tcss"
-    INLINE_PADDING = 0 # For compact inline mode
+    INLINE_PADDING = 0
 
     BINDINGS = [
         Binding("q", "quit_recording", "Quit App", show=True, priority=True),
         Binding("space", "toggle_record_pause", "Record/Pause", show=True, priority=True),
-        Binding("d", "discard_recording", "Discard", show=True), # Added discard binding
-        Binding("ctrl+c", "request_quit_app", "Force Quit", show=False) # Handle Ctrl+C
+        Binding("d", "discard_recording", "Discard", show=True),
+        Binding("ctrl+c", "request_quit_app", "Force Quit", show=False),
     ]
 
     # Reactive variables for UI updates
@@ -121,20 +183,24 @@ class MicRecApp(App):
     is_recording = reactive(False)
     is_paused = reactive(False)
     record_button_label = reactive("Record")
-    record_button_variant = reactive("primary") # "primary" for Record, "warning" for Pause
+    record_button_variant = reactive("primary")
 
     def __init__(self):
         super().__init__()
-        global _app_instance_ref
-        _app_instance_ref = self # Set the global reference
+        self._session: RecordingSession | None = None
         self.start_time = 0.0
         self.output_filename = ""
-        self._timer_update_elapsed = None # Textual timer object
-        self.can_exit_now = False # To prevent premature exit before saving
-        self._current_paused_duration = 0.0 # Accumulates paused time
+        self._timer_update_elapsed = None
+        self.can_exit_now = False
+        self._current_paused_duration = 0.0
         self._last_pause_time = 0.0
-        self._exit_checker_timer = None # Timer for checking exit conditions
-        self._is_saving_and_restarting = False # Flag to manage save & restart flow
+        self._exit_checker_timer = None
+        self._is_saving_and_restarting = False
+
+    @property
+    def session(self) -> RecordingSession | None:
+        """The current recording session, if any."""
+        return self._session
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -145,22 +211,20 @@ class MicRecApp(App):
             with Horizontal(id="controls_container"):
                 yield Button(self.record_button_label, id="record_pause_button", variant=self.record_button_variant, classes="control_element")
                 yield Button("Save", id="save_button", variant="success", disabled=True, classes="control_element")
-                yield Button("Discard", id="discard_button", variant="error", disabled=True, classes="control_element") # Added discard button
+                yield Button("Discard", id="discard_button", variant="error", disabled=True, classes="control_element")
         yield Footer()
 
     def on_mount(self) -> None:
-        """Called when app starts."""
         if not os.path.exists(OUTPUT_DIR):
             try:
                 os.makedirs(OUTPUT_DIR)
             except OSError as e:
                 self.status_message = f"Error creating output dir {OUTPUT_DIR}: {e}"
-                # Disable buttons if output dir fails
                 self.query_one("#record_pause_button", Button).disabled = True
                 self.query_one("#save_button", Button).disabled = True
-                return # Stop further mount processing
+                return
 
-        self._update_record_pause_button_ui() # Set initial button states
+        self._update_record_pause_button_ui()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -169,51 +233,41 @@ class MicRecApp(App):
         elif button_id == "save_button":
             await self.action_save_and_new_recording()
         elif button_id == "discard_button":
-            self.action_discard_recording() # Discard doesn't need to be async
+            self.action_discard_recording()
 
     def _update_record_pause_button_ui(self):
-        """Updates the record/pause button label and variant based on state."""
         save_button = self.query_one("#save_button", Button)
         discard_button = self.query_one("#discard_button", Button)
 
-        if not self.is_recording: # Idle or just saved
-            self.record_button_label = "🔴 Record"
-            self.record_button_variant = "primary" # Will style red in CSS
+        if not self.is_recording:
+            self.record_button_label = "\U0001f534 Record"
+            self.record_button_variant = "primary"
             save_button.disabled = True
             discard_button.disabled = True
         elif self.is_paused:
-            self.record_button_label = "▶️ Resume"
-            self.record_button_variant = "success" # Will style red in CSS
-            save_button.disabled = False # Can still save when paused
-            discard_button.disabled = False
-        else: # Recording
-            self.record_button_label = "⏸️ Pause"
-            self.record_button_variant = "warning" # Will style red in CSS
+            self.record_button_label = "\u25b6\ufe0f Resume"
+            self.record_button_variant = "success"
             save_button.disabled = False
             discard_button.disabled = False
-        
-        # Update Save button label and variant (will style blue in CSS)
-        save_button.label = "💾 Save"
-        save_button.variant = "primary" # Will style blue in CSS
+        else:
+            self.record_button_label = "\u23f8\ufe0f Pause"
+            self.record_button_variant = "warning"
+            save_button.disabled = False
+            discard_button.disabled = False
 
-        # Update Discard button label and variant (will style red in CSS)
-        discard_button.label = "🗑️ Discard"
-        discard_button.variant = "error" # Will style red in CSS
-
+        save_button.label = "\U0001f4be Save"
+        save_button.variant = "primary"
+        discard_button.label = "\U0001f5d1\ufe0f Discard"
+        discard_button.variant = "error"
 
     async def action_toggle_record_pause(self) -> None:
-        """Handles Record/Pause/Resume button logic."""
         if not self.is_recording:
-            # Start new recording
             self.start_recording_action()
         else:
-            # Pause or Resume existing recording
-            self.action_pause_resume_recording() # This existing method handles pause/resume logic
+            self.action_pause_resume_recording()
         self._update_record_pause_button_ui()
 
-
     async def action_save_and_new_recording(self) -> None:
-        """Saves the current recording and stops."""
         if not self.is_recording or self._is_saving_and_restarting:
             return
 
@@ -222,92 +276,57 @@ class MicRecApp(App):
         self.query_one("#save_button", Button).disabled = True
         self.query_one("#record_pause_button", Button).disabled = True
 
+        if self._session:
+            self._session.save_finished_event.clear()
+            self._session.stop()
+            await self._wait_for_save_completion()
+            self._session.join(timeout=2.0)
 
-        global stop_event, recording_thread, save_finished_event, audio_queue
-        save_finished_event.clear()
-        stop_event.set() # Signal current recording thread to stop and save
-
-        # Wait for the recording thread to finish saving
-        await self.wait_for_save_completion()
-
-        # Ensure thread has finished
-        if recording_thread and recording_thread.is_alive():
-            recording_thread.join(timeout=2.0) # Give it a bit more time
-
-
-        # Reset state to initial (ready to record)
         self.is_recording = False
         self.is_paused = False
         self.start_time = 0.0
         self._current_paused_duration = 0.0
         self.elapsed_time_str = "00:00:00"
-        # status message is set by the record_audio_thread after saving
-        self.can_exit_now = True # Ready to exit if needed
+        self.can_exit_now = True
 
-        # Clear the queue for good measure, though thread should have consumed it
-        while not audio_queue.empty():
-            try:
-                audio_queue.get_nowait()
-            except queue.Empty:
-                break
+        self._session = None
 
-        # Clear events for next recording
-        stop_event.clear()
-        pause_event.clear()
-        save_finished_event.clear()
-
-        self._update_record_pause_button_ui() # Update button states
-        self.query_one("#record_pause_button", Button).disabled = False # Re-enable record button
+        self._update_record_pause_button_ui()
+        self.query_one("#record_pause_button", Button).disabled = False
         self._is_saving_and_restarting = False
 
-
-    async def wait_for_save_completion(self):
-        """Waits for save_finished_event to be set by the recording thread."""
-        # This is a simplified wait. In a real app, you might use a worker or async task.
-        while not save_finished_event.is_set():
-            await asyncio.sleep(0.1) # Use asyncio.sleep for Textual async methods
+    async def _wait_for_save_completion(self):
+        if self._session is None:
+            return
+        while not self._session.save_finished_event.is_set():
+            await asyncio.sleep(0.1)
         self.log("Save finished event received.")
 
-
     def start_recording_action(self):
-        global recording_thread, stop_event, pause_event, audio_queue, save_finished_event
-
-        if self.is_recording and not self._is_saving_and_restarting: # Prevent accidental restart if already recording
+        if self.is_recording and not self._is_saving_and_restarting:
             return
 
         self.log("Starting recording action...")
-        stop_event.clear()
-        pause_event.clear()
-        save_finished_event.clear() # Clear before new recording starts
 
-        # Clear the queue for the new recording
-        while not audio_queue.empty():
-            try:
-                audio_queue.get_nowait()
-            except queue.Empty:
-                break
-
-        # Generate a random hex filename (server-compatible)
-        # 20 chars hex = 10 bytes seems reasonable, server uses secrets.token_hex(10)
         name_new = f"{secrets.token_hex(10)}.wav"
         self.output_filename = os.path.join(OUTPUT_DIR, name_new)
+
+        # Create a fresh session
+        self._session = RecordingSession(filename=self.output_filename)
 
         self.is_recording = True
         self.is_paused = False
         self.start_time = time.monotonic()
         self._current_paused_duration = 0.0
-        self.can_exit_now = False # Reset for new recording
-        self.update_elapsed_time() # Start/reset the timer
-        self.status_message = "🔴 Recording..." # Initial status for new recording
-        self._update_record_pause_button_ui() # Ensure buttons are updated
+        self.can_exit_now = False
+        self.update_elapsed_time()
+        self.status_message = "\U0001f534 Recording..."
+        self._update_record_pause_button_ui()
 
-        recording_thread = threading.Thread(target=record_audio_thread, args=(self.output_filename, self))
-        recording_thread.daemon = True
-        recording_thread.start()
-        self._update_record_pause_button_ui() # Update button states
+        self._session.start(self)
+        self._update_record_pause_button_ui()
 
     def update_elapsed_time(self) -> None:
-        """Updates the elapsed time display."""
         if self.is_recording and not self.is_paused:
             current_elapsed = time.monotonic() - self.start_time - self._current_paused_duration
             duration = int(current_elapsed)
@@ -317,154 +336,114 @@ class MicRecApp(App):
 
         if self.is_recording:
             if self._timer_update_elapsed:
-                self._timer_update_elapsed.reset() # Reset if already exists
+                self._timer_update_elapsed.reset()
             else:
                 self._timer_update_elapsed = self.set_interval(1.0, self.update_elapsed_time)
         elif self._timer_update_elapsed:
-             self._timer_update_elapsed.stop()
-             self._timer_update_elapsed = None
-
+            self._timer_update_elapsed.stop()
+            self._timer_update_elapsed = None
 
     def action_quit_recording(self) -> None:
-        """Stop recording (if any) and prepare to exit the app."""
         if self._is_saving_and_restarting:
             self.status_message = "Saving in progress, please wait to quit."
             return
 
-        if self.is_recording:
+        if self.is_recording and self._session:
             self.status_message = "Stopping and saving before exiting..."
-            global stop_event, save_finished_event
-            save_finished_event.clear() # Ensure it's clear if we are quitting
-            stop_event.set() # Signal recording thread to stop and save
+            self._session.save_finished_event.clear()
+            self._session.stop()
 
             if self._timer_update_elapsed:
                 self._timer_update_elapsed.stop()
                 self._timer_update_elapsed = None
-            # The record_audio_thread will set can_exit_now = True
-            # and save_finished_event.set()
-            # We will use a periodic check to exit the app
+
             if self._exit_checker_timer:
                 try:
                     self._exit_checker_timer.stop()
-                except Exception: # Timer might already be stopped or invalid
+                except Exception:
                     pass
                 self._exit_checker_timer = None
-            # Start checking for exit conditions (save completion)
             self._exit_checker_timer = self.set_interval(0.2, self._check_exit_conditions_after_save)
         else:
-            # If not recording, quit immediately
             self.exit()
-
 
     async def _check_exit_conditions_after_save(self):
-        """Periodically check if saving is done (via save_finished_event) then exit."""
-        if save_finished_event.is_set() or self.can_exit_now: # can_exit_now is a fallback
+        session_done = self._session is None or self._session.save_finished_event.is_set()
+        if session_done or self.can_exit_now:
             if self._exit_checker_timer:
                 try:
                     self._exit_checker_timer.stop()
-                except Exception: pass
-                self._exit_checker_timer = None
-            self.log("Save finished, exiting application.")
-            self.exit() # Textual's built-in quit
-
-    async def _check_exit_conditions(self): # Original exit checker, might be redundant now
-        """ Periodically check if we can exit. """
-        if self.can_exit_now:
-            if self._exit_checker_timer:
-                try:
-                    self._exit_checker_timer.stop()
-                except Exception: # Timer might already be stopped or invalid
+                except Exception:
                     pass
                 self._exit_checker_timer = None
-            self.exit() # Textual's built-in quit
+            self.log("Save finished, exiting application.")
+            self.exit()
 
     def action_request_quit_app(self) -> None:
-        """Handles Ctrl+C: stops recording if active, then exits."""
-        if self.is_recording and not stop_event.is_set():
+        session_stop_set = self._session and self._session.stop_event.is_set()
+        if self.is_recording and not session_stop_set:
             self.status_message = "Ctrl+C pressed. Stopping and saving..."
-            self.action_quit_recording() # This will initiate save and then exit check
-        elif not self.is_recording and self.can_exit_now: # Already stopped, ready to exit
+            self.action_quit_recording()
+        elif not self.is_recording and self.can_exit_now:
             self.exit()
-        elif not self.is_recording and not self.can_exit_now and stop_event.is_set(): # Stopping in progress
+        elif not self.is_recording and not self.can_exit_now and session_stop_set:
             self.status_message = "Saving in progress. Please wait."
-        else: # Not recording, not stopping, just exit
-             self.exit()
-
+        else:
+            self.exit()
 
     def action_discard_recording(self) -> None:
-        """Discards the current recording."""
         if not self.is_recording:
             return
 
         self.log("Discarding recording...")
-        global stop_event, recording_thread, audio_queue, save_finished_event
-        
-        # Signal the recording thread to stop, but without saving
-        stop_event.set()
-        # Clear the queue to ensure no data is saved
-        while not audio_queue.empty():
-            try:
-                audio_queue.get_nowait()
-            except queue.Empty:
-                break
-        
-        # Wait briefly for the thread to acknowledge stop_event and exit
-        if recording_thread and recording_thread.is_alive():
-             recording_thread.join(timeout=1.0)
 
-        # Reset state
+        if self._session:
+            self._session.stop()
+            self._session.drain_queue()
+            self._session.join(timeout=1.0)
+
         self.is_recording = False
         self.is_paused = False
         self.start_time = 0.0
         self._current_paused_duration = 0.0
         self.elapsed_time_str = "00:00:00"
         self.status_message = "Recording discarded."
-        self.can_exit_now = True # Ready to exit if needed
-        
+        self.can_exit_now = True
+
         if self._timer_update_elapsed:
-             self._timer_update_elapsed.stop()
-             self._timer_update_elapsed = None
+            self._timer_update_elapsed.stop()
+            self._timer_update_elapsed = None
 
-        # Clear events for next recording
-        stop_event.clear()
-        pause_event.clear()
-        save_finished_event.clear()
-
-        self._update_record_pause_button_ui() # Update button states
-
-
-    def action_pause_resume_recording(self) -> None:
-        """Toggle pause/resume state. Called by action_toggle_record_pause."""
-        if not self.is_recording:
-            return
-
-        if self.is_paused: # Current state is paused, so RESUME
-            pause_event.clear()
-            self.is_paused = False
-            self._current_paused_duration += (time.monotonic() - self._last_pause_time)
-            self.status_message = "🔴 Recording..."
-            self.update_elapsed_time() # Resume timer updates
-        else: # Current state is recording, so PAUSE
-            pause_event.set()
-            self.is_paused = True
-            self._last_pause_time = time.monotonic()
-            self.status_message = "⏸️ Paused"
-            # Timer update logic in update_elapsed_time already handles not advancing time if paused
+        self._session = None
         self._update_record_pause_button_ui()
 
+    def action_pause_resume_recording(self) -> None:
+        if not self.is_recording or not self._session:
+            return
 
-    # Watch methods for reactive variables to update UI
+        if self.is_paused:
+            self._session.pause_event.clear()
+            self.is_paused = False
+            self._current_paused_duration += (time.monotonic() - self._last_pause_time)
+            self.status_message = "\U0001f534 Recording..."
+            self.update_elapsed_time()
+        else:
+            self._session.pause_event.set()
+            self.is_paused = True
+            self._last_pause_time = time.monotonic()
+            self.status_message = "\u23f8\ufe0f Paused"
+        self._update_record_pause_button_ui()
+
+    # Watch methods for reactive variables
     def watch_status_message(self, new_message: str) -> None:
         try:
-            status_widget = self.query_one("#status_display", Static)
-            status_widget.update(new_message)
+            self.query_one("#status_display", Static).update(new_message)
         except Exception:
-            pass # App might be shutting down
+            pass
 
     def watch_elapsed_time_str(self, new_time_str: str) -> None:
         try:
-            elapsed_widget = self.query_one("#elapsed_display", Static)
-            elapsed_widget.update(new_time_str)
+            self.query_one("#elapsed_display", Static).update(new_time_str)
         except Exception:
             pass
 
@@ -472,23 +451,20 @@ class MicRecApp(App):
         try:
             self.query_one("#record_pause_button", Button).label = new_label
         except Exception:
-            pass # App might be shutting down
+            pass
 
     def watch_record_button_variant(self, new_variant: str) -> None:
         try:
             self.query_one("#record_pause_button", Button).variant = new_variant
         except Exception:
-            pass # App might be shutting down
-
+            pass
 
     def set_status_from_callback(self, message: str):
-        """Helper to update status message from audio callback thread."""
         self.status_message = message
 
 
 def run_mic_rec_app():
     """Initializes and runs the MicRecApp application."""
-    # Pre-flight checks
     if not os.path.exists(OUTPUT_DIR):
         try:
             os.makedirs(OUTPUT_DIR)
@@ -499,7 +475,6 @@ def run_mic_rec_app():
             sys.exit(1)
 
     try:
-        # Check if default microphone is available
         sd.check_input_settings(device=DEVICE, samplerate=SAMPLE_RATE, channels=CHANNELS)
     except Exception as e:
         print(f"Error initializing audio input: {e}", file=sys.stderr)
@@ -512,20 +487,9 @@ def run_mic_rec_app():
         sys.exit(1)
 
     app = MicRecApp()
-    # Import asyncio here as it's needed by app.run and potentially by logic within MicRecApp
-    # that might be triggered by app.run, especially if run_sync is used internally by Textual for inline mode.
     app.run(inline=True)
-
-    # Clean up, though daemon thread should allow exit
-    if recording_thread and recording_thread.is_alive():
-        print("Main exit: Signaling recording thread to stop...", file=sys.stderr)
-        stop_event.set()
-        recording_thread.join(timeout=2) # Wait a bit for thread to finish
-        if recording_thread.is_alive():
-            print("Main exit: Recording thread still alive after timeout.", file=sys.stderr)
-        else:
-            print("Main exit: Recording thread finished.", file=sys.stderr)
     print("MicRec exited.", file=sys.stderr)
+
 
 if __name__ == "__main__":
     run_mic_rec_app()
