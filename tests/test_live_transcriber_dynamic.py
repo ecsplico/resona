@@ -167,6 +167,115 @@ class TestDynamicRetention:
         # All 5 words retained, so _emitted_word_count = 5.
         assert lt._emitted_word_count == 5
 
+    def test_flush_deduplicates_retained_audio(self, mock_transcriber_factory):
+        """flush() must not re-emit words from the retention window."""
+        from ws_server.processing.live_transcriber import LiveTranscriber
+
+        mock_t = MagicMock()
+        mock_transcriber_factory.return_value = mock_t
+
+        lt = LiveTranscriber(language="en")
+
+        # Simulate state after several process() cycles:
+        # "Hello world this is" was confirmed, buffer still has retained audio
+        lt._confirmed_text = "Hello world this is"
+        lt._emitted_word_count = 4  # 4 words already emitted
+        lt.add_audio(make_audio(5.0))  # retained audio in buffer
+
+        # flush() transcribes the retained buffer and gets back the
+        # retained words plus maybe a new word "great"
+        words = [
+            SimpleNamespace(word="Hello", start=0.0, end=0.5),
+            SimpleNamespace(word="world", start=0.5, end=1.0),
+            SimpleNamespace(word="this", start=1.0, end=1.5),
+            SimpleNamespace(word="is", start=1.5, end=2.0),
+            SimpleNamespace(word="great", start=2.0, end=2.5),
+        ]
+        mock_t.transcribe.return_value = {
+            "text": "Hello world this is great",
+            "language": "en",
+            "segments": [SimpleNamespace(words=words)],
+        }
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(lt.flush())
+
+        # Only "great" should be the new delta
+        assert result.confirmed_delta == "great"
+        # Full confirmed should end with "great", no duplication
+        assert result.confirmed == "Hello world this is great"
+        assert result.confirmed.lower().count("hello") == 1
+
+    def test_flush_sync_deduplicates_retained_audio(self, mock_transcriber_factory):
+        """flush_sync() must not re-emit words from the retention window."""
+        from ws_server.processing.live_transcriber import LiveTranscriber
+
+        mock_t = MagicMock()
+        mock_transcriber_factory.return_value = mock_t
+
+        lt = LiveTranscriber(language="en")
+        lt._confirmed_text = "Hello world this is"
+        lt._emitted_word_count = 4
+        lt.add_audio(make_audio(5.0))
+
+        words = [
+            SimpleNamespace(word="Hello", start=0.0, end=0.5),
+            SimpleNamespace(word="world", start=0.5, end=1.0),
+            SimpleNamespace(word="this", start=1.0, end=1.5),
+            SimpleNamespace(word="is", start=1.5, end=2.0),
+            SimpleNamespace(word="great", start=2.0, end=2.5),
+        ]
+        mock_t.transcribe.return_value = {
+            "text": "Hello world this is great",
+            "language": "en",
+            "segments": [SimpleNamespace(words=words)],
+        }
+
+        result = lt.flush_sync()
+
+        assert result.confirmed_delta == "great"
+        assert result.confirmed == "Hello world this is great"
+        assert result.confirmed.lower().count("hello") == 1
+
+    def test_process_sync_matches_async(self, mock_transcriber_factory):
+        """process_sync() should produce the same result as process()."""
+        from ws_server.processing.live_transcriber import LiveTranscriber
+
+        mock_t = MagicMock()
+        mock_transcriber_factory.return_value = mock_t
+
+        words = [
+            SimpleNamespace(word="Hello", start=0.0, end=0.5),
+            SimpleNamespace(word="world", start=0.5, end=1.0),
+        ]
+        mock_result = {
+            "text": "Hello world",
+            "language": "en",
+            "segments": [SimpleNamespace(words=words)],
+        }
+        mock_t.transcribe.return_value = mock_result
+
+        # Async version
+        lt_async = LiveTranscriber(language="en")
+        lt_async.add_audio(make_audio(3.5))
+        lt_async._prev_text = "Hello"
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result_async = loop.run_until_complete(lt_async.process())
+
+        # Sync version
+        lt_sync = LiveTranscriber(language="en")
+        lt_sync.add_audio(make_audio(3.5))
+        lt_sync._prev_text = "Hello"
+
+        result_sync = lt_sync.process_sync()
+
+        assert result_async.confirmed == result_sync.confirmed
+        assert result_async.partial == result_sync.partial
+        assert result_async.confirmed_delta == result_sync.confirmed_delta
+
     def test_deduplication_punctuation_ignored(self, mock_transcriber_factory):
         from ws_server.processing.live_transcriber import LiveTranscriber
         
