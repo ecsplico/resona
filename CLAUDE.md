@@ -11,9 +11,7 @@ whisper-server/
 │   ├── ws-engine/          ← stateless transcription, GPU, :7001
 │   ├── ws-api/             ← job queue + DB, CPU, :7000
 │   ├── ws-client/          ← httpx client library
-│   ├── ws-cli/             ← typer CLI (watch, batch, replacements, prompts)
-│   ├── ws-recorder/        ← Textual TUI audio recorder
-│   ├── ws-live/            ← live transcription TUI
+│   ├── ws-cli/             ← typer CLI (watch, batch, replacements, prompts, rec TUI, live TUI)
 │   └── ws-ui/              ← record-and-transcribe TUI
 └── src/                    ← LEGACY — to be removed in Phase 10
 ```
@@ -64,6 +62,10 @@ When adding functionality to ws-engine, ask: "can this be done with only what's 
 - `batch.py` — `batch` subcommand: submit all files + wait for results
 - `replacements.py` — CRUD via `WhisperClient`
 - `prompts.py` — CRUD via `WhisperClient`
+- `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand entry point
+- `recorder.tcss` — CSS for the recorder TUI
+- `live_ui.py` — `WSLiveApp`: live transcription TUI extending `MicRecApp`
+- `live.tcss` — CSS for the live TUI
 
 ## Import conventions
 
@@ -73,7 +75,7 @@ from .db.models import Job
 from .engine_client import EngineClient
 ```
 
-Cross-package imports only happen in ws-live (imports `ws_engine.live_transcriber`) and ws-ui (imports `ws_client.client` and `recorder.micrec`). All other cross-package communication is over HTTP.
+Cross-package imports: ws-cli imports `ws_engine.live_transcriber` (for `live` command); ws-ui imports `ws_cli.micrec.MicRecApp`. All other cross-package communication is over HTTP.
 
 Do not import from `src/` — that is legacy code.
 
@@ -116,8 +118,8 @@ uv run ws-engine      # :7001, needs GPU
 uv run ws-api         # :7000, needs engine running
 
 # TUI tools
-uv run ws-rec         # recorder
-uv run ws-live        # live transcription
+uv run ws-cli rec     # recorder TUI
+uv run ws-cli live    # live transcription TUI
 uv run ws-ui          # record + transcribe
 ```
 

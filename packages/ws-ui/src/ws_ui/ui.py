@@ -11,7 +11,7 @@ from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
 from textual.containers import Container, Horizontal
 
-from recorder.micrec import MicRecApp
+from ws_cli.micrec import MicRecApp
 from ws_client.client import WhisperClient
 
 MD_PATH = os.getenv("MD_PATH", os.path.join(os.getcwd(), "data", "md"))

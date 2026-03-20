@@ -454,7 +454,7 @@ class MicRecApp(App):
     def set_status_from_callback(self, message: str):
         self.status_message = message
 
-    # ── Shared utilities for subclasses (ws_live, ws_ui) ─────────────
+    # ── Shared utilities for subclasses ──────────────────────────────
 
     def log_msg(self, msg: str) -> None:
         """Write a timestamped message to the #log_display RichLog widget."""
