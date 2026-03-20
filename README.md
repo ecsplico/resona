@@ -68,8 +68,8 @@ Audio transcription system built on OpenAI Whisper / faster-whisper, designed fo
 Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), ffmpeg, CUDA GPU (for ws-engine).
 
 ```bash
-# Install all workspace packages
-uv sync
+# Install all workspace packages (--all-packages is required)
+uv sync --all-packages
 
 # Start the engine (GPU required, separate terminal)
 uv run ws-engine
@@ -244,3 +244,7 @@ uv add --package ws-api httpx
 uv run pytest                          # all packages
 uv run pytest packages/ws-api/tests/   # single package
 ```
+
+### Note on `uv sync`
+
+`uv sync` alone only installs the workspace root's dev dependencies (pytest, httpx). Always use `uv sync --all-packages` to install all workspace members and their entry points.

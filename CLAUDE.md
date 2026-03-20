@@ -108,8 +108,8 @@ Client → GET /job/{id} → sees COMPLETED job with transcript
 ## Running in development
 
 ```bash
-# Install all packages
-uv sync
+# Install all packages (--all-packages is required — plain uv sync only installs root dev deps)
+uv sync --all-packages
 
 # Run individual services
 uv run ws-engine      # :7001, needs GPU
