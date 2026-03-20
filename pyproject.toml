@@ -1,52 +1,10 @@
-[build-system]
-requires = ["hatchling"]  # Or ["setuptools>=61.0", "wheel"]
-build-backend = "hatchling.build" # Or "setuptools.build_meta"
-
 [project]
-name = "whisper_server"
+name = "whisper-server-workspace"
 version = "0.1.0"
-description = "A Server for transcribing german audio files"
-readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "aiofiles>=24.1.0",
-    "fastapi>=0.115.7",
-    "faster-whisper>=1.1.1",
-    "ffmpeg-python>=0.2.0",
-    "numpy>=2.1.3",
-    "openai-whisper>=20240930",
-    "pypandoc>=1.15",
-    "python-decouple>=3.8",
-    "python-dotenv>=1.1.0",
-    "python-multipart>=0.0.20",
-    "sounddevice>=0.5.1",
-    "soundfile>=0.13.1",
-    "sqlmodel>=0.0.22",
-    "textual>=3.2.0",
-    "torch>=2.11.0.dev",
-    "torchaudio>=2.11.0.dev",
-    "triton",
-    "transformers>=4.48.1",
-    "typer>=0.15.3",
-    "uvicorn>=0.34.0",
-    "websockets>=16.0",
-]
 
-[project.scripts]
-ws-server = "ws_server.run:main"
-ws-cli = "ws_cli.main:app"
-ws-rec = "recorder.micrec:run_mic_rec_app"
-ws-ui = "ws_ui.main:main"
-ws-live = "ws_live.main:main"
-
-
-[tool.hatch.build.targets.wheel]
-# This explicitly tells Hatch to look inside the 'src/' directory
-# and include the specified package directories ('my_api', 'my_cli')
-# in the built wheel.
-# --- IMPORTANT: Replace 'my_api' and 'my_cli' below ---
-# --- with the actual names of your package folders inside src/ ---
-packages = ["src/ws_server", "src/ws_cli", "src/ws_ui", "src/ws_live", "src/recorder", "src/core"]
+[tool.uv.workspace]
+members = ["packages/*"]
 
 [[tool.uv.index]]
 name = "pytorch-nightly"

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ws-live"
+version = "0.1.0"
+description = "Live transcription TUI"
+requires-python = ">=3.12"
+dependencies = [
+    "torchaudio>=2.11.0.dev",
+    "sounddevice>=0.5.1",
+    "soundfile>=0.13.1",
+    "textual>=3.2.0",
+    "python-dotenv>=1.1.0",
+    "ws-recorder",
+    "ws-engine",
+]
+
+[project.scripts]
+ws-live = "ws_live.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ws_live"]
+
+[tool.uv.sources]
+ws-recorder = { workspace = true }
+ws-engine = { workspace = true }

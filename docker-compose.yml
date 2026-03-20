@@ -1,32 +1,42 @@
 services:
-  whisper-server:
+  engine:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: packages/ws-engine/Dockerfile
+    ports:
+      - "7001:7001"
+    environment:
+      ASR_MODE: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: large-v3
+      LOGLEVEL: info
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/ws-api/Dockerfile
     ports:
       - "7000:7000"
     volumes:
       - ./data:/app/data
+    environment:
+      ENGINE_URL: http://engine:7001
+      DATA_PATH: /app/data
+      LOGLEVEL: info
     env_file:
       - .env
+    depends_on:
+      engine:
+        condition: service_healthy
     restart: unless-stopped
-
-  # GPU variant — uncomment and comment out the above service to use
-  # whisper-server-gpu:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.gpu
-  #   ports:
-  #     - "7000:7000"
-  #   volumes:
-  #     - ./data:/app/data
-  #   env_file:
-  #     - .env
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
-  #   restart: unless-stopped
