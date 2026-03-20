@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ws-ui"
+version = "0.1.0"
+description = "GUI audio recorder with async transcription"
+requires-python = ">=3.12"
+dependencies = [
+    "textual>=3.2.0",
+    "sounddevice>=0.5.1",
+    "python-dotenv>=1.1.0",
+    "ws-client",
+    "ws-recorder",
+]
+
+[project.scripts]
+ws-ui = "ws_ui.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ws_ui"]
+
+[tool.uv.sources]
+ws-client = { workspace = true }
+ws-recorder = { workspace = true }

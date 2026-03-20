@@ -2,6 +2,18 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "whisper-server-workspace",
+    "ws-api",
+    "ws-cli",
+    "ws-client",
+    "ws-engine",
+    "ws-live",
+    "ws-recorder",
+    "ws-ui",
+]
+
 [[package]]
 name = "aiofiles"
 version = "24.1.0"
@@ -962,15 +974,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pypandoc"
-version = "1.15"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e1/88/26e650d053df5f3874aa3c05901a14166ce3271f58bfe114fd776987efbd/pypandoc-1.15.tar.gz", hash = "sha256:ea25beebe712ae41d63f7410c08741a3cab0e420f6703f95bc9b3a749192ce13", size = 32940, upload-time = "2025-01-08T17:39:58.705Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/06/0763e0ccc81754d3eadb21b2cb86cf21bdedc9b52698c2ad6785db7f0a4e/pypandoc-1.15-py3-none-any.whl", hash = "sha256:4ededcc76c8770f27aaca6dff47724578428eca84212a31479403a9731fc2b16", size = 21321, upload-time = "2025-01-08T17:39:09.928Z" },
-]
-
-[[package]]
 name = "pyreadline3"
 version = "3.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1358,21 +1361,21 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp312-cp312-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp312-cp312-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313t-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313t-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313t-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314t-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314t-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314t-win_amd64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp312-cp312-manylinux_2_28_aarch64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp312-cp312-win_amd64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313-manylinux_2_28_aarch64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313-win_amd64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313t-manylinux_2_28_aarch64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313t-manylinux_2_28_x86_64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp313-cp313t-win_amd64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314-manylinux_2_28_aarch64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314-manylinux_2_28_x86_64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314-win_amd64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314t-manylinux_2_28_aarch64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314t-manylinux_2_28_x86_64.whl" },
+    { url = "https://download-r2.pytorch.org/whl/nightly/cu128/torch-2.11.0.dev20260124%2Bcu128-cp314-cp314t-win_amd64.whl" },
 ]
 
 [[package]]
@@ -1560,32 +1563,9 @@ wheels = [
 ]
 
 [[package]]
-name = "whisper-server"
+name = "whisper-server-workspace"
 version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiofiles" },
-    { name = "fastapi" },
-    { name = "faster-whisper" },
-    { name = "ffmpeg-python" },
-    { name = "numpy" },
-    { name = "openai-whisper" },
-    { name = "pypandoc" },
-    { name = "python-decouple" },
-    { name = "python-dotenv" },
-    { name = "python-multipart" },
-    { name = "sounddevice" },
-    { name = "soundfile" },
-    { name = "sqlmodel" },
-    { name = "textual" },
-    { name = "torch" },
-    { name = "torchaudio" },
-    { name = "transformers" },
-    { name = "triton" },
-    { name = "typer" },
-    { name = "uvicorn" },
-    { name = "websockets" },
-]
+source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
@@ -1594,32 +1574,164 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "aiofiles", specifier = ">=24.1.0" },
-    { name = "fastapi", specifier = ">=0.115.7" },
-    { name = "faster-whisper", specifier = ">=1.1.1" },
-    { name = "ffmpeg-python", specifier = ">=0.2.0" },
-    { name = "numpy", specifier = ">=2.1.3" },
-    { name = "openai-whisper", specifier = ">=20240930" },
-    { name = "pypandoc", specifier = ">=1.15" },
-    { name = "python-decouple", specifier = ">=3.8" },
-    { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "sounddevice", specifier = ">=0.5.1" },
-    { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "sqlmodel", specifier = ">=0.0.22" },
-    { name = "textual", specifier = ">=3.2.0" },
-    { name = "torch", specifier = ">=2.11.0.dev0", index = "https://download.pytorch.org/whl/nightly/cu128" },
-    { name = "torchaudio", specifier = ">=2.11.0.dev0", index = "https://download.pytorch.org/whl/nightly/cu128" },
-    { name = "transformers", specifier = ">=4.48.1" },
-    { name = "triton", index = "https://download.pytorch.org/whl/nightly/cu128" },
-    { name = "typer", specifier = ">=0.15.3" },
-    { name = "uvicorn", specifier = ">=0.34.0" },
-    { name = "websockets", specifier = ">=16.0" },
-]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=9.0.2" },
+]
+
+[[package]]
+name = "ws-api"
+version = "0.1.0"
+source = { editable = "packages/ws-api" }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "python-decouple" },
+    { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "sqlmodel" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiofiles", specifier = ">=24.1.0" },
+    { name = "fastapi", specifier = ">=0.115.7" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "python-decouple", specifier = ">=3.8" },
+    { name = "python-dotenv", specifier = ">=1.1.0" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "sqlmodel", specifier = ">=0.0.22" },
+    { name = "uvicorn", specifier = ">=0.34.0" },
+]
+
+[[package]]
+name = "ws-cli"
+version = "0.1.0"
+source = { editable = "packages/ws-cli" }
+dependencies = [
+    { name = "typer" },
+    { name = "ws-client" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "typer", specifier = ">=0.15.3" },
+    { name = "ws-client", editable = "packages/ws-client" },
+]
+
+[[package]]
+name = "ws-client"
+version = "0.1.0"
+source = { editable = "packages/ws-client" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
+
+[[package]]
+name = "ws-engine"
+version = "0.1.0"
+source = { editable = "packages/ws-engine" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "faster-whisper" },
+    { name = "ffmpeg-python" },
+    { name = "numpy" },
+    { name = "openai-whisper" },
+    { name = "python-decouple" },
+    { name = "python-multipart" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "transformers" },
+    { name = "triton" },
+    { name = "uvicorn" },
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115.7" },
+    { name = "faster-whisper", specifier = ">=1.1.1" },
+    { name = "ffmpeg-python", specifier = ">=0.2.0" },
+    { name = "numpy", specifier = ">=2.1.3" },
+    { name = "openai-whisper", specifier = ">=20240930" },
+    { name = "python-decouple", specifier = ">=3.8" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "torch", specifier = ">=2.11.0.dev0", index = "https://download.pytorch.org/whl/nightly/cu128" },
+    { name = "torchaudio", specifier = ">=2.11.0.dev0", index = "https://download.pytorch.org/whl/nightly/cu128" },
+    { name = "transformers", specifier = ">=4.48.1" },
+    { name = "triton", index = "https://download.pytorch.org/whl/nightly/cu128" },
+    { name = "uvicorn", specifier = ">=0.34.0" },
+    { name = "websockets", specifier = ">=16.0" },
+]
+
+[[package]]
+name = "ws-live"
+version = "0.1.0"
+source = { editable = "packages/ws-live" }
+dependencies = [
+    { name = "python-dotenv" },
+    { name = "sounddevice" },
+    { name = "soundfile" },
+    { name = "textual" },
+    { name = "torchaudio" },
+    { name = "ws-engine" },
+    { name = "ws-recorder" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "python-dotenv", specifier = ">=1.1.0" },
+    { name = "sounddevice", specifier = ">=0.5.1" },
+    { name = "soundfile", specifier = ">=0.13.1" },
+    { name = "textual", specifier = ">=3.2.0" },
+    { name = "torchaudio", specifier = ">=2.11.0.dev0", index = "https://download.pytorch.org/whl/nightly/cu128" },
+    { name = "ws-engine", editable = "packages/ws-engine" },
+    { name = "ws-recorder", editable = "packages/ws-recorder" },
+]
+
+[[package]]
+name = "ws-recorder"
+version = "0.1.0"
+source = { editable = "packages/ws-recorder" }
+dependencies = [
+    { name = "numpy" },
+    { name = "sounddevice" },
+    { name = "soundfile" },
+    { name = "textual" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=2.1.3" },
+    { name = "sounddevice", specifier = ">=0.5.1" },
+    { name = "soundfile", specifier = ">=0.13.1" },
+    { name = "textual", specifier = ">=3.2.0" },
+]
+
+[[package]]
+name = "ws-ui"
+version = "0.1.0"
+source = { editable = "packages/ws-ui" }
+dependencies = [
+    { name = "python-dotenv" },
+    { name = "sounddevice" },
+    { name = "textual" },
+    { name = "ws-client" },
+    { name = "ws-recorder" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "python-dotenv", specifier = ">=1.1.0" },
+    { name = "sounddevice", specifier = ">=0.5.1" },
+    { name = "textual", specifier = ">=3.2.0" },
+    { name = "ws-client", editable = "packages/ws-client" },
+    { name = "ws-recorder", editable = "packages/ws-recorder" },
 ]

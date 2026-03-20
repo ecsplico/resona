@@ -1,298 +1,246 @@
-# Whisper Server - ASR Service
+# whisper-server
 
-A secure, production-ready API for Automatic Speech Recognition (ASR) using OpenAI's Whisper models. Features API key authentication, job status tracking, and both synchronous and asynchronous processing.
+Audio transcription system built on OpenAI Whisper / faster-whisper, designed for German medical dictation. Structured as a uv workspace monorepo with independently deployable services.
+
+## Architecture
+
+```
+                    ┌──────────────────────┐
+                    │     ws-cli           │
+                    │  batch / watch /     │
+                    │  replacements        │
+                    └─────────┬────────────┘
+                              │ uses
+                    ┌─────────▼────────────┐
+                    │     ws-client        │
+                    │  WhisperClient       │
+                    └──┬───────────────┬───┘
+                       │               │
+            HTTP/REST  │               │  HTTP/REST
+                       │               │
+          ┌────────────▼──┐   ┌───────▼──────────────┐
+          │   ws-api      │   │   ws-engine           │
+          │   :7000       │──▶│   :7001               │
+          │               │   │                       │
+          │ POST /jobs    │   │ POST /transcribe      │
+          │ GET  /jobs/   │   │ WS   /ws/transcribe   │
+          │ GET  /jobs/id │   │ WS   /ws/live         │
+          │ CRUD replace  │   │                       │
+          │ CRUD prompts  │   │ Stateless, no DB      │
+          │               │   │ GPU, heavy deps       │
+          │ SQLite DB     │   └───────────────────────┘
+          │ File storage  │
+          └───────────────┘
+```
+
+**ws-engine** is stateless — no database, no side effects. It owns all GPU-heavy inference. **ws-api** owns the job queue, SQLite database, and calls the engine over HTTP. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
+
+## Packages
+
+| Package | Port | Description |
+|---------|------|-------------|
+| `ws-engine` | 7001 | Stateless FastAPI transcription engine (GPU required) |
+| `ws-api` | 7000 | Async job queue + SQLite, calls engine via HTTP |
+| `ws-client` | — | httpx client library for the ws-api REST interface |
+| `ws-cli` | — | CLI: `ws-cli watch/batch/replacements/prompts` |
+| `ws-recorder` | — | Textual TUI audio recorder (`ws-rec`) |
+| `ws-live` | — | Live transcription TUI, connects to ws-engine directly |
+| `ws-ui` | — | Record-and-transcribe TUI, uses ws-client + ws-recorder |
+
+## Entry Points
+
+| Command | Package | Description |
+|---------|---------|-------------|
+| `ws-engine` | ws-engine | Start transcription engine on :7001 |
+| `ws-api` | ws-api | Start job API on :7000 |
+| `ws-cli batch <dir>` | ws-cli | Transcribe all audio files in a directory |
+| `ws-cli watch <dir>` | ws-cli | Watch directory and auto-submit new files |
+| `ws-cli replacements` | ws-cli | Manage text replacement rules |
+| `ws-cli prompts` | ws-cli | Manage initial prompt phrases |
+| `ws-rec` | ws-recorder | Terminal audio recorder |
+| `ws-ui` | ws-ui | GUI audio recorder + transcription |
+| `ws-live` | ws-live | Live transcription TUI |
 
 ## Quick Start
 
-1. **Install dependencies**:
-   ```bash
-   uv sync
-   ```
+### Local development
 
-2. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and set your API_KEY
-   ```
-
-3. **Run the server**:
-   ```bash
-   # Using the CLI tool
-   uv run ws-server
-   
-   # Or using Python directly
-   uv run python run.py
-   
-   # Or using ws-cli serve command
-   uv run ws-cli serve --port 7000
-   ```
-
-## Security
-
-### API Authentication
-
-All API endpoints require authentication using an API key. Set your API key in the `.env` file:
+Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), ffmpeg, CUDA GPU (for ws-engine).
 
 ```bash
-API_KEY=your_secure_api_key_here
+# Install all workspace packages
+uv sync
+
+# Start the engine (GPU required, separate terminal)
+uv run ws-engine
+
+# Start the API (CPU-only, separate terminal)
+uv run ws-api
+
+# Verify
+curl http://localhost:7001/health
+curl http://localhost:7000/health
 ```
 
-Include the API key in all requests using the `X-API-Key` header:
+### Docker (recommended for deployment)
 
 ```bash
-curl -H "X-API-Key: your_api_key" http://localhost:8000/jobs/
+cp .env.example .env
+# Edit .env — set WS_API_KEY at minimum
+
+docker compose up -d
+
+curl http://localhost:7001/health
+curl http://localhost:7000/health
 ```
 
-## CLI Commands
+The engine container requires a GPU and is health-checked before the API starts.
 
-The whisper-server provides several CLI tools for different purposes:
+## Environment Variables
 
-### 1. `ws-server` - Start the API Server
+### ws-engine (:7001)
 
-Starts the FastAPI server for ASR processing.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASR_MODE` | `faster-whisper` | Backend: `faster-whisper`, `whisper`, `transformer` |
+| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model size |
+| `ENGINE_API_KEY` | _(unset)_ | Optional API key; auth disabled if not set |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
+| `LOGLEVEL` | `info` | Log level |
+
+### ws-api (:7000)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENGINE_URL` | `http://localhost:7001` | URL of the ws-engine service |
+| `WS_API_KEY` | _(unset)_ | API key for clients; auth disabled if not set |
+| `DATA_PATH` | `./data` | Root data directory |
+| `FILE_PATH` | `$DATA_PATH/files` | Audio file storage directory |
+| `DB_PATH` | `$DATA_PATH/db` | SQLite database directory |
+| `LOGLEVEL` | `info` | Log level |
+
+### ws-client / ws-cli
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WS_API_URL` | `http://localhost:7000` | ws-api base URL |
+| `WS_API_KEY` | _(empty)_ | API key for ws-api |
+
+## API Reference
+
+### ws-engine (:7001)
+
+```
+GET  /health
+POST /transcribe
+WS   /ws/transcribe
+WS   /ws/live
+```
+
+`POST /transcribe` — multipart form fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `audio_file` | file | Audio file to transcribe |
+| `task` | string | `transcribe` or `translate` (default: `transcribe`) |
+| `language` | string | Language code (default: `de`) |
+| `initial_prompt` | string | Whisper initial prompt |
+| `replacements` | string | JSON array of `{"name": "<regex>", "replacement": "<text>"}` |
+| `vad_filter` | bool | Enable voice activity detection |
+| `word_timestamps` | bool | Include per-word timestamps |
+
+Response:
+```json
+{
+  "text": "raw transcript",
+  "language": "de",
+  "segments": [{"start": 0.0, "end": 1.5, "text": "..."}],
+  "md": "transcript with replacements applied"
+}
+```
+
+`md` is only present when `replacements` is supplied.
+
+### ws-api (:7000)
+
+All endpoints require `X-API-Key` header when `WS_API_KEY` is configured.
+
+```
+GET  /health
+POST /jobs                    multipart: audio_files[], keep, translate
+POST /jobs/registerfile       body: filename (re-queue existing file)
+GET  /job/{id}
+GET  /jobs/
+GET  /replacements/
+POST /replacements/           body: {name, replacement}
+DELETE /replacements/{id}
+GET  /prompts/
+POST /prompts/                body: {phrase}
+PUT  /prompts/{id}/activate
+PUT  /prompts/{id}/deactivate
+DELETE /prompts/{id}
+```
+
+Job status lifecycle: `PENDING` → `PROCESSING` → `COMPLETED` | `FAILED`
+
+## CLI Usage
 
 ```bash
-uv run ws-server
+# Watch a directory and auto-submit new audio files
+ws-cli watch ./inbox/ --recursive --poll-interval 2.0
+
+# Transcribe all files in a directory
+ws-cli batch ./recordings/ --output-dir ./out/
+
+# Manage text replacements (spoken → written corrections)
+ws-cli replacements list
+ws-cli replacements add "Komma" ","
+ws-cli replacements delete 3
+
+# Manage Whisper initial prompts (domain vocabulary hints)
+ws-cli prompts list
+ws-cli prompts add "Befund, Diagnose, Therapie"
+ws-cli prompts activate 2
+ws-cli prompts deactivate 1
+ws-cli prompts remove 4
 ```
 
-This runs the server on `0.0.0.0:7000` by default.
+## Text Replacements
 
-### 2. `ws-cli` - Server and Database Management
+Replacements are regex patterns applied to transcribed text after inference. ws-api fetches active replacements from its SQLite database and passes them to ws-engine as a JSON form field with each transcription request. ws-engine applies them in order (case-insensitive) and returns the result as `md`.
 
-Manage the server, database replacements, and initial prompts.
+Example: pattern `Komma` → replacement `,` converts spoken punctuation markers to symbols.
 
-#### Server Commands
+## Data Storage
+
+Audio files are kept by default (`keepfile=True`). Directory layout under `DATA_PATH`:
+
+```
+data/
+  files/      ← uploaded audio files (never auto-deleted)
+  db/         ← whisper.db SQLite database
+  md/         ← generated markdown transcripts
+```
+
+## Development
+
+### Running a single package
 
 ```bash
-# Start server with custom options
-uv run ws-cli serve --host 0.0.0.0 --port 7000 --log-level info
+uv run --package ws-engine ws-engine
+uv run --package ws-api ws-api
+uv run --package ws-cli ws-cli -- --help
 ```
 
-#### Replacement Management
-
-Manage text replacement rules for markdown conversion:
+### Adding a dependency
 
 ```bash
-# Add a replacement rule
-uv run ws-cli replacements add "Dr." "Doctor"
-
-# List all replacements
-uv run ws-cli replacements list
-
-# Delete a replacement
-uv run ws-cli replacements delete "Dr."
+uv add --package ws-api httpx
 ```
 
-#### Prompt Management
-
-Manage initial prompts for transcription:
+### Running tests
 
 ```bash
-# Add a new prompt
-uv run ws-cli prompts add "This is a medical transcription."
-
-# List all prompts
-uv run ws-cli prompts list
-
-# Activate a specific prompt by ID
-uv run ws-cli prompts activate 1
-
-# Deactivate a prompt
-uv run ws-cli prompts deactivate 1
-
-# Remove a prompt
-uv run ws-cli prompts remove 1
-```
-
-### 3. `ws-rec` - Terminal Audio Recorder
-
-Text-based UI (TUI) for recording audio directly to the inbox.
-
-```bash
-uv run ws-rec
-```
-
-**Features**:
-- 🎤 Record audio from microphone
-- ⏸️ Pause/Resume recording
-- 💾 Save recordings to inbox
-- 🗑️ Discard unwanted recordings
-- ⏱️ Real-time elapsed time display
-
-**Keyboard Shortcuts**:
-- `Space` - Record/Pause/Resume
-- `S` - Save recording
-- `D` - Discard recording
-- `Q` - Quit
-
-### 4. `ws-ui` - Graphical Audio Recorder
-
-GUI-based audio recorder with visual interface.
-
-```bash
-uv run ws-ui
-```
-
-**Features**:
-- Full graphical interface
-- Audio visualization
-- Recording management
-
-## Project Structure
-
-```
-.
-├── .dockerignore
-├── .env
-├── .gitignore
-├── .python-version
-├── Dockerfile
-├── Dockerfile.gpu
-├── pyproject.toml
-├── README.md           # This file
-├── run.py              # Entry point for the application
-├── uv.lock
-├── src/                # Source code directory
-│   ├── __init__.py
-│   ├── app.py          # FastAPI application
-│   ├── BackgroundTasks.py # Background tasks for processing audio files
-│   ├── model.py        # SQLModel definitions for database interaction
-│   ├── paths.py        # Path definitions
-│   ├── replacements.py # Text replacements for markdown conversion
-│   └── utils.py        # Utility functions for ASR and audio processing
-├── tests/              # Test directory
-│   └── test.http       # Example HTTP test file
-└── webapp/             # Static files for the web application
-```
-
-## Modules
-
-### `src/app.py`
-
-This file defines the FastAPI application and its endpoints. It handles:
-
-*   Serving static files for the web application.
-*   Defining API endpoints for synchronous and asynchronous ASR processing.
-*   Registering audio files for processing.
-*   Retrieving job results.
-
-Key components:
-
-*   `lifespan`:  An async context manager that starts and stops background tasks (`TranscribeTask` and `ScanInboxTask`).
-*   `asr`: An endpoint for synchronous ASR processing.
-*   `transcribe_async`: An endpoint for asynchronous ASR processing.
-*   `registerfile`: An endpoint to register an existing file for ASR processing.
-*   `get_async`: An endpoint to retrieve the result of an asynchronous ASR job.
-*   `get_jobs`: An endpoint to retrieve all ASR jobs.
-
-### `src/BackgroundTasks.py`
-
-This file defines the background tasks responsible for scanning the inbox directory and transcribing audio files.
-
-Key components:
-
-*   `ScanInboxTask`: A thread that scans the inbox directory for new audio files and registers them as jobs in the database.
-*   `TranscribeTask`: A thread that retrieves jobs from the database and performs ASR processing using the `run_asr` function.
-
-### `src/model.py`
-
-This file defines the SQLModel models for interacting with the database.
-
-Key components:
-
-*   `Job`: A model representing an ASR job, including information about the file, processing status, transcript, and other metadata.
-*   `Replacement`: A model representing a text replacement rule for markdown conversion.
-
-### `src/utils.py`
-
-This file defines utility functions for ASR processing, audio loading, and result writing.
-
-Key components:
-
-*   `WhisperTranscriber`, `TransformerTranscriber`, `FastWhisperTranscriber`: Classes that implement different ASR models.
-*   `getTranscriber`: A function that returns an instance of the configured ASR model.
-*   `run_asr`: A function that performs ASR processing on an audio file.
-*   `load_audio`: A function that loads an audio file and converts it to a NumPy array.
-*   `write_result`: A function that writes the ASR result to a file in the specified format.
-*   `toMarkdown`: A function that converts the ASR transcript to markdown, applying text replacement rules from the database.
-*   `register_job`: A function that registers a job in the database.
-
-## Features
-
-- **🔒 Secure**: API key authentication on all endpoints
-- **📊 Job Tracking**: Detailed status tracking (PENDING, PROCESSING, COMPLETED, FAILED)
-- **⚡ Async Processing**: Upload files and retrieve results later
-- **🔍 Error Tracking**: Detailed error messages stored for failed jobs
-- **🛡️ Input Validation**: Filename sanitization and file type validation
-- **⏱️ Timestamps**: Automatic created_at and updated_at tracking
-
-## Job Status Lifecycle
-
-Jobs progress through the following states:
-
-1. **PENDING**: Job created, waiting to be processed
-2. **PROCESSING**: Currently being transcribed
-3. **COMPLETED**: Successfully transcribed, results available
-4. **FAILED**: Error occurred, check `error_message` field
-
-## Usage
-
-1.  **Upload an audio file** to the `/asr-async` endpoint for asynchronous processing
-2.  **Retrieve the job ID** from the response
-3.  **Poll `/job/{id}`** to check status and retrieve results when completed
-
-## Endpoints
-
-**Note**: All endpoints require the `X-API-Key` header.
-
-*   **/asr**: Processes an audio file synchronously and returns the transcription.
-    *   Method: POST
-    *   Headers: `X-API-Key: <your_api_key>`
-    *   Request body: `audio_file` (audio file to transcribe)
-    *   Query parameters:
-        *   `encode` (boolean, default: True): Encode audio first through ffmpeg
-        *   `task` (string, default: "transcribe", enum: ["transcribe", "translate"]): Task to perform (transcribe or translate)
-        *   `language` (string, default: None): Language of the audio file
-        *   `initial_prompt` (string, default: None): Initial prompt for the ASR model
-        *   `vad_filter` (boolean, default: False): Enable voice activity detection (VAD)
-        *   `word_timestamps` (boolean, default: False): Word level timestamps
-        *   `markdown` (boolean, default: True): Convert the result to markdown
-        *   `output` (string, default: "txt", enum: ["txt", "vtt", "srt", "tsv", "json"]): Output format
-    *   Response: StreamingResponse containing the transcription in the specified format.
-*   **/asr-async**: Processes audio files asynchronously and returns job IDs.
-    *   Method: POST
-    *   Headers: `X-API-Key: <your_api_key>`
-    *   Request body: `audio_files` (list of audio files to transcribe)
-    *   Form parameters:
-        *   `keep` (boolean, default: True): Keep the audio file after processing
-        *   `translate` (boolean, default: False): Translate the transcription to English
-    *   Response: JSON array containing job objects with `id`, `file`, and `result` URLs.
-*   **/asr-registerfile**: Registers an existing file for processing.
-    *   Method: POST
-    *   Headers: `X-API-Key: <your_api_key>`
-    *   Request body: `filename` (string, the name of the file to register)
-    *   Response: JSON object containing job information.
-*   **/job/{id}**: Retrieves the result of an asynchronous processing job.
-    *   Method: GET
-    *   Headers: `X-API-Key: <your_api_key>`
-    *   Parameters: `id` (integer, the ID of the job)
-    *   Response: JSON object containing the job details, including status, transcription, and error_message if failed.
-*   **/jobs**: Retrieves all jobs.
-    *   Method: GET
-    *   Headers: `X-API-Key: <your_api_key>`
-    *   Response: JSON array containing all job objects.
-
-## Testing
-
-Run the test suite:
-
-```bash
-uv run pytest
-```
-
-Run specific test files:
-
-```bash
-uv run pytest tests/test_api.py
-uv run pytest tests/test_security.py
+uv run pytest                          # all packages
+uv run pytest packages/ws-api/tests/   # single package
 ```

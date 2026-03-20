@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ws-cli"
+version = "0.1.0"
+description = "CLI tools for whisper-server"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.15.3",
+    "ws-client",
+]
+
+[project.scripts]
+ws-cli = "ws_cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ws_cli"]
+
+[tool.uv.sources]
+ws-client = { workspace = true }
