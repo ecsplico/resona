@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from ws_engine.app import app
 
+# Module-level client — lifespan does NOT fire without a `with` block,
+# so the transcriber singleton is untouched in these tests.
 client = TestClient(app, raise_server_exceptions=True)
 
 ASR_RESULT = {
@@ -112,3 +114,12 @@ def test_transcribe_auth_correct_key(mock_asr):
             headers={"X-API-Key": "mykey"},
         )
     assert resp.status_code == 200
+
+
+def test_lifespan_preloads_transcriber():
+    """Lifespan should call getTranscriber() exactly once at startup."""
+    with patch("ws_engine.app.getTranscriber") as mock_get:
+        with TestClient(app) as c:
+            resp = c.get("/health")
+            assert resp.status_code == 200
+        mock_get.assert_called_once()
