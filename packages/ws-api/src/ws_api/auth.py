@@ -10,16 +10,17 @@ logger = logging.getLogger(__name__)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def get_api_key() -> str:
-    api_key = config("API_KEY", default=None)
-    if not api_key:
-        logger.error("API_KEY not configured in environment")
-        raise RuntimeError("API_KEY must be configured in environment variables")
-    return api_key
+def get_api_key() -> Optional[str]:
+    """Retrieve WS_API_KEY from environment. Returns None if not configured (auth disabled)."""
+    return config("WS_API_KEY", default=None)
 
 
-async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> str:
+async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> Optional[str]:
+    """Validate the provided API key. If WS_API_KEY is not set, auth is disabled."""
     expected_key = get_api_key()
+
+    if not expected_key:
+        return None  # Auth disabled
 
     if api_key is None:
         logger.warning("API request without API key")
