@@ -1,2 +1,39 @@
-db/*
-files/*
+# Data and database
+db/
+data/
+files/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+.eggs/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Tests and docs
+**/tests/
+**/test/
+*.md
+
+# Legacy
+src/
+
+# Env files (secrets)
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv cache
+.cache/
