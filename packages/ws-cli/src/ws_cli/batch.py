@@ -13,7 +13,7 @@ def batch_transcribe(
     """Transcribe all audio files in a directory (submit + wait for results)."""
     from ws_client.client import WhisperClient
 
-    client = WhisperClient()
+    client = WhisperClient.from_config()
     jobs: list[tuple[Path, int]] = []
 
     glob_fn = directory.rglob if recursive else directory.glob

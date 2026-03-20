@@ -7,7 +7,7 @@ replacements_app = typer.Typer(no_args_is_help=True)
 
 
 def _client() -> WhisperClient:
-    return WhisperClient()
+    return WhisperClient.from_config()
 
 
 @replacements_app.command("add")

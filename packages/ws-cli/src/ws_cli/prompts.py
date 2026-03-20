@@ -10,7 +10,7 @@ prompts_app = typer.Typer(
 
 
 def _client() -> WhisperClient:
-    return WhisperClient()
+    return WhisperClient.from_config()
 
 
 @prompts_app.command("add")
