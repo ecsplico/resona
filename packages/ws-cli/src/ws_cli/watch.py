@@ -13,7 +13,7 @@ def watch_directory(
     """Watch a directory for new audio files and submit them for transcription."""
     from ws_client.client import WhisperClient
 
-    client = WhisperClient()
+    client = WhisperClient.from_config()
     seen: set[Path] = set()
     print(f"Watching {directory} for audio files (recursive={recursive})...")
 

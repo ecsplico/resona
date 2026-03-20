@@ -1,9 +1,10 @@
 """
 WhisperClient — HTTP client for the whisper-server API.
 
-Configuration via environment variables:
-  WS_API_URL  : base URL of ws-api (default: http://localhost:7000)
-  WS_API_KEY  : API key (default: empty)
+Configuration (in priority order):
+  1. Explicit base_url / api_key arguments
+  2. WS_API_URL / WS_API_KEY environment variables
+  3. ~/.whisper-server/config.json (via WhisperClient.from_config())
 """
 import os
 import time
@@ -30,6 +31,32 @@ class WhisperClient:
         self._client = httpx.Client(
             timeout=timeout,
             headers={"X-API-Key": self.api_key} if self.api_key else {},
+        )
+
+    @classmethod
+    def from_config(cls, auto_start: bool = True, timeout: float = 300.0) -> "WhisperClient":
+        """
+        Create a client by resolving the backend to use:
+
+        1. WS_API_URL env var (if set) — used directly, no config lookup.
+        2. First reachable backend in ~/.whisper-server/config.json.
+        3. If none reachable and a backend has compose_dir set, start it via
+           docker compose up -d and wait for it to become healthy.
+
+        Raises RuntimeError if no backend could be resolved.
+        """
+        env_url = os.getenv("WS_API_URL")
+        if env_url:
+            return cls(base_url=env_url, timeout=timeout)
+
+        from .config import resolve_backend
+        entry = resolve_backend(auto_start=auto_start)
+        if entry:
+            return cls(base_url=entry.api_url, api_key=entry.api_key, timeout=timeout)
+
+        raise RuntimeError(
+            "No reachable whisper-server backend found.\n"
+            "Add one with:  ws-cli backends add <name> <url>"
         )
 
     # ── Job API operations ────────────────────────────────────────────
