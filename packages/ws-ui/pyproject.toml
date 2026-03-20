@@ -12,7 +12,7 @@ dependencies = [
     "sounddevice>=0.5.1",
     "python-dotenv>=1.1.0",
     "ws-client",
-    "ws-recorder",
+    "ws-cli",
 ]
 
 [project.scripts]
@@ -23,4 +23,4 @@ packages = ["src/ws_ui"]
 
 [tool.uv.sources]
 ws-client = { workspace = true }
-ws-recorder = { workspace = true }
+ws-cli = { workspace = true }

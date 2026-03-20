@@ -17,7 +17,7 @@ from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
 from textual.containers import Container, Horizontal, VerticalScroll
 
-from recorder.micrec import MicRecApp
+from .micrec import MicRecApp
 from ws_engine.live_transcriber import LiveTranscriber, SAMPLE_RATE as ASR_SAMPLE_RATE
 
 # Audio capture settings (must match recorder defaults)
@@ -36,7 +36,7 @@ if MIC_SAMPLE_RATE != ASR_SAMPLE_RATE:
 
 
 class WSLiveApp(MicRecApp):
-    CSS_PATH = "css/style.tcss"
+    CSS_PATH = "live.tcss"
     TITLE = "WS-Live - Live Transcription"
 
     def __init__(self):
