@@ -5,6 +5,8 @@ services:
       dockerfile: packages/ws-engine/Dockerfile
     ports:
       - "7001:7001"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
       ASR_MODE: faster-whisper
       DEFAULT_FASTWHISPER_MODEL: large-v3

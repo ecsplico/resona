@@ -1,4 +1,5 @@
 import logging
+from threading import Lock
 import torch
 from decouple import config
 
@@ -9,21 +10,29 @@ from .transcriber_fast_whisper import FastWhisperTranscriber
 MODE: str = config("ASR_MODE")
 log = logging.getLogger(__name__)
 
+_transcriber = None
+_init_lock = Lock()
+
 
 def getTranscriber():
-    """Factory function to instantiate the appropriate transcriber based on ASR_MODE."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    log.info(f'Using {MODE} Mode. Using {device} device.')
-    if MODE == "faster-whisper":
-        MODEL = config("DEFAULT_FASTWHISPER_MODEL")
-        log.info(f"Loaded DEFAULT_FASTWHISPER_MODEL: {MODEL}")
-        t = FastWhisperTranscriber(device=device)
-    elif MODE == "whisper-tf":
-        MODEL = config("DEFAULT_TRANSFORMER_MODEL")
-        log.info(f"Loaded DEFAULT_TRANSFORMER_MODEL: {MODEL}")
-        t = TransformerTranscriber(device=device)
-    else:
-        MODEL = config("DEFAULT_WHISPER_MODEL")
-        log.info(f"Loaded DEFAULT_WHISPER_MODEL: {MODEL}")
-        t = WhisperTranscriber(device=device)
-    return t
+    """Return the singleton transcriber, creating and loading it on first call."""
+    global _transcriber
+    if _transcriber is None:
+        with _init_lock:
+            if _transcriber is None:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                log.info(f"Using {MODE} Mode. Using {device} device.")
+                if MODE == "faster-whisper":
+                    MODEL = config("DEFAULT_FASTWHISPER_MODEL")
+                    log.info(f"Loading DEFAULT_FASTWHISPER_MODEL: {MODEL}")
+                    _transcriber = FastWhisperTranscriber(device=device)
+                elif MODE == "whisper-tf":
+                    MODEL = config("DEFAULT_TRANSFORMER_MODEL")
+                    log.info(f"Loading DEFAULT_TRANSFORMER_MODEL: {MODEL}")
+                    _transcriber = TransformerTranscriber(device=device)
+                else:
+                    MODEL = config("DEFAULT_WHISPER_MODEL")
+                    log.info(f"Loading DEFAULT_WHISPER_MODEL: {MODEL}")
+                    _transcriber = WhisperTranscriber(device=device)
+                log.info("Transcriber ready.")
+    return _transcriber

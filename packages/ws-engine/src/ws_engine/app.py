@@ -7,8 +7,10 @@ Endpoints:
   WS   /ws/transcribe
   WS   /ws/live
 """
+import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from typing import Optional, List
 
 from decouple import config
@@ -16,6 +18,7 @@ from fastapi import FastAPI, File, Form, UploadFile, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import verify_api_key
+from .transcriber_factory import getTranscriber
 from .utils import run_asr, load_audio
 from .replacements import apply_replacements
 from .ws_transcribe import transcribe_websocket
@@ -23,7 +26,21 @@ from .ws_live import live_transcribe_websocket
 
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="ws-engine", description="Stateless transcription engine")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-load the ASR model into memory before accepting requests."""
+    log.info("Pre-loading ASR model at startup...")
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, getTranscriber)
+        log.info("ASR model loaded and ready.")
+    except Exception as e:
+        log.warning(f"Model pre-load failed ({e}) — will load on first request.")
+    yield
+
+
+app = FastAPI(title="ws-engine", description="Stateless transcription engine", lifespan=lifespan)
 
 CORS_ORIGINS = config("CORS_ORIGINS", default="*")
 app.add_middleware(
