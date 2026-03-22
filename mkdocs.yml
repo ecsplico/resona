@@ -44,7 +44,9 @@ plugins:
 
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
+  - User Guide:
+    - CLI Setup & Onboarding: onboarding.md
+    - Server Setup: getting-started.md
   - Architecture: architecture.md
   - CLI Reference: cli.md
   - Configuration:
