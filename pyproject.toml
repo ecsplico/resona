@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "apps/cli"]
 
 [[tool.uv.index]]
 name = "pytorch-nightly"
@@ -17,11 +17,13 @@ torchaudio = [{ index = "pytorch-nightly" }]
 triton = [{ index = "pytorch-nightly" }]
 
 [tool.uv.extra-build-dependencies]
-openai-whisper = ["setuptools"]
+openai-whisper = ["setuptools", "wheel"]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.2",
     "respx>=0.21.1",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
 ]

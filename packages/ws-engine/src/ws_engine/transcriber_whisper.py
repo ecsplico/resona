@@ -9,6 +9,14 @@ DEFAULT_MODEL_NAME: str = config("DEFAULT_WHISPER_MODEL", cast=str)
 
 
 class WhisperTranscriber:
+    """Whisper backend using the original openai-whisper library (PyTorch).
+
+    Slower and heavier than :class:`FastWhisperTranscriber` but supports the full
+    OpenAI Whisper API surface.
+
+    Configure via ``DEFAULT_WHISPER_MODEL`` env var and ``ASR_MODE=whisper``.
+    """
+
     def __init__(self, device: str = "cpu", modelname=DEFAULT_MODEL_NAME):
         self.modelname = modelname
         log.info(f"Loading Whisper model: {DEFAULT_MODEL_NAME} on {device}...")

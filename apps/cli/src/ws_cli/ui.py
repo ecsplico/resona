@@ -1,7 +1,6 @@
+"""Record-and-transcribe TUI — merged from ws-ui."""
 import os
-import sys
 import logging
-import threading
 import datetime
 import warnings
 
@@ -11,7 +10,7 @@ from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
 from textual.containers import Container, Horizontal
 
-from ws_cli.micrec import MicRecApp
+from .micrec import MicRecApp
 from ws_client.client import WhisperClient
 
 MD_PATH = os.getenv("MD_PATH", os.path.join(os.getcwd(), "data", "md"))
@@ -19,7 +18,7 @@ MD_PATH = os.getenv("MD_PATH", os.path.join(os.getcwd(), "data", "md"))
 
 class _TextualLogHandler(logging.Handler):
     """Routes Python logging records into the TUI's log tab."""
-    def __init__(self, app: 'WSUIApp'):
+    def __init__(self, app: "WSUIApp"):
         super().__init__()
         self._app = app
 
@@ -32,7 +31,7 @@ class _TextualLogHandler(logging.Handler):
 
 
 class WSUIApp(MicRecApp):
-    CSS_PATH = "css/style.tcss"
+    CSS_PATH = "css/ui.tcss"
     TITLE = "WS-UI - Record & Transcribe"
 
     BINDINGS = [
@@ -80,7 +79,6 @@ class WSUIApp(MicRecApp):
         if root_logger.level > logging.DEBUG:
             root_logger.setLevel(logging.DEBUG)
 
-        # Poll for completed jobs every 2 seconds
         self.set_interval(2.0, self.check_for_completed_jobs)
         self.log_msg("WS-UI ready. Press Record to start.")
 
@@ -265,6 +263,6 @@ class WSUIApp(MicRecApp):
         if self._session is not None:
             self._session.stop()
             self._session.join(timeout=2.0)
-        if hasattr(self, '_tui_log_handler'):
+        if hasattr(self, "_tui_log_handler"):
             logging.getLogger().removeHandler(self._tui_log_handler)
         super().exit(*args, **kwargs)

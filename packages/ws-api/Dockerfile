@@ -3,11 +3,7 @@ FROM python:3.12-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:0.10.3 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -20,9 +16,6 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv

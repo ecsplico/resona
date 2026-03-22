@@ -9,6 +9,15 @@ DEFAULT_MODEL_NAME: str = config("DEFAULT_TRANSFORMER_MODEL")
 
 
 class TransformerTranscriber:
+    """Alternate HuggingFace Transformers backend with ``initial_prompt`` support.
+
+    Similar to :class:`~ws_engine.transcriber_transformer.TransformerTranscriber`
+    but passes ``initial_prompt`` directly to the pipeline, enabling vocabulary
+    hints on models that support it.
+
+    Configure via ``DEFAULT_TRANSFORMER_MODEL`` env var and ``ASR_MODE=whisper-tf``.
+    """
+
     def __init__(self, device: str = "cpu", modelname=DEFAULT_MODEL_NAME):
         self.modelname = modelname
         log.info(f"Loading Transformer model: {DEFAULT_MODEL_NAME} on {device}...")

@@ -8,3 +8,4 @@ whisper-*
 build/*
 *.egg-info
 
+site/

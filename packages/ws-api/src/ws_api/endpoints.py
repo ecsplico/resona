@@ -104,6 +104,7 @@ def get_job(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Get the current status and result of a transcription job."""
     statement = select(Job).where(Job.id == job_id)
     job = session.exec(statement).first()
     if not job:
@@ -119,12 +120,15 @@ def list_jobs(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """List all transcription jobs."""
     return session.exec(select(Job)).all()
 
 
 # ── Replacement CRUD ──────────────────────────────────────────────────
 
 class ReplacementCreate(BaseModel):
+    """Request body for creating a replacement rule."""
+
     name: str
     replacement: str
 
@@ -134,6 +138,7 @@ def list_replacements(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """List all text replacement rules."""
     return session.exec(select(Replacement)).all()
 
 
@@ -143,6 +148,7 @@ def add_replacement(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Create a new text replacement rule. Returns 409 if the pattern already exists."""
     existing = session.exec(select(Replacement).where(Replacement.name == body.name)).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Pattern '{body.name}' already exists")
@@ -159,6 +165,7 @@ def delete_replacement(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Delete a replacement rule by ID."""
     r = session.get(Replacement, replacement_id)
     if not r:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Replacement not found")
@@ -170,6 +177,8 @@ def delete_replacement(
 # ── Prompt CRUD ───────────────────────────────────────────────────────
 
 class PromptCreate(BaseModel):
+    """Request body for adding an initial prompt phrase."""
+
     phrase: str
 
 
@@ -178,6 +187,7 @@ def list_prompts(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """List all initial prompt phrases, ordered by ID."""
     return session.exec(select(InitialPrompt).order_by(InitialPrompt.id)).all()
 
 
@@ -187,6 +197,7 @@ def add_prompt(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Add a new initial prompt phrase. Returns 409 if the phrase already exists."""
     existing = session.exec(select(InitialPrompt).where(InitialPrompt.phrase == body.phrase)).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Prompt already exists")
@@ -203,6 +214,7 @@ def activate_prompt(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Activate a prompt phrase, deactivating all others."""
     all_prompts = session.exec(select(InitialPrompt)).all()
     for p in all_prompts:
         p.active = False
@@ -225,6 +237,7 @@ def deactivate_prompt(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Deactivate a prompt phrase without activating another."""
     p = session.get(InitialPrompt, prompt_id)
     if not p:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt not found")
@@ -240,6 +253,7 @@ def delete_prompt(
     session: Session = Depends(get_db_session),
     api_key: str = Depends(verify_api_key)
 ):
+    """Delete a prompt phrase by ID."""
     p = session.get(InitialPrompt, prompt_id)
     if not p:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt not found")

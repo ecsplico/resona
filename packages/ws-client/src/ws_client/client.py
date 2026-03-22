@@ -105,11 +105,25 @@ class WhisperClient:
     # ── Replacement CRUD ──────────────────────────────────────────────
 
     def list_replacements(self) -> list[dict]:
+        """List all text replacement rules. GET /replacements/
+
+        Returns:
+            List of replacement dicts with keys ``id``, ``name``, ``replacement``, ``active``.
+        """
         resp = self._client.get(f"{self.base_url}/replacements/")
         resp.raise_for_status()
         return resp.json()
 
     def add_replacement(self, name: str, replacement: str) -> dict:
+        """Create a new text replacement rule. POST /replacements/
+
+        Args:
+            name: Regex pattern to match (applied case-insensitively).
+            replacement: Substitution text.
+
+        Returns:
+            Created replacement dict with assigned ``id``.
+        """
         resp = self._client.post(
             f"{self.base_url}/replacements/",
             json={"name": name, "replacement": replacement},
@@ -118,17 +132,35 @@ class WhisperClient:
         return resp.json()
 
     def delete_replacement(self, replacement_id: int) -> None:
+        """Delete a replacement rule. DELETE /replacements/{id}
+
+        Args:
+            replacement_id: ID of the replacement to delete.
+        """
         resp = self._client.delete(f"{self.base_url}/replacements/{replacement_id}")
         resp.raise_for_status()
 
     # ── Prompt CRUD ───────────────────────────────────────────────────
 
     def list_prompts(self) -> list[dict]:
+        """List all initial prompt phrases. GET /prompts/
+
+        Returns:
+            List of prompt dicts with keys ``id``, ``phrase``, ``active``.
+        """
         resp = self._client.get(f"{self.base_url}/prompts/")
         resp.raise_for_status()
         return resp.json()
 
     def add_prompt(self, phrase: str) -> dict:
+        """Add a new initial prompt phrase. POST /prompts/
+
+        Args:
+            phrase: Vocabulary hint passed to Whisper as ``initial_prompt``.
+
+        Returns:
+            Created prompt dict with assigned ``id``.
+        """
         resp = self._client.post(
             f"{self.base_url}/prompts/",
             json={"phrase": phrase},
@@ -137,14 +169,29 @@ class WhisperClient:
         return resp.json()
 
     def activate_prompt(self, prompt_id: int) -> None:
+        """Activate a prompt phrase, deactivating all others. PUT /prompts/{id}/activate
+
+        Args:
+            prompt_id: ID of the prompt to activate.
+        """
         resp = self._client.put(f"{self.base_url}/prompts/{prompt_id}/activate")
         resp.raise_for_status()
 
     def deactivate_prompt(self, prompt_id: int) -> None:
+        """Deactivate a prompt phrase without activating another. PUT /prompts/{id}/deactivate
+
+        Args:
+            prompt_id: ID of the prompt to deactivate.
+        """
         resp = self._client.put(f"{self.base_url}/prompts/{prompt_id}/deactivate")
         resp.raise_for_status()
 
     def remove_prompt(self, prompt_id: int) -> None:
+        """Delete a prompt phrase. DELETE /prompts/{id}
+
+        Args:
+            prompt_id: ID of the prompt to remove.
+        """
         resp = self._client.delete(f"{self.base_url}/prompts/{prompt_id}")
         resp.raise_for_status()
 
