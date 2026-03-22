@@ -9,6 +9,15 @@ DEFAULT_MODEL_NAME: str = config("DEFAULT_TRANSFORMER_MODEL")
 
 
 class TransformerTranscriber:
+    """Whisper backend using HuggingFace Transformers pipeline.
+
+    Uses ``transformers.pipeline("automatic-speech-recognition")`` with
+    30-second chunked inference. Supports ``language`` and ``task``
+    override via ``generate_kwargs``.
+
+    Configure via ``DEFAULT_TRANSFORMER_MODEL`` env var and ``ASR_MODE=transformer``.
+    """
+
     def __init__(self, device: str = "cpu", modelname=DEFAULT_MODEL_NAME):
         self.modelname = modelname
         log.info(f"Loading Transformer model: {DEFAULT_MODEL_NAME} on {device}...")

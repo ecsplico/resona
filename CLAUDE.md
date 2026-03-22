@@ -7,16 +7,18 @@ whisper-server/
 ├── pyproject.toml          ← workspace root (no build-system, no deps)
 ├── uv.lock
 ├── docker-compose.yml
-├── packages/
-│   ├── ws-engine/          ← stateless transcription, GPU, :7001
-│   ├── ws-api/             ← job queue + DB, CPU, :7000
-│   ├── ws-client/          ← httpx client library
-│   ├── ws-cli/             ← typer CLI (watch, batch, replacements, prompts, rec TUI, live TUI)
-│   └── ws-ui/              ← record-and-transcribe TUI
-└── src/                    ← LEGACY — to be removed in Phase 10
+├── apps/
+│   ├── cli/                ← ws-cli: typer CLI (watch, batch, replacements, prompts, rec/live/ui TUIs)
+│   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS, no build step yet
+└── packages/
+    ├── ws-engine/          ← stateless transcription, GPU, :7001
+    ├── ws-api/             ← job queue + DB, CPU, :7000
+    └── ws-client/          ← httpx client library
 ```
 
-Each package follows src-layout: `packages/<pkg>/src/<module>/`.
+- `apps/` contains end-user applications (CLI tool, web front-end).
+- `packages/` contains the services and libraries they depend on.
+- Each Python package follows src-layout: `<root>/src/<module>/`.
 
 ## The stateless engine contract
 
@@ -56,7 +58,7 @@ When adding functionality to ws-engine, ask: "can this be done with only what's 
 ### ws-client
 - `client.py` — `WhisperClient`: all ws-api HTTP operations. Reads `WS_API_URL` / `WS_API_KEY` from env.
 
-### ws-cli
+### ws-cli (lives in `apps/cli/`)
 - `main.py` — typer app root
 - `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
 - `batch.py` — `batch` subcommand: submit all files + wait for results
@@ -66,6 +68,8 @@ When adding functionality to ws-engine, ask: "can this be done with only what's 
 - `recorder.tcss` — CSS for the recorder TUI
 - `live_ui.py` — `WSLiveApp`: live transcription TUI extending `MicRecApp`
 - `live.tcss` — CSS for the live TUI
+- `ui.py` — `WSUIApp`: record-and-transcribe TUI (records, submits job, polls result); `ui` subcommand
+- `css/ui.tcss` — CSS for the ui TUI
 
 ## Import conventions
 
@@ -75,9 +79,7 @@ from .db.models import Job
 from .engine_client import EngineClient
 ```
 
-Cross-package imports: ws-cli imports `ws_engine.live_transcriber` (for `live` command); ws-ui imports `ws_cli.micrec.MicRecApp`. All other cross-package communication is over HTTP.
-
-Do not import from `src/` — that is legacy code.
+Cross-package imports: ws-cli imports `ws_engine.live_transcriber` (for `live` command). All other cross-package communication is over HTTP.
 
 ## How to add a new endpoint to ws-api
 
@@ -111,7 +113,8 @@ Client → GET /job/{id} → sees COMPLETED job with transcript
 
 ```bash
 # Install all packages (--all-packages is required — plain uv sync only installs root dev deps)
-uv sync --all-packages
+# openai-whisper needs --no-build-isolation-package due to a pkg_resources build dep issue
+uv sync --all-packages --no-build-isolation-package openai-whisper
 
 # Run individual services
 uv run ws-engine      # :7001, needs GPU
@@ -120,17 +123,24 @@ uv run ws-api         # :7000, needs engine running
 # TUI tools
 uv run ws-cli rec     # recorder TUI
 uv run ws-cli live    # live transcription TUI
-uv run ws-ui          # record + transcribe
+uv run ws-cli ui      # record + transcribe
+
+# Documentation (dev server with hot-reload at http://127.0.0.1:8000)
+uv run mkdocs serve
+
+# Build static docs to site/
+uv run mkdocs build
 ```
 
 ## Testing
 
-Tests live in `packages/<pkg>/tests/`. Run with:
+Tests live in `<pkg>/tests/`. Run with:
 
 ```bash
-uv run pytest                         # all
+uv run pytest                       # all
 uv run pytest packages/ws-api/tests/  # one package
-uv run pytest -k test_transcribe      # one test
+uv run pytest apps/cli/tests/       # cli tests
+uv run pytest -k test_transcribe    # one test
 ```
 
 Mocking strategy:
@@ -139,7 +149,7 @@ Mocking strategy:
 - ws-client: use `respx.mock` to intercept httpx calls
 - ws-cli: use typer's `CliRunner` for command tests
 
-Audio fixtures: keep small WAV files (1-2 seconds, 16kHz mono) in `packages/<pkg>/tests/fixtures/`.
+Audio fixtures: keep small WAV files (1-2 seconds, 16kHz mono) in `<pkg>/tests/fixtures/`.
 
 ## Docker
 
@@ -159,13 +169,12 @@ All config is read with `python-decouple`'s `config()`. This reads from env vars
 
 ## Known state
 
-- `src/` directory still exists (Phase 10 cleanup not done). It is legacy code from before the monorepo split. Do not add to it.
 - The old `Dockerfile` and `Dockerfile.gpu` at the root are superseded by `packages/*/Dockerfile`. They can be removed.
-- `uv sync` has not been verified end-to-end in production — PyTorch nightly index may require `--index-strategy unsafe-best-match`.
+- `uv sync` in production requires `--no-build-isolation-package openai-whisper` (pkg_resources build dep issue). PyTorch nightly index may also require `--index-strategy unsafe-best-match`.
+- `apps/web/` is plain HTML/JS with no build step — Vite integration is a future task.
 
 ## What NOT to do
 
-- Do not import from `src/` in any package under `packages/`
 - Do not add database access to ws-engine
 - Do not delete audio files after transcription (`keepfile=True` is the default and intent)
 - Do not add `ScanInboxTask` back — inbox scanning is done by `ws-cli watch`

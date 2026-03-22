@@ -5,17 +5,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-dev python3-pip curl ca-certificates \
+    python3.12 python3.12-dev python3.12-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:0.10.3 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
 COPY pyproject.toml uv.lock* ./
 COPY packages/ws-engine/ ./packages/ws-engine/
-RUN uv sync --package ws-engine --frozen --no-dev --no-editable --compile-bytecode
+
+# openai-whisper's setup.py imports pkg_resources without declaring it in build-system.requires
+RUN uv venv --python 3.12 && uv pip install setuptools \
+    && uv sync --package ws-engine --python 3.12 --frozen --no-dev --no-editable --no-build-isolation-package openai-whisper --compile-bytecode
 
 # Strip build artifacts and unused torch cruft from the venv
 RUN find /app/.venv -name "*.a" -delete \

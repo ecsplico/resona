@@ -20,24 +20,65 @@ def list_backends():
     for b in cfg.backends:
         ok = is_reachable(b)
         icon = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
-        key_note = "  [auth]" if b.api_key else ""
-        compose_note = f"  [compose: {b.compose_dir}]" if b.compose_dir else ""
-        typer.echo(f"  {icon}  {b.name:<20} {b.api_url}{key_note}{compose_note}")
+        notes: list[str] = []
+        if b.api_key:
+            notes.append("[auth]")
+        if b.compose_dir:
+            notes.append(f"[compose: {b.compose_dir}]")
+        if b.ssh_host:
+            remote_port = b.ssh_remote_port or ""
+            rport_str = f":{remote_port}" if remote_port else ""
+            notes.append(f"[ssh: {b.ssh_host}{rport_str}]")
+        note_str = "  " + "  ".join(notes) if notes else ""
+        typer.echo(f"  {icon}  {b.name:<20} {b.api_url}{note_str}")
 
 
 @backends_app.command("add")
 def add_backend(
     name: str = typer.Argument(..., help="Unique name for this backend"),
-    api_url: str = typer.Argument(..., help="ws-api base URL, e.g. http://192.168.1.10:7000"),
+    api_url: str = typer.Argument(..., help="ws-api base URL, e.g. http://localhost:7000"),
     api_key: str = typer.Option("", "--key", "-k", help="API key (if the server requires one)"),
     compose_dir: Optional[str] = typer.Option(
         None, "--compose-dir", "-c",
         help="Path to docker-compose project dir. When set, this backend can be auto-started.",
     ),
+    ssh_host: Optional[str] = typer.Option(
+        None, "--ssh", "-s",
+        help=(
+            "SSH host to tunnel through, e.g. user@myserver.com or user@myserver.com:2222. "
+            "Opens a local port-forward (ssh -N -L) when the backend is not directly reachable."
+        ),
+    ),
+    ssh_remote_port: Optional[int] = typer.Option(
+        None, "--ssh-remote-port",
+        help="Remote port on the SSH host (defaults to the port in api_url).",
+    ),
 ):
-    """Add a backend address."""
+    """Add a backend address.
+
+    \b
+    Examples:
+      # Direct remote server on LAN
+      ws-cli backends add lan http://192.168.1.10:7000
+
+      # Local docker-compose (auto-started when needed)
+      ws-cli backends add local http://localhost:7000 --compose-dir ~/whisper-server
+
+      # Remote server over SSH tunnel
+      ws-cli backends add remote http://localhost:7000 --ssh user@myserver.com
+
+      # Remote server with different local/remote ports
+      ws-cli backends add remote http://localhost:17000 --ssh user@myserver.com --ssh-remote-port 7000
+    """
     cfg = BackendConfig.load()
-    entry = BackendEntry(name=name, api_url=api_url.rstrip("/"), api_key=api_key, compose_dir=compose_dir)
+    entry = BackendEntry(
+        name=name,
+        api_url=api_url.rstrip("/"),
+        api_key=api_key,
+        compose_dir=compose_dir,
+        ssh_host=ssh_host,
+        ssh_remote_port=ssh_remote_port,
+    )
     try:
         cfg.add(entry)
     except ValueError as e:
@@ -49,6 +90,8 @@ def add_backend(
     typer.echo(f"Added '{name}' ({api_url}) — {status}")
     if compose_dir and not ok:
         typer.echo(f"  Auto-start enabled: will run `docker compose up -d` in {compose_dir} when needed.")
+    if ssh_host and not ok:
+        typer.echo(f"  SSH tunnel enabled: will open port-forward via {ssh_host} when needed.")
 
 
 @backends_app.command("remove")

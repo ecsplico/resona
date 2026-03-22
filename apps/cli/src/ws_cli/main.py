@@ -57,5 +57,33 @@ def live():
     WSLiveApp().run()
 
 
+@app.command()
+def ui():
+    """Launch the record-and-transcribe TUI (records, submits job, shows result)."""
+    import logging
+    from dotenv import load_dotenv
+    import sounddevice as sd
+
+    load_dotenv()
+
+    logging.root.handlers.clear()
+    logging.root.addHandler(logging.NullHandler())
+
+    output_dir = os.getenv("FILE_PATH", os.path.join(os.getcwd(), "data", "files"))
+    sample_rate = int(os.getenv("SAMPLE_RATE", 44100))
+    channels = int(os.getenv("CHANNELS", 1))
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    try:
+        sd.check_input_settings(device=None, samplerate=sample_rate, channels=channels)
+    except Exception as e:
+        sys.stderr.write(f"Error initializing audio input: {e}\n")
+        raise typer.Exit(1)
+
+    from .ui import WSUIApp
+    WSUIApp().run()
+
+
 if __name__ == "__main__":
     app()

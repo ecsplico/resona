@@ -9,6 +9,15 @@ DEFAULT_MODEL_NAME: str = config("DEFAULT_FASTWHISPER_MODEL", cast=str)
 
 
 class FastWhisperTranscriber:
+    """Whisper backend using faster-whisper (CTranslate2).
+
+    Default and recommended backend. Uses INT8-quantised models for fast CPU
+    or GPU inference with a lower memory footprint than the original openai-whisper.
+    The model is loaded once at construction time.
+
+    Configure via ``DEFAULT_FASTWHISPER_MODEL`` env var and ``ASR_MODE=faster-whisper``.
+    """
+
     def __init__(self, device: str = "cpu", modelname=DEFAULT_MODEL_NAME):
         self.modelname = modelname
         compute_type = "int8_float16" if device == "cuda" else "int8"
