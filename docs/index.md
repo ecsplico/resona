@@ -49,9 +49,10 @@ This separation lets the engine run on a dedicated GPU machine while the API run
 
 ## Quick links
 
-- [Getting Started](getting-started.md) — install, run, first transcription
+- [CLI Setup & Onboarding](onboarding.md) — install ws-cli and connect to a server
+- [Server Setup](getting-started.md) — run the services locally or via Docker
 - [Architecture](architecture.md) — service design and job lifecycle
 - [CLI Reference](cli.md) — all `ws-cli` commands
-- [Backends & SSH](configuration/backends.md) — remote server setup
+- [Backends & SSH](configuration/backends.md) — LAN, SSH tunnel, auto-start
 - [Environment Variables](configuration/environment.md) — all config knobs
 - [Client Library](reference/client.md) — Python API reference
