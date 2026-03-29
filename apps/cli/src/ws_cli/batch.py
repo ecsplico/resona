@@ -86,7 +86,7 @@ def _batch_local_fallback(
 
     typer.echo(
         "No server reachable — starting local engine "
-        "(replacements, prompts, and language selection not available on server path).",
+        "(replacements and prompts not available in local fallback mode).",
         err=True,
     )
 

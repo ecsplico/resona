@@ -130,10 +130,12 @@ class LocalEngine:
         )
 
     def _shutdown(self) -> None:
-        if self._process is not None and self._process.poll() is None:
-            self._process.terminate()
+        proc = self._process
+        self._process = None  # prevent double-call
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
             try:
-                self._process.wait(timeout=10)
+                proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait()
+                proc.kill()
+                proc.wait()
