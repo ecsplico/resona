@@ -115,3 +115,144 @@ def test_watch_ignores_non_audio_files(tmp_path):
         runner.invoke(app, ["watch", str(tmp_path)])
 
     mock_client.submit_job.assert_not_called()
+
+
+# ── Fallback tests ────────────────────────────────────────────────────
+import httpx
+from unittest.mock import MagicMock
+
+
+def _make_local_engine_watch(transcript="Watched text"):
+    engine = MagicMock()
+    engine.transcribe.return_value = {"text": transcript, "language": "de", "segments": []}
+    engine.__enter__ = lambda s: engine
+    engine.__exit__ = MagicMock(return_value=False)
+    return engine
+
+
+def test_watch_fallback_used_when_no_server(tmp_path):
+    """When from_config raises RuntimeError, LocalEngine is used."""
+    audio_file = make_wav(tmp_path / "test.wav")
+    mock_engine = _make_local_engine_watch()
+
+    call_count = 0
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("ws_client.client.WhisperClient.from_config", side_effect=RuntimeError("no server")),
+        patch("ws_cli.watch.LocalEngine", return_value=mock_engine),
+        patch("ws_cli.watch.time.sleep", side_effect=fake_sleep),
+    ):
+        runner.invoke(app, ["watch", str(tmp_path)])
+
+    mock_engine.transcribe.assert_called_once()
+
+
+def test_watch_fallback_writes_txt_next_to_audio(tmp_path):
+    """Fallback writes <stem>.txt next to audio file."""
+    make_wav(tmp_path / "speech.wav")
+    mock_engine = _make_local_engine_watch(transcript="Watch result")
+
+    call_count = 0
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("ws_client.client.WhisperClient.from_config", side_effect=RuntimeError("no server")),
+        patch("ws_cli.watch.LocalEngine", return_value=mock_engine),
+        patch("ws_cli.watch.time.sleep", side_effect=fake_sleep),
+    ):
+        runner.invoke(app, ["watch", str(tmp_path)])
+
+    txt = tmp_path / "speech.txt"
+    assert txt.exists()
+    assert txt.read_text() == "Watch result"
+
+
+def test_watch_fallback_respects_output_dir(tmp_path):
+    """Fallback writes to --output-dir when provided."""
+    make_wav(tmp_path / "speech.wav")
+    out_dir = tmp_path / "out"
+    mock_engine = _make_local_engine_watch(transcript="Output dir result")
+
+    call_count = 0
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("ws_client.client.WhisperClient.from_config", side_effect=RuntimeError("no server")),
+        patch("ws_cli.watch.LocalEngine", return_value=mock_engine),
+        patch("ws_cli.watch.time.sleep", side_effect=fake_sleep),
+    ):
+        runner.invoke(app, ["watch", str(tmp_path), "--output-dir", str(out_dir)])
+
+    txt = out_dir / "speech.txt"
+    assert txt.exists()
+
+
+def test_watch_fallback_continues_on_per_file_error(tmp_path):
+    """A transcription error does not abort the watch loop."""
+    make_wav(tmp_path / "a.wav")
+    make_wav(tmp_path / "b.wav")
+
+    call_count = 0
+    mock_engine = _make_local_engine_watch()
+    mock_engine.transcribe.side_effect = [
+        httpx.RequestError("refused"),
+        {"text": "ok", "language": "de", "segments": []},
+    ]
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("ws_client.client.WhisperClient.from_config", side_effect=RuntimeError("no server")),
+        patch("ws_cli.watch.LocalEngine", return_value=mock_engine),
+        patch("ws_cli.watch.time.sleep", side_effect=fake_sleep),
+    ):
+        result = runner.invoke(app, ["watch", str(tmp_path)])
+
+    assert mock_engine.transcribe.call_count == 2
+    assert result.exit_code == 0
+
+
+def test_watch_fallback_passes_model_and_language(tmp_path):
+    """--model and --language are forwarded correctly."""
+    make_wav(tmp_path / "audio.wav")
+    mock_engine = _make_local_engine_watch()
+
+    call_count = 0
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("ws_client.client.WhisperClient.from_config", side_effect=RuntimeError("no server")),
+        patch("ws_cli.watch.LocalEngine", return_value=mock_engine) as mock_le_cls,
+        patch("ws_cli.watch.time.sleep", side_effect=fake_sleep),
+    ):
+        runner.invoke(app, ["watch", str(tmp_path), "--model", "small", "--language", "fr"])
+
+    call_kwargs = mock_le_cls.call_args.kwargs
+    assert call_kwargs.get("model") == "small"
+    transcribe_kwargs = mock_engine.transcribe.call_args.kwargs
+    assert transcribe_kwargs.get("language") == "fr"
