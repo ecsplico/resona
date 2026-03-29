@@ -216,6 +216,32 @@ def test_exit_kills_if_terminate_hangs():
     mock_proc.kill.assert_called_once()
 
 
+def test_enter_cleans_up_resources_on_health_failure():
+    """If _wait_for_health raises, __exit__ is called and resources are cleaned up."""
+    dead_proc = _make_mock_process(returncode=1)
+    mock_http = MagicMock(spec=httpx.Client)
+    mock_http.get.side_effect = httpx.RequestError("refused")
+
+    with (
+        patch("ws_cli.local_engine._find_free_port", return_value=54330),
+        patch("subprocess.Popen", return_value=dead_proc),
+        patch("httpx.Client", return_value=mock_http),
+        patch("tempfile.TemporaryFile") as mock_tf,
+        patch("time.sleep"),
+        patch("time.monotonic", side_effect=[0, 1, 2]),
+    ):
+        fake_file = MagicMock()
+        fake_file.read.return_value = b"startup failure"
+        mock_tf.return_value = fake_file
+
+        engine = LocalEngine(timeout=5.0)
+        with pytest.raises(RuntimeError):
+            engine.__enter__()
+
+    mock_http.close.assert_called_once()
+    fake_file.close.assert_called_once()
+
+
 def test_atexit_handler_unregistered_after_clean_exit():
     mock_proc = _make_mock_process()
     mock_http = _make_healthy_http_client()

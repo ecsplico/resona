@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "CLI tools for whisper-server"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28.1",
     "typer>=0.15.3",
     "textual>=3.2.0",
     "sounddevice>=0.5.1",

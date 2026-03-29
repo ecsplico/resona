@@ -64,7 +64,11 @@ class LocalEngine:
         self._http = httpx.Client(timeout=30.0)
         atexit.register(self._atexit_fn)
 
-        self._wait_for_health()
+        try:
+            self._wait_for_health()
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
         return self
 
     def __exit__(self, *args: object) -> None:
