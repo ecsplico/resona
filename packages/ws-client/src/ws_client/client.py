@@ -24,7 +24,7 @@ class WhisperClient:
         self,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        timeout: float = 300.0,
+        timeout: float = 3600.0,
     ):
         self.base_url = (base_url or os.getenv("WS_API_URL", "http://localhost:7000")).rstrip("/")
         self.api_key = api_key or os.getenv("WS_API_KEY", "")
@@ -34,7 +34,7 @@ class WhisperClient:
         )
 
     @classmethod
-    def from_config(cls, auto_start: bool = True, timeout: float = 300.0) -> "WhisperClient":
+    def from_config(cls, auto_start: bool = True, timeout: float = 3600.0) -> "WhisperClient":
         """
         Create a client by resolving the backend to use:
 

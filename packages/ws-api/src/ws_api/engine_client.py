@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 class EngineClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.Client(timeout=300.0)
+        self.client = httpx.Client(timeout=3600.0)
 
     def transcribe(
         self,
