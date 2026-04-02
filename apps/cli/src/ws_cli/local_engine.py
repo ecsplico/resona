@@ -94,7 +94,7 @@ class LocalEngine:
                 f"http://localhost:{self._port}/transcribe",
                 files={"audio_file": (filepath.name, f, "audio/wav")},
                 data={"language": language},
-                timeout=300.0,
+                timeout=3600.0,
             )
         resp.raise_for_status()
         return resp.json()
