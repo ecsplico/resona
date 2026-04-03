@@ -1,0 +1,44 @@
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: packages/engine-faster-whisper/Dockerfile
+    ports:
+      - "7001:7001"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      RESONA_BACKEND: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: large-v3
+      LOGLEVEL: info
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    ports:
+      - "7000:7000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      RESONA_ENGINE_URL: http://engine:7001
+      DATA_PATH: /app/data
+      LOGLEVEL: info
+    env_file:
+      - .env
+    depends_on:
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
