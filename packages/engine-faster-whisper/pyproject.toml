@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-engine-faster-whisper"
+version = "0.1.0"
+description = "Faster-whisper (CTranslate2) backend for Resona"
+requires-python = ">=3.12"
+dependencies = [
+    "resona-engine-core",
+    "faster-whisper>=1.1.1",
+    "torch>=2.11.0.dev",
+]
+
+[project.entry-points."resona.backends"]
+faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
+
+[project.scripts]
+resona-engine-faster-whisper = "resona_engine_core.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_engine_faster_whisper"]
