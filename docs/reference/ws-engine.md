@@ -1,29 +1,40 @@
-# ws-engine Internals
+# resona-engine-core Internals
 
-Internal reference for `ws-engine` — the stateless transcription service.
+Internal reference for `resona-engine-core` — the stateless transcription service.
 
-## Transcription backends
+!!! note "Legacy"
+    The older `ws-engine` package is retained for backward compatibility. This page documents `resona-engine-core` (`packages/engine-core/`). Legacy module paths use `ws_engine.*`.
 
-Backends are selected via the `ASR_MODE` environment variable and cached as a singleton by `transcriber_factory`.
+## Transcriber protocol
 
-::: ws_engine.transcriber_factory.getTranscriber
+All backends implement the `Transcriber` protocol defined in `resona_engine_core.protocol`:
 
-::: ws_engine.transcriber_fast_whisper.FastWhisperTranscriber
+::: resona_engine_core.protocol.Transcriber
 
-::: ws_engine.transcriber_whisper.WhisperTranscriber
+::: resona_engine_core.protocol.TranscriptionResult
 
-::: ws_engine.transcriber_transformer.TransformerTranscriber
+## Backend registry
+
+Backends are discovered via Python entry points at startup. The `RESONA_BACKEND` environment variable selects which backend to load.
+
+::: resona_engine_core.registry.get_transcriber
+
+::: resona_engine_core.registry.list_backends
+
+## Available backends
+
+### faster-whisper (default)
+
+::: resona_engine_faster_whisper.transcriber.FastWhisperTranscriber
+
+### openai-whisper
+
+::: resona_engine_whisper.transcriber.WhisperTranscriber
 
 ## Audio utilities
 
-::: ws_engine.utils.run_asr
-
-::: ws_engine.utils.load_audio
-
-## Replacements
-
-::: ws_engine.replacements.apply_replacements
+::: resona_engine_core.audio.load_audio
 
 ## WebSocket streaming
 
-::: ws_engine.ws_transcribe.AudioBuffer
+::: resona_engine_core.ws_transcribe.AudioBuffer

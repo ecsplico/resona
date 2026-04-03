@@ -1,5 +1,5 @@
-site_name: whisper-server
-site_description: Audio transcription system built on OpenAI Whisper / faster-whisper
+site_name: Resona
+site_description: Modular audio transcription platform with pluggable ASR backends
 
 theme:
   name: material
@@ -29,6 +29,13 @@ plugins:
       handlers:
         python:
           paths:
+            - packages/client/src
+            - packages/api/src
+            - packages/engine-core/src
+            - packages/engine-faster-whisper/src
+            - packages/engine-whisper/src
+            - packages/postprocess/src
+            - apps/resona-cli/src
             - packages/ws-client/src
             - packages/ws-api/src
             - packages/ws-engine/src
@@ -54,8 +61,8 @@ nav:
     - Environment Variables: configuration/environment.md
   - API Reference:
     - Client Library: reference/client.md
-    - ws-api Internals: reference/ws-api.md
-    - ws-engine Internals: reference/ws-engine.md
+    - resona-api Internals: reference/ws-api.md
+    - resona-engine Internals: reference/ws-engine.md
 
 markdown_extensions:
   - admonition

@@ -1,9 +1,9 @@
 # CLI Reference
 
-`ws-cli` is the main command-line tool. Install via `uv sync --all-packages`.
+`resona` is the main command-line tool. Install via `uv sync --all-packages`.
 
 ```
-ws-cli [OPTIONS] COMMAND [ARGS]...
+resona [OPTIONS] COMMAND [ARGS]...
 ```
 
 ## Commands overview
@@ -13,7 +13,7 @@ ws-cli [OPTIONS] COMMAND [ARGS]...
 | `watch` | Watch a directory, auto-submit new audio files |
 | `batch` | Transcribe all files in a directory |
 | `rec` | Audio recorder TUI |
-| `live` | Live transcription TUI (streams to ws-engine) |
+| `live` | Live transcription TUI (streams to resona-engine) |
 | `ui` | Record-and-transcribe TUI (records, submits job, shows result) |
 | `backends` | Manage backend server addresses |
 | `replacements` | Manage text replacement rules |
@@ -21,12 +21,12 @@ ws-cli [OPTIONS] COMMAND [ARGS]...
 
 ---
 
-## `ws-cli watch`
+## `resona watch`
 
 Watch a directory and auto-submit any new audio files for transcription.
 
 ```bash
-ws-cli watch <directory> [OPTIONS]
+resona watch <directory> [OPTIONS]
 ```
 
 **Options:**
@@ -40,17 +40,17 @@ ws-cli watch <directory> [OPTIONS]
 **Example:**
 
 ```bash
-ws-cli watch ./inbox/ --recursive --poll-interval 5
+resona watch ./inbox/ --recursive --poll-interval 5
 ```
 
 ---
 
-## `ws-cli batch`
+## `resona batch`
 
 Submit all audio files in a directory and wait for results.
 
 ```bash
-ws-cli batch <directory> [OPTIONS]
+resona batch <directory> [OPTIONS]
 ```
 
 **Options:**
@@ -64,17 +64,17 @@ ws-cli batch <directory> [OPTIONS]
 **Example:**
 
 ```bash
-ws-cli batch ./recordings/ --output-dir ./transcripts/
+resona batch ./recordings/ --output-dir ./transcripts/
 ```
 
 ---
 
-## `ws-cli rec`
+## `resona rec`
 
 Launch the audio recorder TUI. Records to WAV files in `FILE_PATH`.
 
 ```bash
-ws-cli rec
+resona rec
 ```
 
 **Keybindings:**
@@ -88,24 +88,24 @@ ws-cli rec
 
 ---
 
-## `ws-cli live`
+## `resona live`
 
-Launch the live transcription TUI. Streams 16 kHz audio to ws-engine via `WS /ws/live`.
+Launch the live transcription TUI. Streams 16 kHz audio to resona-engine via `WS /ws/live`.
 
 ```bash
-ws-cli live
+resona live
 ```
 
 Reads `FILE_PATH`, `SAMPLE_RATE`, `CHANNELS` from environment / `.env`.
 
 ---
 
-## `ws-cli ui`
+## `resona ui`
 
 Record audio and automatically submit it for transcription. Displays results in tabs as jobs complete.
 
 ```bash
-ws-cli ui
+resona ui
 ```
 
 **Keybindings:**
@@ -120,14 +120,14 @@ ws-cli ui
 
 ---
 
-## `ws-cli backends`
+## `resona backends`
 
-Manage backend server addresses stored in `~/.whisper-server/config.json`.
+Manage backend server addresses stored in `~/.resona/config.json`.
 
 ### `backends list`
 
 ```bash
-ws-cli backends list
+resona backends list
 ```
 
 Shows all configured backends with reachability status (`✓` / `✗`).
@@ -135,7 +135,7 @@ Shows all configured backends with reachability status (`✓` / `✗`).
 ### `backends add`
 
 ```bash
-ws-cli backends add <name> <api_url> [OPTIONS]
+resona backends add <name> <api_url> [OPTIONS]
 ```
 
 **Options:**
@@ -151,16 +151,16 @@ ws-cli backends add <name> <api_url> [OPTIONS]
 
 ```bash
 # Direct LAN server
-ws-cli backends add lan http://192.168.1.10:7000
+resona backends add lan http://192.168.1.10:7000
 
 # Local docker-compose auto-start
-ws-cli backends add local http://localhost:7000 --compose-dir ~/whisper-server
+resona backends add local http://localhost:7000 --compose-dir ~/resona
 
 # Remote server over SSH tunnel
-ws-cli backends add remote http://localhost:7000 --ssh user@myserver.com
+resona backends add remote http://localhost:7000 --ssh user@myserver.com
 
 # Non-standard SSH port, different local forwarding port
-ws-cli backends add remote http://localhost:17000 \
+resona backends add remote http://localhost:17000 \
   --ssh user@myserver.com:2222 \
   --ssh-remote-port 7000
 ```
@@ -170,59 +170,59 @@ See [Backends & SSH](configuration/backends.md) for the full resolution logic.
 ### `backends remove`
 
 ```bash
-ws-cli backends remove <name>
+resona backends remove <name>
 ```
 
 ### `backends test`
 
 ```bash
-ws-cli backends test [name] [--timeout 3.0]
+resona backends test [name] [--timeout 3.0]
 ```
 
 Test reachability of one backend (or all if `name` is omitted). Exits 0 if at least one is reachable.
 
 ---
 
-## `ws-cli replacements`
+## `resona replacements`
 
-Manage regex-based text replacement rules. Rules are applied post-transcription by ws-engine.
+Manage regex-based text replacement rules. Rules are applied post-transcription by resona-api (via `resona-postprocess`). The engine returns raw text; replacements are applied server-side in the API layer.
 
 ```bash
-ws-cli replacements list
-ws-cli replacements add <pattern> <replacement>
-ws-cli replacements delete <id>
+resona replacements list
+resona replacements add <pattern> <replacement>
+resona replacements delete <id>
 ```
 
 **Example:**
 
 ```bash
-ws-cli replacements add "Komma" ","
-ws-cli replacements add "Punkt" "."
-ws-cli replacements list
-ws-cli replacements delete 3
+resona replacements add "Komma" ","
+resona replacements add "Punkt" "."
+resona replacements list
+resona replacements delete 3
 ```
 
 Patterns are applied case-insensitively in order of creation.
 
 ---
 
-## `ws-cli prompts`
+## `resona prompts`
 
 Manage Whisper initial prompt phrases. The active prompt biases recognition towards domain vocabulary.
 
 ```bash
-ws-cli prompts list
-ws-cli prompts add <phrase>
-ws-cli prompts activate <id>
-ws-cli prompts deactivate <id>
-ws-cli prompts remove <id>
+resona prompts list
+resona prompts add <phrase>
+resona prompts activate <id>
+resona prompts deactivate <id>
+resona prompts remove <id>
 ```
 
 **Example:**
 
 ```bash
-ws-cli prompts add "Befund, Diagnose, Therapie, Anamnese"
-ws-cli prompts activate 1
+resona prompts add "Befund, Diagnose, Therapie, Anamnese"
+resona prompts activate 1
 ```
 
 Only one prompt can be active at a time. `activate` deactivates all others automatically.
@@ -231,10 +231,10 @@ Only one prompt can be active at a time. `activate` deactivates all others autom
 
 ## Backend resolution
 
-When ws-cli needs to connect to a ws-api server, it resolves the backend in this order:
+When `resona` needs to connect to a resona-api server, it resolves the backend in this order:
 
-1. `WS_API_URL` environment variable — used directly, no config lookup
-2. First reachable backend in `~/.whisper-server/config.json`
+1. `RESONA_API_URL` environment variable — used directly, no config lookup
+2. First reachable backend in `~/.resona/config.json`
 3. Auto-start: SSH tunnel or `docker compose up -d` for the first configured backend
 
 See [Backends & SSH](configuration/backends.md) for details.
