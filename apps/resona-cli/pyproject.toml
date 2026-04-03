@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-cli"
+version = "0.1.0"
+description = "CLI tool for Resona transcription platform"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "typer>=0.15.3",
+    "textual>=3.2.0",
+    "sounddevice>=0.5.1",
+    "soundfile>=0.13.1",
+    "numpy>=2.1.3",
+    "torchaudio>=2.11.0.dev",
+    "python-dotenv>=1.1.0",
+    "resona-client",
+    "resona-engine-core",
+]
+
+[project.scripts]
+resona = "resona_cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_cli"]
