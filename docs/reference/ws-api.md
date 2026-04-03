@@ -1,32 +1,35 @@
-# ws-api Internals
+# resona-api Internals
 
-Internal reference for `ws-api` — the job queue service.
+Internal reference for `resona-api` — the job queue and postprocessing service.
 
 !!! note
     The public-facing REST interface is documented in the [README](../index.md) and exposed via the OpenAPI UI at `http://localhost:7000/docs` when the service is running.
 
+!!! note "Legacy"
+    The older `ws-api` package is retained for backward compatibility. This page documents `resona-api` (`packages/api/`). For the legacy internals, the module paths are `ws_api.*` instead of `resona_api.*`.
+
 ## Database models
 
-::: ws_api.db.models.JobStatus
+::: resona_api.db.models.JobStatus
 
-::: ws_api.db.models.Job
+::: resona_api.db.models.Job
 
-::: ws_api.db.models.Replacement
+::: resona_api.db.models.Replacement
 
-::: ws_api.db.models.InitialPrompt
+::: resona_api.db.models.InitialPrompt
 
 ## Engine client
 
-::: ws_api.engine_client.EngineClient
+::: resona_api.engine_client.EngineClient
 
 ## Background task
 
-::: ws_api.tasks_transcribe.TranscribeTask
+::: resona_api.tasks_transcribe.TranscribeTask
 
 ## Database utilities
 
-::: ws_api.db.utils.register_job
+::: resona_api.db.utils.register_job
 
-::: ws_api.db.utils.get_active_replacements
+::: resona_api.db.utils.get_active_replacements
 
-::: ws_api.db.utils.get_active_initial_prompts_string
+::: resona_api.db.utils.get_active_initial_prompts_string

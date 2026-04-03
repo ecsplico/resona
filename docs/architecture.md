@@ -4,18 +4,21 @@
 
 | Package | Port | Role | GPU |
 |---------|------|------|-----|
-| `ws-engine` | 7001 | Stateless transcription (inference) | Required |
-| `ws-api` | 7000 | Job queue, SQLite DB, file storage | No |
-| `ws-client` | — | Python client library | — |
-| `ws-cli` (`apps/cli`) | — | CLI + Textual TUI tools | — |
+| `resona-engine-core` + backend | 7001 | Stateless transcription (inference) | Required |
+| `resona-api` | 7000 | Job queue, SQLite DB, file storage, postprocessing | No |
+| `resona-client` | — | Python client library | — |
+| `resona` CLI (`apps/resona-cli`) | — | CLI + Textual TUI tools | — |
+
+!!! note "Legacy packages"
+    `ws-engine`, `ws-api`, `ws-client`, and `ws-cli` are retained for backward compatibility. New deployments should use the `resona-*` packages.
 
 ## The stateless engine contract
 
-**ws-engine has no database and no persistent state.** Every request must be self-contained.
+**resona-engine-core has no database and no persistent state.** Every request must be self-contained.
 
-- `POST /transcribe` accepts `initial_prompt` and `replacements` as form fields
-- `replacements` is a JSON-serialised array: `[{"name": "<regex>", "replacement": "<text>"}]`
-- The engine applies replacements and returns `md` in the response; `text` is always the raw transcript
+- `POST /transcribe` accepts `audio_file`, `language`, `task`, `initial_prompt`, `vad_filter`, `word_timestamps`
+- The engine returns `{text, language, segments}` — raw transcript only
+- **Replacements and postprocessing are not applied by the engine** — they are the caller's responsibility
 - The engine never reads from or writes to a database
 - The engine never deletes audio files — it receives bytes, returns JSON
 
@@ -23,7 +26,31 @@ This separation means:
 
 - The engine can run on a remote GPU machine; the API runs anywhere CPU-only
 - The engine can be swapped or scaled without touching the API
-- Replacements and prompts live in ws-api's DB; the engine is a pure function
+- Replacements and prompts live in resona-api's DB; the engine is a pure function
+- Postprocessing (`resona-postprocess`) runs in resona-api after transcription completes
+
+## Backend discovery via entry points
+
+Backends are installed as separate packages and register themselves via Python entry points:
+
+```toml
+# In resona-engine-faster-whisper/pyproject.toml
+[project.entry-points."resona.backends"]
+faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
+```
+
+The `resona_engine_core.registry` discovers all installed backends at startup:
+
+- `RESONA_BACKEND` env var selects which backend to load (default: `faster-whisper`)
+- `get_transcriber()` returns a thread-safe singleton
+- Each backend's `[project.scripts]` points to `resona_engine_core.run:main` — the same FastAPI app, different backend loaded
+
+Available backend packages:
+
+| Package | Entry point | Class | Notes |
+|---------|-------------|-------|-------|
+| `resona-engine-faster-whisper` | `faster-whisper` | `FastWhisperTranscriber` | CTranslate2, INT8, recommended |
+| `resona-engine-whisper` | `whisper` | `WhisperTranscriber` | Original OpenAI Whisper (PyTorch) |
 
 ## Job lifecycle
 
@@ -31,7 +58,7 @@ This separation means:
 Client
   │
   ▼  POST /jobs  (multipart: audio file)
-ws-api
+resona-api
   ├── saves file to FILE_PATH
   ├── creates Job(status=PENDING) in SQLite
   └── returns job dict immediately
@@ -39,13 +66,14 @@ ws-api
 TranscribeTask (background thread, polls every 1s)
   ├── finds oldest PENDING job
   ├── sets status=PROCESSING
-  ├── fetches active replacements from DB
   ├── fetches active initial_prompt from DB
-  ├── calls EngineClient.transcribe(filepath, language, prompt, replacements)
-  │     └── serialises replacements as JSON form field
-  │     └── POSTs multipart to ws-engine POST /transcribe
-  │     └── engine loads audio, runs inference, applies replacements
-  │     └── returns {text, md, language, segments}
+  ├── calls EngineClient.transcribe(filepath, language, prompt)
+  │     └── POSTs multipart to resona-engine POST /transcribe
+  │     └── engine loads audio, runs inference
+  │     └── returns {text, language, segments}   ← raw, no replacements
+  ├── fetches active replacements from DB
+  ├── builds PostprocessPipeline (replacements + optional LLM steps)
+  ├── md = pipeline.run(text)
   ├── writes md to Job row
   ├── writes .md file to MD_PATH
   └── sets status=COMPLETED (or FAILED on error)
@@ -54,22 +82,38 @@ Client
   └── GET /job/{id}  →  {status: "completed", transcript: "...", md: "..."}
 ```
 
+## PostprocessPipeline
+
+`resona-postprocess` provides a composable `str → str` pipeline:
+
+```python
+from resona_postprocess.pipeline import PostprocessPipeline
+from resona_postprocess.replacements import ReplacementStep
+from resona_postprocess.llm import LLMStep
+
+pipeline = PostprocessPipeline([
+    ReplacementStep(rules),          # regex replacements
+    LLMStep(model="gpt-4o-mini"),    # optional LLM cleanup
+])
+result = pipeline.run(raw_text)
+```
+
+Pipeline configuration can be loaded from `~/.resona/postprocess.json` via `build_pipeline_from_config()`.
+
 ## ASR backends
 
-The engine selects its backend via the `ASR_MODE` environment variable:
+The engine selects its backend via the `RESONA_BACKEND` environment variable:
 
-| `ASR_MODE` | Class | Library | Notes |
-|-----------|-------|---------|-------|
-| `faster-whisper` (default) | `FastWhisperTranscriber` | CTranslate2 | INT8 quantised, fast |
-| `whisper` | `WhisperTranscriber` | openai-whisper | Original PyTorch |
-| `transformer` | `TransformerTranscriber` | HuggingFace | Pipeline API, chunked |
-| `whisper-tf` | `TransformerTranscriber` (v2) | HuggingFace | Alternate transformer backend |
+| `RESONA_BACKEND` | Package | Class | Library | Notes |
+|-----------------|---------|-------|---------|-------|
+| `faster-whisper` (default) | `resona-engine-faster-whisper` | `FastWhisperTranscriber` | CTranslate2 | INT8 quantised, fast |
+| `whisper` | `resona-engine-whisper` | `WhisperTranscriber` | openai-whisper | Original PyTorch |
 
-The transcriber is instantiated once at startup (`transcriber_factory.py`) and cached as a singleton.
+The transcriber is instantiated once at startup and cached as a singleton.
 
 ## WebSocket endpoints
 
-ws-engine exposes two WebSocket endpoints in addition to the HTTP endpoint:
+resona-engine-core exposes two WebSocket endpoints in addition to the HTTP endpoint:
 
 ### `WS /ws/transcribe`
 
@@ -111,8 +155,8 @@ Protocol:
 
 Both services support optional API key authentication via the `X-API-Key` request header.
 
-- **ws-engine**: Set `ENGINE_API_KEY`. If unset, all requests are allowed.
-- **ws-api**: Set `WS_API_KEY`. If unset, all requests are allowed.
+- **resona-engine-core**: Set `RESONA_ENGINE_KEY`. If unset, all requests are allowed.
+- **resona-api**: Set `RESONA_API_KEY`. If unset, all requests are allowed.
 
 The API key is validated with `secrets.compare_digest` to prevent timing attacks.
 
@@ -122,17 +166,16 @@ All paths are configurable via environment variables:
 
 ```
 DATA_PATH/
-  files/    ← uploaded audio files (never auto-deleted, keepfile=True)
-  db/       ← whisper.db SQLite database
+  files/    ← uploaded audio files (never auto-deleted)
+  db/       ← resona.db SQLite database
   md/       ← generated Markdown transcripts
 ```
 
 ## Cross-package imports
 
 ```
-ws-cli  ──imports──▶  ws-engine.live_transcriber  (live command)
-ws-cli  ──imports──▶  ws-client.client             (all HTTP ops)
-ws-ui   ──imports──▶  ws-cli.micrec.MicRecApp      (TUI base class)
+resona-cli  ──imports──▶  resona_engine_core.live_transcriber  (live command)
+resona-cli  ──imports──▶  resona_client.client                  (all HTTP ops)
 ```
 
-All other cross-service communication is over HTTP. Never import ws-api or ws-engine from ws-client.
+All other cross-service communication is over HTTP. Never import resona-api or resona-engine-core from resona-client.
