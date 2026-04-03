@@ -481,3 +481,10 @@ This is a breaking change. The migration order should be:
 - Streaming LLM postprocessing (future enhancement)
 - Web UI changes (uses API, unaffected by internal restructuring)
 - Database migration tooling (SQLite schema unchanged, just table/column names)
+- **Old transformer backends** (`transcriber_transformer.py`, `transcriber_transformer2.py`) — these are superseded by resona-engine-voxtral which uses the same HuggingFace transformers library. If needed, a generic `resona-engine-transformers` backend can be added later.
+- **Backward-compatible env vars** — old env vars (`WS_API_URL`, `ENGINE_URL`, etc.) are dropped, not deprecated. This is a clean break.
+
+## 12. Open Questions
+
+- `postprocess.json` source paths: relative paths like `"replacements.json"` should resolve relative to `~/.resona/`, not CWD. To be enforced in `load_replacements_from_file()`.
+- Voxtral Dockerfile base image: depends on model requirements (GPU vs CPU, CUDA version). To be decided when implementing that backend.
