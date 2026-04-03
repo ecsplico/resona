@@ -19,6 +19,9 @@ triton = [{ index = "pytorch-nightly" }]
 [tool.uv.extra-build-dependencies]
 openai-whisper = ["setuptools", "wheel"]
 
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
