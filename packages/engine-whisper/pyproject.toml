@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-engine-whisper"
+version = "0.1.0"
+description = "OpenAI Whisper (PyTorch) backend for Resona"
+requires-python = ">=3.12"
+dependencies = [
+    "resona-engine-core",
+    "openai-whisper>=20240930",
+    "torch>=2.11.0.dev",
+]
+
+[project.entry-points."resona.backends"]
+whisper = "resona_engine_whisper.transcriber:WhisperTranscriber"
+
+[project.scripts]
+resona-engine-whisper = "resona_engine_core.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_engine_whisper"]
