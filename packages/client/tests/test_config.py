@@ -96,6 +96,39 @@ def test_load_does_not_migrate_when_resona_config_exists(tmp_path, monkeypatch):
     assert cfg.backends[0].name == "current"
 
 
+# ── BackendConfig.default_backend ─────────────────────────────────────────────
+
+def test_load_default_backend_from_config(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({
+        "backends": [],
+        "default_backend": "voxtral",
+    }))
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+    cfg = BackendConfig.load()
+    assert cfg.default_backend == "voxtral"
+
+
+def test_load_default_backend_falls_back_to_faster_whisper(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({"backends": []}))
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+    cfg = BackendConfig.load()
+    assert cfg.default_backend == "faster-whisper"
+
+
+def test_save_persists_default_backend(tmp_path, monkeypatch):
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    config_file = tmp_path / "config.json"
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
+    cfg = BackendConfig(default_backend="whisper")
+    cfg.save()
+    data = json.loads(config_file.read_text())
+    assert data["default_backend"] == "whisper"
+
+
 # ── BackendConfig.save / add / remove / get ───────────────────────────────────
 
 def test_save_writes_json(tmp_path, monkeypatch):

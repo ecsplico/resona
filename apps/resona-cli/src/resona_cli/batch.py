@@ -15,10 +15,13 @@ def batch_transcribe(
     model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
     language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
     engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
-    backend: str = typer.Option("faster-whisper", "--backend", help="Backend to use for local engine (e.g. faster-whisper, whisper)."),
+    backend: Optional[str] = typer.Option(None, "--backend", help="Backend for local engine (e.g. faster-whisper, whisper, voxtral). Falls back to default_backend in ~/.resona/config.json."),
 ):
     """Transcribe all audio files in a directory (submit + wait for results)."""
     from resona_client.client import ResonaClient
+    from resona_client.config import BackendConfig
+
+    resolved_backend = backend or BackendConfig.load().default_backend
 
     glob_fn = directory.rglob if recursive else directory.glob
     files = [f for ext in EXTENSIONS for f in glob_fn(f"*.{ext}")]
@@ -26,7 +29,7 @@ def batch_transcribe(
     try:
         client = ResonaClient.from_config()
     except RuntimeError:
-        _batch_local_fallback(files, output_dir, model, language, engine_timeout, backend)
+        _batch_local_fallback(files, output_dir, model, language, engine_timeout, resolved_backend)
         return
 
     if model is not None:
