@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Resona is a modular transcription platform with pluggable ASR backends and a composable postprocessing pipeline.
+Resona is a modular transcription platform with pluggable ASR backends and a composable postprocessing pipeline. Designed for German medical dictation but usable for any language.
 
 ## Project structure
 
@@ -18,7 +18,7 @@ resona/
     ├── engine-core/        ← resona-engine-core: FastAPI app, Transcriber protocol, registry, :7001
     ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 backend (default)
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) backend
-    ├── engine-voxtral/    ← resona-engine-voxtral: HuggingFace Transformers backend
+    ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers backend
     ├── postprocess/        ← resona-postprocess: replacements + LLM pipeline
     ├── api/                ← resona-api: job queue + DB + postprocessing, :7000
     └── client/             ← resona-client: httpx client library
@@ -54,6 +54,8 @@ The registry in `resona_engine_core/registry.py` discovers backends at runtime:
 - `get_transcriber()` returns a thread-safe singleton
 - Each backend's `[project.scripts]` points to `resona_engine_core.run:main` — same FastAPI app, different backend
 
+Available backends: `faster-whisper` (default), `whisper`, `voxtral`.
+
 ## Package responsibilities
 
 ### resona-engine-core
@@ -82,7 +84,8 @@ The registry in `resona_engine_core/registry.py` discovers backends at runtime:
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
 - `llm.py` — `llm_postprocess(text, prompt, model, api_base)` via litellm
 - `pipeline.py` — `PostprocessPipeline`: composable `str → str` chain
-- `sources.py` — `build_pipeline_from_config()` reads `~/.resona/postprocess.json`
+- `sources.py` — `build_pipeline_from_config()` reads `~/.resona/postprocess.json`, falls back to bundled defaults
+- `default_replacements.json` — bundled German dictation replacements (Komma, Punkt, Absatz, medical headings, name corrections)
 
 ### resona-api
 - `app.py` — FastAPI lifespan: creates DB, starts `TranscribeTask`, instantiates `EngineClient`
@@ -92,19 +95,20 @@ The registry in `resona_engine_core/registry.py` discovers backends at runtime:
 - `db/models.py` — `Job`, `Replacement`, `InitialPrompt` SQLModel tables
 - `db/engine.py` — SQLite engine + `create_db_and_tables()`
 - `db/utils.py` — `register_job()`, `get_active_replacements()`, `get_active_initial_prompts_string()`
+- `db/presets.py` — default replacements and initial prompts seeded on first DB creation
 - `formatting.py` — writes markdown output files
 - `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH` resolved from env
 - `auth.py` — optional `RESONA_API_KEY` auth
 
 ### resona-client
 - `client.py` — `ResonaClient`: all resona-api HTTP operations. Reads `RESONA_API_URL` / `RESONA_API_KEY`.
-- `config.py` — `BackendConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose)
+- `config.py` — `BackendConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_backend`
 
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
 - `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
 - `batch.py` — `batch` subcommand: submit all files + wait for results
-- `local_engine.py` — `LocalEngine`: spawns `uv run resona-engine-faster-whisper` as fallback
+- `local_engine.py` — `LocalEngine`: spawns `uv run resona-engine-{backend}` as fallback
 - `backends.py`, `replacements.py`, `prompts.py` — CRUD subcommands
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
 - `live_ui.py` — `WSLiveApp`: live transcription TUI
@@ -126,8 +130,9 @@ Cross-package imports: resona-cli imports `resona_engine_core.live_transcriber` 
 2. Implement a class with `transcribe(audio: np.ndarray, **kwargs) -> TranscriptionResult`
 3. Constructor: `__init__(self, device: str, modelname: str | None = None)`
 4. Register in pyproject.toml: `[project.entry-points."resona.backends"]`
-5. Set `[project.scripts]` to `resona_engine_core.run:main`
-6. The backend must not touch the database
+5. Add `[tool.uv.sources]` with `resona-engine-core = { workspace = true }`
+6. Set `[project.scripts]` to `resona_engine_core.run:main`
+7. The backend must not touch the database
 
 ## How to add a new endpoint to resona-api
 
@@ -137,6 +142,8 @@ Cross-package imports: resona-cli imports `resona_engine_core.live_transcriber` 
 4. Add a CLI subcommand if appropriate
 
 ## Job flow
+
+### Server path
 
 ```
 Client → POST /jobs → resona-api saves file, registers PENDING job
@@ -150,6 +157,54 @@ resona-api TranscribeTask polls PENDING jobs →
   writes transcript + md to Job row, sets status COMPLETED
 Client → GET /job/{id} → sees COMPLETED job with transcript + md
 ```
+
+### Local fallback path
+
+```
+resona batch ./audio/ --backend voxtral
+  no server reachable →
+  resolves backend: --backend flag → config.json default_backend → "faster-whisper"
+  spawns: uv run resona-engine-voxtral on a free port
+  waits for /health →
+  POSTs each audio file to local engine →
+  engine returns {text, language, segments} →
+  builds PostprocessPipeline from ~/.resona/postprocess.json (or bundled defaults) →
+  md = pipeline.run(text) →
+  writes transcript to output file
+```
+
+## Postprocessing
+
+Postprocessing is a composable pipeline of `str → str` steps applied **after** the engine returns raw text.
+
+### Default replacements
+
+Bundled in `resona_postprocess/default_replacements.json` and active out of the box. Includes German dictation commands:
+
+| Spoken | Written |
+|--------|---------|
+| Komma | , |
+| Punkt | . |
+| Absatz | (newline) |
+| Kapitel | # (heading) |
+| Klammer auf/zu | ( ) |
+
+Plus medical section headings (Verlauf, Medikation, Psychopathologischer Befund, Procedere) and name corrections.
+
+### Customizing
+
+Override by creating `~/.resona/replacements.json`. Or for a full pipeline with LLM steps, create `~/.resona/postprocess.json`:
+
+```json
+{
+  "steps": [
+    {"type": "replacements", "source": "replacements.json"},
+    {"type": "llm", "name": "format", "prompt": "Format this medical text.", "model": "ollama/llama3"}
+  ]
+}
+```
+
+Relative paths in `source` resolve relative to the config directory (`~/.resona/`).
 
 ## Running in development
 
@@ -168,6 +223,10 @@ uv run resona ui                       # record + transcribe
 uv run resona batch ./audio/           # batch transcribe
 uv run resona watch ./inbox/           # watch directory
 
+# Local-only (no server needed — spawns engine automatically)
+uv run resona batch ./audio/ --output-dir ./out/
+uv run resona batch ./audio/ --backend whisper --language en
+
 # Documentation
 uv run mkdocs serve                    # dev server at :8000
 uv run mkdocs build                    # static docs to site/
@@ -178,7 +237,7 @@ uv run mkdocs build                    # static docs to site/
 Tests live in `<pkg>/tests/`. Run with:
 
 ```bash
-uv run pytest                                    # all
+uv run pytest                                    # all (238 tests)
 uv run pytest packages/engine-core/tests/        # engine core
 uv run pytest packages/api/tests/                # api
 uv run pytest packages/client/tests/             # client
@@ -214,6 +273,8 @@ Run with: `docker compose -f docker-compose.resona.yml up`
 
 All config is read with `python-decouple`'s `config()`. This reads from env vars first, then `.env` file. Never use `os.environ[]` directly — use `config("VAR_NAME", default=...)`.
 
+Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API_KEY` (it has no decouple dependency).
+
 ### Key environment variables
 
 | Variable | Package | Purpose | Default |
@@ -225,16 +286,27 @@ All config is read with `python-decouple`'s `config()`. This reads from env vars
 | `RESONA_API_KEY` | api, client | API auth key | (none, auth disabled) |
 | `RESONA_LLM_MODEL` | postprocess | Default LLM model | `gpt-4o-mini` |
 | `RESONA_LLM_API_BASE` | postprocess | Custom LLM endpoint | (none) |
+| `DEFAULT_FASTWHISPER_MODEL` | engine-faster-whisper | Model name | `large-v3` |
+| `DEFAULT_WHISPER_MODEL` | engine-whisper | Model name | `large-v3` |
+| `DEFAULT_VOXTRAL_MODEL` | engine-voxtral | HuggingFace model ID | `openai/whisper-large-v3` |
 | `DATA_PATH` | api | Root data directory | `./data` |
 
 ### Config files
 
 ```
 ~/.resona/
-├── config.json          ← remote backends + auto-start
-├── replacements.json    ← static replacement rules
-└── postprocess.json     ← full pipeline: replacements + LLM steps
+├── config.json          ← remote backends, auto-start settings, default_backend
+├── replacements.json    ← override default text replacement rules
+└── postprocess.json     ← full pipeline config: replacements + LLM steps
 ```
+
+If neither `postprocess.json` nor `replacements.json` exists, bundled default replacements are used automatically.
+
+### Backend resolution order (local fallback)
+
+1. `--backend` CLI flag (highest priority)
+2. `default_backend` in `~/.resona/config.json`
+3. Hardcoded default: `"faster-whisper"`
 
 ## What NOT to do
 

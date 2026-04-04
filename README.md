@@ -1,81 +1,75 @@
-# whisper-server
+# Resona
 
-Audio transcription system built on OpenAI Whisper / faster-whisper, designed for German medical dictation. Structured as a uv workspace monorepo with independently deployable services.
+Modular audio transcription platform with pluggable ASR backends and composable postprocessing. Designed for German medical dictation but usable for any language. Built as a uv workspace monorepo.
 
 ## Architecture
 
 ```
                     ┌──────────────────────┐
-                    │     ws-cli           │
+                    │     resona CLI       │
                     │  batch / watch /     │
-                    │  replacements        │
+                    │  rec / live / ui     │
                     └─────────┬────────────┘
                               │ uses
                     ┌─────────▼────────────┐
-                    │     ws-client        │
-                    │  WhisperClient       │
+                    │   resona-client      │
+                    │   ResonaClient       │
                     └──┬───────────────┬───┘
                        │               │
             HTTP/REST  │               │  HTTP/REST
                        │               │
           ┌────────────▼──┐   ┌───────▼──────────────┐
-          │   ws-api      │   │   ws-engine           │
-          │   :7000       │──▶│   :7001               │
-          │               │   │                       │
-          │ POST /jobs    │   │ POST /transcribe      │
-          │ GET  /jobs/   │   │ WS   /ws/transcribe   │
-          │ GET  /jobs/id │   │ WS   /ws/live         │
-          │ CRUD replace  │   │                       │
-          │ CRUD prompts  │   │ Stateless, no DB      │
-          │               │   │ GPU, heavy deps       │
-          │ SQLite DB     │   └───────────────────────┘
-          │ File storage  │
+          │  resona-api   │   │  resona-engine-core   │
+          │  :7000        │──▶│  :7001                │
+          │               │   │  + backend plugin     │
+          │ POST /jobs    │   │                       │
+          │ GET  /jobs/   │   │ POST /transcribe      │
+          │ GET  /job/id  │   │ WS   /ws/transcribe   │
+          │ CRUD replace  │   │ WS   /ws/live         │
+          │ CRUD prompts  │   │                       │
+          │               │   │ Stateless, no DB      │
+          │ SQLite DB     │   │ GPU, heavy deps       │
+          │ Postprocessing│   └───────────────────────┘
           └───────────────┘
 ```
 
-**ws-engine** is stateless — no database, no side effects. It owns all GPU-heavy inference. **ws-api** owns the job queue, SQLite database, and calls the engine over HTTP. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
+**resona-engine-core** is stateless -- no database, no side effects, no postprocessing. It owns all GPU-heavy inference. **resona-api** owns the job queue, SQLite database, and applies postprocessing (replacements + optional LLM) after getting raw text from the engine. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
+
+Backends are discovered via Python entry points (`resona.backends` group). Each backend is a separate package with its own Dockerfile.
 
 ## Packages
 
 | Package | Port | Description |
 |---------|------|-------------|
-| `ws-engine` | 7001 | Stateless FastAPI transcription engine (GPU required) |
-| `ws-api` | 7000 | Async job queue + SQLite, calls engine via HTTP |
-| `ws-client` | — | httpx client library for the ws-api REST interface |
-| `ws-cli` | — | CLI: `ws-cli watch/batch/replacements/prompts` |
-| `ws-recorder` | — | Textual TUI audio recorder (`ws-rec`) |
-| `ws-live` | — | Live transcription TUI, connects to ws-engine directly |
-| `ws-ui` | — | Record-and-transcribe TUI, uses ws-client + ws-recorder |
+| `resona-engine-core` | 7001 | FastAPI app, Transcriber protocol, backend registry |
+| `resona-engine-faster-whisper` | -- | CTranslate2 backend (default, recommended) |
+| `resona-engine-whisper` | -- | Original OpenAI Whisper (PyTorch) backend |
+| `resona-engine-voxtral` | -- | HuggingFace Transformers backend (Voxtral, Whisper, etc.) |
+| `resona-postprocess` | -- | Composable pipeline: regex replacements + LLM via litellm |
+| `resona-api` | 7000 | Job queue + SQLite + postprocessing, calls engine via HTTP |
+| `resona-client` | -- | httpx client library for the resona-api REST interface |
+| `resona-cli` | -- | CLI: `resona batch/watch/rec/live/ui/backends/replacements/prompts` |
 
-## Entry Points
+## Quick start
 
-| Command | Package | Description |
-|---------|---------|-------------|
-| `ws-engine` | ws-engine | Start transcription engine on :7001 |
-| `ws-api` | ws-api | Start job API on :7000 |
-| `ws-cli batch <dir>` | ws-cli | Transcribe all audio files in a directory |
-| `ws-cli watch <dir>` | ws-cli | Watch directory and auto-submit new files |
-| `ws-cli replacements` | ws-cli | Manage text replacement rules |
-| `ws-cli prompts` | ws-cli | Manage initial prompt phrases |
-| `ws-rec` | ws-recorder | Terminal audio recorder |
-| `ws-ui` | ws-ui | GUI audio recorder + transcription |
-| `ws-live` | ws-live | Live transcription TUI |
+### Prerequisites
 
-## Quick Start
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
+- ffmpeg
+- NVIDIA GPU with CUDA (for the engine)
 
 ### Local development
 
-Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), ffmpeg, CUDA GPU (for ws-engine).
-
 ```bash
-# Install all workspace packages (--all-packages is required)
-uv sync --all-packages
+# Install all workspace packages
+uv sync --all-packages --no-build-isolation-package openai-whisper
 
 # Start the engine (GPU required, separate terminal)
-uv run ws-engine
+uv run resona-engine-faster-whisper
 
 # Start the API (CPU-only, separate terminal)
-uv run ws-api
+uv run resona-api
 
 # Verify
 curl http://localhost:7001/health
@@ -85,10 +79,9 @@ curl http://localhost:7000/health
 ### Docker (recommended for deployment)
 
 ```bash
-cp .env.example .env
-# Edit .env — set WS_API_KEY at minimum
+cp .env.example .env   # set RESONA_API_KEY at minimum
 
-docker compose up -d
+docker compose -f docker-compose.resona.yml up -d
 
 curl http://localhost:7001/health
 curl http://localhost:7000/health
@@ -96,155 +89,222 @@ curl http://localhost:7000/health
 
 The engine container requires a GPU and is health-checked before the API starts.
 
-## Environment Variables
+### Local-only mode (no server)
 
-### ws-engine (:7001)
+If no server is reachable, the CLI automatically spawns a local engine:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ASR_MODE` | `faster-whisper` | Backend: `faster-whisper`, `whisper`, `transformer` |
-| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model size |
-| `ENGINE_API_KEY` | _(unset)_ | Optional API key; auth disabled if not set |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
-| `LOGLEVEL` | `info` | Log level |
+```bash
+# Transcribe files -- starts a local engine automatically
+uv run resona batch ./recordings/ --output-dir ./transcripts/
 
-### ws-api (:7000)
+# Use a different backend
+uv run resona batch ./recordings/ --backend whisper
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENGINE_URL` | `http://localhost:7001` | URL of the ws-engine service |
-| `WS_API_KEY` | _(unset)_ | API key for clients; auth disabled if not set |
-| `DATA_PATH` | `./data` | Root data directory |
-| `FILE_PATH` | `$DATA_PATH/files` | Audio file storage directory |
-| `DB_PATH` | `$DATA_PATH/db` | SQLite database directory |
-| `LOGLEVEL` | `info` | Log level |
-
-### ws-client / ws-cli
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WS_API_URL` | `http://localhost:7000` | ws-api base URL |
-| `WS_API_KEY` | _(empty)_ | API key for ws-api |
-
-## API Reference
-
-### ws-engine (:7001)
-
-```
-GET  /health
-POST /transcribe
-WS   /ws/transcribe
-WS   /ws/live
+# Set a default backend so you don't need --backend every time
+# Edit ~/.resona/config.json and set "default_backend": "whisper"
 ```
 
-`POST /transcribe` — multipart form fields:
+## CLI usage
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `audio_file` | file | Audio file to transcribe |
-| `task` | string | `transcribe` or `translate` (default: `transcribe`) |
-| `language` | string | Language code (default: `de`) |
-| `initial_prompt` | string | Whisper initial prompt |
-| `replacements` | string | JSON array of `{"name": "<regex>", "replacement": "<text>"}` |
-| `vad_filter` | bool | Enable voice activity detection |
-| `word_timestamps` | bool | Include per-word timestamps |
+```bash
+# Transcribe all audio files in a directory
+resona batch ./recordings/ --output-dir ./out/ --language de
 
-Response:
+# Watch a directory and auto-submit new files
+resona watch ./inbox/ --recursive --poll-interval 2.0
+
+# Record audio (terminal UI)
+resona rec
+
+# Live transcription (terminal UI, streams to engine via WebSocket)
+resona live
+
+# Record, transcribe, and display result (terminal UI)
+resona ui
+
+# Manage remote backends
+resona backends add gpu-server http://gpu-machine:7000
+resona backends add home http://localhost:7000 --ssh user@homeserver.com
+resona backends list
+resona backends test
+
+# Manage text replacements (spoken -> written corrections)
+resona replacements list
+resona replacements add "Komma" ","
+resona replacements delete 3
+
+# Manage Whisper initial prompts (vocabulary hints)
+resona prompts list
+resona prompts add "Befund, Diagnose, Therapie"
+resona prompts activate 2
+```
+
+## Text replacements
+
+Replacements are regex patterns applied to transcribed text after inference. They convert spoken punctuation, formatting commands, and name corrections into the desired written form.
+
+Default replacements are bundled and active out of the box (German dictation commands like "Komma" -> `,`, "Punkt" -> `.`, "Absatz" -> newline, medical section headings, etc.).
+
+**Server mode:** resona-api stores replacements in SQLite and applies them via `PostprocessPipeline` after the engine returns raw text.
+
+**Local mode:** The CLI reads from `~/.resona/replacements.json` (or falls back to bundled defaults). You can also configure a full pipeline with LLM steps in `~/.resona/postprocess.json`.
+
+### Customizing replacements
+
+Override the defaults by creating `~/.resona/replacements.json`:
+
+```json
+[
+  {"name": "\\s*Komma", "replacement": ","},
+  {"name": "\\s*Punkt", "replacement": "."},
+  {"name": "\\s*Absatz", "replacement": "\n"},
+  {"name": "Monique", "replacement": "Monic"}
+]
+```
+
+### Adding LLM postprocessing
+
+Create `~/.resona/postprocess.json` to chain replacements with LLM formatting:
+
 ```json
 {
-  "text": "raw transcript",
-  "language": "de",
-  "segments": [{"start": 0.0, "end": 1.5, "text": "..."}],
-  "md": "transcript with replacements applied"
+  "steps": [
+    {
+      "type": "replacements",
+      "source": "replacements.json"
+    },
+    {
+      "type": "llm",
+      "name": "format-medical",
+      "prompt": "Format this medical transcription with proper paragraphs and punctuation. Do not change the content.",
+      "model": "ollama/llama3"
+    }
+  ]
 }
 ```
 
-`md` is only present when `replacements` is supplied.
+LLM postprocessing uses [litellm](https://docs.litellm.ai/) -- supports OpenAI, Anthropic, Ollama, vLLM, and 100+ other providers. Set the model string and any required API keys (e.g. `OPENAI_API_KEY`).
 
-### ws-api (:7000)
+## Backend selection
 
-All endpoints require `X-API-Key` header when `WS_API_KEY` is configured.
+Three transcription backends are available:
+
+| Backend | Command | Best for |
+|---------|---------|----------|
+| `faster-whisper` (default) | `resona-engine-faster-whisper` | Production use, fastest inference |
+| `whisper` | `resona-engine-whisper` | Full OpenAI Whisper compatibility |
+| `voxtral` | `resona-engine-voxtral` | HuggingFace models (Voxtral, etc.) |
+
+Select via environment variable or CLI flag:
+
+```bash
+# Environment variable
+RESONA_BACKEND=whisper uv run resona-engine-whisper
+
+# CLI flag (local fallback mode)
+resona batch ./audio/ --backend voxtral
+
+# Default backend in config
+# ~/.resona/config.json: {"default_backend": "voxtral", "backends": [...]}
+```
+
+## Configuration
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RESONA_BACKEND` | `faster-whisper` | Backend to load |
+| `RESONA_ENGINE_URL` | `http://localhost:7001` | Engine URL (used by API) |
+| `RESONA_ENGINE_KEY` | _(unset)_ | Engine API key; auth disabled if unset |
+| `RESONA_API_URL` | `http://localhost:7000` | API URL (used by client/CLI) |
+| `RESONA_API_KEY` | _(unset)_ | API key; auth disabled if unset |
+| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM for postprocessing |
+| `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint (e.g. Ollama) |
+| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model name |
+| `DEFAULT_WHISPER_MODEL` | `large-v3` | OpenAI Whisper model name |
+| `DEFAULT_VOXTRAL_MODEL` | `openai/whisper-large-v3` | HuggingFace model ID |
+| `DATA_PATH` | `./data` | Root data directory (API) |
+| `LOGLEVEL` | `info` | Log level |
+
+### Config files
+
+```
+~/.resona/
+├── config.json          # Remote backends, auto-start settings, default_backend
+├── replacements.json    # Override default text replacement rules
+└── postprocess.json     # Full pipeline config: replacements + LLM steps
+```
+
+## API reference
+
+### Engine (:7001)
 
 ```
 GET  /health
-POST /jobs                    multipart: audio_files[], keep, translate
-POST /jobs/registerfile       body: filename (re-queue existing file)
+POST /transcribe          multipart: audio_file, task, language, initial_prompt, vad_filter, word_timestamps
+WS   /ws/transcribe       WebSocket batch transcription
+WS   /ws/live             WebSocket live transcription with VAD
+```
+
+`POST /transcribe` returns:
+```json
+{"text": "raw transcript", "language": "de", "segments": [{"start": 0.0, "end": 1.5, "text": "..."}]}
+```
+
+No `md` field, no replacements -- the engine is stateless.
+
+### API (:7000)
+
+All endpoints require `X-API-Key` header when `RESONA_API_KEY` is configured.
+
+```
+GET  /health
+POST /jobs                multipart: audio_files[], keep, translate
+POST /jobs/registerfile   body: filename
 GET  /job/{id}
 GET  /jobs/
 GET  /replacements/
-POST /replacements/           body: {name, replacement}
+POST /replacements/       body: {name, replacement}
 DELETE /replacements/{id}
 GET  /prompts/
-POST /prompts/                body: {phrase}
+POST /prompts/            body: {phrase}
 PUT  /prompts/{id}/activate
 PUT  /prompts/{id}/deactivate
 DELETE /prompts/{id}
 ```
 
-Job status lifecycle: `PENDING` → `PROCESSING` → `COMPLETED` | `FAILED`
+Job lifecycle: `PENDING` -> `PROCESSING` -> `COMPLETED` | `FAILED`
 
-## CLI Usage
+## Data storage
 
-```bash
-# Watch a directory and auto-submit new audio files
-ws-cli watch ./inbox/ --recursive --poll-interval 2.0
-
-# Transcribe all files in a directory
-ws-cli batch ./recordings/ --output-dir ./out/
-
-# Manage text replacements (spoken → written corrections)
-ws-cli replacements list
-ws-cli replacements add "Komma" ","
-ws-cli replacements delete 3
-
-# Manage Whisper initial prompts (domain vocabulary hints)
-ws-cli prompts list
-ws-cli prompts add "Befund, Diagnose, Therapie"
-ws-cli prompts activate 2
-ws-cli prompts deactivate 1
-ws-cli prompts remove 4
-```
-
-## Text Replacements
-
-Replacements are regex patterns applied to transcribed text after inference. ws-api fetches active replacements from its SQLite database and passes them to ws-engine as a JSON form field with each transcription request. ws-engine applies them in order (case-insensitive) and returns the result as `md`.
-
-Example: pattern `Komma` → replacement `,` converts spoken punctuation markers to symbols.
-
-## Data Storage
-
-Audio files are kept by default (`keepfile=True`). Directory layout under `DATA_PATH`:
+Audio files are kept permanently (`keepfile=True`). Directory layout under `DATA_PATH`:
 
 ```
 data/
-  files/      ← uploaded audio files (never auto-deleted)
-  db/         ← whisper.db SQLite database
-  md/         ← generated markdown transcripts
+  files/      # uploaded audio files (never auto-deleted)
+  db/         # SQLite database
+  md/         # generated markdown transcripts
 ```
 
 ## Development
 
-### Running a single package
-
 ```bash
-uv run --package ws-engine ws-engine
-uv run --package ws-api ws-api
-uv run --package ws-cli ws-cli -- --help
+# Run tests
+uv run pytest                              # all packages
+uv run pytest packages/api/tests/          # single package
+uv run pytest -k test_transcribe           # single test
+
+# Add a dependency to a package
+uv add --package resona-api httpx
+
+# Documentation (MkDocs Material)
+uv run mkdocs serve     # dev server at :8000
+uv run mkdocs build     # static site to site/
 ```
 
-### Adding a dependency
+Note: `uv sync` alone only installs workspace root dev deps. Always use `uv sync --all-packages` to install all workspace members.
 
-```bash
-uv add --package ws-api httpx
-```
+## License
 
-### Running tests
-
-```bash
-uv run pytest                          # all packages
-uv run pytest packages/ws-api/tests/   # single package
-```
-
-### Note on `uv sync`
-
-`uv sync` alone only installs the workspace root's dev dependencies (pytest, httpx). Always use `uv sync --all-packages` to install all workspace members and their entry points.
+Private.
