@@ -18,6 +18,7 @@ resona/
     ├── engine-core/        ← resona-engine-core: FastAPI app, Transcriber protocol, registry, :7001
     ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 backend (default)
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) backend
+    ├── engine-voxtral/    ← resona-engine-voxtral: HuggingFace Transformers backend
     ├── postprocess/        ← resona-postprocess: replacements + LLM pipeline
     ├── api/                ← resona-api: job queue + DB + postprocessing, :7000
     └── client/             ← resona-client: httpx client library
@@ -72,6 +73,10 @@ The registry in `resona_engine_core/registry.py` discovers backends at runtime:
 ### resona-engine-whisper
 - `transcriber.py` — `WhisperTranscriber`: original OpenAI Whisper (PyTorch)
 - Configured via `DEFAULT_WHISPER_MODEL` env var
+
+### resona-engine-voxtral
+- `transcriber.py` — `VoxtralTranscriber`: HuggingFace Transformers pipeline (supports Voxtral, Whisper, etc.)
+- Configured via `DEFAULT_VOXTRAL_MODEL` env var (default: `openai/whisper-large-v3`)
 
 ### resona-postprocess
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
