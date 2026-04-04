@@ -20,6 +20,10 @@ dependencies = [
     "resona-engine-core",
 ]
 
+[tool.uv.sources]
+resona-client = { workspace = true }
+resona-engine-core = { workspace = true }
+
 [project.scripts]
 resona = "resona_cli.main:app"
 
