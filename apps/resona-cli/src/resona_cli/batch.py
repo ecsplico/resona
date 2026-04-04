@@ -15,6 +15,7 @@ def batch_transcribe(
     model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
     language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
     engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
+    backend: str = typer.Option("faster-whisper", "--backend", help="Backend to use for local engine (e.g. faster-whisper, whisper)."),
 ):
     """Transcribe all audio files in a directory (submit + wait for results)."""
     from resona_client.client import ResonaClient
@@ -25,7 +26,7 @@ def batch_transcribe(
     try:
         client = ResonaClient.from_config()
     except RuntimeError:
-        _batch_local_fallback(files, output_dir, model, language, engine_timeout)
+        _batch_local_fallback(files, output_dir, model, language, engine_timeout, backend)
         return
 
     if model is not None:
@@ -79,25 +80,30 @@ def _batch_local_fallback(
     model: Optional[str],
     language: str,
     engine_timeout: float,
+    backend: str = "faster-whisper",
 ) -> None:
+    from resona_postprocess.sources import build_pipeline_from_config
+
     if not files:
         print("No audio files found.")
         return
 
     typer.echo(
-        "No server reachable — starting local engine "
-        "(replacements and prompts not available in local fallback mode).",
+        f"No server reachable — starting local engine (backend={backend}).",
         err=True,
     )
+
+    pipeline = build_pipeline_from_config()
 
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    with LocalEngine(model=model, timeout=engine_timeout) as engine:
+    with LocalEngine(model=model, timeout=engine_timeout, backend=backend) as engine:
         for filepath in files:
             try:
                 result = engine.transcribe(filepath, language=language)
-                transcript = result.get("text", "")
+                raw_text = result.get("text", "")
+                transcript = pipeline.run(raw_text)
                 out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
                 out_path.write_text(transcript, encoding="utf-8")
                 print(f"Transcribed {filepath.name} -> {out_path}")

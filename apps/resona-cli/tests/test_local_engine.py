@@ -86,6 +86,23 @@ def test_enter_spawns_resona_engine_command(tmp_path):
     engine.__exit__(None, None, None)
 
 
+def test_enter_spawns_custom_backend(tmp_path):
+    mock_proc = _make_mock_process()
+    mock_http = _make_healthy_http_client()
+
+    with (
+        patch("resona_cli.local_engine._find_free_port", return_value=54321),
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+        patch("httpx.Client", return_value=mock_http),
+        patch("time.sleep"),
+    ):
+        engine = LocalEngine(backend="whisper").__enter__()
+
+    cmd_used = mock_popen.call_args.args[0]
+    assert cmd_used == ["uv", "run", "resona-engine-whisper"]
+    engine.__exit__(None, None, None)
+
+
 def test_enter_injects_model_override(tmp_path):
     mock_proc = _make_mock_process()
     mock_http = _make_healthy_http_client()

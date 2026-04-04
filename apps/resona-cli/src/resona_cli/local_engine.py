@@ -31,9 +31,16 @@ class LocalEngine:
     No replacements or initial_prompt are sent — local fallback mode only.
     """
 
-    def __init__(self, model: str | None = None, timeout: float = 120.0) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        timeout: float = 120.0,
+        backend: str = "faster-whisper",
+    ) -> None:
         self.model = model
         self.timeout = timeout
+        self.backend = backend
+        self._package = f"resona-engine-{backend}"
         self._process: subprocess.Popen | None = None
         self._port: int | None = None
         self._stderr_file = None
@@ -56,7 +63,7 @@ class LocalEngine:
 
         self._stderr_file = tempfile.TemporaryFile()
         self._process = subprocess.Popen(
-            ["uv", "run", "resona-engine-faster-whisper"],
+            ["uv", "run", self._package],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=self._stderr_file,
