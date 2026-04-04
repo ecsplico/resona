@@ -19,6 +19,9 @@ dependencies = [
     "resona-postprocess",
 ]
 
+[tool.uv.sources]
+resona-postprocess = { workspace = true }
+
 [project.scripts]
 resona-api = "resona_api.run:main"
 

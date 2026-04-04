@@ -16,6 +16,9 @@ torch = [{ index = "pytorch-nightly" }]
 torchaudio = [{ index = "pytorch-nightly" }]
 triton = [{ index = "pytorch-nightly" }]
 
+[tool.uv]
+override-dependencies = ["triton>=3.0.0"]
+
 [tool.uv.extra-build-dependencies]
 openai-whisper = ["setuptools", "wheel"]
 
