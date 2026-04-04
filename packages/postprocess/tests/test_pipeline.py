@@ -69,3 +69,23 @@ def test_pipeline_with_none_return_from_step():
     p.add("upper", str.upper)
     with pytest.raises(TypeError):
         p.run("hello")
+
+
+def test_mixed_replacements_and_callable_steps():
+    """Pipeline with replacements step followed by a custom callable."""
+    from resona_postprocess.replacements import apply_replacements
+
+    rules = [{"name": "hello", "replacement": "hi"}]
+    p = PostprocessPipeline()
+    p.add("replacements", lambda t, r=rules: apply_replacements(t, r))
+    p.add("upper", str.upper)
+
+    result = p.run("hello world")
+    assert result == "HI WORLD"
+
+
+def test_pipeline_preserves_unicode():
+    """Pipeline correctly handles unicode text (medical German, accents, etc)."""
+    p = PostprocessPipeline()
+    p.add("noop", lambda t: t)
+    assert p.run("Ärztlicher Befund: Müdigkeit, Übelkeit") == "Ärztlicher Befund: Müdigkeit, Übelkeit"
