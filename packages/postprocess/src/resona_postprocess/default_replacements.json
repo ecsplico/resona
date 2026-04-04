@@ -1,0 +1,23 @@
+[
+  {"name": "\\s*Komma", "replacement": ","},
+  {"name": "\\s*Punkt", "replacement": "."},
+  {"name": "\\s*Doppel[\\s.,]*punkt", "replacement": ":"},
+  {"name": "\\s*Kapitel", "replacement": "\n\n# "},
+  {"name": "\\s*Hashtag\\s*", "replacement": " #"},
+  {"name": "\\s*Absatz", "replacement": "\n"},
+  {"name": "\\s*Anstrich", "replacement": "\n- "},
+  {"name": "[\\s\\.]*Eckige[\\s.,]*Klammer[\\s.,]*auf[\\s.,]*", "replacement": " ["},
+  {"name": "[\\s\\.]*Eckige[\\s.,]*Klammer[\\s.,]*zu[\\s.,]*", "replacement": "] "},
+  {"name": "[\\s\\.]*Klammer[\\s.,]*auf[\\s.,]*", "replacement": " ("},
+  {"name": "[\\s\\.]*Klammer[\\s.,]*zu[\\s.,]*", "replacement": ") "},
+  {"name": "#\\s+Verlauf[\\s.,]*", "replacement": "# Verlauf\n"},
+  {"name": "#\\s+Medikation[\\s.,]*", "replacement": "# Medikation\n"},
+  {"name": "#\\s+Psychopathologischer\\s*Befund[\\s.,]*", "replacement": "# Psychopathologischer Befund\n"},
+  {"name": "#\\s+Pro[cz]edere[\\s.,]*", "replacement": "# Procedere\n"},
+  {"name": "Monique", "replacement": "Monic"},
+  {"name": "Serafine", "replacement": "Seraphine"},
+  {"name": "Serafina", "replacement": "Seraphine"},
+  {"name": "Lucy", "replacement": "Lucie"},
+  {"name": "Nele", "replacement": "Neele"},
+  {"name": "Mele", "replacement": "Neele"}
+]

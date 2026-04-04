@@ -2,6 +2,7 @@
 
 import json
 import logging
+from importlib import resources
 from pathlib import Path
 
 from .llm import llm_postprocess
@@ -13,14 +14,20 @@ log = logging.getLogger(__name__)
 _DEFAULT_CONFIG_DIR = Path.home() / ".resona"
 
 
+def _load_bundled_defaults() -> list[dict[str, str]]:
+    """Load the default replacement rules bundled with resona-postprocess."""
+    ref = resources.files("resona_postprocess").joinpath("default_replacements.json")
+    return json.loads(ref.read_text(encoding="utf-8"))
+
+
 def load_replacements_from_file(path: Path | None = None) -> list[dict[str, str]]:
     """Load replacement rules from a JSON file.
 
-    Returns an empty list if the file doesn't exist.
+    Falls back to bundled defaults if no user file exists.
     """
     path = path or (_DEFAULT_CONFIG_DIR / "replacements.json")
     if not path.exists():
-        return []
+        return _load_bundled_defaults()
     return json.loads(path.read_text())
 
 

@@ -9,9 +9,10 @@ from resona_postprocess.sources import (
 from resona_postprocess.pipeline import PostprocessPipeline
 
 
-def test_load_replacements_from_missing_file(tmp_path):
+def test_load_replacements_from_missing_file_returns_bundled_defaults(tmp_path):
     result = load_replacements_from_file(tmp_path / "nonexistent.json")
-    assert result == []
+    assert len(result) > 0
+    assert result[0]["name"] == "\\s*Komma"
 
 
 def test_load_replacements_from_file(tmp_path):
