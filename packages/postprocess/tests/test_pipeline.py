@@ -1,3 +1,5 @@
+import pytest
+
 from resona_postprocess.pipeline import PostprocessPipeline
 
 
@@ -33,3 +35,37 @@ def test_fluent_api():
         .run("hello")
     )
     assert result == "HELLO!"
+
+
+def test_pipeline_step_exception_propagates():
+    """A step that raises ValueError must not be swallowed by the pipeline."""
+    def boom(text: str) -> str:
+        raise ValueError("step failed")
+
+    p = PostprocessPipeline()
+    p.add("boom", boom)
+    with pytest.raises(ValueError, match="step failed"):
+        p.run("hello")
+
+
+def test_pipeline_step_exception_preserves_context():
+    """The original exception must be accessible (not wrapped in a new one)."""
+    original = ValueError("original error")
+
+    def reraise(text: str) -> str:
+        raise original
+
+    p = PostprocessPipeline()
+    p.add("reraise", reraise)
+    with pytest.raises(ValueError) as exc_info:
+        p.run("hello")
+    assert exc_info.value is original
+
+
+def test_pipeline_with_none_return_from_step():
+    """A step returning None causes a TypeError when the next step tries to use it."""
+    p = PostprocessPipeline()
+    p.add("returns_none", lambda t: None)
+    p.add("upper", str.upper)
+    with pytest.raises(TypeError):
+        p.run("hello")

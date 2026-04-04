@@ -125,3 +125,43 @@ def test_health_returns_false_on_connection_error(engine_client):
     with respx.mock:
         respx.get(f"{ENGINE_URL}/health").mock(side_effect=httpx.ConnectError("down"))
         assert engine_client.health() is False
+
+
+def test_transcribe_raises_on_connection_error(engine_client, audio_file):
+    """Engine unreachable — ConnectError must propagate to the caller."""
+    with respx.mock:
+        respx.post(f"{ENGINE_URL}/transcribe").mock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+        with pytest.raises(httpx.ConnectError):
+            engine_client.transcribe(audio_file, language="de")
+
+
+def test_transcribe_raises_on_timeout(engine_client, audio_file):
+    """Engine times out — ReadTimeout must propagate to the caller."""
+    with respx.mock:
+        respx.post(f"{ENGINE_URL}/transcribe").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+        with pytest.raises(httpx.ReadTimeout):
+            engine_client.transcribe(audio_file, language="de")
+
+
+def test_transcribe_raises_on_non_200(engine_client, audio_file):
+    """Engine returns 500 — raise_for_status must trigger HTTPStatusError."""
+    with respx.mock:
+        respx.post(f"{ENGINE_URL}/transcribe").mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            engine_client.transcribe(audio_file, language="de")
+    assert exc_info.value.response.status_code == 500
+
+
+def test_health_returns_false_on_timeout(engine_client):
+    """health() must not crash on ReadTimeout — return False instead."""
+    with respx.mock:
+        respx.get(f"{ENGINE_URL}/health").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+        assert engine_client.health() is False
