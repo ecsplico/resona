@@ -65,3 +65,57 @@ def test_explicit_backend_name(mock_config, mock_eps):
     t = _load_from_entrypoint(backend="specific")
     assert isinstance(t, Transcriber)
     mock_config.assert_not_called()
+
+
+@patch("resona_engine_core.registry.entry_points")
+@patch("resona_engine_core.registry.config")
+def test_registry_selects_correct_backend_from_multiple(mock_config, mock_eps):
+    """When multiple backends are registered, the correct one is selected by name."""
+    class OtherTranscriber:
+        def __init__(self, device: str = "cpu", modelname: str | None = None):
+            self.device = device
+
+        def transcribe(
+            self, audio: np.ndarray, *, language="de", task="transcribe",
+            initial_prompt=None, word_timestamps=False, vad_filter=False, **kwargs
+        ) -> TranscriptionResult:
+            return TranscriptionResult(text="other", language="de", segments=[])
+
+    mock_config.return_value = "other"
+    mock_eps.return_value = [
+        _make_entry_point("fake", FakeTranscriber),
+        _make_entry_point("other", OtherTranscriber),
+    ]
+    t = _load_from_entrypoint()
+    assert isinstance(t, OtherTranscriber)
+    assert isinstance(t, Transcriber)
+
+
+@patch("resona_engine_core.registry.entry_points")
+@patch("resona_engine_core.registry.config")
+def test_registry_protocol_violation_raises(mock_config, mock_eps):
+    """Backend that doesn't satisfy Transcriber protocol should raise AssertionError."""
+    class BadBackend:
+        def __init__(self, device: str = "cpu"):
+            pass
+        # Missing transcribe method
+
+    mock_config.return_value = "bad"
+    mock_eps.return_value = [_make_entry_point("bad", BadBackend)]
+
+    with pytest.raises(AssertionError, match="does not satisfy"):
+        _load_from_entrypoint()
+
+
+@patch("resona_engine_core.registry.entry_points")
+@patch("resona_engine_core.registry.config")
+def test_reset_clears_singleton(mock_config, mock_eps):
+    """After loading a transcriber, reset() causes get_transcriber() to load a fresh instance."""
+    mock_config.return_value = "fake"
+    mock_eps.return_value = [_make_entry_point("fake", FakeTranscriber)]
+
+    t1 = get_transcriber()
+    reset()
+    t2 = get_transcriber()
+    assert t1 is not t2
+    assert isinstance(t2, FakeTranscriber)

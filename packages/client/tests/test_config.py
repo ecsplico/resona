@@ -259,3 +259,51 @@ def test_resolve_backend_skips_unreachable_tries_next(monkeypatch):
     with patch("resona_client.config.is_reachable", side_effect=lambda e, **kw: reachable[e.api_url]):
         result = resolve_backend(auto_start=False)
     assert result is e2
+
+
+# ── Round-trip tests ───────────────────────────────────────────────────────────
+
+def test_config_round_trip_preserves_all_fields(tmp_path, monkeypatch):
+    """Save a config with backends and default_backend, load it back, verify all fields."""
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+
+    original = BackendConfig(
+        backends=[
+            BackendEntry(name="gpu-server", api_url="http://gpu:7000", api_key="secret"),
+            BackendEntry(name="local", api_url="http://localhost:7000", compose_dir="/opt/resona"),
+        ],
+        default_backend="voxtral",
+    )
+    original.save()
+
+    loaded = BackendConfig.load()
+    assert len(loaded.backends) == 2
+    assert loaded.backends[0].name == "gpu-server"
+    assert loaded.backends[0].api_key == "secret"
+    assert loaded.backends[1].compose_dir == "/opt/resona"
+    assert loaded.default_backend == "voxtral"
+
+
+def test_config_round_trip_with_ssh_fields(tmp_path, monkeypatch):
+    """SSH-related fields survive save/load."""
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+
+    original = BackendConfig(
+        backends=[
+            BackendEntry(
+                name="remote",
+                api_url="http://localhost:7000",
+                ssh_host="user@myserver.com:2222",
+                ssh_remote_port=7000,
+            ),
+        ],
+    )
+    original.save()
+
+    loaded = BackendConfig.load()
+    assert loaded.backends[0].ssh_host == "user@myserver.com:2222"
+    assert loaded.backends[0].ssh_remote_port == 7000
