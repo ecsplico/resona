@@ -243,6 +243,26 @@ def test_batch_fallback_applies_postprocess_pipeline(tmp_path):
     assert txt.read_text() == "HELLO WORLD"
 
 
+def test_batch_fallback_uses_default_backend_from_config(tmp_path):
+    """When --backend is not passed, reads default_backend from config."""
+    make_wav(tmp_path / "audio.wav")
+    mock_engine = _make_local_engine()
+
+    mock_config = MagicMock()
+    mock_config.default_backend = "voxtral"
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_client.config.BackendConfig.load", return_value=mock_config),
+        patch("resona_cli.batch.LocalEngine", return_value=mock_engine) as mock_le_cls,
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
+    ):
+        runner.invoke(app, ["batch", str(tmp_path)])
+
+    call_kwargs = mock_le_cls.call_args.kwargs
+    assert call_kwargs.get("backend") == "voxtral"
+
+
 def test_batch_warns_when_model_flag_with_live_server(tmp_path):
     """--model should print a warning and be ignored when server is reachable."""
     make_wav(tmp_path / "audio.wav")

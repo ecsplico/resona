@@ -107,6 +107,7 @@ class BackendConfig:
     """
 
     backends: list[BackendEntry] = field(default_factory=list)
+    default_backend: str = "faster-whisper"
 
     @classmethod
     def load(cls) -> "BackendConfig":
@@ -126,14 +127,19 @@ class BackendConfig:
         try:
             data = json.loads(CONFIG_FILE.read_text())
             backends = [BackendEntry(**b) for b in data.get("backends", [])]
-            return cls(backends=backends)
+            default_backend = data.get("default_backend", "faster-whisper")
+            return cls(backends=backends, default_backend=default_backend)
         except (json.JSONDecodeError, TypeError) as e:
             log.warning(f"Could not parse {CONFIG_FILE}: {e}")
             return cls()
 
     def save(self) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(json.dumps({"backends": [asdict(b) for b in self.backends]}, indent=2))
+        data = {
+            "backends": [asdict(b) for b in self.backends],
+            "default_backend": self.default_backend,
+        }
+        CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
     def get(self, name: str) -> Optional[BackendEntry]:
         return next((b for b in self.backends if b.name == name), None)
