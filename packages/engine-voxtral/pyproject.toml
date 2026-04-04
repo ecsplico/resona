@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-engine-voxtral"
+version = "0.1.0"
+description = "HuggingFace Transformers backend for Resona (Voxtral, Whisper, and other ASR models)"
+requires-python = ">=3.12"
+dependencies = [
+    "resona-engine-core",
+    "transformers>=4.45.0",
+    "torch>=2.11.0.dev",
+    "accelerate>=0.34.0",
+]
+
+[tool.uv.sources]
+resona-engine-core = { workspace = true }
+
+[project.entry-points."resona.backends"]
+voxtral = "resona_engine_voxtral.transcriber:VoxtralTranscriber"
+
+[project.scripts]
+resona-engine-voxtral = "resona_engine_core.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_engine_voxtral"]
