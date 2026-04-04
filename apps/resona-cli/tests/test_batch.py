@@ -294,3 +294,38 @@ def test_batch_fallback_continues_on_per_file_error(tmp_path):
 
     assert mock_engine.transcribe.call_count == 2
     assert result.exit_code == 0
+
+
+def test_batch_fallback_with_real_postprocess_config(tmp_path):
+    """Full fallback chain: LocalEngine returns text, real pipeline from config transforms it."""
+    import json
+
+    make_wav(tmp_path / "audio.wav")
+    out_dir = tmp_path / "out"
+
+    # Create a real postprocess config
+    replacements_file = tmp_path / "replacements.json"
+    replacements_file.write_text(json.dumps([
+        {"name": "raw", "replacement": "PROCESSED"},
+    ]))
+    config_file = tmp_path / "postprocess.json"
+    config_file.write_text(json.dumps({
+        "steps": [{"type": "replacements", "source": str(replacements_file)}]
+    }))
+
+    mock_engine = _make_local_engine(transcript="raw text here")
+
+    # Build the real pipeline up-front (outside the patch context)
+    from resona_postprocess.sources import build_pipeline_from_config
+    real_pipeline = build_pipeline_from_config(config_file)
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.batch.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=real_pipeline),
+    ):
+        runner.invoke(app, ["batch", str(tmp_path), "--output-dir", str(out_dir)])
+
+    txt = out_dir / "audio.txt"
+    assert txt.exists()
+    assert txt.read_text() == "PROCESSED text here"
