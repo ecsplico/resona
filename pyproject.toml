@@ -1,10 +1,10 @@
 [project]
-name = "whisper-server-workspace"
+name = "resona-workspace"
 version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["packages/*", "apps/cli", "apps/resona-cli"]
+members = ["packages/*", "apps/resona-cli"]
 
 [[tool.uv.index]]
 name = "pytorch-nightly"

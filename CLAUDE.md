@@ -13,7 +13,6 @@ resona/
 ├── docker-compose.resona.yml
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, batch, replacements, prompts, rec/live/ui TUIs)
-│   ├── cli/                ← ws-cli: legacy CLI (backward compat, will be removed)
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
     ├── engine-core/        ← resona-engine-core: FastAPI app, Transcriber protocol, registry, :7001
@@ -21,16 +20,12 @@ resona/
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) backend
     ├── postprocess/        ← resona-postprocess: replacements + LLM pipeline
     ├── api/                ← resona-api: job queue + DB + postprocessing, :7000
-    ├── client/             ← resona-client: httpx client library
-    ├── ws-engine/          ← legacy engine (backward compat)
-    ├── ws-api/             ← legacy API (backward compat)
-    └── ws-client/          ← legacy client (backward compat)
+    └── client/             ← resona-client: httpx client library
 ```
 
 - `apps/` contains end-user applications (CLI tool, web front-end).
-- `packages/` contains services and libraries.
+- `packages/` contains the services and libraries they depend on.
 - Each Python package follows src-layout: `<root>/src/<module>/`.
-- Legacy `ws-*` packages are retained for backward compatibility and will be removed in a future release.
 
 ## The stateless engine contract
 
