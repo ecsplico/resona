@@ -1,5 +1,5 @@
 {
-    "name": "Whisper Dictaphone",
+    "name": "Resona Dictaphone",
     "short_name": "Dictaphone",
     "description": "Voice recorder with offline storage and automatic transcription",
     "start_url": "/dictaphone.html",
