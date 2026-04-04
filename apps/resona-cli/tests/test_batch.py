@@ -130,6 +130,13 @@ def _make_local_engine(transcript="Transcribed text"):
     return engine
 
 
+def _noop_pipeline():
+    """Mock pipeline that passes text through unchanged."""
+    p = MagicMock()
+    p.run.side_effect = lambda t: t
+    return p
+
+
 def test_batch_fallback_used_when_no_server(tmp_path):
     """When from_config raises RuntimeError, LocalEngine is used instead."""
     make_wav(tmp_path / "audio.wav")
@@ -138,6 +145,7 @@ def test_batch_fallback_used_when_no_server(tmp_path):
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.batch.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
         result = runner.invoke(app, ["batch", str(tmp_path)])
 
@@ -153,6 +161,7 @@ def test_batch_fallback_writes_text_to_audio_parent(tmp_path):
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.batch.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
         runner.invoke(app, ["batch", str(tmp_path)])
 
@@ -170,6 +179,7 @@ def test_batch_fallback_respects_output_dir(tmp_path):
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.batch.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
         runner.invoke(app, ["batch", str(tmp_path), "--output-dir", str(out_dir)])
 
@@ -186,6 +196,7 @@ def test_batch_fallback_passes_model_and_language(tmp_path):
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.batch.LocalEngine", return_value=mock_engine) as mock_le_cls,
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
         runner.invoke(app, ["batch", str(tmp_path), "--model", "large-v3", "--language", "en"])
 
@@ -194,6 +205,42 @@ def test_batch_fallback_passes_model_and_language(tmp_path):
     assert call_kwargs.get("model") == "large-v3"
     engine_transcribe_kwargs = mock_engine.transcribe.call_args.kwargs
     assert engine_transcribe_kwargs.get("language") == "en"
+
+
+def test_batch_fallback_passes_backend_to_local_engine(tmp_path):
+    """--backend is forwarded to LocalEngine."""
+    make_wav(tmp_path / "audio.wav")
+    mock_engine = _make_local_engine()
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.batch.LocalEngine", return_value=mock_engine) as mock_le_cls,
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
+    ):
+        runner.invoke(app, ["batch", str(tmp_path), "--backend", "whisper"])
+
+    call_kwargs = mock_le_cls.call_args.kwargs
+    assert call_kwargs.get("backend") == "whisper"
+
+
+def test_batch_fallback_applies_postprocess_pipeline(tmp_path):
+    """Fallback applies the postprocess pipeline to raw engine text."""
+    make_wav(tmp_path / "audio.wav")
+    out_dir = tmp_path / "out"
+    mock_engine = _make_local_engine(transcript="hello world")
+    mock_pipeline = MagicMock()
+    mock_pipeline.run.return_value = "HELLO WORLD"
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.batch.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=mock_pipeline),
+    ):
+        runner.invoke(app, ["batch", str(tmp_path), "--output-dir", str(out_dir)])
+
+    mock_pipeline.run.assert_called_once_with("hello world")
+    txt = out_dir / "audio.txt"
+    assert txt.read_text() == "HELLO WORLD"
 
 
 def test_batch_warns_when_model_flag_with_live_server(tmp_path):
@@ -221,6 +268,7 @@ def test_batch_fallback_continues_on_per_file_error(tmp_path):
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.batch.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
         result = runner.invoke(app, ["batch", str(tmp_path)])
 
