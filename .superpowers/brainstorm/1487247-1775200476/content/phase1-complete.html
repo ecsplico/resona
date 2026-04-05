@@ -1,0 +1,54 @@
+<h2>Phase 1 Complete</h2>
+<p class="subtitle">3 new packages, 42 tests, 12 commits</p>
+
+<div class="section">
+  <h3>What was built</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+    <div style="background: rgba(79,195,247,0.1); border: 1px solid rgba(79,195,247,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#4fc3f7; margin-top:0;">resona-engine-core</h4>
+      <p style="font-size: 13px;">17 tests</p>
+      <ul style="font-size: 13px; margin-bottom: 0;">
+        <li>Transcriber Protocol</li>
+        <li>Entry-point registry</li>
+        <li>Audio loading (ffmpeg)</li>
+        <li>FastAPI app (no replacements)</li>
+        <li>WebSocket handlers</li>
+        <li>Live transcriber (VAD)</li>
+        <li>API key auth</li>
+      </ul>
+    </div>
+    <div style="background: rgba(129,199,132,0.1); border: 1px solid rgba(129,199,132,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#81c784; margin-top:0;">resona-engine-faster-whisper</h4>
+      <p style="font-size: 13px;">4 tests (incl. integration)</p>
+      <ul style="font-size: 13px; margin-bottom: 0;">
+        <li>FastWhisperTranscriber</li>
+        <li>Entry-point registration</li>
+        <li>Runnable as standalone</li>
+        <li>Full-stack integration test</li>
+      </ul>
+    </div>
+    <div style="background: rgba(255,183,77,0.1); border: 1px solid rgba(255,183,77,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#ffb74d; margin-top:0;">resona-postprocess</h4>
+      <p style="font-size: 13px;">21 tests</p>
+      <ul style="font-size: 13px; margin-bottom: 0;">
+        <li>Static regex replacements</li>
+        <li>LLM postprocessing (litellm)</li>
+        <li>Composable pipeline</li>
+        <li>JSON config sources</li>
+        <li>Fallback to replacements.json</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Next: Phase 2</h3>
+  <div style="background: rgba(186,104,200,0.1); border: 1px solid rgba(186,104,200,0.3); border-radius: 8px; padding: 16px;">
+    <ul style="margin-bottom: 0;">
+      <li>Rename ws-api → resona-api, integrate resona-postprocess</li>
+      <li>Rename ws-client → resona-client, update config paths</li>
+      <li>Rename ws-cli → resona-cli, add backend selection + local postprocessing</li>
+      <li>Update env vars to RESONA_* prefix</li>
+    </ul>
+  </div>
+</div>

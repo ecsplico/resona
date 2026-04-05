@@ -1,0 +1,236 @@
+<h2>Component: resona-postprocess (updated)</h2>
+<p class="subtitle">Static replacements + LLM postprocessing via litellm</p>
+
+<div class="section">
+  <h3>Updated Module Layout</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona_postprocess/</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+resona_postprocess/
+├── replacements.py      ← apply_replacements(text, rules) — static regex
+├── llm.py               ← LLM-based postprocessing via litellm
+├── pipeline.py          ← PostprocessPipeline: composable chain of steps
+└── sources.py           ← load config from DB or ~/.resona/
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Why litellm?</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div style="background: rgba(79,195,247,0.1); border: 1px solid rgba(79,195,247,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#4fc3f7; margin-top:0;">Unified API</h4>
+      <ul style="margin-bottom: 0;">
+        <li>OpenAI, Anthropic, Mistral, Cohere, etc.</li>
+        <li>Local: Ollama, vLLM, llama.cpp, LM Studio</li>
+        <li>One function call: <code>litellm.completion()</code></li>
+      </ul>
+    </div>
+    <div style="background: rgba(129,199,132,0.1); border: 1px solid rgba(129,199,132,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#81c784; margin-top:0;">Env Var Config</h4>
+      <ul style="margin-bottom: 0;">
+        <li><code>OPENAI_API_KEY</code> — for OpenAI/compatible</li>
+        <li><code>ANTHROPIC_API_KEY</code> — for Claude</li>
+        <li>Model string selects provider:<br><code>ollama/llama3</code>, <code>gpt-4o</code>, <code>claude-sonnet-4-20250514</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>LLM Postprocessing Step</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona_postprocess/llm.py</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">import</span> litellm
+<span style="color:#c792ea;">from</span> decouple <span style="color:#c792ea;">import</span> config
+
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">llm_postprocess</span>(
+    text: str,
+    *,
+    prompt: str,
+    model: str | None = None,
+    api_base: str | None = None,
+) -> str:
+    <span style="color:#808080;">"""Send transcript through an LLM with a given prompt."""</span>
+    model = model or config(<span style="color:#c3e88d;">"RESONA_LLM_MODEL"</span>, default=<span style="color:#c3e88d;">"gpt-4o-mini"</span>)
+    api_base = api_base or config(<span style="color:#c3e88d;">"RESONA_LLM_API_BASE"</span>, default=<span style="color:#c3e88d;">""</span>) or None
+
+    response = litellm.completion(
+        model=model,
+        api_base=api_base,
+        messages=[
+            {<span style="color:#c3e88d;">"role"</span>: <span style="color:#c3e88d;">"system"</span>, <span style="color:#c3e88d;">"content"</span>: prompt},
+            {<span style="color:#c3e88d;">"role"</span>: <span style="color:#c3e88d;">"user"</span>, <span style="color:#c3e88d;">"content"</span>: text},
+        ],
+    )
+    <span style="color:#c792ea;">return</span> response.choices[0].message.content
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Environment Variables</h3>
+  <div class="mockup">
+    <div class="mockup-header">Resona-specific LLM config</div>
+    <div class="mockup-body" style="padding: 20px;">
+      <table style="width:100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <th style="text-align:left; padding: 8px; color: #999;">Variable</th>
+          <th style="text-align:left; padding: 8px; color: #999;">Purpose</th>
+          <th style="text-align:left; padding: 8px; color: #999;">Example</th>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px;"><code>RESONA_LLM_MODEL</code></td>
+          <td style="padding: 8px;">Default model (litellm model string)</td>
+          <td style="padding: 8px; color: #81c784;"><code>ollama/llama3</code></td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px;"><code>RESONA_LLM_API_BASE</code></td>
+          <td style="padding: 8px;">Custom endpoint (for local models)</td>
+          <td style="padding: 8px; color: #81c784;"><code>http://localhost:11434</code></td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; color: #999;" colspan="3">
+            Plus standard provider keys: <code>OPENAI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, etc. — litellm reads these natively.
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Pipeline with LLM Steps</h3>
+  <div class="mockup">
+    <div class="mockup-header">Composable: static replacements → LLM → more steps</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#808080;"># Example: build a pipeline with both static and LLM steps</span>
+
+pipeline = PostprocessPipeline()
+
+<span style="color:#808080;"># Step 1: static replacements (fast, local)</span>
+pipeline.add(
+    <span style="color:#c3e88d;">"replacements"</span>,
+    <span style="color:#c792ea;">lambda</span> text: apply_replacements(text, replacements),
+)
+
+<span style="color:#808080;"># Step 2: LLM formatting (configurable prompt)</span>
+pipeline.add(
+    <span style="color:#c3e88d;">"llm-format"</span>,
+    <span style="color:#c792ea;">lambda</span> text: llm_postprocess(
+        text,
+        prompt=<span style="color:#c3e88d;">"Format this medical transcription with proper "
+               "paragraphs, headings, and punctuation. "
+               "Do not change the content, only the formatting."</span>,
+    ),
+)
+
+<span style="color:#808080;"># Run the full chain</span>
+md = pipeline.run(raw_text)
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>LLM Prompts — Stored Like Replacements</h3>
+  <div class="mockup">
+    <div class="mockup-header">~/.resona/postprocess.json — full pipeline config</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+{
+  <span style="color:#c3e88d;">"steps"</span>: [
+    {
+      <span style="color:#c3e88d;">"type"</span>: <span style="color:#c3e88d;">"replacements"</span>,
+      <span style="color:#c3e88d;">"source"</span>: <span style="color:#c3e88d;">"replacements.json"</span>
+    },
+    {
+      <span style="color:#c3e88d;">"type"</span>: <span style="color:#c3e88d;">"llm"</span>,
+      <span style="color:#c3e88d;">"name"</span>: <span style="color:#c3e88d;">"format-medical"</span>,
+      <span style="color:#c3e88d;">"prompt"</span>: <span style="color:#c3e88d;">"Format this medical transcription with proper paragraphs, headings, and punctuation. Do not change the content."</span>,
+      <span style="color:#c3e88d;">"model"</span>: <span style="color:#c3e88d;">"ollama/llama3"</span>
+    },
+    {
+      <span style="color:#c3e88d;">"type"</span>: <span style="color:#c3e88d;">"llm"</span>,
+      <span style="color:#c3e88d;">"name"</span>: <span style="color:#c3e88d;">"extract-summary"</span>,
+      <span style="color:#c3e88d;">"prompt"</span>: <span style="color:#c3e88d;">"Extract a one-line summary of this consultation."</span>
+    }
+  ]
+}
+</pre>
+      <p style="color: #999; margin-bottom: 0;">Each step runs in order. LLM steps can override model per-step or fall back to <code>RESONA_LLM_MODEL</code>.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>How sources.py Builds the Pipeline</h3>
+  <div class="mockup">
+    <div class="mockup-header">sources.py — updated</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">build_pipeline_from_config</span>(
+    config_path: Path | None = None,
+) -> PostprocessPipeline:
+    <span style="color:#808080;">"""Build pipeline from ~/.resona/postprocess.json"""</span>
+    config_path = config_path or Path.home() / <span style="color:#c3e88d;">".resona"</span> / <span style="color:#c3e88d;">"postprocess.json"</span>
+    <span style="color:#c792ea;">if not</span> config_path.exists():
+        <span style="color:#c792ea;">return</span> PostprocessPipeline()  <span style="color:#808080;"># no-op pipeline</span>
+
+    cfg = json.loads(config_path.read_text())
+    pipeline = PostprocessPipeline()
+
+    <span style="color:#c792ea;">for</span> step <span style="color:#c792ea;">in</span> cfg.get(<span style="color:#c3e88d;">"steps"</span>, []):
+        <span style="color:#c792ea;">if</span> step[<span style="color:#c3e88d;">"type"</span>] == <span style="color:#c3e88d;">"replacements"</span>:
+            rules = load_replacements_from_file(step.get(<span style="color:#c3e88d;">"source"</span>))
+            pipeline.add(<span style="color:#c3e88d;">"replacements"</span>, <span style="color:#c792ea;">lambda</span> t: apply_replacements(t, rules))
+
+        <span style="color:#c792ea;">elif</span> step[<span style="color:#c3e88d;">"type"</span>] == <span style="color:#c3e88d;">"llm"</span>:
+            prompt = step[<span style="color:#c3e88d;">"prompt"</span>]
+            model = step.get(<span style="color:#c3e88d;">"model"</span>)  <span style="color:#808080;"># None → falls back to env var</span>
+            pipeline.add(
+                step.get(<span style="color:#c3e88d;">"name"</span>, <span style="color:#c3e88d;">"llm"</span>),
+                <span style="color:#c792ea;">lambda</span> t, p=prompt, m=model: llm_postprocess(t, prompt=p, model=m),
+            )
+
+    <span style="color:#c792ea;">return</span> pipeline
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Server-Side (resona-api) — Same Concept</h3>
+  <div style="background: rgba(255,183,77,0.1); border: 1px solid rgba(255,183,77,0.3); border-radius: 8px; padding: 16px;">
+    <p style="margin-top:0;">The API builds its pipeline from DB records instead of a JSON file, but uses the same <code>PostprocessPipeline</code> and <code>llm_postprocess()</code>. LLM prompts become a new DB table (like <code>InitialPrompt</code> today but for postprocessing), manageable via API endpoints and CLI commands.</p>
+    <p style="margin-bottom:0;">This means <code>resona prompts</code> evolves: initial prompts (pre-transcription hints) stay separate from postprocess prompts (LLM instructions applied after).</p>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Data Flow — Updated</h3>
+  <div class="mockup">
+    <div class="mockup-header">Full pipeline</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+Audio
+  ↓
+<span style="color:#4fc3f7;">resona-engine</span>  →  { text, language, segments }   <span style="color:#808080;">raw transcript</span>
+  ↓
+<span style="color:#ffb74d;">PostprocessPipeline</span>
+  │
+  ├─ <span style="color:#81c784;">Step 1: replacements</span>     static regex, fast     <span style="color:#808080;">(from DB or JSON)</span>
+  ├─ <span style="color:#81c784;">Step 2: llm-format</span>       LLM call via litellm   <span style="color:#808080;">(configurable prompt)</span>
+  └─ <span style="color:#81c784;">Step 3: llm-summary</span>      another LLM call       <span style="color:#808080;">(optional)</span>
+  ↓
+md = final processed text
+</pre>
+    </div>
+  </div>
+</div>

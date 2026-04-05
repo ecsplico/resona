@@ -1,0 +1,187 @@
+<h2>Resona — Modular Transcription Platform</h2>
+<p class="subtitle">Full rename from whisper-server / ws-* to resona / resona-*</p>
+
+<div class="section">
+  <h3>Naming Map</h3>
+  <div class="mockup">
+    <div class="mockup-header">Old → New</div>
+    <div class="mockup-body" style="padding: 20px;">
+      <table style="width:100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <th style="text-align:left; padding: 8px; color: #999;">Old</th>
+          <th style="text-align:left; padding: 8px; color: #999;">New</th>
+          <th style="text-align:left; padding: 8px; color: #999;">Python module</th>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">whisper-server/</td>
+          <td style="padding: 8px; color: #4fc3f7;">resona/</td>
+          <td style="padding: 8px; color: #999;">—</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">ws-engine</td>
+          <td style="padding: 8px; color: #4fc3f7;">resona-engine-core</td>
+          <td style="padding: 8px;">resona_engine_core</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">—</td>
+          <td style="padding: 8px; color: #81c784;">resona-engine-faster-whisper</td>
+          <td style="padding: 8px;">resona_engine_faster_whisper</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">—</td>
+          <td style="padding: 8px; color: #81c784;">resona-engine-voxtral</td>
+          <td style="padding: 8px;">resona_engine_voxtral</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">—</td>
+          <td style="padding: 8px; color: #81c784;">resona-engine-whisper</td>
+          <td style="padding: 8px;">resona_engine_whisper</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">ws-api</td>
+          <td style="padding: 8px; color: #ffb74d;">resona-api</td>
+          <td style="padding: 8px;">resona_api</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">ws-client</td>
+          <td style="padding: 8px; color: #ffb74d;">resona-client</td>
+          <td style="padding: 8px;">resona_client</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">ws-cli</td>
+          <td style="padding: 8px; color: #ba68c8;">resona-cli</td>
+          <td style="padding: 8px;">resona_cli</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px; color: #ef5350;">—</td>
+          <td style="padding: 8px; color: #ffb74d;">resona-postprocess</td>
+          <td style="padding: 8px;">resona_postprocess</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; color: #ef5350;">~/.whisper-server/</td>
+          <td style="padding: 8px; color: #4fc3f7;">~/.resona/</td>
+          <td style="padding: 8px; color: #999;">config dir</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Package Structure</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona/ workspace layout</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 14px; line-height: 1.8; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+resona/
+├── pyproject.toml
+├── uv.lock
+├── docker-compose.yml
+│
+├── apps/
+│   ├── cli/                              ← <span style="color:#ba68c8;">resona-cli</span>
+│   │   └── src/resona_cli/
+│   │       ├── main.py                     CLI: resona rec | live | ui | batch | watch
+│   │       └── local_engine.py             spawns backend by name
+│   └── web/                              ← browser UI
+│
+└── packages/
+    ├── <span style="color:#4fc3f7;">engine-core/</span>                      ← resona-engine-core
+    │   └── src/resona_engine_core/
+    │       ├── app.py                      FastAPI app + endpoints
+    │       ├── protocol.py                 <b>Transcriber Protocol</b>
+    │       ├── registry.py                 entry-point discovery
+    │       ├── audio.py                    load_audio()
+    │       ├── live_transcriber.py         VAD + local agreement
+    │       └── auth.py
+    │
+    ├── <span style="color:#81c784;">engine-faster-whisper/</span>            ← resona-engine-faster-whisper
+    │   ├── src/resona_engine_faster_whisper/
+    │   │   └── transcriber.py
+    │   ├── pyproject.toml
+    │   └── Dockerfile                      nvidia/cuda base
+    │
+    ├── <span style="color:#81c784;">engine-voxtral/</span>                   ← resona-engine-voxtral
+    │   ├── src/resona_engine_voxtral/
+    │   │   └── transcriber.py
+    │   ├── pyproject.toml
+    │   └── Dockerfile
+    │
+    ├── <span style="color:#81c784;">engine-whisper/</span>                   ← resona-engine-whisper
+    │   ├── src/resona_engine_whisper/
+    │   │   └── transcriber.py
+    │   ├── pyproject.toml
+    │   └── Dockerfile
+    │
+    ├── <span style="color:#ffb74d;">postprocess/</span>                      ← resona-postprocess
+    │   └── src/resona_postprocess/
+    │       ├── replacements.py             apply_replacements()
+    │       └── pipeline.py                 composable steps
+    │
+    ├── <span style="color:#ffb74d;">api/</span>                              ← resona-api
+    │   └── src/resona_api/
+    │       └── ...                         (same structure, uses resona-postprocess)
+    │
+    └── <span style="color:#ffb74d;">client/</span>                           ← resona-client
+        └── src/resona_client/
+            ├── client.py
+            └── config.py                   ~/.resona/config.json
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>CLI Commands</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona CLI (was: ws-cli)</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 14px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+$ resona batch ./audio/ --backend faster-whisper --output-dir ./out/
+$ resona watch ./inbox/ --language de
+$ resona rec
+$ resona live
+$ resona ui
+$ resona backends list
+$ resona replacements list
+$ resona prompts list
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Config Location</h3>
+  <div class="mockup">
+    <div class="mockup-header">~/.resona/</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 14px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+~/.resona/
+├── config.json          ← backends list + default_backend
+└── replacements.json    ← local replacements for offline mode
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Environment Variables</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 14px;">
+    <div style="background: rgba(239,83,80,0.1); border: 1px solid rgba(239,83,80,0.3); border-radius: 8px; padding: 12px;">
+      <div style="color:#ef5350; font-weight: bold; margin-bottom: 8px;">Old</div>
+      <code>WS_API_URL</code><br>
+      <code>WS_API_KEY</code><br>
+      <code>ENGINE_API_KEY</code><br>
+      <code>ENGINE_URL</code><br>
+      <code>ASR_MODE</code>
+    </div>
+    <div style="background: rgba(79,195,247,0.1); border: 1px solid rgba(79,195,247,0.3); border-radius: 8px; padding: 12px;">
+      <div style="color:#4fc3f7; font-weight: bold; margin-bottom: 8px;">New</div>
+      <code>RESONA_API_URL</code><br>
+      <code>RESONA_API_KEY</code><br>
+      <code>RESONA_ENGINE_KEY</code><br>
+      <code>RESONA_ENGINE_URL</code><br>
+      <code>RESONA_BACKEND</code> <span style="color:#999;">(replaces ASR_MODE)</span>
+    </div>
+  </div>
+</div>

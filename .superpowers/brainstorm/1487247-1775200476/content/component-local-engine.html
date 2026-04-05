@@ -1,0 +1,146 @@
+<h2>Component: Local Engine & Backend Auto-Start</h2>
+<p class="subtitle">resona-cli — spawning the right backend locally</p>
+
+<div class="section">
+  <h3>Config Structure</h3>
+  <div class="mockup">
+    <div class="mockup-header">~/.resona/config.json — updated</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+{
+  <span style="color:#c3e88d;">"default_backend"</span>: <span style="color:#c3e88d;">"faster-whisper"</span>,
+  <span style="color:#c3e88d;">"backends"</span>: [
+    {
+      <span style="color:#c3e88d;">"name"</span>: <span style="color:#c3e88d;">"gpu-server"</span>,
+      <span style="color:#c3e88d;">"api_url"</span>: <span style="color:#c3e88d;">"http://192.168.1.50:7000"</span>,
+      <span style="color:#c3e88d;">"api_key"</span>: <span style="color:#c3e88d;">"..."</span>,
+      <span style="color:#c3e88d;">"ssh_host"</span>: <span style="color:#c3e88d;">"gpu-box"</span>,
+      <span style="color:#c3e88d;">"ssh_remote_port"</span>: 7000
+    }
+  ]
+}
+</pre>
+      <p style="color: #999; margin-bottom: 0;"><code>default_backend</code> is new — maps to an entry point name in <code>resona.backends</code>.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Backend Resolution Flow</h3>
+  <div class="mockup">
+    <div class="mockup-header">What happens when you run: resona batch ./audio/ --backend voxtral</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#ffb74d;">1.</span> Try configured remote backends
+   │  GET http://gpu-server:7000/health
+   │
+   ├─ <span style="color:#81c784;">reachable</span> → use remote server (--backend flag ignored for remote)
+   │
+   └─ <span style="color:#ef5350;">unreachable</span> → try auto-start (SSH tunnel / docker compose)
+      │
+      ├─ <span style="color:#81c784;">auto-start worked</span> → use remote server
+      │
+      └─ <span style="color:#ef5350;">still unreachable</span> → local fallback
+         │
+<span style="color:#ffb74d;">2.</span> Resolve backend name
+         │  --backend flag  →  <span style="color:#c3e88d;">"voxtral"</span>
+         │  OR config.json  →  <span style="color:#c3e88d;">"faster-whisper"</span>
+         │  OR hardcoded     →  <span style="color:#c3e88d;">"faster-whisper"</span>
+         │
+<span style="color:#ffb74d;">3.</span> Map backend name to package
+         │  <span style="color:#c3e88d;">"voxtral"</span>  →  <span style="color:#4fc3f7;">resona-engine-voxtral</span>
+         │  <span style="color:#c3e88d;">"faster-whisper"</span>  →  <span style="color:#4fc3f7;">resona-engine-faster-whisper</span>
+         │
+<span style="color:#ffb74d;">4.</span> Spawn local engine
+         │  <span style="color:#ba68c8;">uv run resona-engine-voxtral</span>
+         │  poll /health until ready
+         │
+<span style="color:#ffb74d;">5.</span> Transcribe + postprocess
+         │  POST /transcribe → raw text
+         │  PostprocessPipeline (from postprocess.json) → md
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>LocalEngine Changes</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona_cli/local_engine.py — updated</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">class</span> <span style="color:#ffcb6b;">LocalEngine</span>:
+    <span style="color:#c792ea;">def</span> <span style="color:#82aaff;">__init__</span>(
+        self,
+        backend: str = <span style="color:#c3e88d;">"faster-whisper"</span>,
+        model: str | None = None,
+        timeout: float = 120.0,
+    ):
+        self.backend = backend
+        self.model = model
+        self.timeout = timeout
+        <span style="color:#808080;"># package name derived from backend name</span>
+        self._package = f<span style="color:#c3e88d;">"resona-engine-{backend}"</span>
+
+    <span style="color:#c792ea;">def</span> <span style="color:#82aaff;">__enter__</span>(self):
+        <span style="color:#808080;"># spawn: uv run resona-engine-{backend}</span>
+        self._process = subprocess.Popen(
+            [<span style="color:#c3e88d;">"uv"</span>, <span style="color:#c3e88d;">"run"</span>, self._package],
+            env={**os.environ, <span style="color:#c3e88d;">"PORT"</span>: str(self._port)},
+            ...
+        )
+        self._wait_for_health()
+        <span style="color:#c792ea;">return</span> self
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Each Backend Package is Runnable</h3>
+  <div class="mockup">
+    <div class="mockup-header">packages/engine-voxtral/pyproject.toml</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+[project]
+name = <span style="color:#c3e88d;">"resona-engine-voxtral"</span>
+dependencies = [
+    <span style="color:#c3e88d;">"resona-engine-core"</span>,
+    <span style="color:#c3e88d;">"transformers"</span>,
+    <span style="color:#c3e88d;">"torch"</span>,
+]
+
+<span style="color:#808080;"># Register as a backend</span>
+[project.entry-points.<span style="color:#c3e88d;">"resona.backends"</span>]
+voxtral = <span style="color:#c3e88d;">"resona_engine_voxtral.transcriber:VoxtralTranscriber"</span>
+
+<span style="color:#808080;"># Make it runnable: uv run resona-engine-voxtral</span>
+[project.scripts]
+resona-engine-voxtral = <span style="color:#c3e88d;">"resona_engine_core.app:main"</span>
+</pre>
+      <p style="color: #999; margin-bottom: 0;">
+        The <code>[project.scripts]</code> entry point means <code>uv run resona-engine-voxtral</code> launches the core FastAPI app.
+        On startup, the app calls <code>get_transcriber()</code> which discovers the voxtral backend via entry points.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Summary of All Config Sources</h3>
+  <div class="mockup">
+    <div class="mockup-header">~/.resona/ full layout</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 14px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+~/.resona/
+├── config.json          ← remote backends + default_backend
+├── replacements.json    ← static replacement rules (local mode)
+└── postprocess.json     ← full pipeline config: replacements + LLM steps
+</pre>
+      <p style="color: #999; margin-bottom: 0;">
+        <code>postprocess.json</code> references <code>replacements.json</code> as a source.
+        If <code>postprocess.json</code> doesn't exist, CLI falls back to just <code>replacements.json</code> for backward compat.
+      </p>
+    </div>
+  </div>
+</div>

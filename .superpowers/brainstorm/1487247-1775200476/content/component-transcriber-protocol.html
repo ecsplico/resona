@@ -1,0 +1,133 @@
+<h2>Component: Transcriber Protocol & Registry</h2>
+<p class="subtitle">resona-engine-core — the backbone of backend modularity</p>
+
+<div class="section">
+  <h3>Transcriber Protocol</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona_engine_core/protocol.py</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">from</span> typing <span style="color:#c792ea;">import</span> Protocol, runtime_checkable
+<span style="color:#c792ea;">import</span> numpy <span style="color:#c792ea;">as</span> np
+
+<span style="color:#808080;">@runtime_checkable</span>
+<span style="color:#c792ea;">class</span> <span style="color:#ffcb6b;">Transcriber</span>(Protocol):
+    <span style="color:#808080;">"""All backends implement this interface."""</span>
+
+    <span style="color:#c792ea;">def</span> <span style="color:#82aaff;">transcribe</span>(
+        self,
+        audio: np.ndarray,
+        *,
+        language: str = <span style="color:#c3e88d;">"de"</span>,
+        task: str = <span style="color:#c3e88d;">"transcribe"</span>,
+        initial_prompt: str | None = None,
+        word_timestamps: bool = False,
+        vad_filter: bool = False,
+    ) -> <span style="color:#ffcb6b;">TranscriptionResult</span>:
+        ...
+
+<span style="color:#c792ea;">class</span> <span style="color:#ffcb6b;">TranscriptionResult</span>(TypedDict):
+    text: str
+    language: str
+    segments: list[dict]
+</pre>
+    </div>
+  </div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>What this gives us</h4>
+      <ul>
+        <li><code>@runtime_checkable</code> — can verify at startup that a backend is valid</li>
+        <li>Keyword-only args after audio — backends ignore what they don't support</li>
+        <li>Typed return — consumers know exactly what they get</li>
+        <li>No base class inheritance needed — duck typing with safety</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>Constraints</h4>
+      <ul>
+        <li>Backends must accept <code>**kwargs</code> for forward-compat with new params</li>
+        <li><code>segments</code> format varies by backend — kept as list[dict] for flexibility</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Backend Discovery via Entry Points</h3>
+  <div class="mockup">
+    <div class="mockup-header">How backends register themselves</div>
+    <div class="mockup-body" style="padding: 20px;">
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+
+        <div style="flex: 1; min-width: 280px;">
+          <div style="color: #81c784; font-weight: bold; margin-bottom: 8px;">Backend pyproject.toml</div>
+<pre style="margin:0; font-size: 13px; color: #e0e0e0;">
+<span style="color:#808080;"># packages/engine-faster-whisper/pyproject.toml</span>
+
+[project.entry-points.<span style="color:#c3e88d;">"resona.backends"</span>]
+faster-whisper = <span style="color:#c3e88d;">"resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"</span>
+</pre>
+        </div>
+
+        <div style="flex: 1; min-width: 280px;">
+          <div style="color: #4fc3f7; font-weight: bold; margin-bottom: 8px;">Registry discovers at startup</div>
+<pre style="margin:0; font-size: 13px; color: #e0e0e0;">
+<span style="color:#808080;"># resona_engine_core/registry.py</span>
+
+<span style="color:#c792ea;">from</span> importlib.metadata <span style="color:#c792ea;">import</span> entry_points
+
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">get_transcriber</span>(
+    backend: str | None = None,
+) -> Transcriber:
+    name = backend or config(<span style="color:#c3e88d;">"RESONA_BACKEND"</span>)
+    eps = entry_points(group=<span style="color:#c3e88d;">"resona.backends"</span>)
+    <span style="color:#c792ea;">for</span> ep <span style="color:#c792ea;">in</span> eps:
+        <span style="color:#c792ea;">if</span> ep.name == name:
+            cls = ep.load()
+            instance = cls(device=_detect_device())
+            <span style="color:#c792ea;">assert</span> isinstance(instance, Transcriber)
+            <span style="color:#c792ea;">return</span> instance
+    <span style="color:#c792ea;">raise</span> ValueError(
+        f<span style="color:#c3e88d;">"Backend '{name}' not found. "</span>
+        f<span style="color:#c3e88d;">"Installed: {[e.name for e in eps]}"</span>
+    )
+</pre>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div style="background: rgba(255,183,77,0.1); border: 1px solid rgba(255,183,77,0.3); border-radius: 8px; padding: 16px; margin-top: 12px;">
+    <h4 style="color:#ffb74d; margin-top:0;">Why entry points?</h4>
+    <ul style="margin-bottom: 0;">
+      <li><b>Zero coupling</b> — core never imports backend code directly</li>
+      <li><b>Install = register</b> — <code>uv pip install resona-engine-voxtral</code> automatically makes "voxtral" available</li>
+      <li><b>One backend per image</b> — Docker image installs one backend package, entry point resolves it</li>
+      <li><b>CLI auto-start</b> — <code>resona batch --backend voxtral</code> knows to <code>uv run resona-engine-voxtral</code></li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Singleton Lifecycle (unchanged pattern)</h3>
+  <div class="mockup">
+    <div class="mockup-header">One transcriber per process, lazy-loaded</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#808080;"># resona_engine_core/registry.py</span>
+
+_transcriber: Transcriber | None = None
+_lock = threading.Lock()
+
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">get_transcriber</span>(backend: str | None = None) -> Transcriber:
+    <span style="color:#c792ea;">global</span> _transcriber
+    <span style="color:#c792ea;">if</span> _transcriber <span style="color:#c792ea;">is</span> None:
+        <span style="color:#c792ea;">with</span> _lock:
+            <span style="color:#c792ea;">if</span> _transcriber <span style="color:#c792ea;">is</span> None:
+                _transcriber = _load_from_entrypoint(backend)
+    <span style="color:#c792ea;">return</span> _transcriber
+</pre>
+    </div>
+  </div>
+</div>

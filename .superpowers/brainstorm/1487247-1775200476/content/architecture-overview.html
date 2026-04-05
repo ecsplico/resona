@@ -1,0 +1,128 @@
+<h2>Proposed Architecture: Modular whisper-server</h2>
+<p class="subtitle">Overview of all decisions so far and the proposed package structure</p>
+
+<div class="section">
+  <h3>Package Structure</h3>
+  <div class="mockup">
+    <div class="mockup-header">New workspace layout</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 14px; line-height: 1.8; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+whisper-server/
+├── pyproject.toml                    ← workspace root
+├── uv.lock
+├── docker-compose.yml
+│
+├── apps/
+│   ├── cli/                          ← ws-cli (unchanged role)
+│   └── web/                          ← browser UI (unchanged)
+│
+└── packages/
+    ├── <span style="color:#4fc3f7;">ws-engine-core/</span>              ← <b>NEW</b> shared FastAPI app, audio loading,
+    │   └── src/ws_engine_core/         endpoints, auth, transcriber protocol
+    │       ├── app.py                  (routes, lifespan)
+    │       ├── protocol.py             (<b>Transcriber Protocol</b>)
+    │       ├── registry.py             (entry-point based discovery)
+    │       ├── audio.py                (load_audio, format conversion)
+    │       ├── live_transcriber.py     (VAD + local agreement)
+    │       └── auth.py
+    │
+    ├── <span style="color:#81c784;">ws-engine-faster-whisper/</span>    ← backend: CTranslate2
+    │   ├── src/ws_engine_faster_whisper/
+    │   │   └── transcriber.py
+    │   ├── pyproject.toml              (depends on ws-engine-core)
+    │   └── Dockerfile                  (nvidia/cuda base)
+    │
+    ├── <span style="color:#81c784;">ws-engine-voxtral/</span>          ← backend: HuggingFace transformers
+    │   ├── src/ws_engine_voxtral/
+    │   │   └── transcriber.py
+    │   ├── pyproject.toml              (depends on ws-engine-core)
+    │   └── Dockerfile
+    │
+    ├── <span style="color:#81c784;">ws-engine-whisper/</span>          ← backend: openai-whisper
+    │   ├── src/ws_engine_whisper/
+    │   │   └── transcriber.py
+    │   ├── pyproject.toml
+    │   └── Dockerfile
+    │
+    ├── <span style="color:#ffb74d;">ws-postprocess/</span>             ← <b>NEW</b> shared postprocessing library
+    │   └── src/ws_postprocess/
+    │       ├── replacements.py         (apply_replacements — moved from engine)
+    │       └── pipeline.py             (composable postprocessing steps)
+    │
+    ├── ws-api/                         ← job queue + DB (uses ws-postprocess)
+    └── ws-client/                      ← HTTP client library
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Key Design Decisions</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div style="background: rgba(79,195,247,0.1); border: 1px solid rgba(79,195,247,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#4fc3f7; margin-top:0;">Transcriber Protocol</h4>
+      <p>Formal <code>typing.Protocol</code> in ws-engine-core. All backends implement it. Discovered via Python entry points.</p>
+    </div>
+    <div style="background: rgba(129,199,132,0.1); border: 1px solid rgba(129,199,132,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#81c784; margin-top:0;">One Backend Per Image</h4>
+      <p>Each backend is a separate package + Dockerfile. No bloated images. <code>ASR_MODE</code> still selects at runtime within a package.</p>
+    </div>
+    <div style="background: rgba(255,183,77,0.1); border: 1px solid rgba(255,183,77,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#ffb74d; margin-top:0;">Postprocessing Library</h4>
+      <p>ws-postprocess used by ws-api (from DB) and ws-cli (from local JSON file). Engine stays pure ASR.</p>
+    </div>
+    <div style="background: rgba(186,104,200,0.1); border: 1px solid rgba(186,104,200,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#ba68c8; margin-top:0;">Local Fallback</h4>
+      <p>CLI reads <code>~/.whisper-server/config.json</code> for default backend + replacements. <code>--backend</code> flag overrides.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Data Flow</h3>
+  <div class="mockup">
+    <div class="mockup-header">Server path (ws-api → engine)</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+Client ──POST /jobs──▶ <span style="color:#ffb74d;">ws-api</span>
+                        │ saves file, creates PENDING job
+                        │
+                   TranscribeTask
+                        │ fetches replacements + prompt from DB
+                        │ POSTs audio + initial_prompt to engine
+                        ▼
+                   <span style="color:#4fc3f7;">ws-engine-core</span> + <span style="color:#81c784;">backend</span>
+                        │ transcribes audio → {text, language, segments}
+                        │ (NO replacements applied here anymore)
+                        ▼
+                   <span style="color:#ffb74d;">ws-api</span>
+                        │ applies <span style="color:#ffb74d;">ws-postprocess</span>.apply_replacements()
+                        │ stores text + md + segments
+                        ▼
+Client ──GET /job/{id}──▶ COMPLETED with transcript
+</pre>
+    </div>
+  </div>
+
+  <div class="mockup" style="margin-top: 16px;">
+    <div class="mockup-header">Local path (ws-cli direct)</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+ws-cli batch ──▶ no server found
+                  │ reads ~/.whisper-server/config.json
+                  │   → default_backend, replacements
+                  │
+                  │ spawns <span style="color:#81c784;">uv run ws-engine-faster-whisper</span>
+                  │ POSTs audio to local engine
+                  ▼
+             <span style="color:#4fc3f7;">ws-engine-core</span> + <span style="color:#81c784;">backend</span>
+                  │ returns {text, language, segments}
+                  ▼
+             ws-cli applies <span style="color:#ffb74d;">ws-postprocess</span>.apply_replacements()
+                  │ using local replacements.json
+                  ▼
+             writes .txt / .md to output dir
+</pre>
+    </div>
+  </div>
+</div>

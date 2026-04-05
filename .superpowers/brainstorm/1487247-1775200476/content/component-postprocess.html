@@ -1,0 +1,176 @@
+<h2>Component: resona-postprocess</h2>
+<p class="subtitle">Shared postprocessing library — used by both API and CLI</p>
+
+<div class="section">
+  <h3>Architecture</h3>
+  <div class="mockup">
+    <div class="mockup-header">resona_postprocess/ module layout</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+resona_postprocess/
+├── replacements.py      ← apply_replacements(text, rules) — moved from engine
+├── pipeline.py          ← PostprocessPipeline: composable chain of steps
+└── sources.py           ← load replacements from different sources
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Core API</h3>
+  <div class="mockup">
+    <div class="mockup-header">replacements.py — same pure function, new home</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">apply_replacements</span>(
+    text: str,
+    replacements: list[dict[str, str]],
+) -> str:
+    <span style="color:#808080;">"""Apply regex replacements in order. Same logic as before."""</span>
+    <span style="color:#c792ea;">for</span> r <span style="color:#c792ea;">in</span> replacements:
+        text = re.sub(r[<span style="color:#c3e88d;">"name"</span>], r[<span style="color:#c3e88d;">"replacement"</span>], text, flags=re.IGNORECASE)
+    <span style="color:#c792ea;">return</span> text
+</pre>
+    </div>
+  </div>
+
+  <div class="mockup" style="margin-top: 16px;">
+    <div class="mockup-header">pipeline.py — composable postprocessing</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">from</span> typing <span style="color:#c792ea;">import</span> Callable
+
+<span style="color:#808080;"># A step is just a function: str → str</span>
+PostprocessStep = Callable[[str], str]
+
+<span style="color:#c792ea;">class</span> <span style="color:#ffcb6b;">PostprocessPipeline</span>:
+    <span style="color:#808080;">"""Chain of text transformations applied after transcription."""</span>
+
+    <span style="color:#c792ea;">def</span> <span style="color:#82aaff;">__init__</span>(self):
+        self._steps: list[tuple[str, PostprocessStep]] = []
+
+    <span style="color:#c792ea;">def</span> <span style="color:#82aaff;">add</span>(self, name: str, step: PostprocessStep) -> <span style="color:#c3e88d;">"PostprocessPipeline"</span>:
+        self._steps.append((name, step))
+        <span style="color:#c792ea;">return</span> self
+
+    <span style="color:#c792ea;">def</span> <span style="color:#82aaff;">run</span>(self, text: str) -> str:
+        <span style="color:#c792ea;">for</span> name, step <span style="color:#c792ea;">in</span> self._steps:
+            text = step(text)
+        <span style="color:#c792ea;">return</span> text
+</pre>
+    </div>
+  </div>
+
+  <div class="mockup" style="margin-top: 16px;">
+    <div class="mockup-header">sources.py — load replacements from DB or file</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+<span style="color:#c792ea;">from</span> pathlib <span style="color:#c792ea;">import</span> Path
+<span style="color:#c792ea;">import</span> json
+
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">load_replacements_from_file</span>(
+    path: Path | None = None,
+) -> list[dict[str, str]]:
+    <span style="color:#808080;">"""Load from ~/.resona/replacements.json (or custom path)."""</span>
+    path = path or Path.home() / <span style="color:#c3e88d;">".resona"</span> / <span style="color:#c3e88d;">"replacements.json"</span>
+    <span style="color:#c792ea;">if not</span> path.exists():
+        <span style="color:#c792ea;">return</span> []
+    <span style="color:#c792ea;">return</span> json.loads(path.read_text())
+
+<span style="color:#c792ea;">def</span> <span style="color:#82aaff;">build_pipeline</span>(
+    replacements: list[dict[str, str]],
+) -> PostprocessPipeline:
+    <span style="color:#808080;">"""Convenience: create a pipeline with replacements step."""</span>
+    pipeline = PostprocessPipeline()
+    <span style="color:#c792ea;">if</span> replacements:
+        pipeline.add(
+            <span style="color:#c3e88d;">"replacements"</span>,
+            <span style="color:#c792ea;">lambda</span> text: apply_replacements(text, replacements),
+        )
+    <span style="color:#c792ea;">return</span> pipeline
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>How Each Consumer Uses It</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div style="background: rgba(255,183,77,0.1); border: 1px solid rgba(255,183,77,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#ffb74d; margin-top:0;">resona-api (server mode)</h4>
+<pre style="font-size: 12px; color: #e0e0e0; margin: 0;">
+<span style="color:#808080;"># tasks_transcribe.py</span>
+replacements = get_active_replacements(db)
+pipeline = build_pipeline(replacements)
+
+result = engine_client.transcribe(filepath)
+md = pipeline.run(result["text"])
+</pre>
+      <p style="color: #999; font-size: 13px; margin-bottom: 0;">Replacements from DB, postprocessing after engine returns raw text.</p>
+    </div>
+
+    <div style="background: rgba(186,104,200,0.1); border: 1px solid rgba(186,104,200,0.3); border-radius: 8px; padding: 16px;">
+      <h4 style="color:#ba68c8; margin-top:0;">resona-cli (local mode)</h4>
+<pre style="font-size: 12px; color: #e0e0e0; margin: 0;">
+<span style="color:#808080;"># batch.py local fallback</span>
+replacements = load_replacements_from_file()
+pipeline = build_pipeline(replacements)
+
+result = engine.transcribe(filepath)
+md = pipeline.run(result["text"])
+</pre>
+      <p style="color: #999; font-size: 13px; margin-bottom: 0;">Same pipeline, replacements from ~/.resona/replacements.json</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>What Changes vs. Current</h3>
+  <div class="mockup">
+    <div class="mockup-header">Migration path</div>
+    <div class="mockup-body" style="padding: 20px; font-size: 14px;">
+      <table style="width:100%; border-collapse: collapse;">
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <th style="text-align:left; padding: 8px; color: #999;">Before</th>
+          <th style="text-align:left; padding: 8px; color: #999;">After</th>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px;">Engine applies replacements in <code>/transcribe</code></td>
+          <td style="padding: 8px;">Engine returns raw text only</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px;">ws-api sends replacements JSON to engine</td>
+          <td style="padding: 8px;">resona-api applies replacements itself</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px;">CLI local fallback: no replacements</td>
+          <td style="padding: 8px;">CLI reads ~/.resona/replacements.json</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px;">WebSocket paths: no replacements</td>
+          <td style="padding: 8px;">Callers can apply pipeline to WS results too</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px;"><code>md</code> field computed in engine</td>
+          <td style="padding: 8px;"><code>md</code> field computed caller-side</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>replacements.json Format</h3>
+  <div class="mockup">
+    <div class="mockup-header">~/.resona/replacements.json</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 20px;">
+<pre style="margin:0; color: #e0e0e0;">
+[
+  { <span style="color:#c3e88d;">"name"</span>: <span style="color:#c3e88d;">"\\behr\\b"</span>,  <span style="color:#c3e88d;">"replacement"</span>: <span style="color:#c3e88d;">"Ehr"</span> },
+  { <span style="color:#c3e88d;">"name"</span>: <span style="color:#c3e88d;">"mfg"</span>,       <span style="color:#c3e88d;">"replacement"</span>: <span style="color:#c3e88d;">"Mit freundlichen Grüßen"</span> }
+]
+</pre>
+      <p style="color: #999; margin-bottom: 0;">Same format as what ws-api currently stores in SQLite and sends to the engine. Direct compatibility.</p>
+    </div>
+  </div>
+</div>
