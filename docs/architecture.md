@@ -4,7 +4,8 @@
 
 | Package | Port | Role | GPU |
 |---------|------|------|-----|
-| `resona-engine-core` + backend | 7001 | Stateless transcription (inference) | Required |
+| `resona-asr-core` | — | Lean ASR contracts: protocol, registry, audio, live transcriber | — |
+| `resona-engine-server` + backend | 7001 | Stateless transcription (inference); depends on asr-core | Required |
 | `resona-api` | 7000 | Job queue, SQLite DB, file storage, postprocessing | No |
 | `resona-client` | — | Python client library | — |
 | `resona` CLI (`apps/resona-cli`) | — | CLI + Textual TUI tools | — |
@@ -14,7 +15,7 @@
 
 ## The stateless engine contract
 
-**resona-engine-core has no database and no persistent state.** Every request must be self-contained.
+**resona-engine-server has no database and no persistent state.** Every request must be self-contained.
 
 - `POST /transcribe` accepts `audio_file`, `language`, `task`, `initial_prompt`, `vad_filter`, `word_timestamps`
 - The engine returns `{text, language, segments}` — raw transcript only
@@ -39,11 +40,11 @@ Backends are installed as separate packages and register themselves via Python e
 faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
 ```
 
-The `resona_engine_core.registry` discovers all installed backends at startup:
+The `resona_asr_core.registry` discovers all installed backends at startup:
 
 - `RESONA_BACKEND` env var selects which backend to load (default: `faster-whisper`)
 - `get_transcriber()` returns a thread-safe singleton
-- Each backend's `[project.scripts]` points to `resona_engine_core.run:main` — the same FastAPI app, different backend loaded
+- Each backend's `[project.scripts]` points to `resona_engine_server.run:main` — the same FastAPI app, different backend loaded
 
 Available backend packages:
 
@@ -113,7 +114,7 @@ The transcriber is instantiated once at startup and cached as a singleton.
 
 ## WebSocket endpoints
 
-resona-engine-core exposes two WebSocket endpoints in addition to the HTTP endpoint:
+resona-engine-server exposes two WebSocket endpoints in addition to the HTTP endpoint:
 
 ### `WS /ws/transcribe`
 
@@ -155,7 +156,7 @@ Protocol:
 
 Both services support optional API key authentication via the `X-API-Key` request header.
 
-- **resona-engine-core**: Set `RESONA_ENGINE_KEY`. If unset, all requests are allowed.
+- **resona-engine-server**: Set `RESONA_ENGINE_KEY`. If unset, all requests are allowed.
 - **resona-api**: Set `RESONA_API_KEY`. If unset, all requests are allowed.
 
 The API key is validated with `secrets.compare_digest` to prevent timing attacks.
@@ -174,8 +175,9 @@ DATA_PATH/
 ## Cross-package imports
 
 ```
-resona-cli  ──imports──▶  resona_engine_core.live_transcriber  (live command)
-resona-cli  ──imports──▶  resona_client.client                  (all HTTP ops)
+resona-cli  ──imports──▶  resona_asr_core.live_transcriber  (live command, gated behind [live] extra)
+resona-cli  ──imports──▶  resona_asr_core.registry           (InProcessEngine, gated behind backend extra)
+resona-cli  ──imports──▶  resona_client.client               (all HTTP ops)
 ```
 
-All other cross-service communication is over HTTP. Never import resona-api or resona-engine-core from resona-client.
+All other cross-service communication is over HTTP. Never import resona-api or resona-engine-server from resona-client.
