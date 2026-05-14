@@ -17,9 +17,28 @@ app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
 
 
+def _require_extra(extra: str, *modules: str) -> None:
+    """Import each module name; raise typer.Exit with install hint on failure."""
+    missing = []
+    for m in modules:
+        try:
+            __import__(m)
+        except ImportError:
+            missing.append(m)
+    if missing:
+        typer.echo(
+            f"Missing dependencies for this command: {', '.join(missing)}.\n"
+            f"Install with:  uv tool install 'resona-cli[{extra}]'\n"
+            f"or:            pip install 'resona-cli[{extra}]'",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+
 @app.command()
 def rec():
     """Launch the audio recorder TUI."""
+    _require_extra("record", "textual", "sounddevice", "soundfile")
     from .micrec import run_mic_rec_app
     run_mic_rec_app()
 
@@ -27,6 +46,7 @@ def rec():
 @app.command()
 def live():
     """Launch the live transcription TUI."""
+    _require_extra("live", "textual", "sounddevice", "soundfile", "torchaudio")
     import logging
     from dotenv import load_dotenv
     import sounddevice as sd
@@ -60,6 +80,7 @@ def live():
 @app.command()
 def ui():
     """Launch the record-and-transcribe TUI (records, submits job, shows result)."""
+    _require_extra("record", "textual", "sounddevice", "soundfile")
     import logging
     from dotenv import load_dotenv
     import sounddevice as sd
