@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from fastapi.testclient import TestClient
 
-from resona_engine_core.protocol import TranscriptionResult
+from resona_asr_core.protocol import TranscriptionResult
 
 
 @pytest.fixture
@@ -22,9 +22,9 @@ def mock_transcriber():
 
 @pytest.fixture
 def client(mock_transcriber):
-    with patch("resona_engine_core.app.get_transcriber", return_value=mock_transcriber):
-        with patch("resona_engine_core.auth.config", return_value=None):
-            from resona_engine_core.app import app
+    with patch("resona_engine_server.app.get_transcriber", return_value=mock_transcriber):
+        with patch("resona_engine_server.auth.config", return_value=None):
+            from resona_engine_server.app import app
             yield TestClient(app)
 
 
@@ -35,7 +35,7 @@ def test_health(client):
 
 
 def test_transcribe_returns_text(client, mock_transcriber):
-    with patch("resona_engine_core.app.load_audio", return_value=np.zeros(16000)):
+    with patch("resona_engine_server.app.load_audio", return_value=np.zeros(16000)):
         resp = client.post(
             "/transcribe",
             files={"audio_file": ("test.wav", io.BytesIO(b"\x00" * 100), "audio/wav")},
@@ -49,7 +49,7 @@ def test_transcribe_returns_text(client, mock_transcriber):
 
 
 def test_transcribe_no_md_field(client, mock_transcriber):
-    with patch("resona_engine_core.app.load_audio", return_value=np.zeros(16000)):
+    with patch("resona_engine_server.app.load_audio", return_value=np.zeros(16000)):
         resp = client.post(
             "/transcribe",
             files={"audio_file": ("test.wav", io.BytesIO(b"\x00" * 100), "audio/wav")},

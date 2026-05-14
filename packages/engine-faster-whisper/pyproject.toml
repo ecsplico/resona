@@ -9,18 +9,20 @@ description = "Faster-whisper (CTranslate2) backend for Resona"
 requires-python = ">=3.12"
 dependencies = [
     "resona-asr-core",
+    "resona-engine-server",
     "faster-whisper>=1.1.1",
     "torch>=2.11.0.dev",
 ]
 
 [tool.uv.sources]
 resona-asr-core = { workspace = true }
+resona-engine-server = { workspace = true }
 
 [project.entry-points."resona.backends"]
 faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
 
 [project.scripts]
-resona-engine-faster-whisper = "resona_engine_core.run:main"
+resona-engine-faster-whisper = "resona_engine_server.run:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resona_engine_faster_whisper"]

@@ -9,6 +9,7 @@ description = "HuggingFace Transformers backend for Resona (Voxtral, Whisper, an
 requires-python = ">=3.12"
 dependencies = [
     "resona-asr-core",
+    "resona-engine-server",
     "transformers>=4.45.0",
     "torch>=2.11.0.dev",
     "accelerate>=0.34.0",
@@ -16,12 +17,13 @@ dependencies = [
 
 [tool.uv.sources]
 resona-asr-core = { workspace = true }
+resona-engine-server = { workspace = true }
 
 [project.entry-points."resona.backends"]
 voxtral = "resona_engine_voxtral.transcriber:VoxtralTranscriber"
 
 [project.scripts]
-resona-engine-voxtral = "resona_engine_core.run:main"
+resona-engine-voxtral = "resona_engine_server.run:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resona_engine_voxtral"]

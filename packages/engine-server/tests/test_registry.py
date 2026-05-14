@@ -1,10 +1,10 @@
-# packages/engine-core/tests/test_registry.py
+# packages/engine-server/tests/test_registry.py
 from unittest.mock import patch, MagicMock
 import numpy as np
 import pytest
 
-from resona_engine_core.protocol import Transcriber, TranscriptionResult
-from resona_engine_core.registry import get_transcriber, _load_from_entrypoint, reset
+from resona_asr_core.protocol import Transcriber, TranscriptionResult
+from resona_asr_core.registry import get_transcriber, _load_from_entrypoint, reset
 
 
 class FakeTranscriber:
