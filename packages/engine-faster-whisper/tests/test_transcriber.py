@@ -1,6 +1,6 @@
 from unittest.mock import patch, MagicMock
 import numpy as np
-from resona_engine_core.protocol import Transcriber
+from resona_asr_core.protocol import Transcriber
 from resona_engine_faster_whisper.transcriber import FastWhisperTranscriber
 
 

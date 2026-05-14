@@ -6,7 +6,7 @@ import numpy as np
 import whisper
 from decouple import config
 
-from resona_engine_core.protocol import TranscriptionResult
+from resona_asr_core.protocol import TranscriptionResult
 
 log = logging.getLogger(__name__)
 
