@@ -1,6 +1,6 @@
-# packages/engine-core/tests/test_protocol.py
+# packages/engine-server/tests/test_protocol.py
 import numpy as np
-from resona_engine_core.protocol import Transcriber, TranscriptionResult
+from resona_asr_core.protocol import Transcriber, TranscriptionResult
 
 
 class _DummyTranscriber:

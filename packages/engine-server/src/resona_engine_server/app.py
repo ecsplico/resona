@@ -1,5 +1,5 @@
 """
-resona-engine-core: Stateless FastAPI transcription service.
+resona-engine-server: Stateless FastAPI transcription service.
 
 Endpoints:
   GET  /health

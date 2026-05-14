@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "resona-engine-core"
+name = "resona-engine-server"
 version = "0.1.0"
-description = "Core FastAPI app, transcriber protocol, and audio utilities for Resona"
+description = "FastAPI HTTP/WS server that exposes a Resona ASR backend"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.7",
@@ -20,7 +20,7 @@ dependencies = [
 resona-asr-core = { workspace = true }
 
 [project.scripts]
-resona-engine-core = "resona_engine_core.run:main"
+resona-engine-server = "resona_engine_server.run:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/resona_engine_core"]
+packages = ["src/resona_engine_server"]

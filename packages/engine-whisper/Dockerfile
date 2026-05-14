@@ -13,7 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.3 /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml uv.lock* ./
-COPY packages/engine-core/ ./packages/engine-core/
+COPY packages/engine-server/ ./packages/engine-server/
 COPY packages/engine-whisper/ ./packages/engine-whisper/
 
 # openai-whisper needs setuptools for pkg_resources at build time
@@ -43,4 +43,4 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 7001
-CMD ["python3.12", "-m", "resona_engine_core.run"]
+CMD ["python3.12", "-m", "resona_engine_server.run"]

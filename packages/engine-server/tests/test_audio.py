@@ -1,9 +1,9 @@
-# packages/engine-core/tests/test_audio.py
+# packages/engine-server/tests/test_audio.py
 import io
 import struct
 import numpy as np
 from unittest.mock import patch, MagicMock
-from resona_engine_core.audio import load_audio, SAMPLE_RATE
+from resona_asr_core.audio import load_audio, SAMPLE_RATE
 
 
 def test_sample_rate_constant():
