@@ -9,4 +9,5 @@ build/*
 *.egg-info
 
 site/
-.pytest_cache.worktrees/
+.pytest_cache/
+.worktrees/
