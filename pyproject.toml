@@ -32,4 +32,10 @@ dev = [
     "respx>=0.21.1",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
+    # TUI test deps — required so test_micrec runs in the workspace dev env
+    # (these are optional in resona-cli, but workspace devs want full coverage)
+    "textual>=3.2.0",
+    "sounddevice>=0.5.1",
+    "soundfile>=0.13.1",
+    "numpy>=2.1.3",
 ]
