@@ -29,8 +29,8 @@ def setup_function():
     reset()
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_load_from_entrypoint_finds_backend(mock_config, mock_eps):
     mock_config.return_value = "fake"
     mock_eps.return_value = [_make_entry_point("fake", FakeTranscriber)]
@@ -39,8 +39,8 @@ def test_load_from_entrypoint_finds_backend(mock_config, mock_eps):
     assert t.device == "cpu"
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_load_from_entrypoint_raises_on_missing(mock_config, mock_eps):
     mock_config.return_value = "nonexistent"
     mock_eps.return_value = [_make_entry_point("fake", FakeTranscriber)]
@@ -48,8 +48,8 @@ def test_load_from_entrypoint_raises_on_missing(mock_config, mock_eps):
         _load_from_entrypoint()
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_get_transcriber_is_singleton(mock_config, mock_eps):
     mock_config.return_value = "fake"
     mock_eps.return_value = [_make_entry_point("fake", FakeTranscriber)]
@@ -58,8 +58,8 @@ def test_get_transcriber_is_singleton(mock_config, mock_eps):
     assert t1 is t2
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_explicit_backend_name(mock_config, mock_eps):
     mock_eps.return_value = [_make_entry_point("specific", FakeTranscriber)]
     t = _load_from_entrypoint(backend="specific")
@@ -67,8 +67,8 @@ def test_explicit_backend_name(mock_config, mock_eps):
     mock_config.assert_not_called()
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_registry_selects_correct_backend_from_multiple(mock_config, mock_eps):
     """When multiple backends are registered, the correct one is selected by name."""
     class OtherTranscriber:
@@ -91,8 +91,8 @@ def test_registry_selects_correct_backend_from_multiple(mock_config, mock_eps):
     assert isinstance(t, Transcriber)
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_registry_protocol_violation_raises(mock_config, mock_eps):
     """Backend that doesn't satisfy Transcriber protocol should raise AssertionError."""
     class BadBackend:
@@ -107,8 +107,8 @@ def test_registry_protocol_violation_raises(mock_config, mock_eps):
         _load_from_entrypoint()
 
 
-@patch("resona_engine_core.registry.entry_points")
-@patch("resona_engine_core.registry.config")
+@patch("resona_asr_core.registry.entry_points")
+@patch("resona_asr_core.registry.config")
 def test_reset_clears_singleton(mock_config, mock_eps):
     """After loading a transcriber, reset() causes get_transcriber() to load a fresh instance."""
     mock_config.return_value = "fake"
