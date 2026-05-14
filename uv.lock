@@ -2161,6 +2161,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+faster-whisper = [
+    { name = "resona-asr-core" },
+    { name = "resona-engine-faster-whisper" },
+]
 live = [
     { name = "numpy" },
     { name = "resona-asr-core" },
@@ -2175,6 +2179,14 @@ record = [
     { name = "soundfile" },
     { name = "textual" },
 ]
+voxtral = [
+    { name = "resona-asr-core" },
+    { name = "resona-engine-voxtral" },
+]
+whisper = [
+    { name = "resona-asr-core" },
+    { name = "resona-engine-whisper" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2183,8 +2195,14 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'record'", specifier = ">=2.1.3" },
     { name = "python-decouple", specifier = ">=3.8" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
+    { name = "resona-asr-core", marker = "extra == 'faster-whisper'", editable = "packages/asr-core" },
     { name = "resona-asr-core", marker = "extra == 'live'", editable = "packages/asr-core" },
+    { name = "resona-asr-core", marker = "extra == 'voxtral'", editable = "packages/asr-core" },
+    { name = "resona-asr-core", marker = "extra == 'whisper'", editable = "packages/asr-core" },
     { name = "resona-client", editable = "packages/client" },
+    { name = "resona-engine-faster-whisper", marker = "extra == 'faster-whisper'", editable = "packages/engine-faster-whisper" },
+    { name = "resona-engine-voxtral", marker = "extra == 'voxtral'", editable = "packages/engine-voxtral" },
+    { name = "resona-engine-whisper", marker = "extra == 'whisper'", editable = "packages/engine-whisper" },
     { name = "resona-postprocess", editable = "packages/postprocess" },
     { name = "sounddevice", marker = "extra == 'live'", specifier = ">=0.5.1" },
     { name = "sounddevice", marker = "extra == 'record'", specifier = ">=0.5.1" },
@@ -2195,7 +2213,7 @@ requires-dist = [
     { name = "torchaudio", marker = "extra == 'live'", specifier = ">=2.11.0.dev0", index = "https://download.pytorch.org/whl/nightly/cu128" },
     { name = "typer", specifier = ">=0.15.3" },
 ]
-provides-extras = ["record", "live"]
+provides-extras = ["record", "live", "faster-whisper", "whisper", "voxtral"]
 
 [[package]]
 name = "resona-client"

@@ -17,3 +17,16 @@ def test_rec_without_record_extra_shows_install_hint(monkeypatch):
     assert result.exit_code != 0
     assert "uv tool install" in result.output.lower() or "pip install" in result.output.lower()
     assert "[record]" in result.output
+
+
+def test_in_process_engine_without_backend_extra_shows_hint(monkeypatch):
+    """Constructing InProcessEngine without resona-asr-core gives an install hint."""
+    from resona_cli.engine import InProcessEngine
+
+    def fake_import(*args, **kwargs):
+        raise ImportError("No module named 'resona_asr_core'")
+
+    monkeypatch.setattr("resona_cli.engine._import_asr_core", fake_import)
+
+    with pytest.raises(ImportError, match=r"resona-cli\["):
+        InProcessEngine(backend="faster-whisper")
