@@ -62,7 +62,7 @@ def test_in_process_engine_missing_extra_gives_install_hint(monkeypatch):
     """If resona-asr-core isn't installed, InProcessEngine raises ImportError with hint."""
     from resona_cli.engine import InProcessEngine
 
-    def fake_import(name, *args, **kwargs):
+    def fake_import(*args, **kwargs):
         raise ImportError("no asr-core")
 
     monkeypatch.setattr("resona_cli.engine._import_asr_core", fake_import)
