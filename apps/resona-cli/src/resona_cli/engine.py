@@ -21,7 +21,14 @@ class Engine(Protocol):
 
 
 class RemoteEngine:
-    """Submits jobs to a resona-api server and waits for the result."""
+    """Submits a single job to a resona-api server and waits for the result.
+
+    Provides a synchronous, single-file interface for programmatic users. The
+    `resona transcribe` CLI command does NOT use this class — it talks to
+    `ResonaClient` directly so it can submit a batch of jobs concurrently and
+    then wait for all results. This class is for callers who want a uniform
+    `Engine` interface (matching `InProcessEngine`) for one-shot transcription.
+    """
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
         if base_url:
