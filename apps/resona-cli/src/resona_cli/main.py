@@ -17,14 +17,15 @@ app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
 
 
+def _check_missing(modules):
+    """Return list of modules whose import spec cannot be found."""
+    import importlib.util
+    return [m for m in modules if importlib.util.find_spec(m) is None]
+
+
 def _require_extra(extra: str, *modules: str) -> None:
-    """Import each module name; raise typer.Exit with install hint on failure."""
-    missing = []
-    for m in modules:
-        try:
-            __import__(m)
-        except ImportError:
-            missing.append(m)
+    """Check each module is installable; raise typer.Exit with install hint on failure."""
+    missing = _check_missing(modules)
     if missing:
         typer.echo(
             f"Missing dependencies for this command: {', '.join(missing)}.\n"
