@@ -111,7 +111,7 @@ def transcribe_files(
             job_status = job.get("status", "unknown")
             print(f"Completed {filepath.name}: {job_status}")
             if output_dir and job_status == "completed":
-                transcript = job.get("transcript", "") or job.get("md", "")
+                transcript = job.get("md", "") or job.get("transcript", "")
                 out_path = output_dir / f"{filepath.stem}.txt"
                 out_path.write_text(transcript, encoding="utf-8")
                 print(f"  -> Saved to {out_path}")

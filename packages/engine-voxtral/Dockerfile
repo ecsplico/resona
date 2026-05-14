@@ -13,6 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.3 /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml uv.lock* ./
+COPY packages/asr-core/ ./packages/asr-core/
 COPY packages/engine-server/ ./packages/engine-server/
 COPY packages/engine-voxtral/ ./packages/engine-voxtral/
 
