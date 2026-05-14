@@ -7,7 +7,7 @@ Modular audio transcription platform with pluggable ASR backends and composable 
 ```
                     ┌──────────────────────┐
                     │     resona CLI       │
-                    │  batch / watch /     │
+                    │  transcribe / watch /│
                     │  rec / live / ui     │
                     └─────────┬────────────┘
                               │ uses
@@ -48,7 +48,7 @@ Backends are discovered via Python entry points (`resona.backends` group). Each 
 | `resona-postprocess` | -- | Composable pipeline: regex replacements + LLM via litellm |
 | `resona-api` | 7000 | Job queue + SQLite + postprocessing, calls engine via HTTP |
 | `resona-client` | -- | httpx client library for the resona-api REST interface |
-| `resona-cli` | -- | CLI: `resona batch/watch/rec/live/ui/backends/replacements/prompts` |
+| `resona-cli` | -- | CLI: `resona transcribe/watch/rec/live/ui/backends/replacements/prompts` |
 
 ## Quick start
 
@@ -95,10 +95,14 @@ If no server is reachable, the CLI automatically spawns a local engine:
 
 ```bash
 # Transcribe files -- starts a local engine automatically
-uv run resona batch ./recordings/ --output-dir ./transcripts/
+uv run resona transcribe ./recordings/ --output-dir ./transcripts/
+
+# Or a single file / quoted glob
+uv run resona transcribe recording.mp3
+uv run resona transcribe "recordings/*.mp3"
 
 # Use a different backend
-uv run resona batch ./recordings/ --backend whisper
+uv run resona transcribe ./recordings/ --backend whisper
 
 # Set a default backend so you don't need --backend every time
 # Edit ~/.resona/config.json and set "default_backend": "whisper"
@@ -107,8 +111,10 @@ uv run resona batch ./recordings/ --backend whisper
 ## CLI usage
 
 ```bash
-# Transcribe all audio files in a directory
-resona batch ./recordings/ --output-dir ./out/ --language de
+# Transcribe a file, glob, or directory
+resona transcribe ./recordings/ --output-dir ./out/ --language de
+resona transcribe recording.mp3
+resona transcribe "recordings/*.mp3"
 
 # Watch a directory and auto-submit new files
 resona watch ./inbox/ --recursive --poll-interval 2.0
@@ -202,7 +208,7 @@ Select via environment variable or CLI flag:
 RESONA_BACKEND=whisper uv run resona-engine-whisper
 
 # CLI flag (local fallback mode)
-resona batch ./audio/ --backend voxtral
+resona transcribe ./audio/ --backend voxtral
 
 # Default backend in config
 # ~/.resona/config.json: {"default_backend": "voxtral", "backends": [...]}

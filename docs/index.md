@@ -7,7 +7,7 @@ Audio transcription system built on OpenAI Whisper / faster-whisper, designed fo
 ```
                 ┌──────────────────────┐
                 │     resona (CLI)     │
-                │  batch / watch /     │
+                │  transcribe / watch /│
                 │  rec / live / ui     │
                 └─────────┬────────────┘
                           │ uses

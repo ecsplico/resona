@@ -29,7 +29,7 @@ Verify the install:
 resona --help
 ```
 
-You should see the full command list (`watch`, `batch`, `rec`, `live`, `ui`,
+You should see the full command list (`watch`, `transcribe`, `rec`, `live`, `ui`,
 `backends`, `replacements`, `prompts`).
 
 ---
@@ -162,11 +162,13 @@ resona backends test remote
 Once a backend is reachable, transcribe a file:
 
 ```bash
-resona batch ./recordings/ --output-dir ./transcripts/
+resona transcribe ./recordings/ --output-dir ./transcripts/
 ```
 
 This submits every audio file in `./recordings/`, waits for all jobs to
-complete, and saves the transcripts to `./transcripts/`.
+complete, and saves the transcripts to `./transcripts/`. You can also pass a
+single file (`resona transcribe recording.mp3`) or a quoted glob
+(`resona transcribe "recordings/*.mp3"`).
 
 Or watch a folder and auto-submit anything dropped in:
 

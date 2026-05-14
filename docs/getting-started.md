@@ -78,8 +78,10 @@ print(result["md"])  # transcript with replacements applied
 Or use the CLI:
 
 ```bash
-# Transcribe all files in a directory and save results
-resona batch ./recordings/ --output-dir ./transcripts/
+# Transcribe a file, glob, or directory and save results
+resona transcribe ./recordings/ --output-dir ./transcripts/
+resona transcribe recording.mp3
+resona transcribe "recordings/*.mp3"
 
 # Watch a directory and auto-submit any new audio files
 resona watch ./inbox/

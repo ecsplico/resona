@@ -11,7 +11,7 @@ resona [OPTIONS] COMMAND [ARGS]...
 | Command | Description |
 |---------|-------------|
 | `watch` | Watch a directory, auto-submit new audio files |
-| `batch` | Transcribe all files in a directory |
+| `transcribe` | Transcribe files, glob patterns, or a directory |
 | `rec` | Audio recorder TUI |
 | `live` | Live transcription TUI (streams to resona-engine) |
 | `ui` | Record-and-transcribe TUI (records, submits job, shows result) |
@@ -45,26 +45,43 @@ resona watch ./inbox/ --recursive --poll-interval 5
 
 ---
 
-## `resona batch`
+## `resona transcribe`
 
-Submit all audio files in a directory and wait for results.
+Transcribe one or more audio files and wait for results. Accepts individual
+files, glob patterns (quoted so the shell doesn't expand them), or directories.
 
 ```bash
-resona batch <directory> [OPTIONS]
+resona transcribe <INPUTS...> [OPTIONS]
 ```
 
 **Options:**
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--output-dir` | _(print to stdout)_ | Directory to save transcript files |
-| `--translate` | `False` | Request English translation |
-| `--timeout` | `3600` | Per-job timeout in seconds |
+| `--recursive` / `-r` | `False` | Recurse into directories / use `**` in glob patterns |
+| `--output-dir` | _(next to source)_ | Directory to save transcript files |
+| `--model` | _(server default)_ | Whisper model name (local fallback only) |
+| `--language` | `de` | Language hint (local fallback only) |
+| `--engine-timeout` | `120.0` | Seconds to wait for local engine startup |
+| `--backend` | _(from `~/.resona/config.json`)_ | Backend for local engine: `faster-whisper`, `whisper`, `voxtral` |
 
-**Example:**
+**Examples:**
 
 ```bash
-resona batch ./recordings/ --output-dir ./transcripts/
+# Single file
+resona transcribe recording.mp3
+
+# Multiple explicit files
+resona transcribe a.mp3 b.mp3 c.wav
+
+# Quoted glob (expanded by Python — works regardless of shell)
+resona transcribe "folder/*.mp3"
+
+# Directory
+resona transcribe ./recordings/ --output-dir ./transcripts/
+
+# Local fallback with a specific backend
+resona transcribe ./audio/ --backend whisper --language en
 ```
 
 ---
