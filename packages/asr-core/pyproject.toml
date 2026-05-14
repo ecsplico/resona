@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-asr-core"
+version = "0.1.0"
+description = "Lean ASR contracts for Resona — protocol, registry, audio loader, live transcriber. No FastAPI."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.1.3",
+    "ffmpeg-python>=0.2.0",
+    "python-decouple>=3.8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_asr_core"]
