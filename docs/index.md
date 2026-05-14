@@ -19,7 +19,7 @@ Audio transcription system built on OpenAI Whisper / faster-whisper, designed fo
         HTTP/REST  │               │  HTTP/REST
                    │               │
       ┌────────────▼──┐   ┌───────▼──────────────────────┐
-      │  resona-api   │   │  resona-engine-core           │
+      │  resona-api   │   │  resona-engine-server         │
       │  :7000        │──▶│  + backend package  :7001     │
       │               │   │                              │
       │ POST /jobs    │   │ POST /transcribe             │
@@ -27,13 +27,13 @@ Audio transcription system built on OpenAI Whisper / faster-whisper, designed fo
       │ GET  /jobs/id │   │ WS   /ws/live                │
       │ CRUD replace  │   │                              │
       │ CRUD prompts  │   │ Stateless, no DB             │
-      │               │   │ GPU, heavy deps              │
+      │               │   │ depends on resona-asr-core   │
       │ SQLite DB     │   └──────────────────────────────┘
       │ File storage  │
       └───────────────┘
 ```
 
-**resona-engine-core** is stateless — no database, no side effects. It owns all GPU-heavy inference. Backends are installed as separate packages (`resona-engine-faster-whisper`, `resona-engine-whisper`) and discovered via entry points.
+**resona-engine-server** is stateless — no database, no side effects. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in `resona-asr-core`. Backends are installed as separate packages (`resona-engine-faster-whisper`, `resona-engine-whisper`) and discovered via entry points.
 
 **resona-api** owns the job queue, SQLite database, and calls the engine over HTTP. Post-processing (replacements, formatting) is handled by `resona-postprocess` in the API layer — the engine returns raw transcripts.
 
