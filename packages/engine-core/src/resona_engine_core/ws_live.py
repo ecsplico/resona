@@ -21,7 +21,7 @@ import logging
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .live_transcriber import LiveTranscriber, SAMPLE_RATE
+from resona_asr_core.live_transcriber import LiveTranscriber, SAMPLE_RATE
 
 logger = logging.getLogger(__name__)
 

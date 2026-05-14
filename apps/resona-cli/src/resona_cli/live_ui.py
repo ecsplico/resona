@@ -18,8 +18,8 @@ from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Sta
 from textual.containers import Container, Horizontal, VerticalScroll
 
 from .micrec import MicRecApp
-from resona_engine_core.live_transcriber import LiveTranscriber
-from resona_engine_core.audio import SAMPLE_RATE as ASR_SAMPLE_RATE
+from resona_asr_core.live_transcriber import LiveTranscriber
+from resona_asr_core.audio import SAMPLE_RATE as ASR_SAMPLE_RATE
 
 # Audio capture settings (must match recorder defaults)
 MIC_SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 44100))

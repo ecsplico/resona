@@ -8,3 +8,4 @@ working during the migration.
 from resona_asr_core.protocol import Transcriber, TranscriptionResult  # noqa: F401
 from resona_asr_core.registry import get_transcriber, reset  # noqa: F401
 from resona_asr_core.audio import load_audio, SAMPLE_RATE  # noqa: F401
+from resona_asr_core.live_transcriber import LiveTranscriber  # noqa: F401
