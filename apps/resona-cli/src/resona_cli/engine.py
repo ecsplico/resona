@@ -39,19 +39,21 @@ class RemoteEngine:
         )
 
 
-def _import_asr_core(backend: str = "faster-whisper"):
+_INSTALL_HINT = (
+    "In-process transcription requires a backend extra. Install one:\n"
+    "  uv tool install 'resona-cli[faster-whisper]'\n"
+    "  uv tool install 'resona-cli[whisper]'\n"
+    "  uv tool install 'resona-cli[voxtral]'"
+)
+
+
+def _import_asr_core():
     """Import asr-core's registry and audio loader. Raises ImportError with install hint."""
     try:
         from resona_asr_core.registry import get_transcriber as _get_transcriber
         from resona_asr_core.audio import load_audio as _load_audio_fn
     except ImportError as e:
-        raise ImportError(
-            f"{e}\n\n"
-            "In-process transcription requires a backend extra. Install one:\n"
-            "  uv tool install 'resona-cli[faster-whisper]'\n"
-            "  uv tool install 'resona-cli[whisper]'\n"
-            "  uv tool install 'resona-cli[voxtral]'"
-        ) from e
+        raise ImportError(f"{e}\n\n{_INSTALL_HINT}") from e
     return _get_transcriber, _load_audio_fn
 
 
@@ -72,16 +74,10 @@ class InProcessEngine:
 
     def __init__(self, backend: str = "faster-whisper") -> None:
         try:
-            _import_asr_core(backend)  # fail fast with install hint if extras missing
+            _import_asr_core()  # fail fast with install hint if extras missing
         except ImportError as e:
             if "resona-cli[" not in str(e):
-                raise ImportError(
-                    f"{e}\n\n"
-                    "In-process transcription requires a backend extra. Install one:\n"
-                    "  uv tool install 'resona-cli[faster-whisper]'\n"
-                    "  uv tool install 'resona-cli[whisper]'\n"
-                    "  uv tool install 'resona-cli[voxtral]'"
-                ) from e
+                raise ImportError(f"{e}\n\n{_INSTALL_HINT}") from e
             raise
         self._backend = backend
         self._transcriber = get_transcriber(backend)
