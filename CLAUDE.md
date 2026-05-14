@@ -15,7 +15,8 @@ resona/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, replacements, prompts, rec/live/ui TUIs)
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
-    ├── engine-core/        ← resona-engine-core: FastAPI app, Transcriber protocol, registry, :7001
+    ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
+    ├── engine-server/      ← resona-engine-server: FastAPI HTTP/WS app, :7001. Depends on asr-core.
     ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 backend (default)
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) backend
     ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers backend
@@ -30,7 +31,7 @@ resona/
 
 ## The stateless engine contract
 
-**resona-engine-core has no database and no persistent state.** Every request must be self-contained.
+**resona-engine-server has no database and no persistent state.** Every request must be self-contained.
 
 - `POST /transcribe` accepts `audio_file`, `language`, `task`, `initial_prompt`, `vad_filter`, `word_timestamps`
 - The engine returns `{text, language, segments}` — raw transcript only
@@ -38,7 +39,7 @@ resona/
 - The engine never reads from or writes to a database
 - The engine never deletes audio files
 
-When adding functionality to engine-core, ask: "can this be done with only what's in the HTTP request?" If it requires a DB lookup or postprocessing, it belongs in resona-api or resona-postprocess.
+When adding functionality to engine-server, ask: "can this be done with only what's in the HTTP request?" If it requires a DB lookup or postprocessing, it belongs in resona-api or resona-postprocess.
 
 ## Backend discovery via entry points
 
@@ -49,22 +50,24 @@ Backends register themselves in their `pyproject.toml`:
 faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
 ```
 
-The registry in `resona_engine_core/registry.py` discovers backends at runtime:
+The registry in `resona_asr_core/registry.py` discovers backends at runtime:
 - `RESONA_BACKEND` env var selects which backend to load (default: `faster-whisper`)
 - `get_transcriber()` returns a thread-safe singleton
-- Each backend's `[project.scripts]` points to `resona_engine_core.run:main` — same FastAPI app, different backend
+- Each backend's `[project.scripts]` points to `resona_engine_server.run:main` — same FastAPI app, different backend
 
 Available backends: `faster-whisper` (default), `whisper`, `voxtral`.
 
 ## Package responsibilities
 
-### resona-engine-core
+### resona-asr-core
 - `protocol.py` — `Transcriber` Protocol + `TranscriptionResult` TypedDict
 - `registry.py` — entry-point discovery, singleton, device detection
-- `app.py` — FastAPI app: `/health`, `POST /transcribe`, `WS /ws/transcribe`, `WS /ws/live`
 - `audio.py` — `load_audio()`, `SAMPLE_RATE`
+- `live_transcriber.py` — VAD-based live transcription engine (numpy only)
+
+### resona-engine-server
+- `app.py` — FastAPI app: `/health`, `POST /transcribe`, `WS /ws/transcribe`, `WS /ws/live`
 - `auth.py` — optional `RESONA_ENGINE_KEY` auth
-- `live_transcriber.py` — WebSocket live VAD-based transcription
 - `ws_transcribe.py`, `ws_live.py` — WebSocket endpoint handlers
 - `run.py` — uvicorn entry point
 
@@ -108,7 +111,8 @@ Available backends: `faster-whisper` (default), `whisper`, `voxtral`.
 - `main.py` — typer app root, `resona` command
 - `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
 - `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; submits + waits for results
-- `local_engine.py` — `LocalEngine`: spawns `uv run resona-engine-{backend}` as fallback
+- `engine.py` — `Engine` Protocol + `RemoteEngine` (HTTP) + `InProcessEngine` (direct asr-core call); used by transcribe.
+- `local_engine.py` — `LocalEngine`: subprocess-based fallback for transcribe when InProcessEngine extras aren't installed.
 - `backends.py`, `replacements.py`, `prompts.py` — CRUD subcommands
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
 - `live_ui.py` — `WSLiveApp`: live transcription TUI
@@ -122,7 +126,7 @@ from .db.models import Job
 from .engine_client import EngineClient
 ```
 
-Cross-package imports: resona-cli imports `resona_engine_core.live_transcriber` (for `live` command). All other cross-package communication is over HTTP.
+Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (for `live` command — gated behind the `[live]` extra) and `resona_asr_core.registry` (for `InProcessEngine` — gated behind a backend extra). All other cross-package communication is over HTTP.
 
 ## How to add a new transcription backend
 
@@ -130,8 +134,8 @@ Cross-package imports: resona-cli imports `resona_engine_core.live_transcriber` 
 2. Implement a class with `transcribe(audio: np.ndarray, **kwargs) -> TranscriptionResult`
 3. Constructor: `__init__(self, device: str, modelname: str | None = None)`
 4. Register in pyproject.toml: `[project.entry-points."resona.backends"]`
-5. Add `[tool.uv.sources]` with `resona-engine-core = { workspace = true }`
-6. Set `[project.scripts]` to `resona_engine_core.run:main`
+5. Add `[tool.uv.sources]` with `resona-asr-core = { workspace = true }` and `resona-engine-server = { workspace = true }`
+6. Set `[project.scripts]` to `resona_engine_server.run:main`
 7. The backend must not touch the database
 
 ## How to add a new endpoint to resona-api
@@ -228,7 +232,22 @@ uv run resona watch ./inbox/           # watch directory
 # Local-only (no server needed — spawns engine automatically)
 uv run resona transcribe ./audio/ --output-dir ./out/
 uv run resona transcribe ./audio/ --backend whisper --language en
+```
 
+### Install personas
+
+| Persona | Command |
+|---------|---------|
+| Lean HTTP client | `uv tool install --from ./apps/resona-cli resona-cli` |
+| Record + submit to server | `uv tool install --from ./apps/resona-cli 'resona-cli[record]'` |
+| Live TUI + local engine | `uv tool install --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'` |
+| Fully local (no server) | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` ⚠️ see note |
+
+⚠️ The `[faster-whisper]`/`[whisper]`/`[voxtral]` extras pull a torch nightly. `uv tool install` does NOT inherit the workspace's pytorch-nightly index, so these may fail to resolve torch. Workarounds:
+- Stay inside the workspace and use `uv run resona <command>`.
+- Or: `uv pip install --extra-index-url https://download.pytorch.org/whl/nightly/cu128 'resona-cli[faster-whisper]'` into a managed venv.
+
+```bash
 # Documentation
 uv run mkdocs serve                    # dev server at :8000
 uv run mkdocs build                    # static docs to site/
@@ -239,17 +258,18 @@ uv run mkdocs build                    # static docs to site/
 Tests live in `<pkg>/tests/`. Run with:
 
 ```bash
-uv run pytest                                    # all (238 tests)
-uv run pytest packages/engine-core/tests/        # engine core
-uv run pytest packages/api/tests/                # api
-uv run pytest packages/client/tests/             # client
-uv run pytest apps/resona-cli/tests/             # cli
-uv run pytest packages/postprocess/tests/        # postprocess
-uv run pytest -k test_transcribe                 # one test
+uv run pytest                                      # all tests
+uv run pytest packages/engine-server/tests/        # engine server
+uv run pytest packages/asr-core/tests/             # asr core
+uv run pytest packages/api/tests/                  # api
+uv run pytest packages/client/tests/               # client
+uv run pytest apps/resona-cli/tests/               # cli
+uv run pytest packages/postprocess/tests/          # postprocess
+uv run pytest -k test_transcribe                   # one test
 ```
 
 Mocking strategy:
-- resona-engine-core: mock the transcriber at `resona_engine_core.app.get_transcriber`
+- resona-engine-server: mock the transcriber at `resona_engine_server.app.get_transcriber`
 - resona-api: mock `EngineClient.transcribe` with `respx` (httpx mock)
 - resona-client: use `respx.mock` to intercept httpx calls
 - resona-cli: use typer's `CliRunner` for command tests
@@ -262,7 +282,8 @@ Each backend builds from the workspace root as context:
 
 ```dockerfile
 COPY pyproject.toml uv.lock* ./
-COPY packages/engine-core/ ./packages/engine-core/
+COPY packages/engine-server/ ./packages/engine-server/
+COPY packages/asr-core/ ./packages/asr-core/
 COPY packages/engine-faster-whisper/ ./packages/engine-faster-whisper/
 RUN uv sync --package resona-engine-faster-whisper --frozen --no-dev
 ```
@@ -281,9 +302,9 @@ Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API
 
 | Variable | Package | Purpose | Default |
 |----------|---------|---------|---------|
-| `RESONA_BACKEND` | engine-core | Backend selection | `faster-whisper` |
+| `RESONA_BACKEND` | engine-server | Backend selection | `faster-whisper` |
 | `RESONA_ENGINE_URL` | api | Engine service URL | `http://localhost:7001` |
-| `RESONA_ENGINE_KEY` | engine-core | Engine auth key | (none, auth disabled) |
+| `RESONA_ENGINE_KEY` | engine-server | Engine auth key | (none, auth disabled) |
 | `RESONA_API_URL` | client | API server URL | `http://localhost:7000` |
 | `RESONA_API_KEY` | api, client | API auth key | (none, auth disabled) |
 | `RESONA_LLM_MODEL` | postprocess | Default LLM model | `gpt-4o-mini` |
@@ -312,7 +333,7 @@ If neither `postprocess.json` nor `replacements.json` exists, bundled default re
 
 ## What NOT to do
 
-- Do not add database access to engine-core or any engine backend
+- Do not add database access to engine-server or any engine backend
 - Do not add postprocessing (replacements, LLM) to the engine — it belongs in resona-api or resona-postprocess
 - Do not delete audio files after transcription
 - Do not add `ScanInboxTask` back — inbox scanning is done by `resona watch`

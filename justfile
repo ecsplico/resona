@@ -11,7 +11,7 @@ default:
 install:
     uv sync --all-packages --no-build-isolation-package openai-whisper
 
-# Add a dependency to a specific package  (e.g: just add ws-api httpx)
+# Add a dependency to a specific package  (e.g: just add resona-api httpx)
 add package dep:
     uv add --package {{ package }} {{ dep }}
 
@@ -19,29 +19,29 @@ add package dep:
 
 # Start the transcription engine on :7001 (GPU required)
 engine:
-    uv run ws-engine
+    uv run resona-engine-faster-whisper
 
 # Start the job queue API on :7000
 api:
-    uv run ws-api
+    uv run resona-api
 
 # ── Docker ────────────────────────────────────────────────────────────
 
 # Start all services in the background
 up:
-    docker compose up -d
+    docker compose -f docker-compose.resona.yml up -d
 
 # Stop all services
 down:
-    docker compose down
+    docker compose -f docker-compose.resona.yml down
 
 # Follow logs for all services (or a specific one: just logs engine)
 logs service="":
-    docker compose logs -f {{ service }}
+    docker compose -f docker-compose.resona.yml logs -f {{ service }}
 
 # Rebuild images and restart
 rebuild:
-    docker compose up -d --build
+    docker compose -f docker-compose.resona.yml up -d --build
 
 # ── Tests ─────────────────────────────────────────────────────────────
 
@@ -51,46 +51,46 @@ test *args:
 
 # Run tests for a single package
 test-api:
-    uv run pytest packages/ws-api/tests/
+    uv run pytest packages/api/tests/
 
 test-engine:
-    uv run pytest packages/ws-engine/tests/
+    uv run pytest packages/engine-server/tests/ packages/asr-core/tests/
 
 test-client:
-    uv run pytest packages/ws-client/tests/
+    uv run pytest packages/client/tests/
 
 test-cli:
-    uv run pytest apps/cli/tests/
+    uv run pytest apps/resona-cli/tests/
 
 # ── TUI tools ─────────────────────────────────────────────────────────
 
 # Audio recorder TUI
 rec:
-    uv run ws-cli rec
+    uv run resona rec
 
-# Live transcription TUI (streams to ws-engine via WebSocket)
+# Live transcription TUI (streams to engine via WebSocket)
 live:
-    uv run ws-cli live
+    uv run resona live
 
 # Record-and-transcribe TUI (records, submits job, shows result)
 ui:
-    uv run ws-cli ui
+    uv run resona ui
 
 # ── CLI shortcuts ─────────────────────────────────────────────────────
 
+# Transcribe files, globs, or directories
+transcribe *args:
+    uv run resona transcribe {{ args }}
+
 # Watch a directory and auto-submit new audio files
 watch dir:
-    uv run ws-cli watch {{ dir }}
-
-# Transcribe all audio files in a directory
-batch dir:
-    uv run ws-cli batch {{ dir }}
+    uv run resona watch {{ dir }}
 
 # ── Backends ──────────────────────────────────────────────────────────
 
 # List configured backends and their reachability
 backends:
-    uv run ws-cli backends list
+    uv run resona backends list
 
 # ── Docs ──────────────────────────────────────────────────────────────
 

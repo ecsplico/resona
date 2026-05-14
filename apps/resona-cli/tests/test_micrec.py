@@ -3,9 +3,12 @@ import queue
 import threading
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
+# These tests require the [record] extra (sounddevice, soundfile, textual).
+pytest.importorskip("sounddevice", reason="sounddevice not installed; install resona-cli[record]")
+
+import numpy as np
 from resona_cli.micrec import RecordingSession, MicRecApp
 
 

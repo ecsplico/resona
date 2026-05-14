@@ -226,6 +226,7 @@ def test_transcribe_fallback_used_when_no_server(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -242,6 +243,7 @@ def test_transcribe_fallback_single_file(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -257,6 +259,7 @@ def test_transcribe_fallback_writes_text_to_audio_parent(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -275,6 +278,7 @@ def test_transcribe_fallback_respects_output_dir(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -292,6 +296,7 @@ def test_transcribe_fallback_passes_model_and_language(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -311,6 +316,7 @@ def test_transcribe_fallback_passes_backend_to_local_engine(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -330,6 +336,7 @@ def test_transcribe_fallback_applies_postprocess_pipeline(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=mock_pipeline),
     ):
@@ -351,6 +358,7 @@ def test_transcribe_fallback_uses_default_backend_from_config(tmp_path):
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_client.config.BackendConfig.load", return_value=mock_config),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -384,6 +392,7 @@ def test_transcribe_fallback_continues_on_per_file_error(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -416,6 +425,7 @@ def test_transcribe_fallback_with_real_postprocess_config(tmp_path):
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=real_pipeline),
     ):
@@ -424,3 +434,43 @@ def test_transcribe_fallback_with_real_postprocess_config(tmp_path):
     txt = out_dir / "audio.txt"
     assert txt.exists()
     assert txt.read_text() == "PROCESSED text here"
+
+
+def test_transcribe_uses_in_process_engine_when_extra_installed(tmp_path):
+    """When asr-core + a backend is installed and no server is reachable, use InProcessEngine."""
+    make_wav(tmp_path / "audio.wav")
+    out_dir = tmp_path / "out"
+
+    mock_engine = MagicMock()
+    mock_engine.transcribe.return_value = {"text": "hi", "language": "de", "segments": []}
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
+
+    assert result.exit_code == 0
+    mock_engine.transcribe.assert_called_once()
+    assert (out_dir / "audio.txt").read_text() == "hi"
+
+
+def test_transcribe_falls_back_to_subprocess_when_in_process_unavailable(tmp_path):
+    """If InProcessEngine import/init fails, the subprocess LocalEngine is used as fallback."""
+    make_wav(tmp_path / "audio.wav")
+    out_dir = tmp_path / "out"
+
+    mock_subprocess_engine = _make_local_engine(transcript="from subprocess")
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("asr-core missing")),
+        patch("resona_cli.transcribe.LocalEngine", return_value=mock_subprocess_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
+
+    assert result.exit_code == 0
+    mock_subprocess_engine.transcribe.assert_called_once()
+    assert (out_dir / "audio.txt").read_text() == "from subprocess"

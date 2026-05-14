@@ -1,5 +1,5 @@
 """
-resona-engine-core: Stateless FastAPI transcription service.
+resona-engine-server: Stateless FastAPI transcription service.
 
 Endpoints:
   GET  /health
@@ -18,8 +18,8 @@ from fastapi import FastAPI, File, Form, UploadFile, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import verify_api_key
-from .registry import get_transcriber
-from .audio import load_audio, SAMPLE_RATE
+from resona_asr_core.registry import get_transcriber
+from resona_asr_core.audio import load_audio, SAMPLE_RATE
 from .ws_transcribe import transcribe_websocket
 from .ws_live import live_transcribe_websocket
 

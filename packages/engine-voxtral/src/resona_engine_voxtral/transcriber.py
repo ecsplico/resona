@@ -11,7 +11,7 @@ import numpy as np
 from decouple import config
 from transformers import pipeline as hf_pipeline
 
-from resona_engine_core.protocol import TranscriptionResult
+from resona_asr_core.protocol import TranscriptionResult
 
 log = logging.getLogger(__name__)
 

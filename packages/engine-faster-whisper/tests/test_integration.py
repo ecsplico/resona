@@ -1,10 +1,10 @@
-"""Integration test: engine-core + faster-whisper backend via entry points."""
+"""Integration test: engine-server + faster-whisper backend via entry points."""
 from unittest.mock import patch, MagicMock
 
 import numpy as np
 from fastapi.testclient import TestClient
 
-from resona_engine_core.protocol import TranscriptionResult
+from resona_asr_core.protocol import TranscriptionResult
 
 
 def _fake_entry_point(**kwargs):
@@ -27,17 +27,17 @@ def _fake_entry_point(**kwargs):
     return [ep]
 
 
-@patch("resona_engine_core.registry.entry_points", side_effect=_fake_entry_point)
-@patch("resona_engine_core.registry.config", return_value="faster-whisper")
-@patch("resona_engine_core.auth.config", return_value=None)
+@patch("resona_asr_core.registry.entry_points", side_effect=_fake_entry_point)
+@patch("resona_asr_core.registry.config", return_value="faster-whisper")
+@patch("resona_engine_server.auth.config", return_value=None)
 def test_full_stack_transcribe(mock_auth_config, mock_reg_config, mock_eps):
-    from resona_engine_core.registry import reset
+    from resona_asr_core.registry import reset
     reset()
 
-    from resona_engine_core.app import app
+    from resona_engine_server.app import app
     client = TestClient(app)
 
-    with patch("resona_engine_core.app.load_audio", return_value=np.zeros(16000)):
+    with patch("resona_engine_server.app.load_audio", return_value=np.zeros(16000)):
         resp = client.post(
             "/transcribe",
             files={"audio_file": ("test.wav", b"\x00" * 100, "audio/wav")},
