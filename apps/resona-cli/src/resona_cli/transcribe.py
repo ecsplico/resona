@@ -1,3 +1,4 @@
+import glob as _glob
 from pathlib import Path
 from typing import Optional
 import typer
@@ -8,28 +9,70 @@ from .local_engine import LocalEngine
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
 
-def batch_transcribe(
-    directory: Path = typer.Argument(..., help="Directory of audio files to transcribe."),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Include subdirectories."),
+def _expand_inputs(inputs: list[str], recursive: bool) -> list[Path]:
+    """Expand a list of file paths, glob patterns, and/or directories into audio files.
+
+    - A literal file path is included as-is.
+    - A glob pattern (`*`, `?`, `[...]`) is expanded against the cwd; matching files
+      with an audio extension are included.
+    - A directory is scanned for audio files (recursively if `recursive`).
+    """
+    out: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        rp = p.resolve()
+        if rp in seen:
+            return
+        seen.add(rp)
+        out.append(p)
+
+    for raw in inputs:
+        if any(ch in raw for ch in "*?["):
+            matches = [Path(m) for m in _glob.glob(raw, recursive=recursive)]
+            for m in matches:
+                if m.is_file() and m.suffix.lstrip(".").lower() in EXTENSIONS:
+                    _add(m)
+            continue
+
+        p = Path(raw)
+        if p.is_dir():
+            glob_fn = p.rglob if recursive else p.glob
+            for ext in EXTENSIONS:
+                for f in glob_fn(f"*.{ext}"):
+                    _add(f)
+        elif p.is_file():
+            _add(p)
+        else:
+            typer.echo(f"Not found: {raw}", err=True)
+
+    return out
+
+
+def transcribe_files(
+    inputs: list[str] = typer.Argument(
+        ...,
+        help="Audio files, glob patterns (e.g. 'folder/*.mp3'), or directories.",
+        metavar="INPUTS...",
+    ),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Recurse into directories / use `**` in glob patterns."),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Directory to write transcripts."),
     model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
     language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
     engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
     backend: Optional[str] = typer.Option(None, "--backend", help="Backend for local engine (e.g. faster-whisper, whisper, voxtral). Falls back to default_backend in ~/.resona/config.json."),
 ):
-    """Transcribe all audio files in a directory (submit + wait for results)."""
+    """Transcribe audio files. Accepts files, glob patterns, or directories."""
     from resona_client.client import ResonaClient
     from resona_client.config import BackendConfig
 
     resolved_backend = backend or BackendConfig.load().default_backend
-
-    glob_fn = directory.rglob if recursive else directory.glob
-    files = [f for ext in EXTENSIONS for f in glob_fn(f"*.{ext}")]
+    files = _expand_inputs(inputs, recursive=recursive)
 
     try:
         client = ResonaClient.from_config()
     except RuntimeError:
-        _batch_local_fallback(files, output_dir, model, language, engine_timeout, resolved_backend)
+        _transcribe_local_fallback(files, output_dir, model, language, engine_timeout, resolved_backend)
         return
 
     if model is not None:
@@ -77,7 +120,7 @@ def batch_transcribe(
             print(f"Error for job {job_id} ({filepath.name}): {e}")
 
 
-def _batch_local_fallback(
+def _transcribe_local_fallback(
     files: list[Path],
     output_dir: Optional[Path],
     model: Optional[str],

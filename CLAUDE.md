@@ -12,7 +12,7 @@ resona/
 ├── uv.lock
 ├── docker-compose.resona.yml
 ├── apps/
-│   ├── resona-cli/         ← resona: typer CLI (watch, batch, replacements, prompts, rec/live/ui TUIs)
+│   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, replacements, prompts, rec/live/ui TUIs)
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
     ├── engine-core/        ← resona-engine-core: FastAPI app, Transcriber protocol, registry, :7001
@@ -107,7 +107,7 @@ Available backends: `faster-whisper` (default), `whisper`, `voxtral`.
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
 - `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
-- `batch.py` — `batch` subcommand: submit all files + wait for results
+- `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; submits + waits for results
 - `local_engine.py` — `LocalEngine`: spawns `uv run resona-engine-{backend}` as fallback
 - `backends.py`, `replacements.py`, `prompts.py` — CRUD subcommands
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
@@ -161,7 +161,7 @@ Client → GET /job/{id} → sees COMPLETED job with transcript + md
 ### Local fallback path
 
 ```
-resona batch ./audio/ --backend voxtral
+resona transcribe ./audio/ --backend voxtral
   no server reachable →
   resolves backend: --backend flag → config.json default_backend → "faster-whisper"
   spawns: uv run resona-engine-voxtral on a free port
@@ -220,12 +220,14 @@ uv run resona-api                      # :7000, needs engine running
 uv run resona rec                      # recorder TUI
 uv run resona live                     # live transcription TUI
 uv run resona ui                       # record + transcribe
-uv run resona batch ./audio/           # batch transcribe
+uv run resona transcribe ./audio/      # transcribe a directory
+uv run resona transcribe one.mp3       # transcribe a single file
+uv run resona transcribe "audio/*.mp3" # transcribe a quoted glob
 uv run resona watch ./inbox/           # watch directory
 
 # Local-only (no server needed — spawns engine automatically)
-uv run resona batch ./audio/ --output-dir ./out/
-uv run resona batch ./audio/ --backend whisper --language en
+uv run resona transcribe ./audio/ --output-dir ./out/
+uv run resona transcribe ./audio/ --backend whisper --language en
 
 # Documentation
 uv run mkdocs serve                    # dev server at :8000
