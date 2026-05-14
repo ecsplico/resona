@@ -5,6 +5,7 @@ import typer
 import httpx
 
 from .local_engine import LocalEngine
+from .engine import InProcessEngine
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
@@ -134,17 +135,13 @@ def _transcribe_local_fallback(
         print("No audio files found.")
         return
 
-    typer.echo(
-        f"No server reachable — starting local engine (backend={backend}).",
-        err=True,
-    )
-
+    engine, cleanup = _resolve_local_engine(model, engine_timeout, backend)
     pipeline = build_pipeline_from_config()
 
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    with LocalEngine(model=model, timeout=engine_timeout, backend=backend) as engine:
+    try:
         for filepath in files:
             try:
                 result = engine.transcribe(filepath, language=language)
@@ -155,3 +152,30 @@ def _transcribe_local_fallback(
                 print(f"Transcribed {filepath.name} -> {out_path}")
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 typer.echo(f"Failed to transcribe {filepath.name}: {e}", err=True)
+    finally:
+        cleanup()
+
+
+def _resolve_local_engine(model, engine_timeout, backend):
+    """Return (engine, cleanup_fn). Prefer in-process; fall back to subprocess.
+
+    The in-process path is preferred when ``resona-asr-core`` and a backend extra
+    are installed in the same environment as the CLI. Otherwise the original
+    subprocess-based LocalEngine spawns ``resona-engine-<backend>`` and HTTPs
+    against it.
+    """
+    try:
+        engine = InProcessEngine(backend=backend)
+        typer.echo(
+            f"No server reachable — running backend '{backend}' in-process.",
+            err=True,
+        )
+        return engine, (lambda: None)
+    except ImportError:
+        typer.echo(
+            f"No server reachable — starting local engine subprocess (backend={backend}).",
+            err=True,
+        )
+        ctx = LocalEngine(model=model, timeout=engine_timeout, backend=backend)
+        engine = ctx.__enter__()
+        return engine, (lambda: ctx.__exit__(None, None, None))
