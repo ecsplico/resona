@@ -258,7 +258,7 @@ uv run mkdocs build                    # static docs to site/
 Tests live in `<pkg>/tests/`. Run with:
 
 ```bash
-uv run pytest                                      # all (238 tests)
+uv run pytest                                      # all tests
 uv run pytest packages/engine-server/tests/        # engine server
 uv run pytest packages/asr-core/tests/             # asr core
 uv run pytest packages/api/tests/                  # api
