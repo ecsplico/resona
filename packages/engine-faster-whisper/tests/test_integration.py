@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 from fastapi.testclient import TestClient
 
-from resona_engine_core.protocol import TranscriptionResult
+from resona_asr_core.protocol import TranscriptionResult
 
 
 def _fake_entry_point(**kwargs):
@@ -31,7 +31,7 @@ def _fake_entry_point(**kwargs):
 @patch("resona_asr_core.registry.config", return_value="faster-whisper")
 @patch("resona_engine_core.auth.config", return_value=None)
 def test_full_stack_transcribe(mock_auth_config, mock_reg_config, mock_eps):
-    from resona_engine_core.registry import reset
+    from resona_asr_core.registry import reset
     reset()
 
     from resona_engine_core.app import app
