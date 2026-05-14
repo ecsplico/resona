@@ -31,11 +31,26 @@ live = [
     "torchaudio>=2.11.0.dev",
     "resona-asr-core",
 ]
+faster-whisper = [
+    "resona-asr-core",
+    "resona-engine-faster-whisper",
+]
+whisper = [
+    "resona-asr-core",
+    "resona-engine-whisper",
+]
+voxtral = [
+    "resona-asr-core",
+    "resona-engine-voxtral",
+]
 
 [tool.uv.sources]
 resona-client = { workspace = true }
 resona-postprocess = { workspace = true }
 resona-asr-core = { workspace = true }
+resona-engine-faster-whisper = { workspace = true }
+resona-engine-whisper = { workspace = true }
+resona-engine-voxtral = { workspace = true }
 
 [project.scripts]
 resona = "resona_cli.main:app"
