@@ -31,7 +31,8 @@ plugins:
           paths:
             - packages/client/src
             - packages/api/src
-            - packages/engine-core/src
+            - packages/asr-core/src
+            - packages/engine-server/src
             - packages/engine-faster-whisper/src
             - packages/engine-whisper/src
             - packages/postprocess/src
@@ -62,7 +63,7 @@ nav:
   - API Reference:
     - Client Library: reference/client.md
     - resona-api Internals: reference/ws-api.md
-    - resona-engine Internals: reference/ws-engine.md
+    - resona-engine Internals: reference/engine.md
 
 markdown_extensions:
   - admonition

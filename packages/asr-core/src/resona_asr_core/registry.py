@@ -48,7 +48,12 @@ def _load_from_entrypoint(backend: str | None = None) -> Transcriber:
 
 
 def get_transcriber(backend: str | None = None) -> Transcriber:
-    """Return the singleton transcriber, creating it on first call."""
+    """Return the singleton transcriber, creating it on first call.
+
+    The `backend` argument selects which backend to load on the very first call.
+    On subsequent calls the singleton is returned and `backend` is **ignored**.
+    Call `reset()` first if you need to swap backends (intended for tests only).
+    """
     global _transcriber
     if _transcriber is None:
         with _init_lock:

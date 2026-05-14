@@ -19,21 +19,21 @@ Modular audio transcription platform with pluggable ASR backends and composable 
             HTTP/REST  │               │  HTTP/REST
                        │               │
           ┌────────────▼──┐   ┌───────▼──────────────┐
-          │  resona-api   │   │  resona-engine-core   │
-          │  :7000        │──▶│  :7001                │
-          │               │   │  + backend plugin     │
-          │ POST /jobs    │   │                       │
-          │ GET  /jobs/   │   │ POST /transcribe      │
-          │ GET  /job/id  │   │ WS   /ws/transcribe   │
-          │ CRUD replace  │   │ WS   /ws/live         │
-          │ CRUD prompts  │   │                       │
-          │               │   │ Stateless, no DB      │
-          │ SQLite DB     │   │ GPU, heavy deps       │
+          │  resona-api   │   │ resona-engine-server  │
+          │  :7000        │──▶│  + backend plugin     │
+          │               │   │                       │
+          │ POST /jobs    │   │ POST /transcribe      │
+          │ GET  /jobs/   │   │ WS   /ws/transcribe   │
+          │ GET  /job/id  │   │ WS   /ws/live         │
+          │ CRUD replace  │   │                       │
+          │ CRUD prompts  │   │ Stateless, no DB      │
+          │               │   │ depends on resona-    │
+          │ SQLite DB     │   │ asr-core              │
           │ Postprocessing│   └───────────────────────┘
           └───────────────┘
 ```
 
-**resona-engine-core** is stateless -- no database, no side effects, no postprocessing. It owns all GPU-heavy inference. **resona-api** owns the job queue, SQLite database, and applies postprocessing (replacements + optional LLM) after getting raw text from the engine. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
+**resona-engine-server** is stateless -- no database, no side effects, no postprocessing. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in a separate package — `resona-asr-core` — so they can be reused without the FastAPI dependency tree. **resona-api** owns the job queue, SQLite database, and applies postprocessing (replacements + optional LLM) after getting raw text from the engine. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
 
 Backends are discovered via Python entry points (`resona.backends` group). Each backend is a separate package with its own Dockerfile.
 
@@ -41,7 +41,8 @@ Backends are discovered via Python entry points (`resona.backends` group). Each 
 
 | Package | Port | Description |
 |---------|------|-------------|
-| `resona-engine-core` | 7001 | FastAPI app, Transcriber protocol, backend registry |
+| `resona-asr-core` | -- | Lean ASR contracts: protocol, registry, audio, live transcriber |
+| `resona-engine-server` | 7001 | FastAPI HTTP/WS server, hosts an ASR backend |
 | `resona-engine-faster-whisper` | -- | CTranslate2 backend (default, recommended) |
 | `resona-engine-whisper` | -- | Original OpenAI Whisper (PyTorch) backend |
 | `resona-engine-voxtral` | -- | HuggingFace Transformers backend (Voxtral, Whisper, etc.) |
@@ -91,7 +92,7 @@ The engine container requires a GPU and is health-checked before the API starts.
 
 ### Local-only mode (no server)
 
-If no server is reachable, the CLI automatically spawns a local engine:
+If no server is reachable, the CLI automatically spawns a local engine. The CLI now uses an in-process engine when a backend extra is installed (e.g. `resona-cli[faster-whisper]`). This avoids the subprocess spawn from earlier versions. If the extra isn't installed, the CLI falls back to spawning a local engine subprocess as before.
 
 ```bash
 # Transcribe files -- starts a local engine automatically
@@ -213,6 +214,17 @@ resona transcribe ./audio/ --backend voxtral
 # Default backend in config
 # ~/.resona/config.json: {"default_backend": "voxtral", "backends": [...]}
 ```
+
+### Install personas
+
+| Persona | Command |
+|---------|---------|
+| HTTP client only | `uv tool install --from ./apps/resona-cli resona-cli` |
+| Record + submit | `uv tool install --from ./apps/resona-cli 'resona-cli[record]'` |
+| Live transcription | `uv tool install --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'` |
+| Fully local | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` ⚠️ |
+
+⚠️ The backend extras pull torch nightly; `uv tool install` may not inherit the workspace's `pytorch-nightly` index. Workaround: use `uv run resona` from inside the workspace, or `uv pip install --extra-index-url https://download.pytorch.org/whl/nightly/cu128 'resona-cli[faster-whisper]'`.
 
 ## Configuration
 

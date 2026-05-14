@@ -2,7 +2,7 @@
 
 All configuration is read with `python-decouple`: environment variables take precedence over values in `.env`. Copy `.env.example` to `.env` to get started.
 
-## resona-engine-core (`:7001`)
+## resona-engine-server (`:7001`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
