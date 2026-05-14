@@ -20,7 +20,7 @@ import threading
 from threading import Lock
 from typing import Optional, NamedTuple
 
-from .registry import get_transcriber
+from resona_asr_core.registry import get_transcriber
 
 log = logging.getLogger(__name__)
 

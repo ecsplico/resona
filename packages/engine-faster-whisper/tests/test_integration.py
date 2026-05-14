@@ -27,8 +27,8 @@ def _fake_entry_point(**kwargs):
     return [ep]
 
 
-@patch("resona_engine_core.registry.entry_points", side_effect=_fake_entry_point)
-@patch("resona_engine_core.registry.config", return_value="faster-whisper")
+@patch("resona_asr_core.registry.entry_points", side_effect=_fake_entry_point)
+@patch("resona_asr_core.registry.config", return_value="faster-whisper")
 @patch("resona_engine_core.auth.config", return_value=None)
 def test_full_stack_transcribe(mock_auth_config, mock_reg_config, mock_eps):
     from resona_engine_core.registry import reset

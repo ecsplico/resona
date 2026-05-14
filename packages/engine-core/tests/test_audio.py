@@ -18,7 +18,7 @@ def test_load_audio_returns_float32():
     assert len(audio) == 4
 
 
-@patch("resona_engine_core.audio.ffmpeg")
+@patch("resona_asr_core.audio.ffmpeg")
 def test_load_audio_calls_ffmpeg(mock_ffmpeg):
     pcm = struct.pack("<2h", 0, 16384)
     mock_ffmpeg.input.return_value.output.return_value.run.return_value = (pcm, b"")

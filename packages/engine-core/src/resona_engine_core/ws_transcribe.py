@@ -7,7 +7,7 @@ import numpy as np
 from typing import Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .registry import get_transcriber
+from resona_asr_core.registry import get_transcriber
 
 logger = logging.getLogger(__name__)
 
