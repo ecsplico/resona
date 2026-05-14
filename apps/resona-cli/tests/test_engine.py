@@ -2,6 +2,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from resona_cli.engine import Engine, RemoteEngine
@@ -32,3 +33,38 @@ def test_remote_engine_delegates_to_resona_client(tmp_path):
     assert result["language"] == "de"
     mock_client.submit_job.assert_called_once_with(audio)
     mock_client.wait_for_job.assert_called_once_with(7)
+
+
+def test_in_process_engine_calls_registry(tmp_path):
+    """InProcessEngine.transcribe loads a backend via get_transcriber and calls it."""
+    from resona_cli.engine import InProcessEngine
+
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+
+    mock_transcriber = MagicMock()
+    mock_transcriber.transcribe.return_value = {
+        "text": "hello", "language": "de", "segments": [],
+    }
+
+    with (
+        patch("resona_cli.engine._load_audio", return_value=np.zeros(16000, dtype=np.float32)),
+        patch("resona_cli.engine.get_transcriber", return_value=mock_transcriber),
+    ):
+        engine = InProcessEngine(backend="faster-whisper")
+        result = engine.transcribe(audio, language="de")
+
+    assert result["text"] == "hello"
+    mock_transcriber.transcribe.assert_called_once()
+
+
+def test_in_process_engine_missing_extra_gives_install_hint(monkeypatch):
+    """If resona-asr-core isn't installed, InProcessEngine raises ImportError with hint."""
+    from resona_cli.engine import InProcessEngine
+
+    def fake_import(name, *args, **kwargs):
+        raise ImportError("no asr-core")
+
+    monkeypatch.setattr("resona_cli.engine._import_asr_core", fake_import)
+    with pytest.raises(ImportError, match=r"resona-cli\["):
+        InProcessEngine(backend="faster-whisper")
