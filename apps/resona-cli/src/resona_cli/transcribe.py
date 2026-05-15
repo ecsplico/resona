@@ -165,7 +165,7 @@ def _resolve_local_engine(model, engine_timeout, backend):
     against it.
     """
     try:
-        engine = InProcessEngine(backend=backend)
+        engine = InProcessEngine(engine=backend)
         typer.echo(
             f"No server reachable — running backend '{backend}' in-process.",
             err=True,
@@ -176,6 +176,6 @@ def _resolve_local_engine(model, engine_timeout, backend):
             f"No server reachable — starting local engine subprocess (backend={backend}).",
             err=True,
         )
-        ctx = LocalEngine(model=model, timeout=engine_timeout, backend=backend)
+        ctx = LocalEngine(model=model, timeout=engine_timeout, engine=backend)
         engine = ctx.__enter__()
         return engine, (lambda: ctx.__exit__(None, None, None))

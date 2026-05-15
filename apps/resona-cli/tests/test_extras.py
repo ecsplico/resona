@@ -19,7 +19,7 @@ def test_rec_without_record_extra_shows_install_hint(monkeypatch):
     assert "[record]" in result.output
 
 
-def test_in_process_engine_without_backend_extra_shows_hint(monkeypatch):
+def test_in_process_engine_without_engine_extra_shows_hint(monkeypatch):
     """Constructing InProcessEngine without resona-asr-core gives an install hint."""
     from resona_cli.engine import InProcessEngine
 
@@ -29,4 +29,4 @@ def test_in_process_engine_without_backend_extra_shows_hint(monkeypatch):
     monkeypatch.setattr("resona_cli.engine._import_asr_core", fake_import)
 
     with pytest.raises(ImportError, match=r"resona-cli\["):
-        InProcessEngine(backend="faster-whisper")
+        InProcessEngine(engine="faster-whisper")

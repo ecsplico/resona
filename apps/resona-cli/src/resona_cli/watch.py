@@ -82,7 +82,7 @@ def _watch_local_fallback(
     print(f"Watching {directory} for audio files (local fallback, recursive={recursive})...")
 
     try:
-        with LocalEngine(model=model, timeout=engine_timeout, backend=backend) as engine:
+        with LocalEngine(model=model, timeout=engine_timeout, engine=backend) as engine:
             while True:
                 glob_fn = directory.rglob if recursive else directory.glob
                 for ext in EXTENSIONS:

@@ -47,7 +47,7 @@ class RemoteEngine:
 
 
 _INSTALL_HINT = (
-    "In-process transcription requires a backend extra. Install one:\n"
+    "In-process transcription requires an engine extra. Install one:\n"
     "  uv tool install 'resona-cli[faster-whisper]'\n"
     "  uv tool install 'resona-cli[whisper]'\n"
     "  uv tool install 'resona-cli[voxtral]'"
@@ -77,17 +77,17 @@ def _load_audio(path: Path):
 
 
 class InProcessEngine:
-    """Loads an ASR backend in-process via the resona-asr-core entry-point registry."""
+    """Loads an ASR engine in-process via the resona-asr-core entry-point registry."""
 
-    def __init__(self, backend: str = "faster-whisper") -> None:
+    def __init__(self, engine: str = "faster-whisper") -> None:
         try:
             _import_asr_core()  # fail fast with install hint if extras missing
         except ImportError as e:
             if "resona-cli[" not in str(e):
                 raise ImportError(f"{e}\n\n{_INSTALL_HINT}") from e
             raise
-        self._backend = backend
-        self._transcriber = get_transcriber(backend)
+        self._engine = engine
+        self._transcriber = get_transcriber(engine)
 
     def transcribe(self, audio: Path, **kwargs) -> TranscriptionResult:
         samples = _load_audio(audio)

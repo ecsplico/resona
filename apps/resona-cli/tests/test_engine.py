@@ -36,7 +36,7 @@ def test_remote_engine_delegates_to_resona_client(tmp_path):
 
 
 def test_in_process_engine_calls_registry(tmp_path):
-    """InProcessEngine.transcribe loads a backend via get_transcriber and calls it."""
+    """InProcessEngine.transcribe loads an engine via get_transcriber and calls it."""
     from resona_cli.engine import InProcessEngine
 
     audio = tmp_path / "a.wav"
@@ -51,7 +51,7 @@ def test_in_process_engine_calls_registry(tmp_path):
         patch("resona_cli.engine._load_audio", return_value=np.zeros(16000, dtype=np.float32)),
         patch("resona_cli.engine.get_transcriber", return_value=mock_transcriber),
     ):
-        engine = InProcessEngine(backend="faster-whisper")
+        engine = InProcessEngine(engine="faster-whisper")
         result = engine.transcribe(audio, language="de")
 
     assert result["text"] == "hello"
@@ -67,4 +67,4 @@ def test_in_process_engine_missing_extra_gives_install_hint(monkeypatch):
 
     monkeypatch.setattr("resona_cli.engine._import_asr_core", fake_import)
     with pytest.raises(ImportError, match=r"resona-cli\["):
-        InProcessEngine(backend="faster-whisper")
+        InProcessEngine(engine="faster-whisper")

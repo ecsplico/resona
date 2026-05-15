@@ -1,4 +1,4 @@
-"""LocalEngine — spawns a local resona-engine subprocess as a fallback transcription backend."""
+"""LocalEngine — spawns a local resona-engine subprocess as a fallback transcription engine."""
 import atexit
 import os
 import socket
@@ -35,12 +35,12 @@ class LocalEngine:
         self,
         model: str | None = None,
         timeout: float = 120.0,
-        backend: str = "faster-whisper",
+        engine: str = "faster-whisper",
     ) -> None:
         self.model = model
         self.timeout = timeout
-        self.backend = backend
-        self._package = f"resona-engine-{backend}"
+        self.engine = engine
+        self._package = f"resona-engine-{engine}"
         self._process: subprocess.Popen | None = None
         self._port: int | None = None
         self._stderr_file = None
