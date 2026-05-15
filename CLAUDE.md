@@ -120,9 +120,8 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `main.py` — typer app root, `resona` command
 - `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
 - `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; `--engine NAME` unified selector (built-in local engine, config.json server entry, or cloud entry); `--private`/`--no-private` to require a private engine; submits to resona-api, calls cloud provider, or falls back to a local engine
-- `engine.py` — `Engine` Protocol + `RemoteEngine` (HTTP) + `InProcessEngine` (direct asr-core call); used by transcribe.
+- `engine.py` — `Engine` Protocol + `RemoteEngine` (HTTP) + `InProcessEngine` (direct asr-core call) + `CloudEngine` (wraps an `EngineEntry` of type `cloud`; calls `resona_cloud_stt` provider directly); used by transcribe.
 - `local_engine.py` — `LocalEngine`: subprocess-based fallback for transcribe when InProcessEngine extras aren't installed.
-- `cloud_engine.py` — `CloudEngine`: wraps an `EngineEntry` of type `cloud`; calls `resona_cloud_stt` provider directly
 - `engines.py`, `replacements.py`, `prompts.py` — CRUD subcommands; `engines add --type cloud --provider <name>` registers cloud entries
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
 - `live_ui.py` — `WSLiveApp`: live transcription TUI
