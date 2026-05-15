@@ -279,30 +279,51 @@ def _wait_for_engine(entry: EngineEntry, timeout: float = 120.0, poll: float = 3
 def resolve_engine(
     auto_start: bool = True,
     connect_timeout: float = 3.0,
+    name: Optional[str] = None,
+    private_only: bool = False,
 ) -> Optional[EngineEntry]:
-    """
-    Return the first reachable engine from ~/.resona/config.json.
+    """Return a usable engine entry from ~/.resona/config.json.
 
-    Resolution order:
-    1. Return the first engine that is immediately reachable.
-    2. If none reachable and auto_start=True, try to start each engine:
-       - SSH engines: open a port-forward tunnel and wait up to 30s.
-       - compose engines: run `docker compose up -d` and wait up to 120s.
+    Args:
+        auto_start: If True, try to start unreachable resona-api entries.
+        connect_timeout: Per-entry reachability probe timeout.
+        name: If given, resolve only the entry with this exact name.
+        private_only: If True, skip entries where ``is_private()`` is False.
 
-    Returns None if no engine could be reached or started.
+    Resolution:
+      - ``cloud`` entries are usable when their API-key env var is set
+        (no /health probe, no auto-start).
+      - ``resona-api`` entries are usable when /health responds; if not and
+        ``auto_start`` is set, an SSH tunnel or docker compose project is
+        started. A configured ``compose_dir`` that does not exist is logged
+        and skipped instead of raising FileNotFoundError.
+
+    Returns None if no usable engine is found.
     """
     cfg = EngineConfig.load()
-    if not cfg.engines:
+    engines = cfg.engines
+    if name is not None:
+        engines = [e for e in engines if e.name == name]
+    if private_only:
+        engines = [e for e in engines if e.is_private()]
+    if not engines:
         return None
 
-    for entry in cfg.engines:
-        if is_reachable(entry, timeout=connect_timeout):
+    # 1. Immediately usable entries.
+    for entry in engines:
+        if entry.type == "cloud":
+            if entry.is_usable():
+                return entry
+        elif is_reachable(entry, timeout=connect_timeout):
             return entry
 
     if not auto_start:
         return None
 
-    for entry in cfg.engines:
+    # 2. Auto-start resona-api entries (cloud entries cannot be started).
+    for entry in engines:
+        if entry.type == "cloud":
+            continue
         if entry.ssh_host:
             if entry.name not in _active_tunnels:
                 proc = _start_ssh_tunnel(entry)
@@ -313,6 +334,12 @@ def resolve_engine(
             if _wait_for_port(host, port, timeout=30.0) and is_reachable(entry):
                 return entry
         elif entry.compose_dir:
+            if not Path(entry.compose_dir).is_dir():
+                log.warning(
+                    f"Engine '{entry.name}': compose_dir '{entry.compose_dir}' "
+                    f"does not exist — skipping auto-start."
+                )
+                continue
             _start_compose(entry.compose_dir)
             log.info(f"Waiting for '{entry.name}' to become available (up to 120s)...")
             if _wait_for_engine(entry):
