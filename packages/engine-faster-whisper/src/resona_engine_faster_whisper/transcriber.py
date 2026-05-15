@@ -7,7 +7,6 @@ from decouple import config
 from faster_whisper import WhisperModel
 
 from ._cuda_libs import preload_cuda_libs
-
 from resona_asr_core.protocol import TranscriptionResult
 
 log = logging.getLogger(__name__)

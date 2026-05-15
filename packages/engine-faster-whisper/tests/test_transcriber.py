@@ -54,7 +54,7 @@ def test_initial_prompt_passed_through(mock_model_cls):
 @patch("resona_engine_faster_whisper.transcriber.WhisperModel")
 def test_cuda_device_preloads_libs(mock_model_cls, mock_preload):
     FastWhisperTranscriber(device="cuda", modelname="tiny")
-    mock_preload.assert_called_once()
+    mock_preload.assert_called_once_with()
 
 
 @patch("resona_engine_faster_whisper.transcriber.preload_cuda_libs")
