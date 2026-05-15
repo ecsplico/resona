@@ -7,13 +7,61 @@ default:
 
 # ── Setup ─────────────────────────────────────────────────────────────
 
-# Install all workspace packages (required after clone or adding deps)
+# Install all workspace packages into the local venv (after clone or dep change)
 install:
     uv sync --all-packages --no-build-isolation-package openai-whisper
 
 # Add a dependency to a specific package  (e.g: just add resona-api httpx)
 add package dep:
     uv add --package {{ package }} {{ dep }}
+
+# ── Install as a system-wide tool (uv tool install) ───────────────────
+# These install `resona` so it's on $PATH without needing `uv run`.
+# NOTE: never run `uv tool install .` at the workspace root — that's a
+# meta-package with no build backend. Always install from apps/resona-cli.
+# The *-whisper / *-voxtral / *-full recipes pass --index for the torch
+# nightly wheel since `uv tool install` does NOT inherit the workspace's
+# pytorch-nightly index. If it still fails, use `just install` + `uv run resona`.
+
+# Lean HTTP client (talks to a remote resona-api server)
+install-cli:
+    uv tool install --force --from ./apps/resona-cli resona-cli
+
+# + recorder TUI (`resona rec`, `resona ui`, `resona watch`)
+install-cli-record:
+    uv tool install --force --from ./apps/resona-cli 'resona-cli[record]'
+
+# + live transcription TUI (`resona live`) — uses remote engine over WS
+install-cli-live:
+    uv tool install --force --from ./apps/resona-cli 'resona-cli[live]'
+
+# Fully local: bundles faster-whisper backend (⚠ uses --index for torch nightly)
+install-cli-faster-whisper:
+    uv tool install --force \
+        --index https://download.pytorch.org/whl/nightly/cu128 \
+        --from ./apps/resona-cli 'resona-cli[faster-whisper]'
+
+# Fully local with OpenAI Whisper (PyTorch) backend
+install-cli-whisper:
+    uv tool install --force \
+        --index https://download.pytorch.org/whl/nightly/cu128 \
+        --from ./apps/resona-cli 'resona-cli[whisper]'
+
+# Fully local with Voxtral / HuggingFace Transformers backend
+install-cli-voxtral:
+    uv tool install --force \
+        --index https://download.pytorch.org/whl/nightly/cu128 \
+        --from ./apps/resona-cli 'resona-cli[voxtral]'
+
+# Live TUI + local faster-whisper engine (live-from-mic, no server)
+install-cli-full:
+    uv tool install --force \
+        --index https://download.pytorch.org/whl/nightly/cu128 \
+        --from ./apps/resona-cli 'resona-cli[record,live,faster-whisper]'
+
+# Uninstall the resona-cli tool
+uninstall-cli:
+    uv tool uninstall resona-cli
 
 # ── Services (local) ──────────────────────────────────────────────────
 
