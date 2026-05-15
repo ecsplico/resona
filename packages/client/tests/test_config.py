@@ -378,3 +378,68 @@ def test_is_usable_resona_api_probes_health():
     with respx.mock:
         respx.get("http://s:7000/health").mock(return_value=httpx.Response(200))
         assert e.is_usable() is True
+
+
+# ── EngineConfig cloud validation + default_private ───────────────────────────
+
+def test_engine_config_default_private_defaults_false():
+    assert EngineConfig().default_private is False
+
+
+def test_load_default_private_from_config(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({"engines": [], "default_private": True}))
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+    assert EngineConfig.load().default_private is True
+
+
+def test_save_persists_default_private(tmp_path, monkeypatch):
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    config_file = tmp_path / "config.json"
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
+    EngineConfig(default_private=True).save()
+    assert json.loads(config_file.read_text())["default_private"] is True
+
+
+def test_add_rejects_cloud_entry_with_unknown_provider(tmp_path, monkeypatch):
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
+    cfg = EngineConfig()
+    with pytest.raises(ValueError, match="provider"):
+        cfg.add(EngineEntry(name="bad", type="cloud", provider="nonsense"))
+
+
+def test_add_accepts_valid_cloud_entry(tmp_path, monkeypatch):
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
+    cfg = EngineConfig()
+    cfg.add(EngineEntry(name="dg", type="cloud", provider="deepgram"))
+    assert cfg.get("dg") is not None
+
+
+def test_load_skips_invalid_cloud_entry_with_warning(tmp_path, monkeypatch, caplog):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({"engines": [
+        {"name": "good", "type": "cloud", "provider": "openai"},
+        {"name": "bad", "type": "cloud", "provider": "nonsense"},
+    ]}))
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+    cfg = EngineConfig.load()
+    names = [e.name for e in cfg.engines]
+    assert names == ["good"]
+    assert "bad" in caplog.text
+
+
+def test_cloud_entry_round_trips_through_save_load(tmp_path, monkeypatch):
+    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
+    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
+    EngineConfig(engines=[
+        EngineEntry(name="dg", type="cloud", provider="deepgram",
+                    model="nova-3", options={"smart_format": True}),
+    ]).save()
+    loaded = EngineConfig.load()
+    assert loaded.engines[0].type == "cloud"
+    assert loaded.engines[0].options == {"smart_format": True}
