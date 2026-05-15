@@ -11,7 +11,8 @@ dependencies = [
     "resona-asr-core",
     "resona-engine-server",
     "faster-whisper>=1.1.1",
-    "torch>=2.11.0.dev",
+    "nvidia-cublas-cu12>=12.3",
+    "nvidia-cudnn-cu12>=9.0,<10",
 ]
 
 [tool.uv.sources]
