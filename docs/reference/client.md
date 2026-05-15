@@ -34,13 +34,13 @@ print(result["md"])  # transcript with replacements applied
 
 ---
 
-## Backend configuration
+## Engine configuration
 
-::: resona_client.config.BackendEntry
+::: resona_client.config.EngineEntry
 
-::: resona_client.config.BackendConfig
+::: resona_client.config.EngineConfig
 
-::: resona_client.config.resolve_backend
+::: resona_client.config.resolve_engine
 
 ::: resona_client.config.is_reachable
 

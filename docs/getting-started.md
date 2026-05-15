@@ -20,7 +20,7 @@ uv sync --all-packages --no-build-isolation-package openai-whisper
 
 # 3. Copy and edit environment config
 cp .env.example .env
-# Edit .env — set RESONA_BACKEND, model names, optional API keys
+# Edit .env — set RESONA_ENGINE, model names, optional API keys
 
 # 4. Start the engine (GPU required, keep this terminal open)
 uv run resona-engine-faster-whisper

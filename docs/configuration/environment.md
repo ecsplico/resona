@@ -6,7 +6,7 @@ All configuration is read with `python-decouple`: environment variables take pre
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_BACKEND` | `faster-whisper` | Backend to load: `faster-whisper`, `whisper`, or any installed entry-point name |
+| `RESONA_ENGINE` | `faster-whisper` | Engine to load: `faster-whisper`, `whisper`, or any installed entry-point name |
 | `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | Model name/path for faster-whisper backend |
 | `DEFAULT_WHISPER_MODEL` | `large-v3` | Model name/path for openai-whisper backend |
 | `DEFAULT_TRANSFORMER_MODEL` | — | HuggingFace model ID for transformer backends |

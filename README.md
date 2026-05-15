@@ -1,6 +1,6 @@
 # Resona
 
-Modular audio transcription platform with pluggable ASR backends and composable postprocessing. Designed for German medical dictation but usable for any language. Built as a uv workspace monorepo.
+Modular audio transcription platform with pluggable ASR engines and composable postprocessing. Designed for German medical dictation but usable for any language. Built as a uv workspace monorepo.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ Modular audio transcription platform with pluggable ASR backends and composable 
                        │               │
           ┌────────────▼──┐   ┌───────▼──────────────┐
           │  resona-api   │   │ resona-engine-server  │
-          │  :7000        │──▶│  + backend plugin     │
+          │  :7000        │──▶│  + engine plugin     │
           │               │   │                       │
           │ POST /jobs    │   │ POST /transcribe      │
           │ GET  /jobs/   │   │ WS   /ws/transcribe   │
@@ -35,21 +35,21 @@ Modular audio transcription platform with pluggable ASR backends and composable 
 
 **resona-engine-server** is stateless -- no database, no side effects, no postprocessing. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in a separate package — `resona-asr-core` — so they can be reused without the FastAPI dependency tree. **resona-api** owns the job queue, SQLite database, and applies postprocessing (replacements + optional LLM) after getting raw text from the engine. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
 
-Backends are discovered via Python entry points (`resona.backends` group). Each backend is a separate package with its own Dockerfile.
+Engines are discovered via Python entry points (`resona.engines` group). Each engine is a separate package with its own Dockerfile.
 
 ## Packages
 
 | Package | Port | Description |
 |---------|------|-------------|
 | `resona-asr-core` | -- | Lean ASR contracts: protocol, registry, audio, live transcriber |
-| `resona-engine-server` | 7001 | FastAPI HTTP/WS server, hosts an ASR backend |
-| `resona-engine-faster-whisper` | -- | CTranslate2 backend (default, recommended) |
-| `resona-engine-whisper` | -- | Original OpenAI Whisper (PyTorch) backend |
-| `resona-engine-voxtral` | -- | HuggingFace Transformers backend (Voxtral, Whisper, etc.) |
+| `resona-engine-server` | 7001 | FastAPI HTTP/WS server, hosts an ASR engine |
+| `resona-engine-faster-whisper` | -- | CTranslate2 engine (default, recommended) |
+| `resona-engine-whisper` | -- | Original OpenAI Whisper (PyTorch) engine |
+| `resona-engine-voxtral` | -- | HuggingFace Transformers engine (Voxtral, Whisper, etc.) |
 | `resona-postprocess` | -- | Composable pipeline: regex replacements + LLM via litellm |
 | `resona-api` | 7000 | Job queue + SQLite + postprocessing, calls engine via HTTP |
 | `resona-client` | -- | httpx client library for the resona-api REST interface |
-| `resona-cli` | -- | CLI: `resona transcribe/watch/rec/live/ui/backends/replacements/prompts` |
+| `resona-cli` | -- | CLI: `resona transcribe/watch/rec/live/ui/engines/replacements/prompts` |
 
 ## Quick start
 
@@ -92,7 +92,7 @@ The engine container requires a GPU and is health-checked before the API starts.
 
 ### Local-only mode (no server)
 
-If no server is reachable, the CLI automatically spawns a local engine. The CLI now uses an in-process engine when a backend extra is installed (e.g. `resona-cli[faster-whisper]`). This avoids the subprocess spawn from earlier versions. If the extra isn't installed, the CLI falls back to spawning a local engine subprocess as before.
+If no server is reachable, the CLI automatically spawns a local engine. The CLI now uses an in-process engine when an engine extra is installed (e.g. `resona-cli[faster-whisper]`). This avoids the subprocess spawn from earlier versions. If the extra isn't installed, the CLI falls back to spawning a local engine subprocess as before.
 
 ```bash
 # Transcribe files -- starts a local engine automatically
@@ -102,11 +102,11 @@ uv run resona transcribe ./recordings/ --output-dir ./transcripts/
 uv run resona transcribe recording.mp3
 uv run resona transcribe "recordings/*.mp3"
 
-# Use a different backend
-uv run resona transcribe ./recordings/ --backend whisper
+# Use a different engine
+uv run resona transcribe ./recordings/ --engine whisper
 
-# Set a default backend so you don't need --backend every time
-# Edit ~/.resona/config.json and set "default_backend": "whisper"
+# Set a default engine so you don't need --engine every time
+# Edit ~/.resona/config.json and set "default_engine": "whisper"
 ```
 
 ## CLI usage
@@ -129,11 +129,11 @@ resona live
 # Record, transcribe, and display result (terminal UI)
 resona ui
 
-# Manage remote backends
-resona backends add gpu-server http://gpu-machine:7000
-resona backends add home http://localhost:7000 --ssh user@homeserver.com
-resona backends list
-resona backends test
+# Manage remote engines
+resona engines add gpu-server http://gpu-machine:7000
+resona engines add home http://localhost:7000 --ssh user@homeserver.com
+resona engines list
+resona engines test
 
 # Manage text replacements (spoken -> written corrections)
 resona replacements list
@@ -192,11 +192,11 @@ Create `~/.resona/postprocess.json` to chain replacements with LLM formatting:
 
 LLM postprocessing uses [litellm](https://docs.litellm.ai/) -- supports OpenAI, Anthropic, Ollama, vLLM, and 100+ other providers. Set the model string and any required API keys (e.g. `OPENAI_API_KEY`).
 
-## Backend selection
+## Engine selection
 
-Three transcription backends are available:
+Three transcription engines are available:
 
-| Backend | Command | Best for |
+| Engine | Command | Best for |
 |---------|---------|----------|
 | `faster-whisper` (default) | `resona-engine-faster-whisper` | Production use, fastest inference |
 | `whisper` | `resona-engine-whisper` | Full OpenAI Whisper compatibility |
@@ -206,13 +206,13 @@ Select via environment variable or CLI flag:
 
 ```bash
 # Environment variable
-RESONA_BACKEND=whisper uv run resona-engine-whisper
+RESONA_ENGINE=whisper uv run resona-engine-whisper
 
 # CLI flag (local fallback mode)
-resona transcribe ./audio/ --backend voxtral
+resona transcribe ./audio/ --engine voxtral
 
-# Default backend in config
-# ~/.resona/config.json: {"default_backend": "voxtral", "backends": [...]}
+# Default engine in config
+# ~/.resona/config.json: {"default_engine": "voxtral", "engines": [...]}
 ```
 
 ### Install personas
@@ -232,7 +232,7 @@ The `[faster-whisper]`, `[live]`, and `[record]` extras are torch-free and need 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_BACKEND` | `faster-whisper` | Backend to load |
+| `RESONA_ENGINE` | `faster-whisper` | Engine to load |
 | `RESONA_ENGINE_URL` | `http://localhost:7001` | Engine URL (used by API) |
 | `RESONA_ENGINE_KEY` | _(unset)_ | Engine API key; auth disabled if unset |
 | `RESONA_API_URL` | `http://localhost:7000` | API URL (used by client/CLI) |
@@ -249,7 +249,7 @@ The `[faster-whisper]`, `[live]`, and `[record]` extras are torch-free and need 
 
 ```
 ~/.resona/
-├── config.json          # Remote backends, auto-start settings, default_backend
+├── config.json          # Remote engines, auto-start settings, default_engine
 ├── replacements.json    # Override default text replacement rules
 └── postprocess.json     # Full pipeline config: replacements + LLM steps
 ```

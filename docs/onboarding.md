@@ -30,14 +30,14 @@ resona --help
 ```
 
 You should see the full command list (`watch`, `transcribe`, `rec`, `live`, `ui`,
-`backends`, `replacements`, `prompts`).
+`engines`, `replacements`, `prompts`).
 
 ---
 
 ## 2. Connect to a server
 
-`resona` stores backend addresses in `~/.resona/config.json`.
-Backends are tried in priority order; the first reachable one is used.
+`resona` stores engine addresses in `~/.resona/config.json`.
+Engines are tried in priority order; the first reachable one is used.
 
 Pick the scenario that matches your setup:
 
@@ -47,24 +47,24 @@ Pick the scenario that matches your setup:
     `uv run resona-api`):
 
     ```bash
-    resona backends add local http://localhost:7000
+    resona engines add local http://localhost:7000
     ```
 
     If the server needs an API key (i.e. `RESONA_API_KEY` was set):
 
     ```bash
-    resona backends add local http://localhost:7000 --key YOUR_API_KEY
+    resona engines add local http://localhost:7000 --key YOUR_API_KEY
     ```
 
     If you want `resona` to start the server automatically when it's not running:
 
     ```bash
-    resona backends add local http://localhost:7000 \
+    resona engines add local http://localhost:7000 \
       --compose-dir ~/resona
     ```
 
     With `--compose-dir` set, `resona` will run `docker compose up -d` and wait
-    up to 120 seconds whenever the backend is unreachable.
+    up to 120 seconds whenever the engine is unreachable.
 
 === "LAN (same network)"
 
@@ -72,16 +72,16 @@ Pick the scenario that matches your setup:
     (e.g. `192.168.1.50`) and use port `7000`:
 
     ```bash
-    resona backends add lan http://192.168.1.50:7000
+    resona engines add lan http://192.168.1.50:7000
     ```
 
     With an API key:
 
     ```bash
-    resona backends add lan http://192.168.1.50:7000 --key YOUR_API_KEY
+    resona engines add lan http://192.168.1.50:7000 --key YOUR_API_KEY
     ```
 
-    No auto-start is available for direct LAN backends.
+    No auto-start is available for direct LAN engines.
 
 === "Remote (SSH tunnel)"
 
@@ -96,7 +96,7 @@ Pick the scenario that matches your setup:
     **Setup:**
 
     ```bash
-    resona backends add remote http://localhost:7000 \
+    resona engines add remote http://localhost:7000 \
       --ssh user@myserver.com
     ```
 
@@ -109,16 +109,16 @@ Pick the scenario that matches your setup:
 
     ```bash
     # Non-standard SSH port
-    resona backends add remote http://localhost:7000 \
+    resona engines add remote http://localhost:7000 \
       --ssh user@myserver.com:2222
 
     # API key on the remote server
-    resona backends add remote http://localhost:7000 \
+    resona engines add remote http://localhost:7000 \
       --ssh user@myserver.com \
       --key YOUR_API_KEY
 
     # Avoid port conflict with a local service on :7000
-    resona backends add remote http://localhost:17000 \
+    resona engines add remote http://localhost:17000 \
       --ssh user@myserver.com \
       --ssh-remote-port 7000
     ```
@@ -136,7 +136,7 @@ Pick the scenario that matches your setup:
 ## 3. Verify the connection
 
 ```bash
-resona backends list
+resona engines list
 ```
 
 Example output:
@@ -146,20 +146,20 @@ Example output:
   ✓  remote               http://localhost:7000  [ssh: user@myserver.com]
 ```
 
-A `✓` means the backend responded to `GET /health`. A `✗` means it's
+A `✓` means the engine responded to `GET /health`. A `✗` means it's
 unreachable (but may still auto-start when needed).
 
-Test a specific backend explicitly:
+Test a specific engine explicitly:
 
 ```bash
-resona backends test remote
+resona engines test remote
 ```
 
 ---
 
 ## 4. First transcription
 
-Once a backend is reachable, transcribe a file:
+Once an engine is reachable, transcribe a file:
 
 ```bash
 resona transcribe ./recordings/ --output-dir ./transcripts/
@@ -233,21 +233,21 @@ transcript appears in a new tab once the job completes.
 
 ---
 
-## Multiple backends
+## Multiple engines
 
-You can register several backends. `resona` tries them in order and uses the
+You can register several engines. `resona` tries them in order and uses the
 first reachable one — useful if you want a fast LAN server with an SSH
 fallback:
 
 ```bash
-resona backends add lan    http://192.168.1.50:7000
-resona backends add remote http://localhost:7000 --ssh user@myserver.com
+resona engines add lan    http://192.168.1.50:7000
+resona engines add remote http://localhost:7000 --ssh user@myserver.com
 ```
 
 Reorder by removing and re-adding. Remove with:
 
 ```bash
-resona backends remove remote
+resona engines remove remote
 ```
 
-See [Backends & SSH](configuration/backends.md) for the full resolution logic.
+See [Engines & SSH](configuration/engines.md) for the full resolution logic.

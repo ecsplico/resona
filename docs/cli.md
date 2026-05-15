@@ -15,7 +15,7 @@ resona [OPTIONS] COMMAND [ARGS]...
 | `rec` | Audio recorder TUI |
 | `live` | Live transcription TUI (streams to resona-engine) |
 | `ui` | Record-and-transcribe TUI (records, submits job, shows result) |
-| `backends` | Manage backend server addresses |
+| `engines` | Manage engine server addresses |
 | `replacements` | Manage text replacement rules |
 | `prompts` | Manage initial prompt phrases |
 
@@ -63,7 +63,7 @@ resona transcribe <INPUTS...> [OPTIONS]
 | `--model` | _(server default)_ | Whisper model name (local fallback only) |
 | `--language` | `de` | Language hint (local fallback only) |
 | `--engine-timeout` | `120.0` | Seconds to wait for local engine startup |
-| `--backend` | _(from `~/.resona/config.json`)_ | Backend for local engine: `faster-whisper`, `whisper`, `voxtral` |
+| `--engine` | _(from `~/.resona/config.json`)_ | Engine for local transcription: `faster-whisper`, `whisper`, `voxtral` |
 
 **Examples:**
 
@@ -80,8 +80,8 @@ resona transcribe "folder/*.mp3"
 # Directory
 resona transcribe ./recordings/ --output-dir ./transcripts/
 
-# Local fallback with a specific backend
-resona transcribe ./audio/ --backend whisper --language en
+# Local fallback with a specific engine
+resona transcribe ./audio/ --engine whisper --language en
 ```
 
 ---
@@ -137,22 +137,22 @@ resona ui
 
 ---
 
-## `resona backends`
+## `resona engines`
 
-Manage backend server addresses stored in `~/.resona/config.json`.
+Manage engine server addresses stored in `~/.resona/config.json`.
 
-### `backends list`
+### `engines list`
 
 ```bash
-resona backends list
+resona engines list
 ```
 
-Shows all configured backends with reachability status (`✓` / `✗`).
+Shows all configured engines with reachability status (`✓` / `✗`).
 
-### `backends add`
+### `engines add`
 
 ```bash
-resona backends add <name> <api_url> [OPTIONS]
+resona engines add <name> <api_url> [OPTIONS]
 ```
 
 **Options:**
@@ -168,35 +168,35 @@ resona backends add <name> <api_url> [OPTIONS]
 
 ```bash
 # Direct LAN server
-resona backends add lan http://192.168.1.10:7000
+resona engines add lan http://192.168.1.10:7000
 
 # Local docker-compose auto-start
-resona backends add local http://localhost:7000 --compose-dir ~/resona
+resona engines add local http://localhost:7000 --compose-dir ~/resona
 
 # Remote server over SSH tunnel
-resona backends add remote http://localhost:7000 --ssh user@myserver.com
+resona engines add remote http://localhost:7000 --ssh user@myserver.com
 
 # Non-standard SSH port, different local forwarding port
-resona backends add remote http://localhost:17000 \
+resona engines add remote http://localhost:17000 \
   --ssh user@myserver.com:2222 \
   --ssh-remote-port 7000
 ```
 
-See [Backends & SSH](configuration/backends.md) for the full resolution logic.
+See [Engines & SSH](configuration/engines.md) for the full resolution logic.
 
-### `backends remove`
-
-```bash
-resona backends remove <name>
-```
-
-### `backends test`
+### `engines remove`
 
 ```bash
-resona backends test [name] [--timeout 3.0]
+resona engines remove <name>
 ```
 
-Test reachability of one backend (or all if `name` is omitted). Exits 0 if at least one is reachable.
+### `engines test`
+
+```bash
+resona engines test [name] [--timeout 3.0]
+```
+
+Test reachability of one engine (or all if `name` is omitted). Exits 0 if at least one is reachable.
 
 ---
 
@@ -246,12 +246,12 @@ Only one prompt can be active at a time. `activate` deactivates all others autom
 
 ---
 
-## Backend resolution
+## Engine resolution
 
-When `resona` needs to connect to a resona-api server, it resolves the backend in this order:
+When `resona` needs to connect to a resona-api server, it resolves the engine in this order:
 
 1. `RESONA_API_URL` environment variable — used directly, no config lookup
-2. First reachable backend in `~/.resona/config.json`
-3. Auto-start: SSH tunnel or `docker compose up -d` for the first configured backend
+2. First reachable engine in `~/.resona/config.json`
+3. Auto-start: SSH tunnel or `docker compose up -d` for the first configured engine
 
-See [Backends & SSH](configuration/backends.md) for details.
+See [Engines & SSH](configuration/engines.md) for details.
