@@ -17,10 +17,20 @@ ENTRY_POINT_GROUP = "resona.backends"
 
 
 def _detect_device() -> str:
-    """Return 'cuda' if available, else 'cpu'."""
+    """Return 'cuda' if a GPU is available, else 'cpu'.
+
+    Prefers torch when present (whisper / voxtral backends ship it); otherwise
+    falls back to CTranslate2 (the faster-whisper backend ships it). With
+    neither installed, assumes CPU.
+    """
     try:
         import torch
         return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        pass
+    try:
+        import ctranslate2
+        return "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
     except ImportError:
         return "cpu"
 
