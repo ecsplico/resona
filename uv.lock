@@ -2236,6 +2236,7 @@ dependencies = [
     { name = "faster-whisper" },
     { name = "nvidia-cublas-cu12" },
     { name = "nvidia-cudnn-cu12" },
+    { name = "requests" },
     { name = "resona-asr-core" },
     { name = "resona-engine-server" },
 ]
@@ -2245,6 +2246,7 @@ requires-dist = [
     { name = "faster-whisper", specifier = ">=1.1.1" },
     { name = "nvidia-cublas-cu12", specifier = ">=12.3" },
     { name = "nvidia-cudnn-cu12", specifier = ">=9.0,<10" },
+    { name = "requests", specifier = ">=2.31" },
     { name = "resona-asr-core", editable = "packages/asr-core" },
     { name = "resona-engine-server", editable = "packages/engine-server" },
 ]
