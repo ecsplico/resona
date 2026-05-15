@@ -1,10 +1,10 @@
 """
-Backend configuration for resona clients.
+Engine configuration for resona clients.
 
-Backends are stored in ~/.resona/config.json as a priority-ordered list.
-The first reachable backend is used.
+Engines are stored in ~/.resona/config.json as a priority-ordered list.
+The first reachable engine is used.
 
-Auto-start options (tried in order when no backend is reachable):
+Auto-start options (tried in order when no engine is reachable):
   compose_dir — runs `docker compose up -d` in that directory
   ssh_host    — opens an SSH port-forward tunnel to a remote machine
 
@@ -58,21 +58,21 @@ atexit.register(_cleanup_tunnels)
 
 
 @dataclass
-class BackendEntry:
-    """A single resona backend and its connection parameters.
+class EngineEntry:
+    """A single resona engine and its connection parameters.
 
-    Backends are tried in priority order; the first reachable one is used.
+    Engines are tried in priority order; the first reachable one is used.
     If ``ssh_host`` is set, a local port-forward tunnel is opened before
-    connecting. If ``compose_dir`` is set, the backend can be auto-started
+    connecting. If ``compose_dir`` is set, the engine can be auto-started
     via ``docker compose up -d``.
 
     Attributes:
-        name: Unique identifier shown in ``resona backends list``.
+        name: Unique identifier shown in ``resona engines list``.
         api_url: Local URL the client connects to (e.g. ``http://localhost:7000``).
-            For SSH backends this is the *local* tunnel endpoint.
+            For SSH engines this is the *local* tunnel endpoint.
         api_key: Optional ``X-API-Key`` header value.
         compose_dir: Absolute path to a docker-compose project to auto-start
-            when this backend is unreachable.
+            when this engine is unreachable.
         ssh_host: SSH host to tunnel through, e.g. ``user@host`` or
             ``user@host:2222``. The port in ``api_url`` is forwarded.
         ssh_remote_port: Remote port on the SSH host. Defaults to the port
@@ -91,33 +91,33 @@ class BackendEntry:
 
 
 @dataclass
-class BackendConfig:
-    """Persistent ordered list of configured backends.
+class EngineConfig:
+    """Persistent ordered list of configured engines.
 
-    Serialised to ``~/.resona/config.json``. Use :func:`resolve_backend`
-    to obtain a ready-to-use :class:`BackendEntry` with auto-start support.
+    Serialised to ``~/.resona/config.json``. Use :func:`resolve_engine`
+    to obtain a ready-to-use :class:`EngineEntry` with auto-start support.
 
     If ``~/.resona/config.json`` does not exist but the legacy
     ``~/.whisper-server/config.json`` does, it is automatically migrated
     on first load.
 
     Attributes:
-        backends: Priority-ordered list of :class:`BackendEntry` instances.
+        engines: Priority-ordered list of :class:`EngineEntry` instances.
             The first reachable entry is selected.
     """
 
-    backends: list[BackendEntry] = field(default_factory=list)
-    default_backend: str = "faster-whisper"
+    engines: list[EngineEntry] = field(default_factory=list)
+    default_engine: str = "faster-whisper"
 
     @classmethod
-    def load(cls) -> "BackendConfig":
+    def load(cls) -> "EngineConfig":
         # Migration: copy legacy config if new location does not yet exist.
         if not CONFIG_FILE.exists() and _LEGACY_CONFIG_FILE.exists():
             try:
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(_LEGACY_CONFIG_FILE, CONFIG_FILE)
                 log.info(
-                    f"Migrated backend config from {_LEGACY_CONFIG_FILE} to {CONFIG_FILE}"
+                    f"Migrated engine config from {_LEGACY_CONFIG_FILE} to {CONFIG_FILE}"
                 )
             except Exception as e:
                 log.warning(f"Could not migrate legacy config: {e}")
@@ -126,9 +126,10 @@ class BackendConfig:
             return cls()
         try:
             data = json.loads(CONFIG_FILE.read_text())
-            backends = [BackendEntry(**b) for b in data.get("backends", [])]
-            default_backend = data.get("default_backend", "faster-whisper")
-            return cls(backends=backends, default_backend=default_backend)
+            raw_engines = data.get("engines", data.get("backends", []))
+            engines = [EngineEntry(**e) for e in raw_engines]
+            default_engine = data.get("default_engine", data.get("default_backend", "faster-whisper"))
+            return cls(engines=engines, default_engine=default_engine)
         except (json.JSONDecodeError, TypeError) as e:
             log.warning(f"Could not parse {CONFIG_FILE}: {e}")
             return cls()
@@ -136,29 +137,29 @@ class BackendConfig:
     def save(self) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         data = {
-            "backends": [asdict(b) for b in self.backends],
-            "default_backend": self.default_backend,
+            "engines": [asdict(e) for e in self.engines],
+            "default_engine": self.default_engine,
         }
         CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
-    def get(self, name: str) -> Optional[BackendEntry]:
-        return next((b for b in self.backends if b.name == name), None)
+    def get(self, name: str) -> Optional[EngineEntry]:
+        return next((e for e in self.engines if e.name == name), None)
 
-    def add(self, entry: BackendEntry) -> None:
+    def add(self, entry: EngineEntry) -> None:
         if self.get(entry.name):
-            raise ValueError(f"Backend '{entry.name}' already exists")
-        self.backends.append(entry)
+            raise ValueError(f"Engine '{entry.name}' already exists")
+        self.engines.append(entry)
         self.save()
 
     def remove(self, name: str) -> None:
         if not self.get(name):
-            raise KeyError(f"Backend '{name}' not found")
-        self.backends = [b for b in self.backends if b.name != name]
+            raise KeyError(f"Engine '{name}' not found")
+        self.engines = [e for e in self.engines if e.name != name]
         self.save()
 
 
-def is_reachable(entry: BackendEntry, timeout: float = 3.0) -> bool:
-    """Return True if the backend's /health endpoint responds 200."""
+def is_reachable(entry: EngineEntry, timeout: float = 3.0) -> bool:
+    """Return True if the engine's /health endpoint responds 200."""
     try:
         headers = {"X-API-Key": entry.api_key} if entry.api_key else {}
         resp = httpx.get(entry.health_url(), headers=headers, timeout=timeout)
@@ -189,8 +190,8 @@ def _wait_for_port(host: str, port: int, timeout: float = 30.0, poll: float = 0.
     return False
 
 
-def _start_ssh_tunnel(entry: BackendEntry) -> subprocess.Popen:
-    """Start an SSH port-forward tunnel for the given backend entry."""
+def _start_ssh_tunnel(entry: EngineEntry) -> subprocess.Popen:
+    """Start an SSH port-forward tunnel for the given engine entry."""
     local_port = _local_port(entry.api_url)
     remote_port = entry.ssh_remote_port or local_port
 
@@ -227,7 +228,7 @@ def _start_compose(compose_dir: str) -> None:
     )
 
 
-def _wait_for_backend(entry: BackendEntry, timeout: float = 120.0, poll: float = 3.0) -> bool:
+def _wait_for_engine(entry: EngineEntry, timeout: float = 120.0, poll: float = 3.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if is_reachable(entry):
@@ -236,33 +237,33 @@ def _wait_for_backend(entry: BackendEntry, timeout: float = 120.0, poll: float =
     return False
 
 
-def resolve_backend(
+def resolve_engine(
     auto_start: bool = True,
     connect_timeout: float = 3.0,
-) -> Optional[BackendEntry]:
+) -> Optional[EngineEntry]:
     """
-    Return the first reachable backend from ~/.resona/config.json.
+    Return the first reachable engine from ~/.resona/config.json.
 
     Resolution order:
-    1. Return the first backend that is immediately reachable.
-    2. If none reachable and auto_start=True, try to start each backend:
-       - SSH backends: open a port-forward tunnel and wait up to 30s.
-       - compose backends: run `docker compose up -d` and wait up to 120s.
+    1. Return the first engine that is immediately reachable.
+    2. If none reachable and auto_start=True, try to start each engine:
+       - SSH engines: open a port-forward tunnel and wait up to 30s.
+       - compose engines: run `docker compose up -d` and wait up to 120s.
 
-    Returns None if no backend could be reached or started.
+    Returns None if no engine could be reached or started.
     """
-    cfg = BackendConfig.load()
-    if not cfg.backends:
+    cfg = EngineConfig.load()
+    if not cfg.engines:
         return None
 
-    for entry in cfg.backends:
+    for entry in cfg.engines:
         if is_reachable(entry, timeout=connect_timeout):
             return entry
 
     if not auto_start:
         return None
 
-    for entry in cfg.backends:
+    for entry in cfg.engines:
         if entry.ssh_host:
             if entry.name not in _active_tunnels:
                 proc = _start_ssh_tunnel(entry)
@@ -275,7 +276,7 @@ def resolve_backend(
         elif entry.compose_dir:
             _start_compose(entry.compose_dir)
             log.info(f"Waiting for '{entry.name}' to become available (up to 120s)...")
-            if _wait_for_backend(entry):
+            if _wait_for_engine(entry):
                 return entry
 
     return None

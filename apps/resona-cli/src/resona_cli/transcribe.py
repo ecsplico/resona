@@ -61,19 +61,19 @@ def transcribe_files(
     model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
     language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
     engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
-    backend: Optional[str] = typer.Option(None, "--backend", help="Backend for local engine (e.g. faster-whisper, whisper, voxtral). Falls back to default_backend in ~/.resona/config.json."),
+    engine: Optional[str] = typer.Option(None, "--engine", help="Engine for local transcription (e.g. faster-whisper, whisper, voxtral). Falls back to default_engine in ~/.resona/config.json."),
 ):
     """Transcribe audio files. Accepts files, glob patterns, or directories."""
     from resona_client.client import ResonaClient
-    from resona_client.config import BackendConfig
+    from resona_client.config import EngineConfig
 
-    resolved_backend = backend or BackendConfig.load().default_backend
+    resolved_engine = engine or EngineConfig.load().default_engine
     files = _expand_inputs(inputs, recursive=recursive)
 
     try:
         client = ResonaClient.from_config()
     except RuntimeError:
-        _transcribe_local_fallback(files, output_dir, model, language, engine_timeout, resolved_backend)
+        _transcribe_local_fallback(files, output_dir, model, language, engine_timeout, resolved_engine)
         return
 
     if model is not None:
@@ -127,7 +127,7 @@ def _transcribe_local_fallback(
     model: Optional[str],
     language: str,
     engine_timeout: float,
-    backend: str = "faster-whisper",
+    engine: str = "faster-whisper",
 ) -> None:
     from resona_postprocess.sources import build_pipeline_from_config
 
@@ -135,7 +135,7 @@ def _transcribe_local_fallback(
         print("No audio files found.")
         return
 
-    engine, cleanup = _resolve_local_engine(model, engine_timeout, backend)
+    local_engine, cleanup = _resolve_local_engine(model, engine_timeout, engine)
     pipeline = build_pipeline_from_config()
 
     if output_dir:
@@ -144,7 +144,7 @@ def _transcribe_local_fallback(
     try:
         for filepath in files:
             try:
-                result = engine.transcribe(filepath, language=language)
+                result = local_engine.transcribe(filepath, language=language)
                 raw_text = result.get("text", "")
                 transcript = pipeline.run(raw_text)
                 out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
@@ -156,26 +156,26 @@ def _transcribe_local_fallback(
         cleanup()
 
 
-def _resolve_local_engine(model, engine_timeout, backend):
-    """Return (engine, cleanup_fn). Prefer in-process; fall back to subprocess.
+def _resolve_local_engine(model, engine_timeout, engine):
+    """Return (engine_obj, cleanup_fn). Prefer in-process; fall back to subprocess.
 
-    The in-process path is preferred when ``resona-asr-core`` and a backend extra
+    The in-process path is preferred when ``resona-asr-core`` and an engine extra
     are installed in the same environment as the CLI. Otherwise the original
-    subprocess-based LocalEngine spawns ``resona-engine-<backend>`` and HTTPs
+    subprocess-based LocalEngine spawns ``resona-engine-<engine>`` and HTTPs
     against it.
     """
     try:
-        engine = InProcessEngine(engine=backend)
+        engine_obj = InProcessEngine(engine=engine)
         typer.echo(
-            f"No server reachable — running backend '{backend}' in-process.",
+            f"No server reachable — running engine '{engine}' in-process.",
             err=True,
         )
-        return engine, (lambda: None)
+        return engine_obj, (lambda: None)
     except ImportError:
         typer.echo(
-            f"No server reachable — starting local engine subprocess (backend={backend}).",
+            f"No server reachable — starting local engine subprocess (engine={engine}).",
             err=True,
         )
-        ctx = LocalEngine(model=model, timeout=engine_timeout, engine=backend)
-        engine = ctx.__enter__()
-        return engine, (lambda: ctx.__exit__(None, None, None))
+        ctx = LocalEngine(model=model, timeout=engine_timeout, engine=engine)
+        engine_obj = ctx.__enter__()
+        return engine_obj, (lambda: ctx.__exit__(None, None, None))

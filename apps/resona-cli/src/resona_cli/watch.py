@@ -17,19 +17,19 @@ def watch_directory(
     model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
     language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
     engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
-    backend: Optional[str] = typer.Option(None, "--backend", help="Backend for local engine (e.g. faster-whisper, whisper, voxtral). Falls back to default_backend in ~/.resona/config.json."),
+    engine: Optional[str] = typer.Option(None, "--engine", help="Engine for local transcription (e.g. faster-whisper, whisper, voxtral). Falls back to default_engine in ~/.resona/config.json."),
 ):
     """Watch a directory for new audio files and submit them for transcription."""
     from resona_client.client import ResonaClient
-    from resona_client.config import BackendConfig
+    from resona_client.config import EngineConfig
 
-    resolved_backend = backend or BackendConfig.load().default_backend
+    resolved_engine = engine or EngineConfig.load().default_engine
 
     try:
         client = ResonaClient.from_config()
     except RuntimeError:
         _watch_local_fallback(
-            directory, recursive, poll_interval, output_dir, model, language, engine_timeout, resolved_backend
+            directory, recursive, poll_interval, output_dir, model, language, engine_timeout, resolved_engine
         )
         return
 
@@ -64,12 +64,12 @@ def _watch_local_fallback(
     model: Optional[str],
     language: str,
     engine_timeout: float,
-    backend: str = "faster-whisper",
+    engine: str = "faster-whisper",
 ) -> None:
     from resona_postprocess.sources import build_pipeline_from_config
 
     typer.echo(
-        f"No server reachable — starting local engine (backend={backend}).",
+        f"No server reachable — starting local engine (engine={engine}).",
         err=True,
     )
 
@@ -82,7 +82,7 @@ def _watch_local_fallback(
     print(f"Watching {directory} for audio files (local fallback, recursive={recursive})...")
 
     try:
-        with LocalEngine(model=model, timeout=engine_timeout, engine=backend) as engine:
+        with LocalEngine(model=model, timeout=engine_timeout, engine=engine) as engine_obj:
             while True:
                 glob_fn = directory.rglob if recursive else directory.glob
                 for ext in EXTENSIONS:
@@ -90,7 +90,7 @@ def _watch_local_fallback(
                         if f not in seen:
                             seen.add(f)
                             try:
-                                result = engine.transcribe(f, language=language)
+                                result = engine_obj.transcribe(f, language=language)
                                 raw_text = result.get("text", "")
                                 transcript = pipeline.run(raw_text)
                                 out_path = (output_dir or f.parent) / f"{f.stem}.txt"

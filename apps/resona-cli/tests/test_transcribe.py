@@ -309,8 +309,8 @@ def test_transcribe_fallback_passes_model_and_language(tmp_path):
     assert engine_transcribe_kwargs.get("language") == "en"
 
 
-def test_transcribe_fallback_passes_backend_to_local_engine(tmp_path):
-    """--backend is forwarded to LocalEngine."""
+def test_transcribe_fallback_passes_engine_to_local_engine(tmp_path):
+    """--engine is forwarded to LocalEngine."""
     make_wav(tmp_path / "audio.wav")
     mock_engine = _make_local_engine()
 
@@ -320,7 +320,7 @@ def test_transcribe_fallback_passes_backend_to_local_engine(tmp_path):
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--backend", "whisper"])
+        runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "whisper"])
 
     call_kwargs = mock_le_cls.call_args.kwargs
     assert call_kwargs.get("engine") == "whisper"
@@ -347,17 +347,17 @@ def test_transcribe_fallback_applies_postprocess_pipeline(tmp_path):
     assert txt.read_text() == "HELLO WORLD"
 
 
-def test_transcribe_fallback_uses_default_backend_from_config(tmp_path):
-    """When --backend is not passed, reads default_backend from config."""
+def test_transcribe_fallback_uses_default_engine_from_config(tmp_path):
+    """When --engine is not passed, reads default_engine from config."""
     make_wav(tmp_path / "audio.wav")
     mock_engine = _make_local_engine()
 
     mock_config = MagicMock()
-    mock_config.default_backend = "voxtral"
+    mock_config.default_engine = "voxtral"
 
     with (
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
-        patch("resona_client.config.BackendConfig.load", return_value=mock_config),
+        patch("resona_client.config.EngineConfig.load", return_value=mock_config),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
