@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 _transcriber: Transcriber | None = None
 _init_lock = Lock()
 
-ENTRY_POINT_GROUP = "resona.backends"
+ENTRY_POINT_GROUP = "resona.engines"
 
 
 def _detect_device() -> str:
