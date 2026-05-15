@@ -443,3 +443,59 @@ def test_cloud_entry_round_trips_through_save_load(tmp_path, monkeypatch):
     loaded = EngineConfig.load()
     assert loaded.engines[0].type == "cloud"
     assert loaded.engines[0].options == {"smart_format": True}
+
+
+# ── resolve_engine: name pinning, private_only, cloud, compose_dir ────────────
+
+def test_resolve_engine_name_pins_specific_entry(monkeypatch):
+    e1 = EngineEntry(name="a", api_url="http://a:7000")
+    e2 = EngineEntry(name="b", api_url="http://b:7000")
+    monkeypatch.setattr("resona_client.config.EngineConfig.load",
+                        lambda: EngineConfig(engines=[e1, e2]))
+    with patch("resona_client.config.is_reachable", return_value=True):
+        result = resolve_engine(name="b", auto_start=False)
+    assert result is e2
+
+
+def test_resolve_engine_name_unknown_returns_none(monkeypatch):
+    monkeypatch.setattr("resona_client.config.EngineConfig.load",
+                        lambda: EngineConfig(engines=[]))
+    assert resolve_engine(name="ghost", auto_start=False) is None
+
+
+def test_resolve_engine_private_only_skips_non_private(monkeypatch):
+    public = EngineEntry(name="pub", api_url="http://pub:7000", private=False)
+    priv = EngineEntry(name="priv", api_url="http://priv:7000", private=True)
+    monkeypatch.setattr("resona_client.config.EngineConfig.load",
+                        lambda: EngineConfig(engines=[public, priv]))
+    with patch("resona_client.config.is_reachable", return_value=True):
+        result = resolve_engine(private_only=True, auto_start=False)
+    assert result is priv
+
+
+def test_resolve_engine_cloud_usable_when_env_key_set(monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    dg = EngineEntry(name="dg", type="cloud", provider="deepgram")
+    monkeypatch.setattr("resona_client.config.EngineConfig.load",
+                        lambda: EngineConfig(engines=[dg]))
+    result = resolve_engine(auto_start=False)
+    assert result is dg
+
+
+def test_resolve_engine_cloud_skipped_when_env_key_missing(monkeypatch):
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    dg = EngineEntry(name="dg", type="cloud", provider="deepgram")
+    monkeypatch.setattr("resona_client.config.EngineConfig.load",
+                        lambda: EngineConfig(engines=[dg]))
+    assert resolve_engine(auto_start=False) is None
+
+
+def test_resolve_engine_skips_missing_compose_dir_with_warning(monkeypatch, caplog, tmp_path):
+    missing = tmp_path / "does-not-exist"
+    entry = EngineEntry(name="c", api_url="http://c:7000", compose_dir=str(missing))
+    monkeypatch.setattr("resona_client.config.EngineConfig.load",
+                        lambda: EngineConfig(engines=[entry]))
+    with patch("resona_client.config.is_reachable", return_value=False):
+        result = resolve_engine(auto_start=True)
+    assert result is None
+    assert "compose_dir" in caplog.text
