@@ -1,5 +1,5 @@
 # ---- build ----
-FROM nvidia/cuda:12.8.0-devel-ubuntu24.04 AS builder
+FROM nvidia/cuda:13.0.1-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -28,7 +28,7 @@ RUN find /app/.venv -name "*.a" -delete \
     && find /app/.venv -name "*.dist-info" -type d -exec sh -c 'rm -f "$1"/RECORD "$1"/INSTALLER "$1"/REQUESTED' _ {} \;
 
 # ---- runtime ----
-FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
+FROM nvidia/cuda:13.0.1-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
