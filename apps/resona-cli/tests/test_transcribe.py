@@ -596,3 +596,98 @@ def test_transcribe_engine_pins_resona_api_entry(tmp_path):
 
     assert result.exit_code == 0
     mock_client.submit_job.assert_called_once()
+
+
+# ── --private semantics ───────────────────────────────────────────────────────
+
+def test_private_refuses_explicit_non_private_engine(tmp_path, monkeypatch):
+    """--engine naming a non-private cloud entry under --private is a hard error."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(engines=[EngineEntry(name="dg", type="cloud", provider="deepgram")])
+
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.CloudEngine") as mock_cls,
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path),
+                                     "--engine", "dg", "--private"])
+
+    assert result.exit_code == 1
+    assert "not private" in result.output
+    mock_cls.assert_not_called()  # refused before any upload
+
+
+def test_private_allows_explicit_private_resona_api_engine(tmp_path):
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(engines=[
+        EngineEntry(name="gpu", api_url="http://gpu:7000", private=True),
+    ])
+    mock_client = make_client()
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path),
+                                     "--engine", "gpu", "--private"])
+    assert result.exit_code == 0
+    mock_client.submit_job.assert_called_once()
+
+
+def test_private_falls_through_to_local_engine(tmp_path):
+    """--private with no usable private config entry falls through to local."""
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(engines=[
+        EngineEntry(name="dg", type="cloud", provider="deepgram"),
+    ])
+    mock_engine = _make_local_engine(transcript="local")
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("x")),
+        patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config",
+              return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--private"])
+    assert result.exit_code == 0
+    mock_engine.transcribe.assert_called_once()
+
+
+def test_default_private_makes_private_implicit(tmp_path, monkeypatch):
+    """default_private=true refuses an explicit non-private engine without --private."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(
+        engines=[EngineEntry(name="dg", type="cloud", provider="deepgram")],
+        default_private=True,
+    )
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.CloudEngine") as mock_cls,
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "dg"])
+    assert result.exit_code == 1
+    assert "not private" in result.output
+    mock_cls.assert_not_called()
+
+
+def test_no_private_overrides_default_private(tmp_path, monkeypatch):
+    """--no-private lets a non-private engine run even when default_private=true."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(
+        engines=[EngineEntry(name="dg", type="cloud", provider="deepgram")],
+        default_private=True,
+    )
+    mock_engine = MagicMock()
+    mock_engine.transcribe.return_value = {"text": "ok", "language": "de", "segments": []}
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.CloudEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config",
+              return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path),
+                                     "--engine", "dg", "--no-private"])
+    assert result.exit_code == 0
+    mock_engine.transcribe.assert_called_once()
