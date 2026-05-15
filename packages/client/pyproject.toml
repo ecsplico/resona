@@ -9,7 +9,11 @@ description = "HTTP client library for Resona API"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
+    "resona-cloud-stt",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resona_client"]
+
+[tool.uv.sources]
+resona-cloud-stt = { workspace = true }
