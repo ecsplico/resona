@@ -35,11 +35,9 @@ install-cli-record:
 install-cli-live:
     uv tool install --force --from ./apps/resona-cli 'resona-cli[live]'
 
-# Fully local: bundles faster-whisper backend (⚠ uses --index for torch nightly)
+# Fully local: bundles faster-whisper backend (no torch — CTranslate2 + nvidia wheels)
 install-cli-faster-whisper:
-    uv tool install --force \
-        --index https://download.pytorch.org/whl/nightly/cu128 \
-        --from ./apps/resona-cli 'resona-cli[faster-whisper]'
+    uv tool install --force --from ./apps/resona-cli 'resona-cli[faster-whisper]'
 
 # Fully local with OpenAI Whisper (PyTorch) backend
 install-cli-whisper:

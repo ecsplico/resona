@@ -241,11 +241,13 @@ uv run resona transcribe ./audio/ --backend whisper --language en
 | Lean HTTP client | `uv tool install --from ./apps/resona-cli resona-cli` |
 | Record + submit to server | `uv tool install --from ./apps/resona-cli 'resona-cli[record]'` |
 | Live TUI + local engine | `uv tool install --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'` |
-| Fully local (no server) | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` ⚠️ see note |
+| Fully local (no server) | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` |
 
-⚠️ The `[faster-whisper]`/`[whisper]`/`[voxtral]` extras pull a torch nightly. `uv tool install` does NOT inherit the workspace's pytorch-nightly index, so these may fail to resolve torch. Workarounds:
+⚠️ The `[whisper]`/`[voxtral]` extras pull a torch nightly. `uv tool install` does NOT inherit the workspace's pytorch-nightly index, so these may fail to resolve torch. Workarounds:
 - Stay inside the workspace and use `uv run resona <command>`.
-- Or: `uv pip install --extra-index-url https://download.pytorch.org/whl/nightly/cu128 'resona-cli[faster-whisper]'` into a managed venv.
+- Or: `uv pip install --extra-index-url https://download.pytorch.org/whl/nightly/cu128 'resona-cli[whisper]'` into a managed venv.
+
+The `[faster-whisper]` extra is torch-free — it uses CTranslate2 plus the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels from PyPI — so `uv tool install ... 'resona-cli[faster-whisper]'` works without the nightly index.
 
 ```bash
 # Documentation
