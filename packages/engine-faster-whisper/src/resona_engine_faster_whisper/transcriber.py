@@ -6,6 +6,8 @@ import numpy as np
 from decouple import config
 from faster_whisper import WhisperModel
 
+from ._cuda_libs import preload_cuda_libs
+
 from resona_asr_core.protocol import TranscriptionResult
 
 log = logging.getLogger(__name__)
@@ -19,6 +21,8 @@ class FastWhisperTranscriber:
     def __init__(self, device: str = "cpu", modelname: str | None = None):
         model_name = modelname or DEFAULT_MODEL
         compute_type = "int8_float16" if device == "cuda" else "int8"
+        if device == "cuda":
+            preload_cuda_libs()
         log.info(f"Loading FastWhisper model: {model_name} on {device} ({compute_type})")
         self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
 

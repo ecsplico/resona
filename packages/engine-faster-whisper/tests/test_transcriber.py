@@ -48,3 +48,17 @@ def test_initial_prompt_passed_through(mock_model_cls):
 
     _, call_kwargs = mock_model.transcribe.call_args
     assert call_kwargs.get("initial_prompt") == "test prompt"
+
+
+@patch("resona_engine_faster_whisper.transcriber.preload_cuda_libs")
+@patch("resona_engine_faster_whisper.transcriber.WhisperModel")
+def test_cuda_device_preloads_libs(mock_model_cls, mock_preload):
+    FastWhisperTranscriber(device="cuda", modelname="tiny")
+    mock_preload.assert_called_once()
+
+
+@patch("resona_engine_faster_whisper.transcriber.preload_cuda_libs")
+@patch("resona_engine_faster_whisper.transcriber.WhisperModel")
+def test_cpu_device_does_not_preload_libs(mock_model_cls, mock_preload):
+    FastWhisperTranscriber(device="cpu", modelname="tiny")
+    mock_preload.assert_not_called()
