@@ -37,24 +37,9 @@ def _make_resona_api_entry(name="srv", api_url="http://srv:7000", api_key=""):
     return EngineEntry(name=name, api_url=api_url, api_key=api_key, type="resona-api")
 
 
-# ── Helpers used by both old and new server-path tests ───────────────────────
-
-def _patch_server(mock_client, entry=None):
-    """Context manager stack: resolve_engine returns a resona-api entry, ResonaClient returns mock_client."""
-    if entry is None:
-        entry = _make_resona_api_entry()
-    return (
-        patch("resona_client.config.resolve_engine", return_value=entry),
-        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
-    )
-
-
 def test_transcribe_no_files(tmp_path):
-    mock_client = MagicMock()
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        result = runner.invoke(app, ["transcribe", str(tmp_path)])
+    result = runner.invoke(app, ["transcribe", str(tmp_path)])
     assert "No audio files found" in result.output
-    mock_client.submit_job.assert_not_called()
 
 
 def test_transcribe_directory_submits_and_waits(tmp_path):

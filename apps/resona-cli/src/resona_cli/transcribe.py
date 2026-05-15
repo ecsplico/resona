@@ -7,7 +7,7 @@ import httpx
 from .local_engine import LocalEngine
 from .engine import CloudEngine, InProcessEngine
 from resona_client.client import ResonaClient
-from resona_client.config import EngineConfig, resolve_engine
+from resona_client.config import EngineConfig, EngineEntry, resolve_engine
 from .engines import BUILTIN_ENGINES
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
@@ -63,7 +63,7 @@ def transcribe_files(
     model: Optional[str] = typer.Option(None, "--model",
         help="Model name override (local fallback and cloud engines)."),
     language: str = typer.Option("de", "--language",
-        help="Language hint for transcription."),
+        help="Language hint for transcription (local fallback and cloud engines; resona-api servers use their own configured language)."),
     engine_timeout: float = typer.Option(120.0, "--engine-timeout",
         help="Seconds to wait for local engine startup (local fallback only)."),
     engine: Optional[str] = typer.Option(None, "--engine",
@@ -80,9 +80,6 @@ def transcribe_files(
         return
 
     target = _resolve_target(engine, cfg, want_private)
-    if target is None:
-        return  # _resolve_target already printed the error
-
     kind, value = target
     if kind == "cloud":
         _transcribe_cloud(files, output_dir, value, model, language)
@@ -93,10 +90,11 @@ def transcribe_files(
                                    engine_timeout, value)
 
 
-def _resolve_target(engine, cfg, want_private):
+def _resolve_target(engine: Optional[str], cfg: EngineConfig, want_private: bool) -> tuple[str, "str | EngineEntry"]:
     """Resolve --engine into ('cloud'|'resona-api'|'local', payload).
 
-    Returns None (after printing an error) when resolution fails.
+    Raises typer.Exit(1) on resolution failure (unknown engine name, or a
+    non-private engine requested under --private).
     """
     if engine is not None:
         entry = cfg.get(engine)
