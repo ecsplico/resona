@@ -46,6 +46,7 @@ Engines are discovered via Python entry points (`resona.engines` group). Each en
 | `resona-engine-faster-whisper` | -- | CTranslate2 engine (default, recommended) |
 | `resona-engine-whisper` | -- | Original OpenAI Whisper (PyTorch) engine |
 | `resona-engine-voxtral` | -- | HuggingFace Transformers engine (Voxtral, Whisper, etc.) |
+| `resona-cloud-stt` | -- | Cloud STT providers: Deepgram, ElevenLabs, OpenAI Whisper API |
 | `resona-postprocess` | -- | Composable pipeline: regex replacements + LLM via litellm |
 | `resona-api` | 7000 | Job queue + SQLite + postprocessing, calls engine via HTTP |
 | `resona-client` | -- | httpx client library for the resona-api REST interface |
@@ -117,6 +118,14 @@ resona transcribe ./recordings/ --output-dir ./out/ --language de
 resona transcribe recording.mp3
 resona transcribe "recordings/*.mp3"
 
+# Use a specific engine (built-in local, server, or cloud)
+resona transcribe ./audio/ --engine faster-whisper
+resona transcribe ./audio/ --engine deepgram
+resona transcribe ./audio/ --engine my-gpu-server
+
+# Require a private engine (local or resona-api marked private: true)
+resona transcribe ./audio/ --private
+
 # Watch a directory and auto-submit new files
 resona watch ./inbox/ --recursive --poll-interval 2.0
 
@@ -129,9 +138,13 @@ resona live
 # Record, transcribe, and display result (terminal UI)
 resona ui
 
-# Manage remote engines
+# Manage engines (server and cloud)
 resona engines add gpu-server http://gpu-machine:7000
 resona engines add home http://localhost:7000 --ssh user@homeserver.com
+resona engines add deepgram --type cloud --provider deepgram
+resona engines add elevenlabs --type cloud --provider elevenlabs
+resona engines add openai --type cloud --provider openai
+resona engines add deepgram-nova --type cloud --provider deepgram --model nova-2
 resona engines list
 resona engines test
 
@@ -194,7 +207,9 @@ LLM postprocessing uses [litellm](https://docs.litellm.ai/) -- supports OpenAI, 
 
 ## Engine selection
 
-Three transcription engines are available:
+### Local engines
+
+Three built-in local engines run on your GPU:
 
 | Engine | Command | Best for |
 |---------|---------|----------|
@@ -202,18 +217,68 @@ Three transcription engines are available:
 | `whisper` | `resona-engine-whisper` | Full OpenAI Whisper compatibility |
 | `voxtral` | `resona-engine-voxtral` | HuggingFace models (Voxtral, etc.) |
 
-Select via environment variable or CLI flag:
-
 ```bash
-# Environment variable
+# Select engine for the engine server process
 RESONA_ENGINE=whisper uv run resona-engine-whisper
 
-# CLI flag (local fallback mode)
+# Select engine for local fallback in CLI
 resona transcribe ./audio/ --engine voxtral
-
-# Default engine in config
-# ~/.resona/config.json: {"default_engine": "voxtral", "engines": [...]}
 ```
+
+### Cloud engines
+
+Three cloud providers are supported via `resona-cloud-stt`. API keys are read from environment variables and are never stored in `config.json`.
+
+| Provider | `--provider` | API key env var | Default model |
+|----------|-------------|-----------------|---------------|
+| Deepgram | `deepgram` | `DEEPGRAM_API_KEY` | `nova-3` |
+| ElevenLabs | `elevenlabs` | `ELEVENLABS_API_KEY` | `scribe_v1` |
+| OpenAI Whisper API | `openai` | `OPENAI_API_KEY` | `whisper-1` |
+
+```bash
+# Register a cloud engine entry
+resona engines add deepgram --type cloud --provider deepgram
+
+# Transcribe using a cloud engine
+export DEEPGRAM_API_KEY=your-key
+resona transcribe ./audio/ --engine deepgram
+
+# Transcribe using a private (local/server) engine only
+resona transcribe ./audio/ --private
+```
+
+### Privacy
+
+`--private` / `--no-private` controls whether cloud engines are allowed:
+
+- Local built-in engines are always private.
+- `resona-api` server entries are private when explicitly marked `"private": true` in `config.json`.
+- Cloud engines are **never** private — `--private` will refuse them.
+
+Set `"default_private": true` in `~/.resona/config.json` to make `--private` the default for all invocations.
+
+### The `--engine` flag (unified selector)
+
+`--engine NAME` resolves in this order:
+
+1. A built-in local engine name (`faster-whisper`, `whisper`, `voxtral`)
+2. A `config.json` entry name (server or cloud)
+3. Error if not found
+
+```bash
+# Default engine in config (applies when --engine is not given)
+# ~/.resona/config.json: {"default_engine": "deepgram", "engines": [...]}
+```
+
+### resona-api cloud routing
+
+When `RESONA_CLOUD_ENGINE` is set, `resona-api` routes jobs to the cloud provider instead of the local engine server:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `RESONA_CLOUD_ENGINE` | Cloud provider name (`deepgram`/`elevenlabs`/`openai`) | (unset — uses local engine) |
+| `RESONA_CLOUD_MODEL` | Provider model override | (provider default) |
+| `RESONA_CLOUD_OPTIONS` | Provider options as a JSON object | (none) |
 
 ### Install personas
 
@@ -239,6 +304,12 @@ The `[faster-whisper]`, `[live]`, and `[record]` extras are torch-free and need 
 | `RESONA_API_KEY` | _(unset)_ | API key; auth disabled if unset |
 | `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM for postprocessing |
 | `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint (e.g. Ollama) |
+| `RESONA_CLOUD_ENGINE` | _(unset)_ | Cloud provider for API job routing (`deepgram`/`elevenlabs`/`openai`) |
+| `RESONA_CLOUD_MODEL` | _(provider default)_ | Cloud provider model override |
+| `RESONA_CLOUD_OPTIONS` | _(unset)_ | Cloud provider options as JSON object |
+| `DEEPGRAM_API_KEY` | _(unset)_ | Deepgram API key (required when using Deepgram) |
+| `ELEVENLABS_API_KEY` | _(unset)_ | ElevenLabs API key (required when using ElevenLabs) |
+| `OPENAI_API_KEY` | _(unset)_ | OpenAI API key (required when using OpenAI cloud engine) |
 | `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model name |
 | `DEFAULT_WHISPER_MODEL` | `large-v3` | OpenAI Whisper model name |
 | `DEFAULT_VOXTRAL_MODEL` | `openai/whisper-large-v3` | HuggingFace model ID |
@@ -249,7 +320,7 @@ The `[faster-whisper]`, `[live]`, and `[record]` extras are torch-free and need 
 
 ```
 ~/.resona/
-├── config.json          # Remote engines, auto-start settings, default_engine
+├── config.json          # Engines (server + cloud), auto-start, default_engine, default_private
 ├── replacements.json    # Override default text replacement rules
 └── postprocess.json     # Full pipeline config: replacements + LLM steps
 ```
