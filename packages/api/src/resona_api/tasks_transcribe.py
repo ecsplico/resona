@@ -1,8 +1,10 @@
+import json as _json
 import logging
 import os
 import time
 from threading import Thread
 from datetime import datetime
+from pathlib import Path as _Path
 from decouple import config
 from sqlmodel import Session, select
 
@@ -18,6 +20,40 @@ from .db.utils import get_active_replacements, get_active_initial_prompts_string
 from .paths import FILE_PATH
 
 log = logging.getLogger(__name__)
+
+
+def get_cloud_provider(name: str):
+    """Return the resona-cloud-stt provider module for ``name``.
+
+    Wrapper so tests can patch this symbol without importing the package.
+    """
+    from resona_cloud_stt.registry import get_provider
+    return get_provider(name)
+
+
+def _cloud_transcribe(filepath: _Path) -> dict:
+    """Transcribe via a cloud provider selected by RESONA_CLOUD_* env vars."""
+    from resona_cloud_stt.errors import MissingAPIKeyError
+    from resona_cloud_stt.registry import PROVIDER_ENV_KEYS
+
+    provider_name = config("RESONA_CLOUD_ENGINE")
+    env_var = PROVIDER_ENV_KEYS.get(provider_name)
+    api_key = config(env_var, default="") if env_var else ""
+    if not api_key:
+        raise MissingAPIKeyError(env_var or provider_name)
+
+    model = config("RESONA_CLOUD_MODEL", default=None)
+    options_raw = config("RESONA_CLOUD_OPTIONS", default="")
+    options = _json.loads(options_raw) if options_raw else None
+
+    provider = get_cloud_provider(provider_name)
+    return provider.transcribe(
+        _Path(filepath),
+        api_key=api_key,
+        model=model,
+        language="de",
+        options=options,
+    )
 
 
 class TranscribeTask(Thread):
@@ -68,12 +104,15 @@ class TranscribeTask(Thread):
                 # Fetch initial prompt from DB; pass to engine
                 initial_prompt = get_active_initial_prompts_string()
 
-                asr_result = self.engine_client.transcribe(
-                    filepath=filepath,
-                    language="de",
-                    initial_prompt=initial_prompt,
-                    task="translate" if job.translate else "transcribe",
-                )
+                if config("RESONA_CLOUD_ENGINE", default=""):
+                    asr_result = _cloud_transcribe(filepath)
+                else:
+                    asr_result = self.engine_client.transcribe(
+                        filepath=filepath,
+                        language="de",
+                        initial_prompt=initial_prompt,
+                        task="translate" if job.translate else "transcribe",
+                    )
                 log.info(f"Job {job.id}: ASR completed")
 
                 update_job_attributes_from_result(job, asr_result)
