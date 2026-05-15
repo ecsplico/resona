@@ -31,9 +31,10 @@ def setup_function():
     reset()
 
 
+@patch("resona_asr_core.registry._detect_device", return_value="cpu")
 @patch("resona_asr_core.registry.entry_points")
 @patch("resona_asr_core.registry.config")
-def test_load_from_entrypoint_finds_backend(mock_config, mock_eps):
+def test_load_from_entrypoint_finds_backend(mock_config, mock_eps, mock_detect):
     mock_config.return_value = "fake"
     mock_eps.return_value = [_make_entry_point("fake", FakeTranscriber)]
     t = _load_from_entrypoint()
