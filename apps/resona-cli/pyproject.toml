@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "python-decouple>=3.8",
     "resona-client",
+    "resona-cloud-stt",
     "resona-postprocess",
 ]
 
@@ -46,6 +47,7 @@ voxtral = [
 
 [tool.uv.sources]
 resona-client = { workspace = true }
+resona-cloud-stt = { workspace = true }
 resona-postprocess = { workspace = true }
 resona-asr-core = { workspace = true }
 resona-engine-faster-whisper = { workspace = true }
