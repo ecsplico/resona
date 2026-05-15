@@ -7,9 +7,9 @@ All configuration is read with `python-decouple`: environment variables take pre
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RESONA_ENGINE` | `faster-whisper` | Engine to load: `faster-whisper`, `whisper`, or any installed entry-point name |
-| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | Model name/path for faster-whisper backend |
-| `DEFAULT_WHISPER_MODEL` | `large-v3` | Model name/path for openai-whisper backend |
-| `DEFAULT_TRANSFORMER_MODEL` | — | HuggingFace model ID for transformer backends |
+| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | Model name/path for faster-whisper engine |
+| `DEFAULT_WHISPER_MODEL` | `large-v3` | Model name/path for openai-whisper engine |
+| `DEFAULT_TRANSFORMER_MODEL` | — | HuggingFace model ID for transformer engines |
 | `RESONA_ENGINE_KEY` | _(unset)_ | Optional API key for the engine; auth disabled if not set |
 | `CORS_ORIGINS` | `*` | Comma-separated allowed CORS origins |
 | `LOGLEVEL` | `info` | Log level (`debug`, `info`, `warning`, `error`) |
@@ -67,7 +67,7 @@ The following variables are used by the legacy `ws-engine`, `ws-api`, `ws-client
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ASR_MODE` | `faster-whisper` | Backend: `faster-whisper`, `whisper`, `transformer`, `whisper-tf` |
+| `ASR_MODE` | `faster-whisper` | Engine: `faster-whisper`, `whisper`, `transformer`, `whisper-tf` |
 | `ENGINE_API_KEY` | _(unset)_ | Optional API key for ws-engine |
 
 ### ws-api (`:7000`, legacy)

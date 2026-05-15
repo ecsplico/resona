@@ -5,7 +5,7 @@
 | Package | Port | Role | GPU |
 |---------|------|------|-----|
 | `resona-asr-core` | — | Lean ASR contracts: protocol, registry, audio, live transcriber | — |
-| `resona-engine-server` + backend | 7001 | Stateless transcription (inference); depends on asr-core | Required |
+| `resona-engine-server` + engine | 7001 | Stateless transcription (inference); depends on asr-core | Required |
 | `resona-api` | 7000 | Job queue, SQLite DB, file storage, postprocessing | No |
 | `resona-client` | — | Python client library | — |
 | `resona` CLI (`apps/resona-cli`) | — | CLI + Textual TUI tools | — |
@@ -176,7 +176,7 @@ DATA_PATH/
 
 ```
 resona-cli  ──imports──▶  resona_asr_core.live_transcriber  (live command, gated behind [live] extra)
-resona-cli  ──imports──▶  resona_asr_core.registry           (InProcessEngine, gated behind backend extra)
+resona-cli  ──imports──▶  resona_asr_core.registry           (InProcessEngine, gated behind engine extra)
 resona-cli  ──imports──▶  resona_client.client               (all HTTP ops)
 ```
 
