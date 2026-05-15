@@ -20,6 +20,7 @@ resona/
     ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 engine (default)
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) engine
     ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers engine
+    ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
     ├── postprocess/        ← resona-postprocess: replacements + LLM pipeline
     ├── api/                ← resona-api: job queue + DB + postprocessing, :7000
     └── client/             ← resona-client: httpx client library
@@ -83,6 +84,14 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `transcriber.py` — `VoxtralTranscriber`: HuggingFace Transformers pipeline (supports Voxtral, Whisper, etc.)
 - Configured via `DEFAULT_VOXTRAL_MODEL` env var (default: `openai/whisper-large-v3`)
 
+### resona-cloud-stt
+- `types.py` — `TranscriptionResult` TypedDict: `{text, language, segments}`
+- `errors.py` — `CloudSTTError` (base), `MissingAPIKeyError` (env var not set), `ProviderHTTPError` (non-2xx response)
+- `registry.py` — `PROVIDERS` (set), `PROVIDER_ENV_KEYS` (name → env var), `DEFAULT_MODELS` (name → model), `get_provider(name)` (returns provider module)
+- `providers/deepgram.py` — POSTs raw audio to Deepgram `/v1/listen`; default model `nova-3`; key env var `DEEPGRAM_API_KEY`
+- `providers/elevenlabs.py` — POSTs audio to ElevenLabs Speech-to-Text; default model `scribe_v1`; key env var `ELEVENLABS_API_KEY`
+- `providers/openai.py` — POSTs audio to OpenAI Whisper API; default model `whisper-1`; key env var `OPENAI_API_KEY`
+
 ### resona-postprocess
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
 - `llm.py` — `llm_postprocess(text, prompt, model, api_base)` via litellm
@@ -105,15 +114,16 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 
 ### resona-client
 - `client.py` — `ResonaClient`: all resona-api HTTP operations. Reads `RESONA_API_URL` / `RESONA_API_KEY`.
-- `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`
+- `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_private`; `EngineEntry`: per-entry `type` (`resona-api` or `cloud`), `provider`, `model`, `options`, `private`; `resolve_engine(private_only=False)` — walks priority-ordered entries, optionally skipping non-private ones
 
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
 - `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
-- `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; submits + waits for results
+- `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; `--engine NAME` unified selector (built-in local engine, config.json server entry, or cloud entry); `--private`/`--no-private` to require a private engine; submits to resona-api, calls cloud provider, or falls back to a local engine
 - `engine.py` — `Engine` Protocol + `RemoteEngine` (HTTP) + `InProcessEngine` (direct asr-core call); used by transcribe.
 - `local_engine.py` — `LocalEngine`: subprocess-based fallback for transcribe when InProcessEngine extras aren't installed.
-- `engines.py`, `replacements.py`, `prompts.py` — CRUD subcommands
+- `cloud_engine.py` — `CloudEngine`: wraps an `EngineEntry` of type `cloud`; calls `resona_cloud_stt` provider directly
+- `engines.py`, `replacements.py`, `prompts.py` — CRUD subcommands; `engines add --type cloud --provider <name>` registers cloud entries
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
 - `live_ui.py` — `WSLiveApp`: live transcription TUI
 - `ui.py` — `WSUIApp`: record-and-transcribe TUI
@@ -311,6 +321,12 @@ Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API
 | `RESONA_API_KEY` | api, client | API auth key | (none, auth disabled) |
 | `RESONA_LLM_MODEL` | postprocess | Default LLM model | `gpt-4o-mini` |
 | `RESONA_LLM_API_BASE` | postprocess | Custom LLM endpoint | (none) |
+| `RESONA_CLOUD_ENGINE` | api | Cloud provider name for job routing (`deepgram`/`elevenlabs`/`openai`) | (none, uses local engine) |
+| `RESONA_CLOUD_MODEL` | api | Cloud provider model override | (provider default) |
+| `RESONA_CLOUD_OPTIONS` | api | Cloud provider options as JSON object | (none) |
+| `DEEPGRAM_API_KEY` | cloud-stt | Deepgram API key | (required for Deepgram) |
+| `ELEVENLABS_API_KEY` | cloud-stt | ElevenLabs API key | (required for ElevenLabs) |
+| `OPENAI_API_KEY` | cloud-stt | OpenAI API key | (required for OpenAI) |
 | `DEFAULT_FASTWHISPER_MODEL` | engine-faster-whisper | Model name | `large-v3` |
 | `DEFAULT_WHISPER_MODEL` | engine-whisper | Model name | `large-v3` |
 | `DEFAULT_VOXTRAL_MODEL` | engine-voxtral | HuggingFace model ID | `openai/whisper-large-v3` |
@@ -320,18 +336,23 @@ Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API
 
 ```
 ~/.resona/
-├── config.json          ← remote engines, auto-start settings, default_engine
+├── config.json          ← engines (server + cloud), auto-start settings, default_engine, default_private
 ├── replacements.json    ← override default text replacement rules
 └── postprocess.json     ← full pipeline config: replacements + LLM steps
 ```
 
+`config.json` supports cloud engine entries: `{"name": "deepgram", "type": "cloud", "provider": "deepgram"}`. API keys are read from env vars at call time — they are never stored in `config.json`.
+
+`default_private: true` in `config.json` makes `resona transcribe` refuse non-private engines by default (equivalent to always passing `--private`).
+
 If neither `postprocess.json` nor `replacements.json` exists, bundled default replacements are used automatically.
 
-### Engine resolution order (local fallback)
+### Engine resolution order (`resona transcribe`)
 
-1. `--engine` CLI flag (highest priority)
-2. `default_engine` in `~/.resona/config.json`
-3. Hardcoded default: `"faster-whisper"`
+1. `--engine NAME` CLI flag: resolves a built-in local engine name (`faster-whisper`, `whisper`, `voxtral`), a `config.json` server entry, or a `config.json` cloud entry (highest priority)
+2. `--private` / `--no-private`: when private is required (via flag or `default_private`), non-private engines are skipped or refused; cloud engines are never private
+3. `default_engine` in `~/.resona/config.json`
+4. Hardcoded default: `"faster-whisper"`
 
 ## What NOT to do
 
