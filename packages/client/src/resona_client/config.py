@@ -58,6 +58,18 @@ def _cleanup_tunnels() -> None:
 atexit.register(_cleanup_tunnels)
 
 
+def _validate_cloud_entry(entry: "EngineEntry") -> None:
+    """Raise ValueError if a cloud entry names an unknown provider."""
+    if entry.type != "cloud":
+        return
+    from resona_cloud_stt.registry import PROVIDERS
+    if entry.provider not in PROVIDERS:
+        raise ValueError(
+            f"Engine '{entry.name}': cloud entries need a provider in "
+            f"{sorted(PROVIDERS)}, got {entry.provider!r}"
+        )
+
+
 @dataclass
 class EngineEntry:
     """A single configured Resona engine (a resona-api server or a cloud provider).
@@ -122,6 +134,7 @@ class EngineConfig:
 
     engines: list[EngineEntry] = field(default_factory=list)
     default_engine: str = "faster-whisper"
+    default_private: bool = False
 
     @classmethod
     def load(cls) -> "EngineConfig":
@@ -141,9 +154,19 @@ class EngineConfig:
         try:
             data = json.loads(CONFIG_FILE.read_text())
             raw_engines = data.get("engines", data.get("backends", []))
-            engines = [EngineEntry(**e) for e in raw_engines]
+            engines: list[EngineEntry] = []
+            for raw in raw_engines:
+                entry = EngineEntry(**raw)
+                try:
+                    _validate_cloud_entry(entry)
+                except ValueError as e:
+                    log.warning(f"Skipping invalid engine entry: {e}")
+                    continue
+                engines.append(entry)
             default_engine = data.get("default_engine", data.get("default_backend", "faster-whisper"))
-            return cls(engines=engines, default_engine=default_engine)
+            default_private = bool(data.get("default_private", False))
+            return cls(engines=engines, default_engine=default_engine,
+                       default_private=default_private)
         except (json.JSONDecodeError, TypeError) as e:
             log.warning(f"Could not parse {CONFIG_FILE}: {e}")
             return cls()
@@ -153,6 +176,7 @@ class EngineConfig:
         data = {
             "engines": [asdict(e) for e in self.engines],
             "default_engine": self.default_engine,
+            "default_private": self.default_private,
         }
         CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
@@ -160,6 +184,7 @@ class EngineConfig:
         return next((e for e in self.engines if e.name == name), None)
 
     def add(self, entry: EngineEntry) -> None:
+        _validate_cloud_entry(entry)
         if self.get(entry.name):
             raise ValueError(f"Engine '{entry.name}' already exists")
         self.engines.append(entry)
