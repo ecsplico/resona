@@ -3,10 +3,12 @@
 The Engine Protocol defines the contract: accept an audio Path, return a
 TranscriptionResult dict with at least ``text``, ``language``, and ``segments``.
 """
+import os
 from pathlib import Path
 from typing import Protocol, TypedDict, runtime_checkable
 
 from resona_client.client import ResonaClient
+from resona_client.config import EngineEntry
 
 
 class TranscriptionResult(TypedDict):
@@ -92,6 +94,45 @@ class InProcessEngine:
     def transcribe(self, audio: Path, **kwargs) -> TranscriptionResult:
         samples = _load_audio(audio)
         result = self._transcriber.transcribe(samples, **kwargs)
+        return TranscriptionResult(
+            text=result.get("text", ""),
+            language=result.get("language", ""),
+            segments=result.get("segments", []),
+        )
+
+
+class CloudEngine:
+    """Engine that transcribes via a cloud STT provider (resona-cloud-stt).
+
+    Wraps a resolved ``cloud`` :class:`EngineEntry`. The provider's API key is
+    read from the environment variable named in
+    ``resona_cloud_stt.registry.PROVIDER_ENV_KEYS``. The ``transcribe``
+    keyword arguments ``model`` and ``language`` override the entry's values
+    for that run.
+    """
+
+    def __init__(self, entry: EngineEntry) -> None:
+        self._entry = entry
+
+    def transcribe(self, audio: Path, **kwargs) -> TranscriptionResult:
+        from resona_cloud_stt.errors import MissingAPIKeyError
+        from resona_cloud_stt.registry import PROVIDER_ENV_KEYS, get_provider
+
+        provider = self._entry.provider or ""
+        env_var = PROVIDER_ENV_KEYS.get(provider)
+        api_key = os.getenv(env_var) if env_var else None
+        if not api_key:
+            raise MissingAPIKeyError(env_var or f"<unknown provider {provider!r}>")
+
+        model = kwargs.get("model") or self._entry.model
+        language = kwargs.get("language") or None
+        result = get_provider(provider).transcribe(
+            Path(audio),
+            api_key=api_key,
+            model=model,
+            language=language,
+            options=self._entry.options or None,
+        )
         return TranscriptionResult(
             text=result.get("text", ""),
             language=result.get("language", ""),
