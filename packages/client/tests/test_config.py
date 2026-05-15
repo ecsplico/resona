@@ -325,3 +325,56 @@ def test_config_round_trip_with_ssh_fields(tmp_path, monkeypatch):
     loaded = EngineConfig.load()
     assert loaded.engines[0].ssh_host == "user@myserver.com:2222"
     assert loaded.engines[0].ssh_remote_port == 7000
+
+
+# ── EngineEntry cloud fields ──────────────────────────────────────────────────
+
+def test_engine_entry_defaults_are_resona_api_non_private():
+    e = EngineEntry(name="srv", api_url="http://srv:7000")
+    assert e.type == "resona-api"
+    assert e.provider is None
+    assert e.model is None
+    assert e.private is False
+    assert e.options == {}
+
+
+def test_engine_entry_cloud_fields():
+    e = EngineEntry(
+        name="dg", type="cloud", provider="deepgram", model="nova-3",
+        options={"smart_format": True},
+    )
+    assert e.api_url == ""
+    assert e.provider == "deepgram"
+    assert e.options == {"smart_format": True}
+
+
+def test_is_private_true_for_marked_resona_api():
+    assert EngineEntry(name="s", api_url="http://s:7000", private=True).is_private() is True
+
+
+def test_is_private_false_for_unmarked_resona_api():
+    assert EngineEntry(name="s", api_url="http://s:7000").is_private() is False
+
+
+def test_is_private_always_false_for_cloud_even_if_private_flag_set():
+    e = EngineEntry(name="dg", type="cloud", provider="deepgram", private=True)
+    assert e.is_private() is False
+
+
+def test_is_usable_cloud_true_when_env_key_set(monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    e = EngineEntry(name="dg", type="cloud", provider="deepgram")
+    assert e.is_usable() is True
+
+
+def test_is_usable_cloud_false_when_env_key_missing(monkeypatch):
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    e = EngineEntry(name="dg", type="cloud", provider="deepgram")
+    assert e.is_usable() is False
+
+
+def test_is_usable_resona_api_probes_health():
+    e = EngineEntry(name="s", api_url="http://s:7000")
+    with respx.mock:
+        respx.get("http://s:7000/health").mock(return_value=httpx.Response(200))
+        assert e.is_usable() is True

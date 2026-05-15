@@ -24,6 +24,7 @@ the old config is automatically copied to the new location on first load.
 import atexit
 import json
 import logging
+import os
 import shutil
 import socket
 import subprocess
@@ -59,35 +60,48 @@ atexit.register(_cleanup_tunnels)
 
 @dataclass
 class EngineEntry:
-    """A single resona engine and its connection parameters.
+    """A single configured Resona engine (a resona-api server or a cloud provider).
 
-    Engines are tried in priority order; the first reachable one is used.
-    If ``ssh_host`` is set, a local port-forward tunnel is opened before
-    connecting. If ``compose_dir`` is set, the engine can be auto-started
-    via ``docker compose up -d``.
-
-    Attributes:
-        name: Unique identifier shown in ``resona engines list``.
-        api_url: Local URL the client connects to (e.g. ``http://localhost:7000``).
-            For SSH engines this is the *local* tunnel endpoint.
-        api_key: Optional ``X-API-Key`` header value.
-        compose_dir: Absolute path to a docker-compose project to auto-start
-            when this engine is unreachable.
-        ssh_host: SSH host to tunnel through, e.g. ``user@host`` or
-            ``user@host:2222``. The port in ``api_url`` is forwarded.
-        ssh_remote_port: Remote port on the SSH host. Defaults to the port
-            extracted from ``api_url``.
+    ``resona-api`` entries connect to a Resona API server; ``cloud`` entries
+    name a third-party STT provider. Cloud entries have no ``api_url`` and
+    never store an API key — the key is read from an environment variable.
     """
 
     name: str
-    api_url: str
+    api_url: str = ""
     api_key: str = ""
     compose_dir: Optional[str] = None  # if set, can be auto-started via docker compose
     ssh_host: Optional[str] = None     # "[user@]host[:port]" — opens SSH tunnel when needed
     ssh_remote_port: Optional[int] = None  # remote port (defaults to port in api_url)
+    type: str = "resona-api"               # "resona-api" | "cloud"
+    provider: Optional[str] = None         # cloud: "deepgram"|"elevenlabs"|"openai"
+    model: Optional[str] = None            # provider model override
+    private: bool = False                  # resona-api: user-asserted privacy
+    options: dict = field(default_factory=dict)
 
     def health_url(self) -> str:
         return self.api_url.rstrip("/") + "/health"
+
+    def is_private(self) -> bool:
+        """True if audio sent here stays user-controlled.
+
+        Cloud entries are never private (the ``private`` flag is ignored).
+        """
+        if self.type == "cloud":
+            return False
+        return self.private
+
+    def is_usable(self) -> bool:
+        """True if this engine can currently be used.
+
+        ``resona-api``: the ``/health`` endpoint responds 200.
+        ``cloud``: the provider's API-key env var is set.
+        """
+        if self.type == "cloud":
+            from resona_cloud_stt.registry import PROVIDER_ENV_KEYS
+            env_var = PROVIDER_ENV_KEYS.get(self.provider or "")
+            return bool(env_var and os.getenv(env_var))
+        return is_reachable(self)
 
 
 @dataclass

@@ -2246,10 +2246,14 @@ version = "0.1.0"
 source = { editable = "packages/client" }
 dependencies = [
     { name = "httpx" },
+    { name = "resona-cloud-stt" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "resona-cloud-stt", editable = "packages/cloud-stt" },
+]
 
 [[package]]
 name = "resona-cloud-stt"
