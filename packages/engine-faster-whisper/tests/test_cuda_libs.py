@@ -1,6 +1,6 @@
-import sys
+import ctypes
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from resona_engine_faster_whisper._cuda_libs import preload_cuda_libs
 
@@ -31,9 +31,29 @@ def test_preload_loads_existing_libs(tmp_path):
     ):
         with patch("resona_engine_faster_whisper._cuda_libs.ctypes.CDLL") as cdll:
             preload_cuda_libs()
-            loaded = {call.args[0] for call in cdll.call_args_list}
-            assert str(lib_dir / "libcublas.so.12") in loaded
-            assert str(lib_dir / "libcudnn.so.9") in loaded
+            calls = cdll.call_args_list
+            assert [c.args[0] for c in calls] == [
+                str(lib_dir / "libcublas.so.12"),
+                str(lib_dir / "libcudnn.so.9"),
+            ]
+            for c in calls:
+                assert c.kwargs.get("mode") == ctypes.RTLD_GLOBAL
+
+
+def test_preload_skips_when_so_file_missing(tmp_path):
+    """nvidia lib dir exists but the .so is absent -> CDLL not called."""
+    lib_dir = tmp_path / "lib"
+    lib_dir.mkdir()
+
+    fake_spec = types.SimpleNamespace(submodule_search_locations=[str(lib_dir)])
+
+    with patch(
+        "resona_engine_faster_whisper._cuda_libs.importlib.util.find_spec",
+        return_value=fake_spec,
+    ):
+        with patch("resona_engine_faster_whisper._cuda_libs.ctypes.CDLL") as cdll:
+            preload_cuda_libs()
+            cdll.assert_not_called()
 
 
 def test_preload_swallows_oserror(tmp_path):
