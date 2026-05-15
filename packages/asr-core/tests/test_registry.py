@@ -33,7 +33,7 @@ def setup_function():
 @patch("resona_asr_core.registry._detect_device", return_value="cpu")
 @patch("resona_asr_core.registry.entry_points")
 @patch("resona_asr_core.registry.config")
-def test_load_from_entrypoint_finds_backend(mock_config, mock_eps, mock_detect):
+def test_load_from_entrypoint_finds_engine(mock_config, mock_eps, mock_detect):
     mock_config.return_value = "fake"
     mock_eps.return_value = [_make_entry_point("fake", FakeTranscriber)]
     t = _load_from_entrypoint()
@@ -62,17 +62,17 @@ def test_get_transcriber_is_singleton(mock_config, mock_eps):
 
 @patch("resona_asr_core.registry.entry_points")
 @patch("resona_asr_core.registry.config")
-def test_explicit_backend_name(mock_config, mock_eps):
+def test_explicit_engine_name(mock_config, mock_eps):
     mock_eps.return_value = [_make_entry_point("specific", FakeTranscriber)]
-    t = _load_from_entrypoint(backend="specific")
+    t = _load_from_entrypoint(engine="specific")
     assert isinstance(t, Transcriber)
     mock_config.assert_not_called()
 
 
 @patch("resona_asr_core.registry.entry_points")
 @patch("resona_asr_core.registry.config")
-def test_registry_selects_correct_backend_from_multiple(mock_config, mock_eps):
-    """When multiple backends are registered, the correct one is selected by name."""
+def test_registry_selects_correct_engine_from_multiple(mock_config, mock_eps):
+    """When multiple engines are registered, the correct one is selected by name."""
     class OtherTranscriber:
         def __init__(self, device: str = "cpu", modelname: str | None = None):
             self.device = device
@@ -96,14 +96,14 @@ def test_registry_selects_correct_backend_from_multiple(mock_config, mock_eps):
 @patch("resona_asr_core.registry.entry_points")
 @patch("resona_asr_core.registry.config")
 def test_registry_protocol_violation_raises(mock_config, mock_eps):
-    """Backend that doesn't satisfy Transcriber protocol should raise AssertionError."""
-    class BadBackend:
+    """Engine that doesn't satisfy Transcriber protocol should raise AssertionError."""
+    class BadEngine:
         def __init__(self, device: str = "cpu"):
             pass
         # Missing transcribe method
 
     mock_config.return_value = "bad"
-    mock_eps.return_value = [_make_entry_point("bad", BadBackend)]
+    mock_eps.return_value = [_make_entry_point("bad", BadEngine)]
 
     with pytest.raises(AssertionError, match="does not satisfy"):
         _load_from_entrypoint()
