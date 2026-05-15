@@ -47,7 +47,7 @@ def rec():
 @app.command()
 def live():
     """Launch the live transcription TUI."""
-    _require_extra("live", "textual", "sounddevice", "soundfile", "torchaudio", "resona_asr_core")
+    _require_extra("live", "textual", "sounddevice", "soundfile", "soxr", "resona_asr_core")
     import logging
     from dotenv import load_dotenv
     import sounddevice as sd
