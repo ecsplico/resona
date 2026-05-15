@@ -159,3 +159,63 @@ def test_list_marks_local_engines_private(isolated_config):
     for line in result.output.splitlines():
         if "faster-whisper" in line:
             assert "yes" in line
+
+
+# ── engines add — cloud + collision ───────────────────────────────────────────
+
+def test_add_cloud_engine(isolated_config):
+    result = runner.invoke(app, [
+        "engines", "add", "dg", "--type", "cloud", "--provider", "deepgram",
+        "--model", "nova-3", "--option", "smart_format=true",
+    ])
+    assert result.exit_code == 0
+    data = json.loads(isolated_config.read_text())
+    entry = data["engines"][0]
+    assert entry["type"] == "cloud"
+    assert entry["provider"] == "deepgram"
+    assert entry["model"] == "nova-3"
+    assert entry["options"] == {"smart_format": "true"}
+
+
+def test_add_cloud_engine_repeatable_option(isolated_config):
+    result = runner.invoke(app, [
+        "engines", "add", "dg", "--type", "cloud", "--provider", "deepgram",
+        "--option", "smart_format=true", "--option", "diarize=false",
+    ])
+    assert result.exit_code == 0
+    opts = json.loads(isolated_config.read_text())["engines"][0]["options"]
+    assert opts == {"smart_format": "true", "diarize": "false"}
+
+
+def test_add_cloud_engine_unknown_provider_rejected(isolated_config):
+    result = runner.invoke(app, [
+        "engines", "add", "bad", "--type", "cloud", "--provider", "nonsense",
+    ])
+    assert result.exit_code == 1
+    assert "provider" in result.output.lower()
+
+
+def test_add_private_resona_api_engine(isolated_config):
+    with patch("resona_cli.engines.is_reachable", return_value=True):
+        result = runner.invoke(app, [
+            "engines", "add", "gpu", "http://gpu:7000", "--private",
+        ])
+    assert result.exit_code == 0
+    assert json.loads(isolated_config.read_text())["engines"][0]["private"] is True
+
+
+def test_add_rejects_name_shadowing_builtin_engine(isolated_config):
+    result = runner.invoke(app, [
+        "engines", "add", "whisper", "--type", "cloud", "--provider", "openai",
+    ])
+    assert result.exit_code == 1
+    assert "built-in" in result.output.lower()
+
+
+def test_add_option_bad_format_rejected(isolated_config):
+    result = runner.invoke(app, [
+        "engines", "add", "dg", "--type", "cloud", "--provider", "deepgram",
+        "--option", "noequalsign",
+    ])
+    assert result.exit_code == 1
+    assert "KEY=VALUE" in result.output

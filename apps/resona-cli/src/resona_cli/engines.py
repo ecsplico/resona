@@ -32,25 +32,28 @@ def list_engines():
 @engines_app.command("add")
 def add_engine(
     name: str = typer.Argument(..., help="Unique name for this engine"),
-    api_url: str = typer.Argument(..., help="resona-api base URL, e.g. http://localhost:7000"),
+    api_url: Optional[str] = typer.Argument(
+        None, help="resona-api base URL (resona-api engines only)"),
     api_key: str = typer.Option("", "--key", "-k", help="API key (if the server requires one)"),
     compose_dir: Optional[str] = typer.Option(
         None, "--compose-dir", "-c",
-        help="Path to docker-compose project dir. When set, this engine can be auto-started.",
-    ),
+        help="docker-compose project dir; enables auto-start (resona-api only)."),
     ssh_host: Optional[str] = typer.Option(
-        None, "--ssh", "-s",
-        help=(
-            "SSH host to tunnel through, e.g. user@myserver.com or user@myserver.com:2222. "
-            "Opens a local port-forward (ssh -N -L) when the engine is not directly reachable."
-        ),
-    ),
+        None, "--ssh", "-s", help="SSH host to tunnel through (resona-api only)."),
     ssh_remote_port: Optional[int] = typer.Option(
-        None, "--ssh-remote-port",
-        help="Remote port on the SSH host (defaults to the port in api_url).",
-    ),
+        None, "--ssh-remote-port", help="Remote port on the SSH host."),
+    engine_type: str = typer.Option(
+        "resona-api", "--type", help="Engine type: resona-api or cloud."),
+    provider: Optional[str] = typer.Option(
+        None, "--provider", help="Cloud provider: deepgram, elevenlabs, openai."),
+    model: Optional[str] = typer.Option(
+        None, "--model", help="Provider model override (cloud engines)."),
+    private: bool = typer.Option(
+        False, "--private", help="Mark a resona-api engine as private."),
+    option: list[str] = typer.Option(
+        [], "--option", help="Provider option KEY=VALUE (repeatable; cloud engines)."),
 ):
-    """Add an engine address.
+    """Add a resona-api server engine or a cloud provider engine.
 
     \b
     Examples:
@@ -63,31 +66,59 @@ def add_engine(
       # Remote server over SSH tunnel
       resona engines add remote http://localhost:7000 --ssh user@myserver.com
 
-      # Remote server with different local/remote ports
-      resona engines add remote http://localhost:17000 --ssh user@myserver.com --ssh-remote-port 7000
+      # Cloud provider
+      resona engines add dg --type cloud --provider deepgram --model nova-3
     """
-    cfg = EngineConfig.load()
+    if name in BUILTIN_ENGINES:
+        typer.echo(
+            f"Error: '{name}' is a built-in local engine name and cannot be "
+            f"used for a config entry.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    options: dict = {}
+    for item in option:
+        if "=" not in item:
+            typer.echo(f"Error: --option must be KEY=VALUE, got '{item}'", err=True)
+            raise typer.Exit(1)
+        key, value = item.split("=", 1)
+        options[key] = value
+
     entry = EngineEntry(
         name=name,
-        api_url=api_url.rstrip("/"),
+        api_url=(api_url or "").rstrip("/"),
         api_key=api_key,
         compose_dir=compose_dir,
         ssh_host=ssh_host,
         ssh_remote_port=ssh_remote_port,
+        type=engine_type,
+        provider=provider,
+        model=model,
+        private=private,
+        options=options,
     )
+
+    cfg = EngineConfig.load()
     try:
         cfg.add(entry)
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
-    ok = is_reachable(entry)
-    status = typer.style("reachable", fg=typer.colors.GREEN) if ok else typer.style("not reachable", fg=typer.colors.YELLOW)
-    typer.echo(f"Added '{name}' ({api_url}) — {status}")
-    if compose_dir and not ok:
-        typer.echo(f"  Auto-start enabled: will run `docker compose up -d` in {compose_dir} when needed.")
-    if ssh_host and not ok:
-        typer.echo(f"  SSH tunnel enabled: will open port-forward via {ssh_host} when needed.")
+    if engine_type == "cloud":
+        usable = entry.is_usable()
+        status = "key set" if usable else "no API key in environment"
+        typer.echo(f"Added cloud engine '{name}' ({provider}) — {status}")
+    else:
+        ok = is_reachable(entry)
+        status = (typer.style("reachable", fg=typer.colors.GREEN)
+                  if ok else typer.style("not reachable", fg=typer.colors.YELLOW))
+        typer.echo(f"Added '{name}' ({api_url}) — {status}")
+        if compose_dir and not ok:
+            typer.echo(f"  Auto-start enabled: will run `docker compose up -d` in {compose_dir} when needed.")
+        if ssh_host and not ok:
+            typer.echo(f"  SSH tunnel enabled: will open port-forward via {ssh_host} when needed.")
 
 
 @engines_app.command("remove")
