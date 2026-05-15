@@ -1,5 +1,7 @@
 # packages/engine-server/tests/test_registry.py
 from unittest.mock import patch, MagicMock
+import sys
+import types
 import numpy as np
 import pytest
 
@@ -119,3 +121,28 @@ def test_reset_clears_singleton(mock_config, mock_eps):
     t2 = get_transcriber()
     assert t1 is not t2
     assert isinstance(t2, FakeTranscriber)
+
+
+def test_detect_device_uses_ctranslate2_when_torch_absent(monkeypatch):
+    """With torch unavailable, _detect_device falls back to CTranslate2."""
+    import resona_asr_core.registry as reg
+
+    # Make `import torch` raise ImportError.
+    monkeypatch.setitem(sys.modules, "torch", None)
+
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_cuda_device_count = lambda: 0
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
+    assert reg._detect_device() == "cpu"
+
+    fake_ct2.get_cuda_device_count = lambda: 1
+    assert reg._detect_device() == "cuda"
+
+
+def test_detect_device_cpu_when_nothing_available(monkeypatch):
+    """No torch and no ctranslate2 -> cpu."""
+    import resona_asr_core.registry as reg
+
+    monkeypatch.setitem(sys.modules, "torch", None)
+    monkeypatch.setitem(sys.modules, "ctranslate2", None)
+    assert reg._detect_device() == "cpu"
