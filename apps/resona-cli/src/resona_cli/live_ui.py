@@ -12,6 +12,7 @@ import threading
 import time
 import queue
 import numpy as np
+import soxr
 
 from textual.app import ComposeResult
 from textual.widgets import TabbedContent, TabPane, RichLog, Header, Footer, Static, Button
@@ -26,14 +27,18 @@ MIC_SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 44100))
 MIC_CHANNELS = int(os.getenv("CHANNELS", 1))
 MIC_BLOCK_SIZE = 1024
 
-# Pre-build resampler once if sample rates differ
-_resampler = None
-if MIC_SAMPLE_RATE != ASR_SAMPLE_RATE:
-    try:
-        import torchaudio
-        _resampler = torchaudio.transforms.Resample(MIC_SAMPLE_RATE, ASR_SAMPLE_RATE)
-    except ImportError:
-        pass  # Will fall back to per-chunk import in _feed_audio_to_transcriber
+# Resample mic audio to the ASR sample rate when the two differ.
+_NEEDS_RESAMPLE = MIC_SAMPLE_RATE != ASR_SAMPLE_RATE
+
+
+def _resample_to_asr(audio_float: np.ndarray) -> np.ndarray:
+    """Resample a mono float32 chunk from the mic rate to the ASR rate.
+
+    Returns the input unchanged when the rates already match.
+    """
+    if not _NEEDS_RESAMPLE:
+        return audio_float
+    return soxr.resample(audio_float, MIC_SAMPLE_RATE, ASR_SAMPLE_RATE)
 
 
 class WSLiveApp(MicRecApp):
@@ -197,18 +202,7 @@ class WSLiveApp(MicRecApp):
                         chunk = chunk.mean(axis=1, keepdims=True)
 
                     audio_float = chunk.flatten().astype(np.float32)
-
-                    if _resampler is not None:
-                        import torch
-                        audio_resampled = _resampler(torch.from_numpy(audio_float)).numpy()
-                    elif MIC_SAMPLE_RATE != ASR_SAMPLE_RATE:
-                        import torch
-                        import torchaudio.functional as F
-                        audio_resampled = F.resample(
-                            torch.from_numpy(audio_float), MIC_SAMPLE_RATE, ASR_SAMPLE_RATE,
-                        ).numpy()
-                    else:
-                        audio_resampled = audio_float
+                    audio_resampled = _resample_to_asr(audio_float)
 
                     self._live_transcriber.add_audio(audio_resampled)
 
