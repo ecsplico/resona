@@ -59,7 +59,7 @@ def test_load_migrates_from_legacy_config(tmp_path, monkeypatch):
     legacy_config = tmp_path / ".whisper-server" / "config.json"
     legacy_config.parent.mkdir(parents=True)
     legacy_config.write_text(json.dumps({
-        "engines": [{"name": "migrated", "api_url": "http://legacy:7000", "api_key": "", "compose_dir": None}]
+        "backends": [{"name": "migrated", "api_url": "http://legacy:7000", "api_key": "", "compose_dir": None}]
     }))
 
     monkeypatch.setattr("resona_client.config.CONFIG_DIR", resona_dir)
