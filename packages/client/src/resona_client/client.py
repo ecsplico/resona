@@ -45,28 +45,28 @@ class ResonaClient:
     @classmethod
     def from_config(cls, auto_start: bool = True, timeout: float = 3600.0) -> "ResonaClient":
         """
-        Create a client by resolving the backend to use:
+        Create a client by resolving the engine to use:
 
         1. RESONA_API_URL env var (if set) — used directly, no config lookup.
         2. WS_API_URL env var (if set) — used directly, no config lookup (fallback).
-        3. First reachable backend in ~/.resona/config.json.
-        4. If none reachable and a backend has compose_dir set, start it via
+        3. First reachable engine in ~/.resona/config.json.
+        4. If none reachable and an engine has compose_dir set, start it via
            docker compose up -d and wait for it to become healthy.
 
-        Raises RuntimeError if no backend could be resolved.
+        Raises RuntimeError if no engine could be resolved.
         """
         env_url = os.getenv("RESONA_API_URL") or os.getenv("WS_API_URL")
         if env_url:
             return cls(base_url=env_url, timeout=timeout)
 
-        from .config import resolve_backend
-        entry = resolve_backend(auto_start=auto_start)
+        from .config import resolve_engine
+        entry = resolve_engine(auto_start=auto_start)
         if entry:
             return cls(base_url=entry.api_url, api_key=entry.api_key, timeout=timeout)
 
         raise RuntimeError(
-            "No reachable resona backend found.\n"
-            "Add one with:  resona backends add <name> <url>"
+            "No reachable resona engine found.\n"
+            "Add one with:  resona engines add <name> <url>"
         )
 
     # ── Job API operations ────────────────────────────────────────────
@@ -166,7 +166,7 @@ class ResonaClient:
         """Add a new initial prompt phrase. POST /prompts/
 
         Args:
-            phrase: Vocabulary hint passed to the transcription backend as ``initial_prompt``.
+            phrase: Vocabulary hint passed to the transcription engine as ``initial_prompt``.
 
         Returns:
             Created prompt dict with assigned ``id``.
