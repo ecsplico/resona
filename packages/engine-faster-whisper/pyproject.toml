@@ -22,7 +22,7 @@ dependencies = [
 resona-asr-core = { workspace = true }
 resona-engine-server = { workspace = true }
 
-[project.entry-points."resona.backends"]
+[project.entry-points."resona.engines"]
 faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
 
 [project.scripts]
