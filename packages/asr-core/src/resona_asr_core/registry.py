@@ -37,7 +37,7 @@ def _detect_device() -> str:
 
 def _load_from_entrypoint(backend: str | None = None) -> Transcriber:
     """Discover and instantiate a transcriber backend by name."""
-    name = backend or config("RESONA_BACKEND", default="faster-whisper")
+    name = backend or config("RESONA_ENGINE", default="faster-whisper")
     eps = entry_points(group=ENTRY_POINT_GROUP)
     for ep in eps:
         if ep.name == name:
