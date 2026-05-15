@@ -53,7 +53,7 @@ install-cli-voxtral:
 
 # Live TUI + local faster-whisper engine (live-from-mic, no server)
 install-cli-full:
-    uv tool install --force --from ./apps/resona-cli 'resona-cli[record,live,faster-whisper]'
+    uv tool install --force --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'
 
 # Uninstall the resona-cli tool
 uninstall-cli:
