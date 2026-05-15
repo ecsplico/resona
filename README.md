@@ -222,9 +222,9 @@ resona transcribe ./audio/ --backend voxtral
 | HTTP client only | `uv tool install --from ./apps/resona-cli resona-cli` |
 | Record + submit | `uv tool install --from ./apps/resona-cli 'resona-cli[record]'` |
 | Live transcription | `uv tool install --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'` |
-| Fully local | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` ⚠️ |
+| Fully local | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` |
 
-⚠️ The backend extras pull torch nightly; `uv tool install` may not inherit the workspace's `pytorch-nightly` index. Workaround: use `uv run resona` from inside the workspace, or `uv pip install --extra-index-url https://download.pytorch.org/whl/nightly/cu128 'resona-cli[faster-whisper]'`.
+The `[faster-whisper]`, `[live]`, and `[record]` extras are torch-free and need no extra index. The `[whisper]`/`[voxtral]` extras pull a stable PyTorch build from the cu130 index; if `uv tool install` does not inherit the workspace's pytorch index, use `uv run resona` from inside the workspace, or `uv pip install --extra-index-url https://download.pytorch.org/whl/cu130 'resona-cli[whisper]'`.
 
 ## Configuration
 
