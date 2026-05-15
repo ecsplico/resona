@@ -323,7 +323,7 @@ def test_transcribe_fallback_passes_backend_to_local_engine(tmp_path):
         runner.invoke(app, ["transcribe", str(tmp_path), "--backend", "whisper"])
 
     call_kwargs = mock_le_cls.call_args.kwargs
-    assert call_kwargs.get("backend") == "whisper"
+    assert call_kwargs.get("engine") == "whisper"
 
 
 def test_transcribe_fallback_applies_postprocess_pipeline(tmp_path):
@@ -365,7 +365,7 @@ def test_transcribe_fallback_uses_default_backend_from_config(tmp_path):
         runner.invoke(app, ["transcribe", str(tmp_path)])
 
     call_kwargs = mock_le_cls.call_args.kwargs
-    assert call_kwargs.get("backend") == "voxtral"
+    assert call_kwargs.get("engine") == "voxtral"
 
 
 def test_transcribe_warns_when_model_flag_with_live_server(tmp_path):

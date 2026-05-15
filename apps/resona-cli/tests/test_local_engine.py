@@ -86,7 +86,7 @@ def test_enter_spawns_resona_engine_command(tmp_path):
     engine.__exit__(None, None, None)
 
 
-def test_enter_spawns_custom_backend(tmp_path):
+def test_enter_spawns_custom_engine(tmp_path):
     mock_proc = _make_mock_process()
     mock_http = _make_healthy_http_client()
 
@@ -96,7 +96,7 @@ def test_enter_spawns_custom_backend(tmp_path):
         patch("httpx.Client", return_value=mock_http),
         patch("time.sleep"),
     ):
-        engine = LocalEngine(backend="whisper").__enter__()
+        engine = LocalEngine(engine="whisper").__enter__()
 
     cmd_used = mock_popen.call_args.args[0]
     assert cmd_used == ["uv", "run", "resona-engine-whisper"]
