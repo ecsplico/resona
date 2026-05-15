@@ -16,10 +16,12 @@ dependencies = [
     "python-multipart>=0.0.20",
     "python-decouple>=3.8",
     "python-dotenv>=1.1.0",
+    "resona-cloud-stt",
     "resona-postprocess",
 ]
 
 [tool.uv.sources]
+resona-cloud-stt = { workspace = true }
 resona-postprocess = { workspace = true }
 
 [project.scripts]
