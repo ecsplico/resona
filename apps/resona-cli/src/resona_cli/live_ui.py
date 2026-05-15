@@ -38,6 +38,7 @@ def _resample_to_asr(audio_float: np.ndarray) -> np.ndarray:
     """
     if not _NEEDS_RESAMPLE:
         return audio_float
+    # soxr's default quality ('HQ') is appropriate for voice audio.
     return soxr.resample(audio_float, MIC_SAMPLE_RATE, ASR_SAMPLE_RATE)
 
 
