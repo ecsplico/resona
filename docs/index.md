@@ -20,7 +20,7 @@ Audio transcription system built on OpenAI Whisper / faster-whisper, designed fo
                    │               │
       ┌────────────▼──┐   ┌───────▼──────────────────────┐
       │  resona-api   │   │  resona-engine-server         │
-      │  :7000        │──▶│  + backend package  :7001     │
+      │  :7000        │──▶│  + engine package   :7001     │
       │               │   │                              │
       │ POST /jobs    │   │ POST /transcribe             │
       │ GET  /jobs/   │   │ WS   /ws/transcribe          │
@@ -33,7 +33,7 @@ Audio transcription system built on OpenAI Whisper / faster-whisper, designed fo
       └───────────────┘
 ```
 
-**resona-engine-server** is stateless — no database, no side effects. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in `resona-asr-core`. Backends are installed as separate packages (`resona-engine-faster-whisper`, `resona-engine-whisper`) and discovered via entry points.
+**resona-engine-server** is stateless — no database, no side effects. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in `resona-asr-core`. Engines are installed as separate packages (`resona-engine-faster-whisper`, `resona-engine-whisper`) and discovered via entry points.
 
 **resona-api** owns the job queue, SQLite database, and calls the engine over HTTP. Post-processing (replacements, formatting) is handled by `resona-postprocess` in the API layer — the engine returns raw transcripts.
 
@@ -41,13 +41,13 @@ This separation lets the engine run on a dedicated GPU machine while the API run
 
 ## Features
 
-- **Multiple ASR backends** — faster-whisper, openai-whisper, HuggingFace Transformers; installed as separate packages, discovered via entry points
+- **Multiple ASR engines** — faster-whisper, openai-whisper, HuggingFace Transformers; installed as separate packages, discovered via entry points
 - **Async job queue** — submit audio files, poll for results, never block the caller
 - **Text replacements** — regex-based post-processing applied by the API (`resona-postprocess`)
-- **Initial prompts** — Whisper vocabulary hints stored per backend
+- **Initial prompts** — Whisper vocabulary hints stored per engine
 - **Live transcription** — VAD-chunked WebSocket streaming at 16 kHz
 - **TUI tools** — Textual-based recorder (`rec`), live UI (`live`), record-and-transcribe (`ui`)
-- **Backend config** — priority-ordered multi-server with SSH tunnel and Docker auto-start
+- **Engine config** — priority-ordered multi-server with SSH tunnel and Docker auto-start
 
 ## Quick links
 
@@ -55,7 +55,7 @@ This separation lets the engine run on a dedicated GPU machine while the API run
 - [Server Setup](getting-started.md) — run the services locally or via Docker
 - [Architecture](architecture.md) — service design and job lifecycle
 - [CLI Reference](cli.md) — all `resona` commands
-- [Backends & SSH](configuration/backends.md) — LAN, SSH tunnel, auto-start
+- [Engines & SSH](configuration/engines.md) — LAN, SSH tunnel, auto-start
 - [Environment Variables](configuration/environment.md) — all config knobs
 - [Client Library](reference/client.md) — Python API reference
 

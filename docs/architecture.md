@@ -30,23 +30,23 @@ This separation means:
 - Replacements and prompts live in resona-api's DB; the engine is a pure function
 - Postprocessing (`resona-postprocess`) runs in resona-api after transcription completes
 
-## Backend discovery via entry points
+## Engine discovery via entry points
 
-Backends are installed as separate packages and register themselves via Python entry points:
+Engines are installed as separate packages and register themselves via Python entry points:
 
 ```toml
 # In resona-engine-faster-whisper/pyproject.toml
-[project.entry-points."resona.backends"]
+[project.entry-points."resona.engines"]
 faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscriber"
 ```
 
-The `resona_asr_core.registry` discovers all installed backends at startup:
+The `resona_asr_core.registry` discovers all installed engines at startup:
 
-- `RESONA_BACKEND` env var selects which backend to load (default: `faster-whisper`)
+- `RESONA_ENGINE` env var selects which engine to load (default: `faster-whisper`)
 - `get_transcriber()` returns a thread-safe singleton
-- Each backend's `[project.scripts]` points to `resona_engine_server.run:main` — the same FastAPI app, different backend loaded
+- Each engine's `[project.scripts]` points to `resona_engine_server.run:main` — the same FastAPI app, different engine loaded
 
-Available backend packages:
+Available engine packages:
 
 | Package | Entry point | Class | Notes |
 |---------|-------------|-------|-------|
@@ -101,11 +101,11 @@ result = pipeline.run(raw_text)
 
 Pipeline configuration can be loaded from `~/.resona/postprocess.json` via `build_pipeline_from_config()`.
 
-## ASR backends
+## ASR engines
 
-The engine selects its backend via the `RESONA_BACKEND` environment variable:
+The engine server selects its ASR engine via the `RESONA_ENGINE` environment variable:
 
-| `RESONA_BACKEND` | Package | Class | Library | Notes |
+| `RESONA_ENGINE` | Package | Class | Library | Notes |
 |-----------------|---------|-------|---------|-------|
 | `faster-whisper` (default) | `resona-engine-faster-whisper` | `FastWhisperTranscriber` | CTranslate2 | INT8 quantised, fast |
 | `whisper` | `resona-engine-whisper` | `WhisperTranscriber` | openai-whisper | Original PyTorch |

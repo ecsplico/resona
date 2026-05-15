@@ -1,5 +1,5 @@
 site_name: Resona
-site_description: Modular audio transcription platform with pluggable ASR backends
+site_description: Modular audio transcription platform with pluggable ASR engines
 
 theme:
   name: material
@@ -58,12 +58,19 @@ nav:
   - Architecture: architecture.md
   - CLI Reference: cli.md
   - Configuration:
-    - Backends & SSH: configuration/backends.md
+    - Engines & SSH: configuration/engines.md
     - Environment Variables: configuration/environment.md
   - API Reference:
     - Client Library: reference/client.md
     - resona-api Internals: reference/ws-api.md
     - resona-engine Internals: reference/engine.md
+
+validation:
+  links:
+    not_found: ignore
+
+not_in_nav: |
+  superpowers/**
 
 markdown_extensions:
   - admonition

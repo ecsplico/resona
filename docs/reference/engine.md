@@ -4,19 +4,19 @@ Internal reference for `resona-asr-core` (lean ASR contracts) and `resona-engine
 
 ## Transcriber protocol
 
-All backends implement the `Transcriber` protocol defined in `resona_asr_core.protocol`:
+All engines implement the `Transcriber` protocol defined in `resona_asr_core.protocol`:
 
 ::: resona_asr_core.protocol.Transcriber
 
 ::: resona_asr_core.protocol.TranscriptionResult
 
-## Backend registry
+## Engine registry
 
-Backends are discovered via Python entry points at startup. The `RESONA_BACKEND` environment variable selects which backend to load.
+Engines are discovered via Python entry points at startup. The `RESONA_ENGINE` environment variable selects which engine to load.
 
 ::: resona_asr_core.registry.get_transcriber
 
-## Available backends
+## Available engines
 
 ### faster-whisper (default)
 
