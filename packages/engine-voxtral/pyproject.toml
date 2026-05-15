@@ -11,7 +11,7 @@ dependencies = [
     "resona-asr-core",
     "resona-engine-server",
     "transformers>=4.45.0",
-    "torch>=2.11.0.dev",
+    "torch>=2.10",
     "accelerate>=0.34.0",
 ]
 
