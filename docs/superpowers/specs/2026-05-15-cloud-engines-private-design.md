@@ -285,7 +285,8 @@ resolved `cloud` `EngineEntry`, it:
 1. Resolves the API key from the provider's env var
    (`PROVIDER_ENV_KEYS[provider]`); missing → `MissingAPIKeyError`.
 2. Calls `resona_cloud_stt.<provider>.transcribe(...)` with the entry's `model`,
-   `language`, and `options`.
+   `language`, and `options`. The `transcribe` command's existing `--model` and
+   `--language` flags, when provided, override the entry's values for that run.
 3. Returns the `TranscriptionResult`.
 
 ### 2.7 `--private` semantics
