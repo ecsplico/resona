@@ -1,4 +1,3 @@
-# packages/engine-server/tests/test_registry.py
 from unittest.mock import patch, MagicMock
 import sys
 import types
