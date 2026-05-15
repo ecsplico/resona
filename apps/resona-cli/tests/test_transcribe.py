@@ -31,6 +31,24 @@ def make_client(job_status="completed", transcript="Hello world"):
     return client
 
 
+def _make_resona_api_entry(name="srv", api_url="http://srv:7000", api_key=""):
+    """Return a minimal EngineEntry-like mock for a resona-api engine."""
+    from resona_client.config import EngineEntry
+    return EngineEntry(name=name, api_url=api_url, api_key=api_key, type="resona-api")
+
+
+# ── Helpers used by both old and new server-path tests ───────────────────────
+
+def _patch_server(mock_client, entry=None):
+    """Context manager stack: resolve_engine returns a resona-api entry, ResonaClient returns mock_client."""
+    if entry is None:
+        entry = _make_resona_api_entry()
+    return (
+        patch("resona_client.config.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    )
+
+
 def test_transcribe_no_files(tmp_path):
     mock_client = MagicMock()
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
@@ -42,8 +60,12 @@ def test_transcribe_no_files(tmp_path):
 def test_transcribe_directory_submits_and_waits(tmp_path):
     make_wav(tmp_path / "a.wav")
     mock_client = make_client()
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
     mock_client.submit_job.assert_called_once()
@@ -55,8 +77,12 @@ def test_transcribe_single_file(tmp_path):
     """Pass a single file path directly."""
     f = make_wav(tmp_path / "only.wav")
     mock_client = make_client()
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         result = runner.invoke(app, ["transcribe", str(f)])
 
     mock_client.submit_job.assert_called_once()
@@ -73,8 +99,12 @@ def test_transcribe_multiple_files_as_args(tmp_path):
     mock_client = MagicMock()
     mock_client.submit_job.side_effect = [{"id": 1}, {"id": 2}]
     mock_client.wait_for_job.return_value = {"id": 1, "status": "completed", "transcript": "x", "md": ""}
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", str(a), str(b)])
 
     assert mock_client.submit_job.call_count == 2
@@ -91,8 +121,12 @@ def test_transcribe_quoted_glob_pattern(tmp_path, monkeypatch):
     mock_client = MagicMock()
     mock_client.submit_job.side_effect = [{"id": 1}, {"id": 2}]
     mock_client.wait_for_job.return_value = {"id": 1, "status": "completed", "transcript": "x", "md": ""}
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", "*.wav"])
 
     assert mock_client.submit_job.call_count == 2
@@ -106,8 +140,12 @@ def test_transcribe_glob_filters_non_audio(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     mock_client = make_client()
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", "*"])
 
     assert mock_client.submit_job.call_count == 1
@@ -120,8 +158,12 @@ def test_transcribe_directory_with_multiple_files(tmp_path):
     mock_client = MagicMock()
     mock_client.submit_job.side_effect = [{"id": 1}, {"id": 2}]
     mock_client.wait_for_job.return_value = {"id": 1, "status": "completed", "transcript": "x", "md": ""}
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", str(tmp_path)])
 
     assert mock_client.submit_job.call_count == 2
@@ -132,8 +174,12 @@ def test_transcribe_deduplicates_overlapping_inputs(tmp_path):
     """Same file referenced via direct path and glob is only submitted once."""
     f = make_wav(tmp_path / "a.wav")
     mock_client = make_client()
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", str(f), str(tmp_path)])
 
     assert mock_client.submit_job.call_count == 1
@@ -143,8 +189,12 @@ def test_transcribe_writes_output_files(tmp_path):
     make_wav(tmp_path / "audio.wav")
     out_dir = tmp_path / "out"
     mock_client = make_client(transcript="transcribed text")
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
     txt_files = list(out_dir.glob("*.txt"))
@@ -159,8 +209,12 @@ def test_transcribe_uses_md_when_transcript_empty(tmp_path):
     mock_client = MagicMock()
     mock_client.submit_job.return_value = {"id": 1}
     mock_client.wait_for_job.return_value = {"id": 1, "status": "completed", "transcript": "", "md": "md text"}
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
     txt_file = next((out_dir).glob("*.txt"))
@@ -172,8 +226,12 @@ def test_transcribe_handles_timeout(tmp_path):
     mock_client = MagicMock()
     mock_client.submit_job.return_value = {"id": 1}
     mock_client.wait_for_job.side_effect = TimeoutError("timed out")
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
     assert "Timeout" in result.output
@@ -182,8 +240,12 @@ def test_transcribe_handles_timeout(tmp_path):
 def test_transcribe_handles_failed_job(tmp_path):
     make_wav(tmp_path / "fail.wav")
     mock_client = make_client(job_status="failed", transcript="")
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
     assert "failed" in result.output
@@ -220,12 +282,12 @@ def _noop_pipeline():
 
 
 def test_transcribe_fallback_used_when_no_server(tmp_path):
-    """When from_config raises RuntimeError, LocalEngine is used instead."""
+    """When no engine resolves, LocalEngine is used instead."""
     make_wav(tmp_path / "audio.wav")
     mock_engine = _make_local_engine()
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -242,7 +304,7 @@ def test_transcribe_fallback_single_file(tmp_path):
     mock_engine = _make_local_engine(transcript="hi")
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -258,7 +320,7 @@ def test_transcribe_fallback_writes_text_to_audio_parent(tmp_path):
     mock_engine = _make_local_engine(transcript="Hello world")
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -277,7 +339,7 @@ def test_transcribe_fallback_respects_output_dir(tmp_path):
     mock_engine = _make_local_engine(transcript="Output text")
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -295,7 +357,7 @@ def test_transcribe_fallback_passes_model_and_language(tmp_path):
     mock_engine = _make_local_engine()
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -310,12 +372,11 @@ def test_transcribe_fallback_passes_model_and_language(tmp_path):
 
 
 def test_transcribe_fallback_passes_engine_to_local_engine(tmp_path):
-    """--engine is forwarded to LocalEngine."""
+    """--engine (built-in name) is forwarded to LocalEngine."""
     make_wav(tmp_path / "audio.wav")
     mock_engine = _make_local_engine()
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -335,7 +396,7 @@ def test_transcribe_fallback_applies_postprocess_pipeline(tmp_path):
     mock_pipeline.run.return_value = "HELLO WORLD"
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=mock_pipeline),
@@ -352,12 +413,12 @@ def test_transcribe_fallback_uses_default_engine_from_config(tmp_path):
     make_wav(tmp_path / "audio.wav")
     mock_engine = _make_local_engine()
 
-    mock_config = MagicMock()
-    mock_config.default_engine = "voxtral"
+    from resona_client.config import EngineConfig
+    mock_cfg = EngineConfig(engines=[], default_engine="voxtral")
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
-        patch("resona_client.config.EngineConfig.load", return_value=mock_config),
+        patch("resona_client.config.EngineConfig.load", return_value=mock_cfg),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -372,11 +433,15 @@ def test_transcribe_warns_when_model_flag_with_live_server(tmp_path):
     """--model should print a warning and be ignored when server is reachable."""
     make_wav(tmp_path / "audio.wav")
     mock_client = make_client()
+    entry = _make_resona_api_entry()
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+    with (
+        patch("resona_cli.transcribe.resolve_engine", return_value=entry),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
         result = runner.invoke(app, ["transcribe", str(tmp_path), "--model", "large-v3"])
 
-    assert "ignored" in result.output.lower() or "ignored" in (result.stderr or "").lower()
+    assert "ignored" in result.output.lower()
     mock_client.submit_job.assert_called_once()
 
 
@@ -391,7 +456,7 @@ def test_transcribe_fallback_continues_on_per_file_error(tmp_path):
     ]
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -424,7 +489,7 @@ def test_transcribe_fallback_with_real_postprocess_config(tmp_path):
     real_pipeline = build_pipeline_from_config(config_file)
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=real_pipeline),
@@ -437,7 +502,7 @@ def test_transcribe_fallback_with_real_postprocess_config(tmp_path):
 
 
 def test_transcribe_uses_in_process_engine_when_extra_installed(tmp_path):
-    """When asr-core + a backend is installed and no server is reachable, use InProcessEngine."""
+    """When asr-core + a backend is installed and no engine resolves, use InProcessEngine."""
     make_wav(tmp_path / "audio.wav")
     out_dir = tmp_path / "out"
 
@@ -445,7 +510,7 @@ def test_transcribe_uses_in_process_engine_when_extra_installed(tmp_path):
     mock_engine.transcribe.return_value = {"text": "hi", "language": "de", "segments": []}
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", return_value=mock_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
     ):
@@ -464,7 +529,7 @@ def test_transcribe_falls_back_to_subprocess_when_in_process_unavailable(tmp_pat
     mock_subprocess_engine = _make_local_engine(transcript="from subprocess")
 
     with (
-        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.resolve_engine", return_value=None),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("asr-core missing")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_subprocess_engine),
         patch("resona_postprocess.sources.build_pipeline_from_config", return_value=_noop_pipeline()),
@@ -474,3 +539,75 @@ def test_transcribe_falls_back_to_subprocess_when_in_process_unavailable(tmp_pat
     assert result.exit_code == 0
     mock_subprocess_engine.transcribe.assert_called_once()
     assert (out_dir / "audio.txt").read_text() == "from subprocess"
+
+
+# ── Unified --engine routing ──────────────────────────────────────────────────
+
+from resona_client.config import EngineConfig, EngineEntry
+from resona_cli.engines import BUILTIN_ENGINES  # noqa: F401  (sanity import)
+
+
+def test_transcribe_engine_pins_cloud_entry(tmp_path, monkeypatch):
+    """--engine NAME naming a cloud config entry routes to CloudEngine."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(engines=[
+        EngineEntry(name="dg", type="cloud", provider="deepgram"),
+    ])
+    mock_engine = MagicMock()
+    mock_engine.transcribe.return_value = {"text": "cloud text", "language": "de", "segments": []}
+
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.CloudEngine", return_value=mock_engine) as mock_cls,
+        patch("resona_postprocess.sources.build_pipeline_from_config",
+              return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "dg"])
+
+    assert result.exit_code == 0
+    mock_cls.assert_called_once()
+    mock_engine.transcribe.assert_called_once()
+
+
+def test_transcribe_engine_pins_local_builtin(tmp_path):
+    """--engine faster-whisper routes to the local fallback engine."""
+    make_wav(tmp_path / "a.wav")
+    mock_engine = _make_local_engine(transcript="local text")
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config",
+              side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("x")),
+        patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le,
+        patch("resona_postprocess.sources.build_pipeline_from_config",
+              return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "whisper"])
+
+    assert result.exit_code == 0
+    assert mock_le.call_args.kwargs.get("engine") == "whisper"
+
+
+def test_transcribe_engine_unknown_name_errors(tmp_path):
+    make_wav(tmp_path / "a.wav")
+    with patch("resona_client.config.EngineConfig.load", return_value=EngineConfig()):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "ghost"])
+    assert result.exit_code != 0
+    assert "ghost" in result.output
+
+
+def test_transcribe_engine_pins_resona_api_entry(tmp_path):
+    """--engine NAME naming a resona-api entry routes to ResonaClient."""
+    make_wav(tmp_path / "a.wav")
+    cfg = EngineConfig(engines=[EngineEntry(name="srv", api_url="http://srv:7000")])
+    mock_client = make_client()
+
+    with (
+        patch("resona_client.config.EngineConfig.load", return_value=cfg),
+        patch("resona_cli.transcribe.ResonaClient", return_value=mock_client),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "srv"])
+
+    assert result.exit_code == 0
+    mock_client.submit_job.assert_called_once()

@@ -5,7 +5,10 @@ import typer
 import httpx
 
 from .local_engine import LocalEngine
-from .engine import InProcessEngine
+from .engine import CloudEngine, InProcessEngine
+from resona_client.client import ResonaClient
+from resona_client.config import EngineConfig, resolve_engine
+from .engines import BUILTIN_ENGINES
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
@@ -52,40 +55,105 @@ def _expand_inputs(inputs: list[str], recursive: bool) -> list[Path]:
 
 def transcribe_files(
     inputs: list[str] = typer.Argument(
-        ...,
-        help="Audio files, glob patterns (e.g. 'folder/*.mp3'), or directories.",
-        metavar="INPUTS...",
-    ),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Recurse into directories / use `**` in glob patterns."),
-    output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Directory to write transcripts."),
-    model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
-    language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
-    engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
-    engine: Optional[str] = typer.Option(None, "--engine", help="Engine for local transcription (e.g. faster-whisper, whisper, voxtral). Falls back to default_engine in ~/.resona/config.json."),
+        ..., help="Audio files, glob patterns, or directories.", metavar="INPUTS..."),
+    recursive: bool = typer.Option(False, "--recursive", "-r",
+        help="Recurse into directories / use `**` in glob patterns."),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir",
+        help="Directory to write transcripts."),
+    model: Optional[str] = typer.Option(None, "--model",
+        help="Model name override (local fallback and cloud engines)."),
+    language: str = typer.Option("de", "--language",
+        help="Language hint for transcription."),
+    engine_timeout: float = typer.Option(120.0, "--engine-timeout",
+        help="Seconds to wait for local engine startup (local fallback only)."),
+    engine: Optional[str] = typer.Option(None, "--engine",
+        help="Engine name: a built-in local engine, or a config.json server/cloud entry."),
+    private: Optional[bool] = typer.Option(None, "--private/--no-private",
+        help="Require a private engine. Defaults to default_private in config.json."),
 ):
     """Transcribe audio files. Accepts files, glob patterns, or directories."""
-    from resona_client.client import ResonaClient
-    from resona_client.config import EngineConfig
-
-    resolved_engine = engine or EngineConfig.load().default_engine
+    cfg = EngineConfig.load()
+    want_private = cfg.default_private if private is None else private
     files = _expand_inputs(inputs, recursive=recursive)
-
-    try:
-        client = ResonaClient.from_config()
-    except RuntimeError:
-        _transcribe_local_fallback(files, output_dir, model, language, engine_timeout, resolved_engine)
-        return
-
-    if model is not None:
-        typer.echo(
-            "--model is only used in local fallback mode and will be ignored.",
-            err=True,
-        )
-
     if not files:
         print("No audio files found.")
         return
 
+    target = _resolve_target(engine, cfg, want_private)
+    if target is None:
+        return  # _resolve_target already printed the error
+
+    kind, value = target
+    if kind == "cloud":
+        _transcribe_cloud(files, output_dir, value, model, language)
+    elif kind == "resona-api":
+        _transcribe_via_client(files, output_dir, value, model)
+    else:  # kind == "local"
+        _transcribe_local_fallback(files, output_dir, model, language,
+                                   engine_timeout, value)
+
+
+def _resolve_target(engine, cfg, want_private):
+    """Resolve --engine into ('cloud'|'resona-api'|'local', payload).
+
+    Returns None (after printing an error) when resolution fails.
+    """
+    if engine is not None:
+        entry = cfg.get(engine)
+        if entry is not None:
+            if want_private and not entry.is_private():
+                typer.echo(
+                    f"Engine '{engine}' is not private — refused under --private",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            return (entry.type, entry)
+        if engine in BUILTIN_ENGINES:
+            return ("local", engine)
+        typer.echo(f"Unknown engine '{engine}'.", err=True)
+        raise typer.Exit(1)
+
+    # No --engine: try config entries by priority, then a local engine.
+    entry = resolve_engine(private_only=want_private)
+    if entry is not None:
+        return (entry.type, entry)
+    return ("local", cfg.default_engine)
+
+
+def _transcribe_cloud(files, output_dir, entry, model, language):
+    from resona_postprocess.sources import build_pipeline_from_config
+    from resona_cloud_stt.errors import CloudSTTError
+
+    cloud = CloudEngine(entry)
+    pipeline = build_pipeline_from_config()
+    if output_dir:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"Transcribing via cloud engine '{entry.name}' ({entry.provider}).",
+               err=True)
+    for filepath in files:
+        try:
+            kwargs = {"language": language}
+            if model is not None:
+                kwargs["model"] = model
+            result = cloud.transcribe(filepath, **kwargs)
+            transcript = pipeline.run(result.get("text", ""))
+            out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
+            out_path.write_text(transcript, encoding="utf-8")
+            print(f"Transcribed {filepath.name} -> {out_path}")
+        except CloudSTTError as e:
+            typer.echo(f"Failed to transcribe {filepath.name}: {e}", err=True)
+
+
+def _transcribe_via_client(files, output_dir, entry, model):
+    if model is not None:
+        typer.echo("--model is ignored when submitting to a resona-api server.",
+                   err=True)
+    client = ResonaClient(base_url=entry.api_url, api_key=entry.api_key)
+    _submit_and_wait(client, files, output_dir)
+
+
+def _submit_and_wait(client, files, output_dir):
     jobs: list[tuple[Path, int]] = []
     for f in files:
         try:
