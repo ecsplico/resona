@@ -7,30 +7,26 @@ from resona_client.config import EngineConfig, EngineEntry, is_reachable
 
 engines_app = typer.Typer(no_args_is_help=True, help="Manage engine server addresses.")
 
+BUILTIN_ENGINES = ("faster-whisper", "whisper", "voxtral")
+
 
 @engines_app.command("list")
 def list_engines():
-    """List all configured engines and their current reachability."""
+    """List built-in local engines plus configured server/cloud engines."""
     cfg = EngineConfig.load()
-    if not cfg.engines:
-        typer.echo("No engines configured.")
-        typer.echo("  Add one with:  resona engines add <name> <url>")
-        return
-
+    typer.echo(f"  {'NAME':<18}{'TYPE':<9}{'PRIVATE':<9}STATUS")
+    for name in BUILTIN_ENGINES:
+        typer.echo(f"  {name:<18}{'local':<9}{'yes':<9}built-in")
     for e in cfg.engines:
-        ok = is_reachable(e)
-        icon = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
-        notes: list[str] = []
-        if e.api_key:
-            notes.append("[auth]")
-        if e.compose_dir:
-            notes.append(f"[compose: {e.compose_dir}]")
-        if e.ssh_host:
-            remote_port = e.ssh_remote_port or ""
-            rport_str = f":{remote_port}" if remote_port else ""
-            notes.append(f"[ssh: {e.ssh_host}{rport_str}]")
-        note_str = "  " + "  ".join(notes) if notes else ""
-        typer.echo(f"  {icon}  {e.name:<20} {e.api_url}{note_str}")
+        if e.type == "cloud":
+            kind = "cloud"
+            private = "no"
+            status = "key set" if e.is_usable() else "no key"
+        else:
+            kind = "server"
+            private = "yes" if e.is_private() else "no"
+            status = "reachable" if is_reachable(e) else "unreachable"
+        typer.echo(f"  {e.name:<18}{kind:<9}{private:<9}{status}")
 
 
 @engines_app.command("add")

@@ -47,7 +47,9 @@ def _engine(name, api_url, api_key="", compose_dir=None):
 
 def test_list_no_engines(isolated_config):
     result = runner.invoke(app, ["engines", "list"])
-    assert "No engines configured" in result.output
+    # merged view always shows built-in engines even when no config entries exist
+    assert "faster-whisper" in result.output
+    assert "built-in" in result.output
 
 
 def test_list_shows_engines(isolated_config):
@@ -126,3 +128,34 @@ def test_test_specific_engine_not_found(isolated_config):
     _write_engines(isolated_config, _engine("existing", "http://x:7000"))
     result = runner.invoke(app, ["engines", "test", "ghost"])
     assert result.exit_code == 1
+
+
+# ── engines list — merged view ────────────────────────────────────────────────
+
+def test_list_shows_builtin_local_engines_when_no_config(isolated_config):
+    result = runner.invoke(app, ["engines", "list"])
+    assert "faster-whisper" in result.output
+    assert "whisper" in result.output
+    assert "voxtral" in result.output
+    assert "built-in" in result.output
+
+
+def test_list_shows_config_entries_alongside_builtins(isolated_config):
+    isolated_config.write_text(json.dumps({"engines": [
+        {"name": "my-gpu-box", "api_url": "http://gpu:7000", "private": True},
+        {"name": "deepgram", "type": "cloud", "provider": "deepgram"},
+    ]}))
+    with patch("resona_cli.engines.is_reachable", return_value=True):
+        result = runner.invoke(app, ["engines", "list"])
+    assert "my-gpu-box" in result.output
+    assert "server" in result.output
+    assert "deepgram" in result.output
+    assert "cloud" in result.output
+
+
+def test_list_marks_local_engines_private(isolated_config):
+    result = runner.invoke(app, ["engines", "list"])
+    # the three local engines are always private
+    for line in result.output.splitlines():
+        if "faster-whisper" in line:
+            assert "yes" in line
