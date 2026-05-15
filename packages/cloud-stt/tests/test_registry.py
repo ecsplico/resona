@@ -58,7 +58,6 @@ def test_default_models():
     assert DEFAULT_MODELS["openai"] == "whisper-1"
 
 
-@pytest.mark.xfail(reason="deepgram module added in Task 4", strict=True)
 def test_get_provider_returns_module_with_transcribe():
     mod = get_provider("deepgram")
     assert hasattr(mod, "transcribe")
