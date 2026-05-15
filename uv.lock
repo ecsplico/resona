@@ -8,6 +8,7 @@ members = [
     "resona-asr-core",
     "resona-cli",
     "resona-client",
+    "resona-cloud-stt",
     "resona-engine-faster-whisper",
     "resona-engine-server",
     "resona-engine-voxtral",
@@ -2239,6 +2240,17 @@ provides-extras = ["record", "live", "faster-whisper", "whisper", "voxtral"]
 name = "resona-client"
 version = "0.1.0"
 source = { editable = "packages/client" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
+
+[[package]]
+name = "resona-cloud-stt"
+version = "0.1.0"
+source = { editable = "packages/cloud-stt" }
 dependencies = [
     { name = "httpx" },
 ]
