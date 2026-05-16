@@ -61,3 +61,10 @@ def test_cloud_engine_model_kwarg_overrides_entry(tmp_path, monkeypatch):
                return_value={"text": "", "language": "", "segments": []}) as mock_tx:
         engine.transcribe(audio, model="gpt-4o-transcribe")
     assert mock_tx.call_args.kwargs["model"] == "gpt-4o-transcribe"
+
+
+def test_cloud_engine_rejects_non_cloud_entry():
+    """CloudEngine raises ValueError when given a resona-api entry."""
+    entry = EngineEntry(name="myserver", api_url="http://localhost:7000", type="resona-api")
+    with pytest.raises(ValueError, match="resona-api"):
+        CloudEngine(entry)

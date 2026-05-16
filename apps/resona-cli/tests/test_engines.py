@@ -219,3 +219,38 @@ def test_add_option_bad_format_rejected(isolated_config):
     ])
     assert result.exit_code == 1
     assert "KEY=VALUE" in result.output
+
+
+# ── engines test — cloud entries ──────────────────────────────────────────────
+
+def _cloud_engine(name, provider):
+    return {"name": name, "type": "cloud", "provider": provider, "api_url": ""}
+
+
+def test_test_cloud_engine_key_set_exits_0(isolated_config, monkeypatch):
+    """A cloud entry whose API-key env var is set is reported as OK (exit 0)."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "secret")
+    _write_engines(isolated_config, _cloud_engine("dg", "deepgram"))
+    result = runner.invoke(app, ["engines", "test"])
+    assert result.exit_code == 0
+    assert "key set" in result.output
+    assert "dg" in result.output
+
+
+def test_test_cloud_engine_no_key_exits_1(isolated_config, monkeypatch):
+    """A cloud entry with no API-key env var is reported as not-OK (exit 1)."""
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    _write_engines(isolated_config, _cloud_engine("dg", "deepgram"))
+    result = runner.invoke(app, ["engines", "test"])
+    assert result.exit_code == 1
+    assert "no key" in result.output
+    assert "dg" in result.output
+
+
+def test_test_single_cloud_engine_by_name(isolated_config, monkeypatch):
+    """Specifying a cloud entry by name also evaluates via is_usable."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    _write_engines(isolated_config, _cloud_engine("dg", "deepgram"))
+    result = runner.invoke(app, ["engines", "test", "dg"])
+    assert result.exit_code == 0
+    assert "key set" in result.output

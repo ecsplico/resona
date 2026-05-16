@@ -156,9 +156,14 @@ def test_engines(
 
     any_ok = False
     for e in targets:
-        ok = is_reachable(e, timeout=timeout)
+        if e.type == "cloud":
+            ok = e.is_usable()
+            detail = f"{e.provider}  {'key set' if ok else 'no key'}"
+        else:
+            ok = is_reachable(e, timeout=timeout)
+            detail = e.api_url
         icon = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
-        typer.echo(f"  {icon}  {e.name:<20} {e.api_url}")
+        typer.echo(f"  {icon}  {e.name:<20} {detail}")
         if ok:
             any_ok = True
 
