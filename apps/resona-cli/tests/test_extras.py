@@ -15,7 +15,7 @@ def test_rec_without_audio_deps_shows_reinstall_hint(monkeypatch):
     )
     result = runner.invoke(app, ["rec"])
     assert result.exit_code != 0
-    assert "uv tool install" in result.output.lower() or "pip install" in result.output.lower()
+    assert "uv tool install --reinstall" in result.output
     assert "reinstall" in result.output.lower()
 
 
