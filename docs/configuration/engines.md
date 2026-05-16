@@ -1,6 +1,6 @@
 # Engines & SSH
 
-`resona-client` (and all tools built on it) supports multiple engine servers with automatic fallback, SSH tunnelling, and Docker auto-start.
+`resona-client` (and all tools built on it) supports multiple engine servers with automatic fallback, SSH tunnelling, and Docker auto-start. Engines come in three types: **built-in local** engines, **resona-api server** entries, and **cloud** provider entries.
 
 ## Configuration file
 
@@ -8,20 +8,62 @@ Engines are stored in `~/.resona/config.json`:
 
 ```json
 {
+  "default_engine": "local",
+  "default_private": false,
   "engines": [
     {
       "name": "local",
+      "type": "resona-api",
       "api_url": "http://localhost:7000",
       "api_key": "",
       "compose_dir": "/home/user/resona",
       "ssh_host": null,
-      "ssh_remote_port": null
+      "ssh_remote_port": null,
+      "private": false
+    },
+    {
+      "name": "deepgram",
+      "type": "cloud",
+      "provider": "deepgram",
+      "model": "nova-3",
+      "options": {}
     }
   ]
 }
 ```
 
 Engines are tried in priority order (top to bottom). The first reachable one is used.
+
+## Private engines
+
+A "private" engine is one that runs under your own control — local hardware or
+your own infrastructure — so audio never leaves it for a third party.
+
+- **Built-in local engines** (`faster-whisper`, `whisper`, `voxtral`) are always private.
+- **resona-api server entries** are private only when marked `"private": true`.
+- **Cloud engines** are never private.
+
+Set `"default_private": true` at the top level to make `resona transcribe` refuse
+non-private engines by default — equivalent to always passing `--private`. The
+`--private` / `--no-private` CLI flags override it per run.
+
+## Cloud engines
+
+A cloud engine entry has `"type": "cloud"`, a `provider` (`deepgram`,
+`elevenlabs`, or `openai`), an optional `model`, and an optional `options` object
+passed through to the provider. API keys are **never stored in `config.json`** —
+they are read from environment variables (`DEEPGRAM_API_KEY`,
+`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`) at call time.
+
+```bash
+resona engines add deepgram --type cloud --provider deepgram --model nova-3
+```
+
+See [Environment Variables](environment.md) for the provider key variables.
+
+!!! note "Backward compatibility"
+    The `type` field defaults to `resona-api` when omitted, so pre-existing
+    config files keep working unchanged.
 
 !!! note "Backward compatibility"
     The legacy `backends` key (and `default_backend` at the top level) are still read for backward compatibility. New config files should use `engines` and `default_engine` instead.

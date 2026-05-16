@@ -42,6 +42,8 @@ This separation lets the engine run on a dedicated GPU machine while the API run
 ## Features
 
 - **Multiple ASR engines** — faster-whisper, openai-whisper, HuggingFace Transformers; installed as separate packages, discovered via entry points
+- **Cloud STT providers** — Deepgram, ElevenLabs, OpenAI as drop-in engines (`resona-cloud-stt`)
+- **Private engines** — mark local / own-infrastructure engines private; `--private` keeps audio off third-party services
 - **Async job queue** — submit audio files, poll for results, never block the caller
 - **Text replacements** — regex-based post-processing applied by the API (`resona-postprocess`)
 - **Initial prompts** — Whisper vocabulary hints stored per engine

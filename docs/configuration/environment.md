@@ -21,6 +21,9 @@ All configuration is read with `python-decouple`: environment variables take pre
 | `RESONA_ENGINE_URL` | `http://localhost:7001` | URL of the resona-engine service |
 | `RESONA_ENGINE_KEY` | _(unset)_ | API key sent to the engine (`X-API-Key`) |
 | `RESONA_API_KEY` | _(unset)_ | API key required from clients; auth disabled if not set |
+| `RESONA_CLOUD_ENGINE` | _(unset)_ | Cloud provider for job routing: `deepgram`, `elevenlabs`, or `openai`. When set, jobs are transcribed via the cloud provider instead of the local engine |
+| `RESONA_CLOUD_MODEL` | _(provider default)_ | Cloud provider model override |
+| `RESONA_CLOUD_OPTIONS` | _(unset)_ | Cloud provider options as a JSON object |
 | `DATA_PATH` | `./data` | Root directory for all data |
 | `FILE_PATH` | `$DATA_PATH/files` | Audio file storage directory |
 | `DB_PATH` | `$DATA_PATH/db` | SQLite database directory |
@@ -32,6 +35,17 @@ All configuration is read with `python-decouple`: environment variables take pre
 |----------|---------|-------------|
 | `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for postprocessing steps |
 | `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint (e.g. local Ollama); uses litellm |
+
+## resona-cloud-stt
+
+Cloud STT provider API keys. Each is required only for the provider in use; they
+are read at call time and never stored in `~/.resona/config.json`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEEPGRAM_API_KEY` | _(unset)_ | API key for the Deepgram provider |
+| `ELEVENLABS_API_KEY` | _(unset)_ | API key for the ElevenLabs provider |
+| `OPENAI_API_KEY` | _(unset)_ | API key for the OpenAI Whisper provider |
 
 ## resona-client / resona CLI
 
