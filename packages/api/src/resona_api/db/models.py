@@ -33,6 +33,7 @@ class Job(SQLModel, table=True):
         segments: JSON-serialised segment list from the engine.
         keepfile: Whether the audio file is kept after transcription (always ``True``).
         translate: Whether English translation was requested.
+        engine: Name of the engine that should process this job (None = gateway default).
         error_message: Human-readable error description on failure.
         created_at: UTC timestamp when the job was created.
         updated_at: UTC timestamp of the last status change.
@@ -49,6 +50,7 @@ class Job(SQLModel, table=True):
     segments: Optional[str] = Field(default='')
     transcript: Optional[str] = Field(default='')
     model: Optional[str] = Field(default='')
+    engine: Optional[str] = Field(default=None)
     translation: Optional[str] = Field(default='')
     keepfile: bool = Field(default=True)  # Default True — audio files are kept
     md: Optional[str] = Field(default='')

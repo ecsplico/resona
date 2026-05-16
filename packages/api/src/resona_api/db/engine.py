@@ -56,6 +56,13 @@ def create_db_and_tables():
     """Create all tables defined by SQLModel metadata."""
     log.info("Creating database tables...")
     SQLModel.metadata.create_all(engine)
+    # Idempotent migration: add Job.engine to pre-existing databases.
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(job)"))]
+        if "engine" not in cols:
+            conn.execute(text("ALTER TABLE job ADD COLUMN engine VARCHAR"))
+            conn.commit()
     log.info("Database tables created successfully.")
 
 
