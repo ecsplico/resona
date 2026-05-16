@@ -74,9 +74,22 @@ app.add_middleware(
 )
 
 
+_MODEL_ENV = {
+    "faster-whisper": ("DEFAULT_FASTWHISPER_MODEL", "large-v3"),
+    "whisper": ("DEFAULT_WHISPER_MODEL", "large-v3"),
+    "voxtral": ("DEFAULT_VOXTRAL_MODEL", "openai/whisper-large-v3"),
+}
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Report liveness plus which engine and model this process serves."""
+    engine_name = config("RESONA_ENGINE", default="faster-whisper")
+    env_key, default_model = _MODEL_ENV.get(
+        engine_name, ("DEFAULT_FASTWHISPER_MODEL", "large-v3")
+    )
+    model = config(env_key, default=default_model)
+    return {"status": "ok", "engine": engine_name, "models": [model]}
 
 
 @app.post("/transcribe")
