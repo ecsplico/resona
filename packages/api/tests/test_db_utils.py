@@ -97,3 +97,16 @@ def test_get_active_initial_prompts_string_only_inactive():
         session.add(InitialPrompt(phrase="off", active=False))
         session.commit()
     assert get_active_initial_prompts_string() == ""
+
+
+def test_register_job_stores_engine():
+    from resona_api.db.utils import register_job
+    from resona_api.db.models import Job
+    from resona_api.db.engine import engine
+    from sqlmodel import Session, select
+
+    result = register_job(filename="x.wav", upload_name="x.wav",
+                          keep=True, translate=False, engine="deepgram")
+    with Session(engine) as session:
+        stored = session.exec(select(Job).where(Job.id == result["id"])).first()
+    assert stored.engine == "deepgram"
