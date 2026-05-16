@@ -31,7 +31,10 @@ def client(mock_transcriber):
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert "engine" in body
+    assert isinstance(body["models"], list)
 
 
 def test_transcribe_returns_text(client, mock_transcriber):
