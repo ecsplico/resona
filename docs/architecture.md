@@ -197,8 +197,8 @@ DATA_PATH/
 ## Cross-package imports
 
 ```
-resona-cli  ──imports──▶  resona_asr_core.live_transcriber  (live command, gated behind [live] extra)
-resona-cli  ──imports──▶  resona_asr_core.registry           (InProcessEngine, gated behind engine extra)
+resona-cli  ──imports──▶  resona_asr_core.live_transcriber  (live command — base dependency)
+resona-cli  ──imports──▶  resona_asr_core.registry           (InProcessEngine — base dependency)
 resona-cli  ──imports──▶  resona_client.client               (all HTTP ops)
 ```
 
