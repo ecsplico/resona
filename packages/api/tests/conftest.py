@@ -62,10 +62,12 @@ def reset_engine_registry_cache():
 
 @pytest.fixture(scope="session")
 def test_app():
-    """Minimal FastAPI app with only the router (no lifespan/background tasks)."""
+    """Minimal FastAPI app with the job + audio routers (no lifespan)."""
     from resona_api.endpoints import router
+    from resona_api.audio_routes import router as audio_router
     app = FastAPI()
     app.include_router(router)
+    app.include_router(audio_router)
     return app
 
 
