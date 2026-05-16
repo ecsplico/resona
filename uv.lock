@@ -2176,69 +2176,49 @@ version = "0.1.0"
 source = { editable = "apps/resona-cli" }
 dependencies = [
     { name = "httpx" },
+    { name = "numpy" },
     { name = "python-decouple" },
     { name = "python-dotenv" },
+    { name = "resona-asr-core" },
     { name = "resona-client" },
     { name = "resona-cloud-stt" },
-    { name = "resona-postprocess" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-faster-whisper = [
-    { name = "resona-asr-core" },
     { name = "resona-engine-faster-whisper" },
-]
-live = [
-    { name = "numpy" },
-    { name = "resona-asr-core" },
+    { name = "resona-postprocess" },
     { name = "sounddevice" },
     { name = "soundfile" },
     { name = "soxr" },
     { name = "textual" },
+    { name = "typer" },
 ]
-record = [
-    { name = "numpy" },
-    { name = "sounddevice" },
-    { name = "soundfile" },
-    { name = "textual" },
-]
+
+[package.optional-dependencies]
 voxtral = [
-    { name = "resona-asr-core" },
     { name = "resona-engine-voxtral" },
 ]
 whisper = [
-    { name = "resona-asr-core" },
     { name = "resona-engine-whisper" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "numpy", marker = "extra == 'live'", specifier = ">=2.1.3" },
-    { name = "numpy", marker = "extra == 'record'", specifier = ">=2.1.3" },
+    { name = "numpy", specifier = ">=2.1.3" },
     { name = "python-decouple", specifier = ">=3.8" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "resona-asr-core", marker = "extra == 'faster-whisper'", editable = "packages/asr-core" },
-    { name = "resona-asr-core", marker = "extra == 'live'", editable = "packages/asr-core" },
-    { name = "resona-asr-core", marker = "extra == 'voxtral'", editable = "packages/asr-core" },
-    { name = "resona-asr-core", marker = "extra == 'whisper'", editable = "packages/asr-core" },
+    { name = "resona-asr-core", editable = "packages/asr-core" },
     { name = "resona-client", editable = "packages/client" },
     { name = "resona-cloud-stt", editable = "packages/cloud-stt" },
-    { name = "resona-engine-faster-whisper", marker = "extra == 'faster-whisper'", editable = "packages/engine-faster-whisper" },
+    { name = "resona-engine-faster-whisper", editable = "packages/engine-faster-whisper" },
     { name = "resona-engine-voxtral", marker = "extra == 'voxtral'", editable = "packages/engine-voxtral" },
     { name = "resona-engine-whisper", marker = "extra == 'whisper'", editable = "packages/engine-whisper" },
     { name = "resona-postprocess", editable = "packages/postprocess" },
-    { name = "sounddevice", marker = "extra == 'live'", specifier = ">=0.5.1" },
-    { name = "sounddevice", marker = "extra == 'record'", specifier = ">=0.5.1" },
-    { name = "soundfile", marker = "extra == 'live'", specifier = ">=0.13.1" },
-    { name = "soundfile", marker = "extra == 'record'", specifier = ">=0.13.1" },
-    { name = "soxr", marker = "extra == 'live'", specifier = ">=0.5" },
-    { name = "textual", marker = "extra == 'live'", specifier = ">=3.2.0" },
-    { name = "textual", marker = "extra == 'record'", specifier = ">=3.2.0" },
+    { name = "sounddevice", specifier = ">=0.5.1" },
+    { name = "soundfile", specifier = ">=0.13.1" },
+    { name = "soxr", specifier = ">=0.5" },
+    { name = "textual", specifier = ">=3.2.0" },
     { name = "typer", specifier = ">=0.15.3" },
 ]
-provides-extras = ["record", "live", "faster-whisper", "whisper", "voxtral"]
+provides-extras = ["whisper", "voxtral"]
 
 [[package]]
 name = "resona-client"
