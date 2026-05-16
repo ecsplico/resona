@@ -112,6 +112,10 @@ class CloudEngine:
     """
 
     def __init__(self, entry: EngineEntry) -> None:
+        if entry.type != "cloud":
+            raise ValueError(
+                f"CloudEngine requires a cloud engine entry, got type {entry.type!r}"
+            )
         self._entry = entry
 
     def transcribe(self, audio: Path, **kwargs) -> TranscriptionResult:
