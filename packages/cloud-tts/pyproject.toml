@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-cloud-tts"
+version = "0.1.0"
+description = "Cloud text-to-speech providers (OpenAI, ElevenLabs, Deepgram) for Resona"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_cloud_tts"]
