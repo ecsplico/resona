@@ -7,8 +7,8 @@ from resona_cli.main import app
 runner = CliRunner()
 
 
-def test_rec_without_record_extra_shows_install_hint(monkeypatch):
-    """Running `resona rec` without textual/sounddevice gives a clear install hint."""
+def test_rec_without_audio_deps_shows_reinstall_hint(monkeypatch):
+    """Running `resona rec` without textual/sounddevice gives a clear reinstall hint."""
     monkeypatch.setattr(
         "resona_cli.main._check_missing",
         lambda modules: ["textual", "sounddevice", "soundfile"],
@@ -16,7 +16,7 @@ def test_rec_without_record_extra_shows_install_hint(monkeypatch):
     result = runner.invoke(app, ["rec"])
     assert result.exit_code != 0
     assert "uv tool install" in result.output.lower() or "pip install" in result.output.lower()
-    assert "[record]" in result.output
+    assert "reinstall" in result.output.lower()
 
 
 def test_in_process_engine_without_engine_extra_shows_hint(monkeypatch):

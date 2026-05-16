@@ -23,14 +23,14 @@ def _check_missing(modules):
     return [m for m in modules if importlib.util.find_spec(m) is None]
 
 
-def _require_extra(extra: str, *modules: str) -> None:
-    """Check each module is installable; raise typer.Exit with install hint on failure."""
+def _require_modules(*modules: str) -> None:
+    """Check each module is importable; raise typer.Exit with a reinstall hint on failure."""
     missing = _check_missing(modules)
     if missing:
         typer.echo(
             f"Missing dependencies for this command: {', '.join(missing)}.\n"
-            f"Install with:  uv tool install 'resona-cli[{extra}]'\n"
-            f"or:            pip install 'resona-cli[{extra}]'",
+            f"These ship with the base resona-cli install — reinstall it:\n"
+            f"  uv tool install --reinstall --from ./apps/resona-cli resona-cli",
             err=True,
         )
         raise typer.Exit(2)
@@ -39,7 +39,7 @@ def _require_extra(extra: str, *modules: str) -> None:
 @app.command()
 def rec():
     """Launch the audio recorder TUI."""
-    _require_extra("record", "textual", "sounddevice", "soundfile")
+    _require_modules("textual", "sounddevice", "soundfile")
     from .micrec import run_mic_rec_app
     run_mic_rec_app()
 
@@ -47,7 +47,7 @@ def rec():
 @app.command()
 def live():
     """Launch the live transcription TUI."""
-    _require_extra("live", "textual", "sounddevice", "soundfile", "soxr", "resona_asr_core")
+    _require_modules("textual", "sounddevice", "soundfile", "soxr", "resona_asr_core")
     import logging
     from dotenv import load_dotenv
     import sounddevice as sd
@@ -81,7 +81,7 @@ def live():
 @app.command()
 def ui():
     """Launch the record-and-transcribe TUI (records, submits job, shows result)."""
-    _require_extra("record", "textual", "sounddevice", "soundfile")
+    _require_modules("textual", "sounddevice", "soundfile")
     import logging
     from dotenv import load_dotenv
     import sounddevice as sd
