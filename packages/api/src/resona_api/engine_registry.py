@@ -228,14 +228,19 @@ def effective_default(
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
 _clients: dict[str, object] = {}
+_clients_lock = Lock()
 
 
 def _engine_client(url: str):
-    """Return a pooled EngineClient for ``url`` (created on first use)."""
+    """Return a pooled EngineClient for ``url`` (created on first use).
+
+    Thread-safe: concurrent callers share one client per URL.
+    """
     from .engine_client import EngineClient
-    if url not in _clients:
-        _clients[url] = EngineClient(base_url=url)
-    return _clients[url]
+    with _clients_lock:
+        if url not in _clients:
+            _clients[url] = EngineClient(base_url=url)
+        return _clients[url]
 
 
 def _cloud_key(provider: str, error_cls) -> str:
