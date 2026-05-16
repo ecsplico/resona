@@ -35,6 +35,8 @@ plugins:
             - packages/engine-server/src
             - packages/engine-faster-whisper/src
             - packages/engine-whisper/src
+            - packages/engine-voxtral/src
+            - packages/cloud-stt/src
             - packages/postprocess/src
             - apps/resona-cli/src
             - packages/ws-client/src

@@ -7,6 +7,7 @@
 | `resona-asr-core` | — | Lean ASR contracts: protocol, registry, audio, live transcriber | — |
 | `resona-engine-server` + engine | 7001 | Stateless transcription (inference); depends on asr-core | Required |
 | `resona-api` | 7000 | Job queue, SQLite DB, file storage, postprocessing | No |
+| `resona-cloud-stt` | — | Cloud STT providers (Deepgram, ElevenLabs, OpenAI); httpx-only, no torch | — |
 | `resona-client` | — | Python client library | — |
 | `resona` CLI (`apps/resona-cli`) | — | CLI + Textual TUI tools | — |
 
@@ -52,6 +53,7 @@ Available engine packages:
 |---------|-------------|-------|-------|
 | `resona-engine-faster-whisper` | `faster-whisper` | `FastWhisperTranscriber` | CTranslate2, INT8, recommended |
 | `resona-engine-whisper` | `whisper` | `WhisperTranscriber` | Original OpenAI Whisper (PyTorch) |
+| `resona-engine-voxtral` | `voxtral` | `VoxtralTranscriber` | HuggingFace Transformers pipeline |
 
 ## Job lifecycle
 
@@ -109,8 +111,28 @@ The engine server selects its ASR engine via the `RESONA_ENGINE` environment var
 |-----------------|---------|-------|---------|-------|
 | `faster-whisper` (default) | `resona-engine-faster-whisper` | `FastWhisperTranscriber` | CTranslate2 | INT8 quantised, fast |
 | `whisper` | `resona-engine-whisper` | `WhisperTranscriber` | openai-whisper | Original PyTorch |
+| `voxtral` | `resona-engine-voxtral` | `VoxtralTranscriber` | transformers | HuggingFace pipeline |
 
 The transcriber is instantiated once at startup and cached as a singleton.
+
+## Cloud STT routing
+
+`resona-cloud-stt` lets transcription be served by a cloud provider instead of a
+local engine. It is httpx-only (no torch) and exposes three providers — Deepgram,
+ElevenLabs, and OpenAI — each implementing `transcribe(audio_path, *, api_key,
+model, language, options) -> {text, language, segments}`.
+
+Two callers use it:
+
+- **`resona transcribe`** — a cloud `EngineEntry` selected via `--engine` is wrapped
+  by the CLI's `CloudEngine` and called directly.
+- **`resona-api`** — when `RESONA_CLOUD_ENGINE` is set, `TranscribeTask` routes jobs
+  through the cloud provider instead of `EngineClient`, then applies postprocessing
+  as usual.
+
+Provider API keys are read from environment variables (`DEEPGRAM_API_KEY`,
+`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`) at call time and are never persisted to
+`config.json`.
 
 ## WebSocket endpoints
 

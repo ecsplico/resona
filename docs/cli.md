@@ -15,7 +15,7 @@ resona [OPTIONS] COMMAND [ARGS]...
 | `rec` | Audio recorder TUI |
 | `live` | Live transcription TUI (streams to resona-engine) |
 | `ui` | Record-and-transcribe TUI (records, submits job, shows result) |
-| `engines` | Manage engine server addresses |
+| `engines` | Manage local, server, and cloud engines |
 | `replacements` | Manage text replacement rules |
 | `prompts` | Manage initial prompt phrases |
 
@@ -60,10 +60,23 @@ resona transcribe <INPUTS...> [OPTIONS]
 |--------|---------|-------------|
 | `--recursive` / `-r` | `False` | Recurse into directories / use `**` in glob patterns |
 | `--output-dir` | _(next to source)_ | Directory to save transcript files |
-| `--model` | _(server default)_ | Whisper model name (local fallback only) |
-| `--language` | `de` | Language hint (local fallback only) |
-| `--engine-timeout` | `120.0` | Seconds to wait for local engine startup |
-| `--engine` | _(from `~/.resona/config.json`)_ | Engine for local transcription: `faster-whisper`, `whisper`, `voxtral` |
+| `--model` | _(engine default)_ | Model name override (local fallback and cloud engines) |
+| `--language` | `de` | Language hint (local fallback and cloud engines; resona-api servers use their own configured language) |
+| `--engine-timeout` | `120.0` | Seconds to wait for local engine startup (local fallback only) |
+| `--engine` | _(resolved from config)_ | Engine to use: a built-in local engine (`faster-whisper`, `whisper`, `voxtral`), or a `config.json` server/cloud entry |
+| `--private` / `--no-private` | _(from `default_private`)_ | Require a private engine — non-private engines are skipped, and a non-private `--engine` is refused |
+
+**Engine selection.** The `--engine` flag accepts a single unified name that may be
+a built-in local engine, a configured resona-api server, or a configured cloud
+provider. When `--engine` is omitted, the engine is resolved in this order:
+
+1. `--engine NAME` flag
+2. Configured engines in priority order (skipping non-private ones when private is required)
+3. `default_engine` in `~/.resona/config.json`
+4. Built-in default: `faster-whisper`
+
+Local engines are always private. resona-api server entries are private only when
+marked `private: true`. Cloud engines are never private.
 
 **Examples:**
 
@@ -82,6 +95,12 @@ resona transcribe ./recordings/ --output-dir ./transcripts/
 
 # Local fallback with a specific engine
 resona transcribe ./audio/ --engine whisper --language en
+
+# Cloud provider engine (configured via `resona engines add --type cloud`)
+resona transcribe ./audio/ --engine deepgram
+
+# Require a private (local / own-infrastructure) engine
+resona transcribe ./audio/ --private
 ```
 
 ---
@@ -139,7 +158,9 @@ resona ui
 
 ## `resona engines`
 
-Manage engine server addresses stored in `~/.resona/config.json`.
+Manage engines stored in `~/.resona/config.json`. An engine is one of three
+types: a **built-in local** engine (always available, always private), a
+**resona-api server** entry, or a **cloud** provider entry.
 
 ### `engines list`
 
@@ -147,22 +168,34 @@ Manage engine server addresses stored in `~/.resona/config.json`.
 resona engines list
 ```
 
-Shows all configured engines with reachability status (`✓` / `✗`).
+Lists the built-in local engines plus every configured server/cloud entry, each
+with its type, whether it counts as private, and a status column. For server
+entries the status is reachability; for cloud entries it is whether the
+provider's API key is set in the environment.
 
 ### `engines add`
 
 ```bash
-resona engines add <name> <api_url> [OPTIONS]
+resona engines add <name> [api_url] [OPTIONS]
 ```
+
+`api_url` is required for `resona-api` engines and ignored for `cloud` engines.
+The name must not collide with a built-in engine (`faster-whisper`, `whisper`,
+`voxtral`).
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--key`, `-k` | API key (`X-API-Key` header) |
-| `--compose-dir`, `-c` | Docker Compose project dir for auto-start |
-| `--ssh`, `-s` | SSH host to tunnel through (`user@host[:port]`) |
+| `--key`, `-k` | API key (`X-API-Key` header; resona-api engines) |
+| `--compose-dir`, `-c` | Docker Compose project dir for auto-start (resona-api engines) |
+| `--ssh`, `-s` | SSH host to tunnel through (`user@host[:port]`; resona-api engines) |
 | `--ssh-remote-port` | Remote port on SSH host (default: port from `api_url`) |
+| `--type` | Engine type: `resona-api` (default) or `cloud` |
+| `--provider` | Cloud provider: `deepgram`, `elevenlabs`, or `openai` (cloud engines) |
+| `--model` | Provider model override (cloud engines) |
+| `--private` | Mark a resona-api engine as private (own infrastructure) |
+| `--option` | Provider option `KEY=VALUE`, repeatable (cloud engines) |
 
 **Examples:**
 
@@ -180,7 +213,21 @@ resona engines add remote http://localhost:7000 --ssh user@myserver.com
 resona engines add remote http://localhost:17000 \
   --ssh user@myserver.com:2222 \
   --ssh-remote-port 7000
+
+# Private resona-api server (only used when --private is in effect)
+resona engines add clinic http://10.0.0.5:7000 --private
+
+# Cloud provider engine
+resona engines add dg --type cloud --provider deepgram --model nova-3
+
+# Cloud provider with extra options
+resona engines add el --type cloud --provider elevenlabs \
+  --option diarize=true
 ```
+
+Cloud API keys are **never stored in `config.json`** — they are read from
+environment variables (`DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`,
+`OPENAI_API_KEY`) at call time.
 
 See [Engines & SSH](configuration/engines.md) for the full resolution logic.
 
@@ -196,7 +243,9 @@ resona engines remove <name>
 resona engines test [name] [--timeout 3.0]
 ```
 
-Test reachability of one engine (or all if `name` is omitted). Exits 0 if at least one is reachable.
+Test one engine (or all if `name` is omitted). A resona-api engine is probed via
+`GET /health`; a cloud engine passes when its provider API key is present in the
+environment. Exits 0 if at least one engine checks out.
 
 ---
 
