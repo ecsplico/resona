@@ -93,7 +93,7 @@ The engine container requires a GPU and is health-checked before the API starts.
 
 ### Local-only mode (no server)
 
-If no server is reachable, the CLI automatically transcribes locally. The default install bundles the `faster-whisper` engine, so the CLI runs it in-process — no subprocess spawn, no extra to install.
+If no server is reachable, the CLI automatically transcribes locally. The default install bundles the `faster-whisper` engine, so the CLI runs it in-process by default — no extra to install.
 
 ```bash
 # Transcribe files -- starts a local engine automatically
