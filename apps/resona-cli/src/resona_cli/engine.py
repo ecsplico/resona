@@ -49,8 +49,9 @@ class RemoteEngine:
 
 
 _INSTALL_HINT = (
-    "In-process transcription requires an engine extra. Install one:\n"
-    "  uv tool install 'resona-cli[faster-whisper]'\n"
+    "In-process transcription requires resona-asr-core, which ships with the\n"
+    "base resona-cli install. Reinstall resona-cli, or for the PyTorch engines\n"
+    "add an extra:\n"
     "  uv tool install 'resona-cli[whisper]'\n"
     "  uv tool install 'resona-cli[voxtral]'"
 )

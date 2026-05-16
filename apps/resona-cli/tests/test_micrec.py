@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# These tests require the [record] extra (sounddevice, soundfile, textual).
-pytest.importorskip("sounddevice", reason="sounddevice not installed; install resona-cli[record]")
+# These tests need sounddevice/soundfile/textual — base resona-cli dependencies.
+pytest.importorskip("sounddevice", reason="sounddevice not installed; reinstall resona-cli")
 
 import numpy as np
 from resona_cli.micrec import RecordingSession, MicRecApp
