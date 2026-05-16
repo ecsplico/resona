@@ -4,7 +4,8 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel
 
 from . import engine_registry as reg
 from .auth import verify_api_key
@@ -105,3 +106,41 @@ async def create_transcription(
             "segments": segments,
         })
     return JSONResponse({"text": text})
+
+
+class SpeechRequest(BaseModel):
+    """Request body for POST /v1/audio/speech."""
+
+    model: str | None = None
+    input: str
+    voice: str | None = None
+    response_format: str = "mp3"
+    speed: float | None = None
+    engine: str | None = None
+    private: bool = False
+
+
+@router.post("/v1/audio/speech", tags=["Audio"])
+def create_speech(
+    body: SpeechRequest,
+    api_key: str = Depends(verify_api_key),
+):
+    """OpenAI-compatible synchronous text-to-speech (cloud engines only)."""
+    try:
+        info = reg.resolve(body.engine, "tts", body.private)
+    except reg.EngineError as exc:
+        raise _http_error(exc)
+    try:
+        result = reg.run_tts(
+            info,
+            body.input,
+            model=body.model,
+            voice=body.voice,
+            response_format=body.response_format,
+            speed=body.speed,
+        )
+    except Exception as exc:
+        raise _http_error(exc)
+    return StreamingResponse(
+        iter([result["audio"]]), media_type=result["content_type"]
+    )

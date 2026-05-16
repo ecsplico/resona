@@ -77,3 +77,28 @@ def test_transcription_unknown_engine(client, wav_bytes):
             data={"engine": "x"},
         )
     assert resp.status_code == 400
+
+
+def test_speech_returns_audio(client):
+    info = _catalogue()[1]
+    with patch.object(reg, "resolve", return_value=info), \
+         patch.object(reg, "run_tts",
+                       return_value={"audio": b"mp3bytes",
+                                     "content_type": "audio/mpeg"}):
+        resp = client.post(
+            "/v1/audio/speech",
+            json={"input": "hallo welt", "engine": "deepgram"},
+        )
+    assert resp.status_code == 200
+    assert resp.content == b"mp3bytes"
+    assert resp.headers["content-type"] == "audio/mpeg"
+
+
+def test_speech_private_yields_409(client):
+    err = reg.NoEngineError("no private engine available for tts")
+    with patch.object(reg, "resolve", side_effect=err):
+        resp = client.post(
+            "/v1/audio/speech",
+            json={"input": "geheim", "private": True},
+        )
+    assert resp.status_code == 409
