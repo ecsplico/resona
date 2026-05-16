@@ -15,35 +15,18 @@ dependencies = [
     "resona-client",
     "resona-cloud-stt",
     "resona-postprocess",
-]
-
-[project.optional-dependencies]
-record = [
-    "textual>=3.2.0",
-    "sounddevice>=0.5.1",
-    "soundfile>=0.13.1",
-    "numpy>=2.1.3",
-]
-live = [
     "textual>=3.2.0",
     "sounddevice>=0.5.1",
     "soundfile>=0.13.1",
     "numpy>=2.1.3",
     "soxr>=0.5",
     "resona-asr-core",
-]
-faster-whisper = [
-    "resona-asr-core",
     "resona-engine-faster-whisper",
 ]
-whisper = [
-    "resona-asr-core",
-    "resona-engine-whisper",
-]
-voxtral = [
-    "resona-asr-core",
-    "resona-engine-voxtral",
-]
+
+[project.optional-dependencies]
+whisper = ["resona-engine-whisper"]
+voxtral = ["resona-engine-voxtral"]
 
 [tool.uv.sources]
 resona-client = { workspace = true }
