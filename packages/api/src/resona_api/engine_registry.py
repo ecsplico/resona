@@ -224,3 +224,75 @@ def effective_default(
         return resolve(None, capability, False, catalogue=catalogue).name
     except EngineError:
         return None
+
+
+# ── Dispatch ─────────────────────────────────────────────────────────────
+_clients: dict[str, object] = {}
+
+
+def _engine_client(url: str):
+    """Return a pooled EngineClient for ``url`` (created on first use)."""
+    from .engine_client import EngineClient
+    if url not in _clients:
+        _clients[url] = EngineClient(base_url=url)
+    return _clients[url]
+
+
+def _cloud_key(provider: str, error_cls) -> str:
+    """Resolve a cloud provider's API key from env, or raise ``error_cls``."""
+    env_var = CLOUD_ENV_KEYS[provider]
+    key = config(env_var, default="")
+    if not key:
+        raise error_cls(env_var)
+    return key
+
+
+def run_stt(
+    info: EngineInfo,
+    audio_path: Path,
+    *,
+    language: str = "de",
+    model: str | None = None,
+    prompt: str = "",
+    task: str = "transcribe",
+) -> dict:
+    """Dispatch an STT request; return ``{text, language, segments}``."""
+    if info.kind == "local":
+        return _engine_client(info.url).transcribe(
+            filepath=audio_path,
+            language=language,
+            initial_prompt=prompt,
+            task=task,
+        )
+    from resona_cloud_stt.errors import MissingAPIKeyError
+    from resona_cloud_stt.registry import get_provider
+    key = _cloud_key(info.provider, MissingAPIKeyError)
+    provider = get_provider(info.provider)
+    return provider.transcribe(
+        audio_path, api_key=key, model=model, language=language
+    )
+
+
+def run_tts(
+    info: EngineInfo,
+    text: str,
+    *,
+    model: str | None = None,
+    voice: str | None = None,
+    response_format: str = "mp3",
+    speed: float | None = None,
+) -> dict:
+    """Dispatch a TTS request to a cloud engine; return a SpeechResult dict."""
+    from resona_cloud_tts.errors import MissingAPIKeyError
+    from resona_cloud_tts.registry import get_provider
+    key = _cloud_key(info.provider, MissingAPIKeyError)
+    provider = get_provider(info.provider)
+    options = {"speed": speed} if speed is not None else None
+    return provider.synthesize(
+        text,
+        api_key=key,
+        model=model,
+        voice=voice,
+        response_format=response_format,
+        options=options,
+    )
