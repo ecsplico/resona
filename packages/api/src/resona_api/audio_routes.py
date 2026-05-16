@@ -1,10 +1,16 @@
 """OpenAI-compatible /v1/audio/* endpoints and /v1/engines discovery."""
 import logging
+import tempfile
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from . import engine_registry as reg
 from .auth import verify_api_key
+from .db.utils import get_active_replacements
+from .endpoints import validate_audio_file
+from resona_postprocess.replacements import apply_replacements
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,3 +53,55 @@ def list_engines(api_key: str = Depends(verify_api_key)):
         ],
         "default": reg.effective_default("stt", catalogue=catalogue),
     }
+
+
+@router.post("/v1/audio/transcriptions", tags=["Audio"])
+async def create_transcription(
+    file: UploadFile = File(...),
+    model: str | None = Form(default=None),
+    language: str = Form(default="de"),
+    prompt: str = Form(default=""),
+    temperature: float | None = Form(default=None),
+    response_format: str = Form(default="json"),
+    engine: str | None = Form(default=None),
+    private: bool = Form(default=False),
+    api_key: str = Depends(verify_api_key),
+):
+    """OpenAI-compatible synchronous speech-to-text."""
+    validate_audio_file(file)
+    try:
+        info = reg.resolve(engine, "stt", private)
+    except reg.EngineError as exc:
+        raise _http_error(exc)
+
+    suffix = Path(file.filename or "audio").suffix or ".bin"
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+    try:
+        result = reg.run_stt(
+            info, tmp_path, language=language, model=model, prompt=prompt
+        )
+    except Exception as exc:
+        raise _http_error(exc)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    text = result.get("text", "")
+    replacements = get_active_replacements()
+    if replacements:
+        text = apply_replacements(text, replacements)
+
+    if response_format == "text":
+        return PlainTextResponse(text)
+    if response_format == "verbose_json":
+        segments = result.get("segments", [])
+        duration = segments[-1]["end"] if segments else 0.0
+        return JSONResponse({
+            "text": text,
+            "language": result.get("language", language),
+            "duration": duration,
+            "segments": segments,
+        })
+    return JSONResponse({"text": text})

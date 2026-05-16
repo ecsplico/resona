@@ -24,3 +24,56 @@ def test_list_engines_returns_catalogue(client):
     assert fw["kind"] == "local"
     assert "url" not in fw
     assert body["default"] == "faster-whisper"
+
+
+def test_transcription_json_format(client, wav_bytes):
+    info = _catalogue()[0]
+    with patch.object(reg, "resolve", return_value=info), \
+         patch.object(reg, "run_stt",
+                       return_value={"text": "hallo welt", "language": "de",
+                                     "segments": []}):
+        resp = client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("a.wav", wav_bytes, "audio/wav")},
+            data={"response_format": "json"},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {"text": "hallo welt"}
+
+
+def test_transcription_text_format(client, wav_bytes):
+    info = _catalogue()[0]
+    with patch.object(reg, "resolve", return_value=info), \
+         patch.object(reg, "run_stt",
+                       return_value={"text": "nur text", "language": "de",
+                                     "segments": []}):
+        resp = client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("a.wav", wav_bytes, "audio/wav")},
+            data={"response_format": "text"},
+        )
+    assert resp.status_code == 200
+    assert resp.text == "nur text"
+
+
+def test_transcription_private_refuses_cloud(client, wav_bytes):
+    err = reg.PrivacyViolationError("engine 'deepgram' is not private")
+    with patch.object(reg, "resolve", side_effect=err):
+        resp = client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("a.wav", wav_bytes, "audio/wav")},
+            data={"engine": "deepgram", "private": "true"},
+        )
+    assert resp.status_code == 400
+    assert "not private" in resp.json()["detail"]
+
+
+def test_transcription_unknown_engine(client, wav_bytes):
+    with patch.object(reg, "resolve",
+                      side_effect=reg.EngineNotFoundError("unknown engine 'x'")):
+        resp = client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("a.wav", wav_bytes, "audio/wav")},
+            data={"engine": "x"},
+        )
+    assert resp.status_code == 400
