@@ -1,6 +1,7 @@
 """Engine catalogue, resolution, and dispatch for the resona-api gateway."""
 import logging
 import time
+from threading import Lock
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -131,6 +132,7 @@ def build_catalogue() -> list[EngineInfo]:
 
 
 _cache: tuple[float, list[EngineInfo]] | None = None
+_cache_lock = Lock()
 
 
 def get_catalogue(fresh: bool = False) -> list[EngineInfo]:
@@ -139,9 +141,12 @@ def get_catalogue(fresh: bool = False) -> list[EngineInfo]:
     now = time.monotonic()
     if not fresh and _cache is not None and now - _cache[0] < _CACHE_TTL:
         return _cache[1]
-    catalogue = build_catalogue()
-    _cache = (now, catalogue)
-    return catalogue
+    with _cache_lock:
+        if not fresh and _cache is not None and now - _cache[0] < _CACHE_TTL:
+            return _cache[1]
+        catalogue = build_catalogue()
+        _cache = (now, catalogue)
+        return catalogue
 
 
 def default_engine_name() -> str | None:

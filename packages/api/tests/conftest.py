@@ -52,6 +52,14 @@ def clean_db(create_tables):
         session.commit()
 
 
+@pytest.fixture(autouse=True)
+def reset_engine_registry_cache():
+    """Clear the engine_registry catalogue cache before each test."""
+    from resona_api import engine_registry
+    engine_registry._cache = None
+    yield
+
+
 @pytest.fixture(scope="session")
 def test_app():
     """Minimal FastAPI app with only the router (no lifespan/background tasks)."""
