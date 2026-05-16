@@ -135,7 +135,7 @@ from .db.models import Job
 from .engine_client import EngineClient
 ```
 
-Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (for `live` command — gated behind the `[live]` extra) and `resona_asr_core.registry` (for `InProcessEngine` — gated behind an engine extra). All other cross-package communication is over HTTP.
+Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (for the `live` command) and `resona_asr_core.registry` (for `InProcessEngine`). Both `resona-asr-core` and `resona-engine-faster-whisper` are base dependencies of resona-cli, so these imports always resolve. All other cross-package communication is over HTTP.
 
 ## How to add a new transcription engine
 
@@ -247,16 +247,18 @@ uv run resona transcribe ./audio/ --engine whisper --language en
 
 | Persona | Command |
 |---------|---------|
-| Lean HTTP client | `uv tool install --from ./apps/resona-cli resona-cli` |
-| Record + submit to server | `uv tool install --from ./apps/resona-cli 'resona-cli[record]'` |
-| Live TUI + local engine | `uv tool install --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'` |
-| Fully local (no server) | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` |
+| Default (record, live, local faster-whisper) | `uv tool install --from ./apps/resona-cli resona-cli` |
+| Default + Whisper (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[whisper]'` |
+| Default + Voxtral (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[voxtral]'` |
+
+The default install is torch-free: it bundles the record/live TUIs and the
+CTranslate2-based `faster-whisper` engine (via the `nvidia-cublas-cu12` /
+`nvidia-cudnn-cu12` wheels and `soxr` for resampling), so `uv tool install`
+works without any extra index.
 
 ⚠️ The `[whisper]`/`[voxtral]` extras pull a stable PyTorch build from the cu130 index. `uv tool install` does NOT inherit the workspace's pytorch index, so these may fail to resolve torch. Workarounds:
 - Stay inside the workspace and use `uv run resona <command>`.
 - Or: `uv pip install --extra-index-url https://download.pytorch.org/whl/cu130 'resona-cli[whisper]'` into a managed venv.
-
-The `[faster-whisper]` and `[live]` extras are torch-free — `[faster-whisper]` uses CTranslate2 plus the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels, and `[live]` uses `soxr` for resampling — so `uv tool install` works for them without any extra index.
 
 ```bash
 # Documentation
