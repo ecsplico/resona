@@ -17,11 +17,13 @@ dependencies = [
     "python-decouple>=3.8",
     "python-dotenv>=1.1.0",
     "resona-cloud-stt",
+    "resona-cloud-tts",
     "resona-postprocess",
 ]
 
 [tool.uv.sources]
 resona-cloud-stt = { workspace = true }
+resona-cloud-tts = { workspace = true }
 resona-postprocess = { workspace = true }
 
 [project.scripts]

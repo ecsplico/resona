@@ -109,3 +109,58 @@ def test_resolve_no_private_engine_for_tts_raises():
     import pytest
     with pytest.raises(reg.NoEngineError):
         reg.resolve(None, "tts", True, catalogue=_cat())
+
+
+@respx.mock
+def test_run_stt_local_calls_engine_server(tmp_path):
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFFfake")
+    respx.post("http://eng:7001/transcribe").mock(
+        return_value=httpx.Response(
+            200, json={"text": "hallo", "language": "de", "segments": []}
+        )
+    )
+    info = reg.EngineInfo("faster-whisper", "local", ["stt"], True, True,
+                          [], url="http://eng:7001")
+    result = reg.run_stt(info, audio, language="de")
+    assert result["text"] == "hallo"
+
+
+def test_run_stt_cloud_dispatches_to_provider(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dgkey")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFFfake")
+    captured = {}
+
+    class FakeProvider:
+        @staticmethod
+        def transcribe(path, *, api_key, model=None, language=None):
+            captured["api_key"] = api_key
+            return {"text": "cloud", "language": "de", "segments": []}
+
+    monkeypatch.setattr(
+        "resona_cloud_stt.registry.get_provider", lambda n: FakeProvider
+    )
+    info = reg.EngineInfo("deepgram", "cloud", ["stt", "tts"], False, True,
+                          [], provider="deepgram")
+    result = reg.run_stt(info, audio, language="de")
+    assert result["text"] == "cloud"
+    assert captured["api_key"] == "dgkey"
+
+
+def test_run_tts_cloud_dispatches_to_provider(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "oakey")
+
+    class FakeProvider:
+        @staticmethod
+        def synthesize(text, *, api_key, model=None, voice=None,
+                       response_format="mp3", options=None):
+            return {"audio": b"sound", "content_type": "audio/mpeg"}
+
+    monkeypatch.setattr(
+        "resona_cloud_tts.registry.get_provider", lambda n: FakeProvider
+    )
+    info = reg.EngineInfo("openai", "cloud", ["stt", "tts"], False, True,
+                          [], provider="openai")
+    result = reg.run_tts(info, "hallo")
+    assert result["audio"] == b"sound"
