@@ -152,3 +152,75 @@ def get_catalogue(fresh: bool = False) -> list[EngineInfo]:
 def default_engine_name() -> str | None:
     """The configured RESONA_DEFAULT_ENGINE, or None if unset."""
     return config("RESONA_DEFAULT_ENGINE", default="") or None
+
+
+def resolve(
+    engine: str | None,
+    capability: str,
+    private: bool,
+    catalogue: list[EngineInfo] | None = None,
+) -> EngineInfo:
+    """Resolve a request to a concrete engine.
+
+    Args:
+        engine: explicit engine name, ``"local"`` alias, or None for default.
+        capability: ``"stt"`` or ``"tts"``.
+        private: when True, only private (local) engines are eligible.
+        catalogue: override the live catalogue (tests).
+
+    Raises:
+        EngineNotFoundError, EngineUnavailableError, CapabilityError,
+        PrivacyViolationError, NoEngineError.
+    """
+    cat = catalogue if catalogue is not None else get_catalogue()
+
+    local_only = engine == "local"
+    if local_only:
+        engine = None
+
+    if engine:
+        match = next((e for e in cat if e.name == engine), None)
+        if match is None:
+            raise EngineNotFoundError(f"unknown engine '{engine}'")
+        if private and not match.private:
+            raise PrivacyViolationError(
+                f"engine '{engine}' is not private — refused under private=true"
+            )
+        if capability not in match.capabilities:
+            raise CapabilityError(
+                f"engine '{engine}' does not support {capability}"
+            )
+        if not match.available:
+            raise EngineUnavailableError(f"engine '{engine}' is not available")
+        return match
+
+    candidates = [
+        e for e in cat if e.available and capability in e.capabilities
+    ]
+    if private:
+        candidates = [e for e in candidates if e.private]
+    if local_only:
+        candidates = [e for e in candidates if e.kind == "local"]
+    if not candidates:
+        what = "private " if private else ""
+        raise NoEngineError(f"no {what}engine available for {capability}")
+
+    default = default_engine_name()
+    if default:
+        for e in candidates:
+            if e.name == default:
+                return e
+    for e in candidates:
+        if e.kind == "local":
+            return e
+    return candidates[0]
+
+
+def effective_default(
+    capability: str = "stt", catalogue: list[EngineInfo] | None = None
+) -> str | None:
+    """The engine name a no-``engine`` request would resolve to, or None."""
+    try:
+        return resolve(None, capability, False, catalogue=catalogue).name
+    except EngineError:
+        return None

@@ -52,3 +52,60 @@ def test_duplicate_local_engine_name_is_deduped(monkeypatch):
     catalogue = reg.build_catalogue()
     local = [e for e in catalogue if e.kind == "local"]
     assert len(local) == 1
+
+
+def _cat():
+    """A fixed catalogue for resolve() tests."""
+    return [
+        reg.EngineInfo("faster-whisper", "local", ["stt"], True, True, ["large-v3"]),
+        reg.EngineInfo("whisper", "local", ["stt"], True, False, []),
+        reg.EngineInfo("deepgram", "cloud", ["stt", "tts"], False, True,
+                       ["nova-3"], provider="deepgram"),
+    ]
+
+
+def test_resolve_explicit_engine():
+    info = reg.resolve("deepgram", "stt", False, catalogue=_cat())
+    assert info.name == "deepgram"
+
+
+def test_resolve_unknown_engine_raises():
+    import pytest
+    with pytest.raises(reg.EngineNotFoundError):
+        reg.resolve("nope", "stt", False, catalogue=_cat())
+
+
+def test_resolve_unavailable_engine_raises():
+    import pytest
+    with pytest.raises(reg.EngineUnavailableError):
+        reg.resolve("whisper", "stt", False, catalogue=_cat())
+
+
+def test_resolve_capability_mismatch_raises():
+    import pytest
+    with pytest.raises(reg.CapabilityError):
+        reg.resolve("faster-whisper", "tts", False, catalogue=_cat())
+
+
+def test_resolve_private_refuses_cloud_engine():
+    import pytest
+    with pytest.raises(reg.PrivacyViolationError):
+        reg.resolve("deepgram", "stt", True, catalogue=_cat())
+
+
+def test_resolve_default_prefers_local(monkeypatch):
+    monkeypatch.delenv("RESONA_DEFAULT_ENGINE", raising=False)
+    info = reg.resolve(None, "stt", False, catalogue=_cat())
+    assert info.name == "faster-whisper"
+
+
+def test_resolve_default_honours_env(monkeypatch):
+    monkeypatch.setenv("RESONA_DEFAULT_ENGINE", "deepgram")
+    info = reg.resolve(None, "stt", False, catalogue=_cat())
+    assert info.name == "deepgram"
+
+
+def test_resolve_no_private_engine_for_tts_raises():
+    import pytest
+    with pytest.raises(reg.NoEngineError):
+        reg.resolve(None, "tts", True, catalogue=_cat())
