@@ -93,7 +93,7 @@ The engine container requires a GPU and is health-checked before the API starts.
 
 ### Local-only mode (no server)
 
-If no server is reachable, the CLI automatically spawns a local engine. The CLI now uses an in-process engine when an engine extra is installed (e.g. `resona-cli[faster-whisper]`). This avoids the subprocess spawn from earlier versions. If the extra isn't installed, the CLI falls back to spawning a local engine subprocess as before.
+If no server is reachable, the CLI automatically transcribes locally. The default install bundles the `faster-whisper` engine, so the CLI runs it in-process — no subprocess spawn, no extra to install.
 
 ```bash
 # Transcribe files -- starts a local engine automatically
@@ -284,12 +284,11 @@ When `RESONA_CLOUD_ENGINE` is set, `resona-api` routes jobs to the cloud provide
 
 | Persona | Command |
 |---------|---------|
-| HTTP client only | `uv tool install --from ./apps/resona-cli resona-cli` |
-| Record + submit | `uv tool install --from ./apps/resona-cli 'resona-cli[record]'` |
-| Live transcription | `uv tool install --from ./apps/resona-cli 'resona-cli[live,faster-whisper]'` |
-| Fully local | `uv tool install --from ./apps/resona-cli 'resona-cli[faster-whisper]'` |
+| Default (record, live, local faster-whisper) | `uv tool install --from ./apps/resona-cli resona-cli` |
+| Default + Whisper (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[whisper]'` |
+| Default + Voxtral (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[voxtral]'` |
 
-The `[faster-whisper]`, `[live]`, and `[record]` extras are torch-free and need no extra index. The `[whisper]`/`[voxtral]` extras pull a stable PyTorch build from the cu130 index; if `uv tool install` does not inherit the workspace's pytorch index, use `uv run resona` from inside the workspace, or `uv pip install --extra-index-url https://download.pytorch.org/whl/cu130 'resona-cli[whisper]'`.
+The default install is torch-free and needs no extra index — it includes the record/live TUIs and the `faster-whisper` engine. The `[whisper]`/`[voxtral]` extras pull a stable PyTorch build from the cu130 index; if `uv tool install` does not inherit the workspace's pytorch index, use `uv run resona` from inside the workspace, or `uv pip install --extra-index-url https://download.pytorch.org/whl/cu130 'resona-cli[whisper]'`.
 
 ## Configuration
 
