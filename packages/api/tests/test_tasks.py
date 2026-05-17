@@ -5,10 +5,9 @@ Key differences from ws-api tests:
 - Replacements are applied locally via PostprocessPipeline, NOT sent to the engine
 - job.transcript holds the raw engine text
 - job.md holds the postprocessed text (with replacements applied)
-- engine_client.transcribe() is called WITHOUT replacements parameter
+- engine_registry.run_stt() is called WITHOUT replacements parameter
 """
 import os
-from datetime import datetime
 from pathlib import Path
 from threading import Event
 from unittest.mock import MagicMock, patch
@@ -16,10 +15,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlmodel import Session
 
+from resona_api import engine_registry as reg
 from resona_api.db.engine import engine
 from resona_api.db.models import Job, JobStatus
 from resona_api.db.utils import register_job
-from resona_api.engine_client import EngineClient
 from resona_api.tasks_transcribe import TranscribeTask
 
 FILE_PATH = Path(os.environ.get("FILE_PATH", "/tmp"))
@@ -31,12 +30,19 @@ ASR_RESULT = {
     "segments": [],
 }
 
+_FAKE_INFO = reg.EngineInfo(
+    name="test-engine",
+    kind="local",
+    capabilities=["stt"],
+    private=True,
+    available=True,
+    models=[],
+    url="http://test-engine:9999",
+)
 
-def make_task(engine_client=None) -> TranscribeTask:
-    if engine_client is None:
-        engine_client = MagicMock(spec=EngineClient)
-        engine_client.transcribe.return_value = ASR_RESULT
-    return TranscribeTask(shutdown_event=Event(), engine_client=engine_client)
+
+def make_task() -> TranscribeTask:
+    return TranscribeTask(shutdown_event=Event())
 
 
 def write_audio_file(job_filename: str) -> Path:
@@ -47,8 +53,11 @@ def write_audio_file(job_filename: str) -> Path:
 
 def test_no_job_does_nothing():
     task = make_task()
-    task._process_next_job()
-    task.engine_client.transcribe.assert_not_called()
+    with patch.object(reg, "resolve") as resolve, \
+         patch.object(reg, "run_stt") as run_stt:
+        task._process_next_job()
+        resolve.assert_not_called()
+        run_stt.assert_not_called()
 
 
 def test_pending_job_becomes_completed():
@@ -58,6 +67,8 @@ def test_pending_job_becomes_completed():
 
     task = make_task()
     with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=ASR_RESULT),
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.update_job_attributes_from_result"),
         patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
@@ -93,11 +104,11 @@ def test_engine_error_marks_failed():
     job_id = result["id"]
     write_audio_file("audio2.wav")
 
-    failing_client = MagicMock(spec=EngineClient)
-    failing_client.transcribe.side_effect = RuntimeError("engine exploded")
-    task = make_task(engine_client=failing_client)
+    task = make_task()
 
     with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", side_effect=RuntimeError("engine exploded")),
         patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
         patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
     ):
@@ -109,20 +120,18 @@ def test_engine_error_marks_failed():
     assert "engine exploded" in (job.error_message or "")
 
 
-def test_engine_client_called_without_replacements():
-    """The engine client must NOT receive replacements — they are applied locally."""
+def test_run_stt_called_without_replacements():
+    """run_stt must NOT receive replacements — they are applied locally."""
     result = register_job("audio3.wav", "audio3.wav")
     write_audio_file("audio3.wav")
-    job_id = result["id"]
-
-    mock_client = MagicMock(spec=EngineClient)
-    mock_client.transcribe.return_value = ASR_RESULT
-    task = make_task(engine_client=mock_client)
 
     replacements = [{"name": "foo", "replacement": "bar"}]
     prompt = "my prompt"
 
+    task = make_task()
     with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=ASR_RESULT) as mock_run_stt,
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.update_job_attributes_from_result"),
         patch("resona_api.tasks_transcribe.get_active_replacements", return_value=replacements),
@@ -130,12 +139,12 @@ def test_engine_client_called_without_replacements():
     ):
         task._process_next_job()
 
-    mock_client.transcribe.assert_called_once()
-    _, kwargs = mock_client.transcribe.call_args
+    mock_run_stt.assert_called_once()
+    _, kwargs = mock_run_stt.call_args
     # Replacements must NOT be passed to the engine
     assert "replacements" not in kwargs
-    # initial_prompt should still be passed
-    assert kwargs["initial_prompt"] == prompt
+    # prompt should still be passed
+    assert kwargs["prompt"] == prompt
 
 
 def test_transcript_and_md_set_correctly():
@@ -146,14 +155,14 @@ def test_transcript_and_md_set_correctly():
 
     # Engine returns raw text without replacements applied
     raw_result = {"text": "foo baz", "language": "de", "segments": []}
-    mock_client = MagicMock(spec=EngineClient)
-    mock_client.transcribe.return_value = raw_result
-    task = make_task(engine_client=mock_client)
 
     # Replacement: "foo" -> "bar"
     replacements = [{"name": "foo", "replacement": "bar"}]
 
+    task = make_task()
     with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=raw_result),
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.get_active_replacements", return_value=replacements),
         patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
@@ -177,11 +186,11 @@ def test_md_equals_transcript_when_no_replacements():
     write_audio_file("audio5.wav")
 
     raw_result = {"text": "hello world", "language": "de", "segments": []}
-    mock_client = MagicMock(spec=EngineClient)
-    mock_client.transcribe.return_value = raw_result
-    task = make_task(engine_client=mock_client)
 
+    task = make_task()
     with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=raw_result),
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
         patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
@@ -204,6 +213,8 @@ def test_processes_oldest_job_first():
 
     task = make_task()
     with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=ASR_RESULT),
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.update_job_attributes_from_result"),
         patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
