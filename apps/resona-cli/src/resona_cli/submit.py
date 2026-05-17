@@ -13,12 +13,9 @@ def submit_files(
         ..., help="Audio files, glob patterns, or directories.", metavar="FILES..."),
     engine: Optional[str] = typer.Option(None, "--engine",
         help="Engine name to forward to the gateway."),
-    language: str = typer.Option("de", "--language",
-        help="Language hint (informational; stored on the job)."),
     translate: bool = typer.Option(False, "--translate",
         help="Request English translation instead of transcription."),
 ):
-    """Submit audio to the async job queue. Prints one result URL per file immediately."""
     files = _expand_inputs(inputs, recursive=False)
     if not files:
         typer.echo("No audio files found.", err=True)
