@@ -3,8 +3,7 @@ import os
 import typer
 
 from .engines import engines_app
-from .replacements import replacements_app
-from .prompts import prompts_app
+from .profiles import profiles_app
 from .watch import watch_directory
 from .transcribe import transcribe_files
 from .submit import submit_files
@@ -13,8 +12,7 @@ from .speech import speak
 app = typer.Typer(help="resona CLI")
 
 app.add_typer(engines_app, name="engines", help="Manage engine server addresses.")
-app.add_typer(replacements_app, name="replacements", help="Manage text replacement rules.")
-app.add_typer(prompts_app, name="prompts", help="Manage initial transcription prompts.")
+app.add_typer(profiles_app, name="profiles", help="Manage postprocessing profiles.")
 app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
 app.command("submit")(submit_files)
