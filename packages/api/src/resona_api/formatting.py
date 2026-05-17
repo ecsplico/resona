@@ -7,8 +7,13 @@ from .paths import MD_PATH
 log = logging.getLogger(__name__)
 
 
-def write_md_file(id: int, filename: str, md: str, keepfile: bool):
-    """Write a transcription result to a markdown file with metadata."""
+def write_md_file(id: int, filename: str, md: str, keepfile: bool,
+                  structured: str | None = None):
+    """Write a transcription result to a markdown file with metadata.
+
+    When `structured` is given (a JSON string), also write it as a `.json`
+    sidecar beside the `.md` file (same name, `.json` extension).
+    """
     p_match = re.compile(r"[Dd]okumentation von ([^\s]*)").search(md)
     patient = p_match.group(1) if p_match else ""
 
@@ -31,5 +36,9 @@ def write_md_file(id: int, filename: str, md: str, keepfile: bool):
             if keepfile and filename:
                 file.write(f"Audio: \n![[{filename}]]\n\n")
             file.write(md)
+        if structured:
+            json_filename = md_filename[:-3] + ".json"
+            with open(json_filename, "w", encoding="utf-8") as jf:
+                jf.write(structured)
     except IOError as e:
         log.error(f"Error writing markdown file {md_filename}: {e}")
