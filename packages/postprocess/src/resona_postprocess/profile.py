@@ -27,6 +27,16 @@ def _validate_step(step: dict, idx: int, extract_names: set[str]) -> None:
     if stype == "replacements":
         if "rules" not in step and "source" not in step:
             raise ProfileError(f"Step {idx}: replacements needs 'rules' or 'source'")
+        source = step.get("source")
+        if source is not None:
+            from pathlib import PurePosixPath, PureWindowsPath
+            s = str(source)
+            if (PurePosixPath(s).is_absolute() or PureWindowsPath(s).is_absolute()
+                    or ".." in PurePosixPath(s).parts or ".." in PureWindowsPath(s).parts):
+                raise ProfileError(
+                    f"Step {idx}: replacements 'source' must be a relative path "
+                    f"without '..' segments, got {source!r}"
+                )
         for rule in step.get("rules", []):
             pattern = rule.get("pattern", rule.get("name"))
             if pattern is None:
