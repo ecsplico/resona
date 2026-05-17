@@ -1,6 +1,6 @@
 # resona-client
 
-`resona-client` is the Python client library for talking to a resona-api server. It handles authentication, job submission, polling, and full CRUD for replacements and prompts. Engine configuration — which servers to connect to, auto-start rules, and cloud provider registrations — lives in `~/.resona/config.json` and is managed through `EngineConfig` and `EngineEntry`.
+`resona-client` is the Python client library for talking to a resona-api server. It handles authentication, job submission, polling, and full CRUD for postprocessing profiles. Engine configuration — which servers to connect to, auto-start rules, and cloud provider registrations — lives in `~/.resona/config.json` and is managed through `EngineConfig` and `EngineEntry`.
 
 ## Installation
 
@@ -23,7 +23,15 @@ client = ResonaClient.from_config()
 
 job = client.submit_job("recording.wav")
 result = client.wait_for_job(job["id"])
-print(result["md"])   # formatted transcript with replacements applied
+print(result["md"])   # formatted transcript after postprocessing pipeline
+
+# Submit with a named profile
+job = client.submit_job("recording.wav", profile="medical-de")
+
+# Submit with an inline profile
+import json
+profile_json = json.dumps({"name": "x", "steps": [{"type": "replacements", "rules": []}]})
+job = client.submit_job("recording.wav", profile=profile_json)
 ```
 
 ## Authentication
@@ -69,6 +77,31 @@ with open("out.mp3", "wb") as f:
 
 # List available engines
 engines = client.list_engines()
+```
+
+## Profile management
+
+```python
+# List all profiles stored on the server
+profiles = client.list_profiles()
+for p in profiles:
+    print(p["name"], p["description"])
+
+# Get the full JSON of a profile
+profile = client.get_profile("medical-de")
+
+# Upload a local profile to the server
+import json
+from pathlib import Path
+profile_data = json.loads(Path("my-profile.json").read_text())
+client.push_profile(profile_data)
+
+# Download a profile from the server
+profile = client.pull_profile("medical-de")
+Path("medical-de.json").write_text(json.dumps(profile, ensure_ascii=False, indent=2))
+
+# Delete a profile from the server
+client.delete_profile("old-profile")
 ```
 
 ## Engine configuration

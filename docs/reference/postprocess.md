@@ -1,12 +1,17 @@
 # resona-postprocess
 
-`resona-postprocess` is the composable postprocessing pipeline. It transforms raw engine output through an ordered chain of `str → str` steps before results reach the user. Out of the box it applies regex-based text replacements (German dictation commands, medical headings, name corrections). An optional LLM step can be added via `~/.resona/postprocess.json`.
+`resona-postprocess` is the composable postprocessing library. It transforms raw engine output
+through an ordered pipeline of steps driven by a **profile** — a JSON document that combines
+vocabulary hints for the ASR engine with `replacements`, `llm`, and `extract` steps.
 
-Postprocessing runs **after** the engine — never inside it. resona-api applies it when completing async jobs and when serving `/v1/audio/transcriptions`. `resona transcribe` applies it locally using `~/.resona/postprocess.json` (or bundled defaults).
+Postprocessing runs **after** the engine — never inside it. resona-api applies it when completing
+async jobs and when serving `/v1/audio/transcriptions`. `resona transcribe` applies it locally
+when no server is reachable.
 
-## Default replacements
+## Bundled default profile
 
-Bundled in `default_replacements.json`. Active out of the box — no configuration needed.
+`resona-postprocess` ships `profiles/default.json`. It is used automatically when no profile is
+specified and activates German medical dictation rules with no configuration needed.
 
 | Spoken | Written |
 |--------|---------|
@@ -17,74 +22,99 @@ Bundled in `default_replacements.json`. Active out of the box — no configurati
 | Klammer auf / Klammer zu | `(` / `)` |
 | Medikation, Verlauf, Procedere, ... | Section headings |
 
-Override by creating `~/.resona/replacements.json` with your own rules list.
-
-## Pipeline configuration
-
-For a full pipeline with LLM steps, create `~/.resona/postprocess.json`:
+## Profile format
 
 ```json
 {
+  "name": "my-profile",
+  "description": "Optional description",
+  "initial_prompt": ["phrase1", "phrase2"],
   "steps": [
-    {"type": "replacements", "source": "replacements.json"},
-    {
-      "type": "llm",
-      "name": "format",
-      "prompt": "Format this medical text into clean paragraphs.",
-      "model": "ollama/llama3"
-    }
+    {"type": "replacements", "rules": [{"pattern": "\\bKomma\\b", "replacement": ","}]},
+    {"type": "llm", "name": "format", "prompt": "Format this medical text.", "model": "gpt-4o-mini"},
+    {"type": "extract", "name": "codes", "prompt": "Return JSON {\"codes\": [...]} with ICD codes."}
   ]
 }
 ```
 
-Relative `source` paths resolve relative to `~/.resona/`. If `postprocess.json` does not exist, `build_pipeline_from_config()` falls back to `replacements.json` and then to the bundled defaults.
+See [Postprocessing Profiles](../guide/postprocessing.md) for the full format reference.
 
 ## Direct usage
 
 ```python
-from resona_postprocess.sources import build_pipeline_from_config
+from resona_postprocess.profile import resolve_profile, bundled_default
+from resona_postprocess.pipeline import build_pipeline, PostprocessResult
+
+# Use the bundled default profile
+profile = bundled_default()
+result: PostprocessResult = build_pipeline(profile).run("Hallo Komma wie geht es Ihnen Punkt")
+print(result.text)   # → "Hallo, wie geht es Ihnen."
+print(result.data)   # → {} (no extract steps in default profile)
+
+# Resolve a profile by name (from ~/.resona/profiles/ or bundled)
+profile = resolve_profile("default", "~/.resona/profiles/")
+result = build_pipeline(profile).run(raw_text)
+
+# Inline profile
+import json
+profile = resolve_profile(json.dumps({
+    "name": "x",
+    "steps": [{"type": "replacements", "rules": [{"pattern": "hello", "replacement": "GOODBYE"}]}]
+}), "/any/dir")
+result = build_pipeline(profile).run("hello world")
+print(result.text)   # → "GOODBYE world"
+
+# Apply replacements directly (no pipeline needed)
 from resona_postprocess.replacements import apply_replacements
-from resona_postprocess.pipeline import PostprocessPipeline
-
-# Build from config files (recommended)
-pipeline = build_pipeline_from_config()
-result = pipeline.run("Hallo Komma wie geht es Ihnen Punkt")
-# → "Hallo, wie geht es Ihnen."
-
-# Build manually
-pipeline = PostprocessPipeline()
-pipeline.add("clean", lambda t: t.strip())
-pipeline.add("replacements", lambda t: apply_replacements(t, my_rules))
-result = pipeline.run(raw_text)
-
-# Apply replacements directly
-rules = [{"name": "Komma", "replacement": ","}]
+rules = [{"pattern": "Komma", "replacement": ","}]
 text = apply_replacements("Hallo Komma", rules)
 # → "Hallo ,"
 ```
 
-## LLM step
-
-The LLM step uses [litellm](https://docs.litellm.ai/), which supports OpenAI, Ollama, Anthropic, and many other providers via a unified interface.
+## LLM functions
 
 ```python
-from resona_postprocess.llm import llm_postprocess
+from resona_postprocess.llm import llm_transform, llm_extract
 
-formatted = llm_postprocess(
+# Transform text via LLM
+formatted = llm_transform(
     "Befund Absatz Patient kommt zur Kontrolle",
     prompt="Format this medical dictation text.",
-    model="ollama/llama3",     # or "gpt-4o", "anthropic/claude-3-5-haiku-20241022", ...
-    api_base=None,
+    model="ollama/llama3",
+    api_base="http://localhost:11434",
+)
+
+# Extract structured data via LLM
+data = llm_extract(
+    "ICD-10 F32.1 und F41.0",
+    prompt="Return JSON {\"codes\": [...]} with ICD codes mentioned.",
+    model="gpt-4o-mini",
 )
 ```
 
-Set `RESONA_LLM_MODEL` and `RESONA_LLM_API_BASE` env vars to configure defaults without touching the config file.
+Set `RESONA_LLM_MODEL` and `RESONA_LLM_API_BASE` to configure defaults without changing code.
 
 ---
 
 ## Pipeline
 
 ::: resona_postprocess.pipeline.PostprocessPipeline
+
+::: resona_postprocess.pipeline.PostprocessResult
+
+::: resona_postprocess.pipeline.build_pipeline
+
+---
+
+## Profile
+
+::: resona_postprocess.profile.Profile
+
+::: resona_postprocess.profile.resolve_profile
+
+::: resona_postprocess.profile.bundled_default
+
+::: resona_postprocess.profile.list_profiles
 
 ---
 
@@ -96,12 +126,6 @@ Set `RESONA_LLM_MODEL` and `RESONA_LLM_API_BASE` env vars to configure defaults 
 
 ## LLM
 
-::: resona_postprocess.llm.llm_postprocess
+::: resona_postprocess.llm.llm_transform
 
----
-
-## Config
-
-::: resona_postprocess.sources.build_pipeline_from_config
-
-::: resona_postprocess.sources.load_replacements_from_file
+::: resona_postprocess.llm.llm_extract

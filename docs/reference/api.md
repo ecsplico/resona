@@ -1,6 +1,6 @@
 # resona-api
 
-resona-api is the central gateway service. It accepts audio uploads, manages an async job queue, stores replacements and initial prompts in SQLite, and exposes OpenAI-compatible `/v1/audio/*` routes that dispatch to local engine-servers or cloud providers.
+resona-api is the central gateway service. It accepts audio uploads, manages an async job queue, applies postprocessing profiles, and exposes OpenAI-compatible `/v1/audio/*` routes that dispatch to local engine-servers or cloud providers.
 
 - Default port: **7000**
 - Database: SQLite at `$DATA_PATH/resona.db`
@@ -46,6 +46,7 @@ Upload one or more audio files and register them for async transcription. Files 
 | `keep` | bool | no | Keep the audio file after transcription (default: `true`) |
 | `translate` | bool | no | Translate to English instead of transcribing (default: `false`) |
 | `engine` | string | no | Route this job to a specific engine by name |
+| `profile` | string | no | Profile name (resolved from `RESONA_PROFILES_DIR`) or inline JSON profile string. Omit to use the bundled `default` profile. |
 
 Response — array of job objects:
 
@@ -103,7 +104,9 @@ Returns an array of all job objects.
 | `id` | int | Auto-assigned job ID |
 | `status` | string | `pending`, `processing`, `completed`, or `failed` |
 | `transcript` | string\|null | Raw transcript text (set when completed) |
-| `md` | string\|null | Formatted transcript with replacements applied |
+| `md` | string\|null | Formatted transcript after postprocessing pipeline |
+| `structured` | string\|null | JSON output from any `extract` steps in the profile |
+| `profile` | string\|null | Profile name or inline JSON used for this job |
 | `language` | string\|null | Detected language code (e.g. `"de"`) |
 | `engine` | string\|null | Engine that handled the job |
 | `filename` | string | Server-side filename |
@@ -183,7 +186,7 @@ POST /v1/audio/transcriptions
 Content-Type: multipart/form-data
 ```
 
-OpenAI-compatible speech-to-text. Replacements from the DB are applied to the transcript before it is returned.
+OpenAI-compatible speech-to-text. A postprocessing profile is applied to the transcript before it is returned.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -195,6 +198,7 @@ OpenAI-compatible speech-to-text. Replacements from the DB are applied to the tr
 | `response_format` | string | no | `"json"` (default), `"text"`, or `"verbose_json"` |
 | `engine` | string | no | Engine name, or `"local"` to require a local engine |
 | `private` | bool | no | Refuse cloud engines (default: `false`) |
+| `profile` | string | no | Profile name or inline JSON; omit to use the `default` profile |
 
 `response_format` responses:
 
@@ -237,100 +241,52 @@ Returns raw audio bytes with the appropriate `Content-Type` header.
 
 ---
 
-### Replacements
+### Profiles
 
-Text replacement rules are regex patterns applied case-insensitively to every transcript (both the async job path and `/v1/audio/transcriptions`). They are stored in the DB and can be managed at runtime without restarting the server.
+Postprocessing profiles are JSON files that bundle an `initial_prompt` list and an ordered pipeline
+of steps (replacements, LLM formatting, structured extraction). Named profiles are stored in
+`RESONA_PROFILES_DIR` on the server. The bundled `default` profile applies German dictation
+replacements automatically.
 
-#### List replacements
+See [Postprocessing Profiles](../guide/postprocessing.md) for the profile file format.
+
+#### List profiles
 
 ```
-GET /replacements/
+GET /profiles/
 ```
 
-Returns an array of replacement objects.
+Returns an array of profile summaries:
 
 ```json
 [
-  {"id": 1, "name": "Komma", "replacement": ",", "active": true},
-  {"id": 2, "name": "Punkt", "replacement": ".", "active": true}
+  {"name": "default", "description": "Bundled German medical dictation defaults"},
+  {"name": "medical-de", "description": "German medical dictation with LLM formatting"}
 ]
 ```
 
-#### Add replacement
+#### Get profile
 
 ```
-POST /replacements/
+GET /profiles/{name}
+```
+
+Returns the full profile JSON. Returns `404` if not found.
+
+#### Create or replace profile
+
+```
+PUT /profiles/{name}
 Content-Type: application/json
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Regex pattern (case-insensitive) |
-| `replacement` | string | Substitution string |
+Upload a profile object. The `name` field in the body must match the URL `{name}`. Returns the
+stored profile.
 
-Returns `409` if the pattern already exists. Returns the created replacement object.
-
-#### Delete replacement
+#### Delete profile
 
 ```
-DELETE /replacements/{id}
-```
-
-Returns `{"ok": true}`. Returns `404` if not found.
-
----
-
-### Initial prompts
-
-Vocabulary hints sent to the engine as `initial_prompt`. Only one prompt can be active at a time; activating a prompt deactivates all others.
-
-#### List prompts
-
-```
-GET /prompts/
-```
-
-Returns an array of prompt objects:
-
-```json
-[
-  {"id": 1, "phrase": "Befund, Diagnose, Medikation", "active": true}
-]
-```
-
-#### Add prompt
-
-```
-POST /prompts/
-Content-Type: application/json
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `phrase` | string | Vocabulary hint text |
-
-Returns `409` if the phrase already exists.
-
-#### Activate prompt
-
-```
-PUT /prompts/{id}/activate
-```
-
-Sets the prompt active, deactivating all others. Returns `{"ok": true}`.
-
-#### Deactivate prompt
-
-```
-PUT /prompts/{id}/deactivate
-```
-
-Sets the prompt inactive without activating another. Returns `{"ok": true}`.
-
-#### Delete prompt
-
-```
-DELETE /prompts/{id}
+DELETE /profiles/{name}
 ```
 
 Returns `{"ok": true}`. Returns `404` if not found.

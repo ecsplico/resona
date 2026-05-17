@@ -12,7 +12,7 @@ resona/
 ├── uv.lock
 ├── docker-compose.resona.yml
 ├── apps/
-│   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, replacements, prompts, rec/live/ui TUIs)
+│   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
     ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
@@ -22,7 +22,7 @@ resona/
     ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers engine
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
     ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
-    ├── postprocess/        ← resona-postprocess: replacements + LLM pipeline
+    ├── postprocess/        ← resona-postprocess: profile-based postprocessing pipeline (replacements + LLM + extract)
     ├── api/                ← resona-api: job queue + DB + postprocessing + unified STT/TTS API, :7000
     └── client/             ← resona-client: httpx client library
 ```
@@ -104,37 +104,40 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 
 ### resona-postprocess
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
-- `llm.py` — `llm_postprocess(text, prompt, model, api_base)` via litellm
-- `pipeline.py` — `PostprocessPipeline`: composable `str → str` chain
-- `sources.py` — `build_pipeline_from_config()` reads `~/.resona/postprocess.json`, falls back to bundled defaults
-- `default_replacements.json` — bundled German dictation replacements (Komma, Punkt, Absatz, medical headings, name corrections)
+- `llm.py` — `llm_transform(text, prompt, ...)` and `llm_extract(text, prompt, ...)` via litellm; `llm_postprocess` is a deprecated alias for `llm_transform`
+- `pipeline.py` — `PostprocessPipeline`: composable step chain; `PostprocessResult{text, data}` carries both formatted text and structured extraction data; `build_pipeline(profile)` constructs a runnable pipeline from a `Profile`
+- `profile.py` — `Profile` dataclass (name, description, initial_prompt, steps); `resolve_profile(ref, profiles_dir)` accepts a name, inline JSON string, file path, or `Profile`/dict; `list_profiles(dir)`, `bundled_default()`
+- `profiles/default.json` — bundled default profile with German dictation replacements (Komma, Punkt, Absatz, medical headings, name corrections)
+- `default_replacements.json` — bundled replacement rules used by the default profile
 
 ### resona-api
-- `app.py` — FastAPI lifespan: creates DB, starts `TranscribeTask`, instantiates `EngineClient`
-- `endpoints.py` — REST routes: jobs, replacements, prompts
-- `audio_routes.py` (NEW) — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`
-- `engine_registry.py` (NEW) — multi-backend catalogue: probes local engine `/health` endpoints, checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)`, error hierarchy
-- `tasks_transcribe.py` — background thread: dequeues PENDING jobs, calls engine, **applies postprocessing locally**
+- `app.py` — FastAPI lifespan: creates DB, starts `TranscribeTask`, instantiates `EngineClient`; runs `migration.py` on startup to export any legacy DB tables to `default.json`
+- `endpoints.py` — REST routes: jobs
+- `profiles_routes.py` — CRUD routes for profile files: `GET /profiles/`, `GET /profiles/{name}`, `PUT /profiles/{name}`, `DELETE /profiles/{name}`
+- `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`; accepts optional `profile` field
+- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)`, error hierarchy
+- `tasks_transcribe.py` — background thread: dequeues PENDING jobs, resolves the job's profile via `resolve_profile`, calls engine with `profile.initial_prompt_string()`, **applies profile pipeline** after engine returns
 - `engine_client.py` — `EngineClient.transcribe()`: POSTs to engine (no replacements sent)
-- `db/models.py` — `Job`, `Replacement`, `InitialPrompt` SQLModel tables; `Job` has an `engine: Optional[str]` field recording which engine handled the job
+- `migration.py` — on startup, exports legacy `Replacement`/`InitialPrompt` DB rows to a `default.json` profile file in `RESONA_PROFILES_DIR`; idempotent
+- `db/models.py` — `Job` SQLModel table; `Job` has `engine`, `profile`, `profile_config`, `structured` fields
 - `db/engine.py` — SQLite engine + `create_db_and_tables()`
-- `db/utils.py` — `register_job()`, `get_active_replacements()`, `get_active_initial_prompts_string()`
-- `db/presets.py` — default replacements and initial prompts seeded on first DB creation
+- `db/utils.py` — `register_job()`
 - `formatting.py` — writes markdown output files
-- `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH` resolved from env
+- `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH`, `PROFILES_PATH` resolved from env
 - `auth.py` — optional `RESONA_API_KEY` auth
 
 ### resona-client
-- `client.py` — `ResonaClient`: all resona-api HTTP operations. Reads `RESONA_API_URL` / `RESONA_API_KEY`.
-- `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_private`; `EngineEntry`: per-entry `type` (`resona-api` or `cloud`), `provider`, `model`, `options`, `private`; `resolve_engine(private_only=False)` — walks priority-ordered entries, optionally skipping non-private ones
+- `client.py` — `ResonaClient`: all resona-api HTTP operations. Reads `RESONA_API_URL` / `RESONA_API_KEY`. Includes profile CRUD methods (`list_profiles`, `get_profile`, `push_profile`, `pull_profile`, `delete_profile`) and a `profile` argument on `submit_job` and `create_transcription`.
+- `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_profile`, `default_private`; `EngineEntry`: per-entry `type` (`resona-api` or `cloud`), `provider`, `model`, `options`, `private`; `resolve_engine(private_only=False)` — walks priority-ordered entries, optionally skipping non-private ones
 
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
-- `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`
-- `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; `--engine NAME` unified selector (built-in local engine, config.json server entry, or cloud entry); `--private`/`--no-private` to require a private engine; submits to resona-api, calls cloud provider, or falls back to a local engine
+- `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`; accepts `--profile`
+- `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; `--engine NAME` unified selector (built-in local engine, config.json server entry, or cloud entry); `--private`/`--no-private` to require a private engine; `--profile NAME` or inline JSON profile; submits to resona-api, calls cloud provider, or falls back to a local engine
 - `engine.py` — `Engine` Protocol + `RemoteEngine` (HTTP) + `InProcessEngine` (direct asr-core call) + `CloudEngine` (wraps an `EngineEntry` of type `cloud`; calls `resona_cloud_stt` provider directly); used by transcribe.
 - `local_engine.py` — `LocalEngine`: subprocess-based fallback for transcribe when InProcessEngine extras aren't installed.
-- `engines.py`, `replacements.py`, `prompts.py` — CRUD subcommands; `engines add --type cloud --provider <name>` registers cloud entries
+- `engines.py` — `resona engines` CRUD subcommands; `engines add --type cloud --provider <name>` registers cloud entries
+- `profiles.py` — `resona profiles` subcommand: `list`, `show`, `push`, `pull`, `delete` for server-side profile management
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
 - `live_ui.py` — `WSLiveApp`: live transcription TUI
 - `ui.py` — `WSUIApp`: record-and-transcribe TUI
@@ -171,40 +174,72 @@ Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (fo
 ### Server path
 
 ```
-Client → POST /jobs → resona-api saves file, registers PENDING job
+Client → POST /jobs (profile=<name|inline JSON>) → resona-api saves file, registers PENDING job
 resona-api TranscribeTask polls PENDING jobs →
-  fetches initial_prompt from DB →
-  calls EngineClient.transcribe(filepath, language, initial_prompt) →
+  resolves profile via resolve_profile(job.profile or "default", PROFILES_PATH) →
+  calls EngineClient.transcribe(filepath, language, profile.initial_prompt_string()) →
     POSTs multipart to engine POST /transcribe (no replacements) →
   engine returns {text, language, segments} →
-  resona-api builds PostprocessPipeline from DB replacements →
-  md = pipeline.run(text) →
+  result = build_pipeline(profile).run(text) →
+  stores result.text as job.md, result.data as job.structured →
   writes transcript + md to Job row, sets status COMPLETED
 Client → GET /job/{id} → sees COMPLETED job with transcript + md
 ```
 
+Profile may be: a profile name (resolved from RESONA_PROFILES_DIR), an inline JSON string, or omitted (uses the bundled `default` profile).
+
 ### Local fallback path
 
 ```
-resona transcribe ./audio/ --engine voxtral
+resona transcribe ./audio/ --engine voxtral --profile my-profile
   no server reachable →
   resolves engine: --engine flag → config.json default_engine → "faster-whisper"
+  resolves profile: --profile flag → config.json default_profile → bundled "default"
   spawns: uv run resona-engine-voxtral on a free port
   waits for /health →
   POSTs each audio file to local engine →
   engine returns {text, language, segments} →
-  builds PostprocessPipeline from ~/.resona/postprocess.json (or bundled defaults) →
-  md = pipeline.run(text) →
+  result = build_pipeline(profile).run(text) →
   writes transcript to output file
 ```
 
 ## Postprocessing
 
-Postprocessing is a composable pipeline of `str → str` steps applied **after** the engine returns raw text.
+Postprocessing is driven by **profiles**. A profile is a JSON file (or inline JSON string) that bundles an `initial_prompt` list and an ordered list of pipeline steps. Profiles replace the old DB-backed `Replacement`/`InitialPrompt` tables.
 
-### Default replacements
+### Profile file format
 
-Bundled in `resona_postprocess/default_replacements.json` and active out of the box. Includes German dictation commands:
+```json
+{
+  "name": "my-profile",
+  "description": "German medical dictation with LLM formatting",
+  "initial_prompt": ["Befund", "Diagnose", "Medikation"],
+  "steps": [
+    {
+      "type": "replacements",
+      "rules": [
+        {"pattern": "\\bKomma\\b", "replacement": ","},
+        {"pattern": "\\bPunkt\\b",  "replacement": "."}
+      ]
+    },
+    {
+      "type": "llm",
+      "name": "format",
+      "prompt": "Format this medical dictation as a structured clinical note.",
+      "model": "ollama/llama3"
+    }
+  ]
+}
+```
+
+Step types:
+- `replacements` — regex rules applied case-insensitively. Supply `rules` (inline array) or `source` (path to a JSON rules file).
+- `llm` — sends text to a language model via litellm; returns transformed text.
+- `extract` — sends text to a language model and returns structured JSON data stored in `job.structured`.
+
+### Bundled default profile
+
+`profiles/default.json` is bundled with `resona-postprocess`. It includes German dictation commands:
 
 | Spoken | Written |
 |--------|---------|
@@ -216,20 +251,21 @@ Bundled in `resona_postprocess/default_replacements.json` and active out of the 
 
 Plus medical section headings (Verlauf, Medikation, Psychopathologischer Befund, Procedere) and name corrections.
 
-### Customizing
+### Using profiles
 
-Override by creating `~/.resona/replacements.json`. Or for a full pipeline with LLM steps, create `~/.resona/postprocess.json`:
+Server-side: pass `profile=<name>` or `profile=<inline JSON>` when submitting a job via `POST /jobs` or `POST /v1/audio/transcriptions`. Named profiles are loaded from `RESONA_PROFILES_DIR` (default `<DATA_PATH>/profiles/`); the bundled `default` profile is used when none is specified.
 
-```json
-{
-  "steps": [
-    {"type": "replacements", "source": "replacements.json"},
-    {"type": "llm", "name": "format", "prompt": "Format this medical text.", "model": "ollama/llama3"}
-  ]
-}
-```
+CLI: `resona transcribe ./audio/ --profile my-profile` or `resona transcribe ./audio/ --profile '{"name":"x","steps":[...]}'`
 
-Relative paths in `source` resolve relative to the config directory (`~/.resona/`).
+Manage server-side profiles with `resona profiles list|show|push|pull|delete`.
+
+### Env vars for LLM steps
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for `llm`/`extract` steps that do not specify `model` |
+| `RESONA_LLM_API_BASE` | (unset) | Custom API base URL (e.g. local Ollama) |
+| `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` (server) / `~/.resona/profiles/` (CLI) | Directory where named profile files are stored |
 
 ## Running in development
 

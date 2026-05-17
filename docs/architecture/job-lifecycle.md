@@ -5,24 +5,23 @@ This page traces what happens to an audio file from the moment it is submitted u
 ## Server path
 
 ```
-Client → POST /jobs (multipart: audio file)
+Client → POST /jobs (multipart: audio file; optional profile=<name|inline JSON>)
   resona-api:
     saves file to FILE_PATH/
-    creates Job(status=PENDING) in SQLite
+    creates Job(status=PENDING, profile=...) in SQLite
     returns job dict immediately (non-blocking)
 
 TranscribeTask (background thread, polls every 1 s):
   finds oldest PENDING job
   sets status = PROCESSING
-  fetches active initial_prompt from DB
-  calls EngineClient.transcribe(filepath, language, prompt)
+  resolves profile via resolve_profile(job.profile or "default", RESONA_PROFILES_DIR)
+  calls EngineClient.transcribe(filepath, language, profile.initial_prompt_string())
     → POSTs multipart to engine POST /transcribe
     → engine loads audio via ffmpeg (pipe mode), runs inference
     → returns {text, language, segments}   ← raw, no replacements
-  fetches active replacements from DB
-  builds PostprocessPipeline
-  md = pipeline.run(text)
-  writes md to Job row
+  result = build_pipeline(profile).run(text)
+  writes result.text as job.md
+  writes result.data (structured JSON) as job.structured
   writes .md file to MD_PATH/
   sets status = COMPLETED (or FAILED on error)
 
@@ -45,7 +44,7 @@ PENDING → PROCESSING → COMPLETED
 
 ### TranscribeTask behaviour
 
-`TranscribeTask` is a daemon thread started during the FastAPI lifespan event. It polls the SQLite database every second for the oldest `PENDING` job and processes one job at a time. If the engine call or postprocessing raises an exception, the job is marked `FAILED` and the loop continues with the next job.
+`TranscribeTask` is a daemon thread started during the FastAPI lifespan event. It polls the SQLite database every second for the oldest `PENDING` job and processes one job at a time. The job's `profile` field (a name or inline JSON string) is resolved to a `Profile` object; if resolution fails the bundled `default` profile is used. If the engine call or postprocessing raises an exception, the job is marked `FAILED` and the loop continues with the next job.
 
 ### What is stored in each Job row
 
@@ -56,8 +55,11 @@ PENDING → PROCESSING → COMPLETED
 | `status` | enum | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
 | `language` | str or null | Detected or requested language code |
 | `engine` | str or null | Name of the engine that handled this job |
+| `profile` | str or null | Profile name or inline JSON used for postprocessing (null = default) |
+| `profile_config` | str or null | JSON snapshot of the resolved profile stored with the job |
 | `transcript` | str or null | Raw text returned by the engine |
 | `md` | str or null | Postprocessed Markdown output |
+| `structured` | str or null | JSON output from any `extract` steps in the profile |
 | `created_at` | datetime | Submission timestamp |
 | `updated_at` | datetime | Last status-change timestamp |
 
