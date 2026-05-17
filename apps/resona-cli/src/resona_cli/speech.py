@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import typer
 
 from resona_client.client import ResonaClient
@@ -49,6 +50,9 @@ def speak(
         if engine:
             kwargs["engine"] = engine
         audio = client.create_speech(text, **kwargs)
+    except httpx.HTTPStatusError as e:
+        typer.echo(f"Error {e.response.status_code}: {e.response.text}", err=True)
+        raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -68,13 +72,9 @@ def speak(
 
 def _play_audio(data: bytes, fmt: str) -> None:
     """Pipe audio bytes to the first available player."""
-    for cmd in (
-        ["mpv", "--no-video", "--really-quiet", "-"],
-        ["ffplay", "-nodisp", "-autoexit", "-i", "pipe:0"],
-    ):
-        if shutil.which(cmd[0]):
-            subprocess.run(cmd, input=data, check=False)
-            return
+    if shutil.which("aplay"):
+        subprocess.run(["aplay", "-q", "-"], input=data, check=False)
+        return
     if shutil.which("afplay"):
         with tempfile.NamedTemporaryFile(suffix=f".{fmt}", delete=False) as f:
             f.write(data)
@@ -85,4 +85,7 @@ def _play_audio(data: bytes, fmt: str) -> None:
             import os
             os.unlink(tmp)
         return
-    typer.echo("Warning: no audio player found (tried mpv, ffplay, afplay)", err=True)
+    if shutil.which("mpv"):
+        subprocess.run(["mpv", "--no-video", "--really-quiet", "-"], input=data, check=False)
+        return
+    typer.echo("Warning: no audio player found (tried aplay, afplay, mpv)", err=True)

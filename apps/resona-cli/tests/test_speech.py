@@ -80,6 +80,7 @@ def test_speech_http_error_exits_nonzero(tmp_path, monkeypatch):
         result = runner.invoke(app, ["speech", "hi"])
 
     assert result.exit_code != 0
+    assert "bad engine" in result.output
 
 
 def test_speech_no_server_exits_nonzero():
@@ -95,9 +96,13 @@ def test_speech_play_flag_calls_player(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     mock_client = _make_speech_client()
 
+    # Simulate only aplay available (first in spec order)
+    def which_aplay_only(name):
+        return "/usr/bin/aplay" if name == "aplay" else None
+
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("shutil.which", return_value="/usr/bin/mpv"),
+        patch("shutil.which", side_effect=which_aplay_only),
         patch("subprocess.run") as mock_run,
     ):
         result = runner.invoke(app, ["speech", "hi", "--play"])
@@ -105,7 +110,7 @@ def test_speech_play_flag_calls_player(tmp_path, monkeypatch):
     assert result.exit_code == 0
     mock_run.assert_called_once()
     cmd = mock_run.call_args.args[0]
-    assert cmd[0] == "mpv"
+    assert cmd[0] == "aplay"
 
 
 def test_speech_play_no_player_warns(tmp_path, monkeypatch):
