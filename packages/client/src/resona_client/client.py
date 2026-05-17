@@ -138,7 +138,8 @@ class ResonaClient:
         """Transcribe audio synchronously via the gateway. POST /v1/audio/transcriptions
 
         Returns:
-            Dict with keys ``text``, ``language``, ``segments``.
+            Dict with key ``text`` (default "json" format).
+            With ``response_format="verbose_json"``, returns ``text``, ``language``, ``duration``, ``segments``.
         """
         audio_path = Path(audio_path)
         data: dict = {
