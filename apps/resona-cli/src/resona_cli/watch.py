@@ -6,23 +6,13 @@ import typer
 import httpx
 
 from .local_engine import LocalEngine
+from .profiles import resolve_profile_arg as _resolve_profile_arg
 from resona_postprocess.profile import resolve_profile, ProfileError
 from resona_postprocess.pipeline import build_pipeline
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
 _PROFILES_DIR = Path.home() / ".resona" / "profiles"
-
-
-def _resolve_profile_arg(profile_arg: Optional[str]) -> Optional[str]:
-    """If profile_arg is a path to an existing .json file, read and return its text.
-    Otherwise return the name string as-is (or None)."""
-    if profile_arg is None:
-        return None
-    p = Path(profile_arg)
-    if p.suffix == ".json" and p.exists():
-        return p.read_text(encoding="utf-8")
-    return profile_arg
 
 
 def watch_directory(

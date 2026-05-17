@@ -1,11 +1,29 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 import typer
 
 from resona_client.client import ResonaClient
 
 profiles_app = typer.Typer(no_args_is_help=True)
+
+
+def resolve_profile_arg(profile_arg: Optional[str]) -> Optional[str]:
+    """Resolve a --profile argument to a profile name or inline JSON.
+
+    If *profile_arg* is a path to an existing ``.json`` file, the file is read
+    and its text content is returned (so the caller can forward raw JSON to the
+    server or pass it to a local pipeline).  Otherwise the value is returned
+    unchanged — a bare name like ``"medical"`` stays ``"medical"``, and
+    ``None`` stays ``None``.
+    """
+    if profile_arg is None:
+        return None
+    p = Path(profile_arg)
+    if p.suffix == ".json" and p.exists():
+        return p.read_text(encoding="utf-8")
+    return profile_arg
 
 
 def _client() -> ResonaClient:
