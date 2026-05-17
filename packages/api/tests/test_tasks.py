@@ -1,12 +1,15 @@
 """Tests for resona_api.tasks_transcribe.TranscribeTask._process_next_job.
 
-Key differences from ws-api tests:
-- Engine returns {text, language, segments} — no 'md' key (postprocessing is local)
-- Replacements are applied locally via PostprocessPipeline, NOT sent to the engine
+Key design after the profile refactor:
+- Engine is called with an initial_prompt derived from the profile
+- Postprocessing is done via the profile pipeline (build_pipeline)
 - job.transcript holds the raw engine text
-- job.md holds the postprocessed text (with replacements applied)
+- job.md holds the postprocessed text
+- job.structured holds JSON-encoded structured data (extract steps)
+- job.profile_config holds the resolved profile snapshot as JSON
 - engine_registry.run_stt() is called WITHOUT replacements parameter
 """
+import json
 import os
 from pathlib import Path
 from threading import Event
@@ -71,9 +74,12 @@ def test_pending_job_becomes_completed():
         patch.object(reg, "run_stt", return_value=ASR_RESULT),
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.update_job_attributes_from_result"),
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
+        patch("resona_api.tasks_transcribe.build_pipeline") as mock_bp,
     ):
+        mock_result = MagicMock()
+        mock_result.text = "raw text"
+        mock_result.data = {}
+        mock_bp.return_value.run.return_value = mock_result
         task._process_next_job()
 
     with Session(engine) as session:
@@ -87,11 +93,7 @@ def test_missing_audio_file_marks_failed():
     # Don't create the file
 
     task = make_task()
-    with (
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
-    ):
-        task._process_next_job()
+    task._process_next_job()
 
     with Session(engine) as session:
         job = session.get(Job, job_id)
@@ -109,8 +111,6 @@ def test_engine_error_marks_failed():
     with (
         patch.object(reg, "resolve", return_value=_FAKE_INFO),
         patch.object(reg, "run_stt", side_effect=RuntimeError("engine exploded")),
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
     ):
         task._process_next_job()
 
@@ -121,12 +121,14 @@ def test_engine_error_marks_failed():
 
 
 def test_run_stt_called_without_replacements():
-    """run_stt must NOT receive replacements — they are applied locally."""
-    result = register_job("audio3.wav", "audio3.wav")
+    """run_stt must NOT receive replacements — they are applied locally via pipeline."""
+    result = register_job("audio3.wav", "audio3.wav",
+                          profile=json.dumps({
+                              "name": "test",
+                              "initial_prompt": ["Befund"],
+                              "steps": [],
+                          }))
     write_audio_file("audio3.wav")
-
-    replacements = [{"name": "foo", "replacement": "bar"}]
-    prompt = "my prompt"
 
     task = make_task()
     with (
@@ -134,75 +136,20 @@ def test_run_stt_called_without_replacements():
         patch.object(reg, "run_stt", return_value=ASR_RESULT) as mock_run_stt,
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.update_job_attributes_from_result"),
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=replacements),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=prompt),
+        patch("resona_api.tasks_transcribe.build_pipeline") as mock_bp,
     ):
+        mock_result = MagicMock()
+        mock_result.text = "raw text"
+        mock_result.data = {}
+        mock_bp.return_value.run.return_value = mock_result
         task._process_next_job()
 
     mock_run_stt.assert_called_once()
     _, kwargs = mock_run_stt.call_args
     # Replacements must NOT be passed to the engine
     assert "replacements" not in kwargs
-    # prompt should still be passed
-    assert kwargs["prompt"] == prompt
-
-
-def test_transcript_and_md_set_correctly():
-    """job.transcript = raw engine text; job.md = postprocessed with replacements."""
-    result = register_job("audio4.wav", "audio4.wav")
-    job_id = result["id"]
-    write_audio_file("audio4.wav")
-
-    # Engine returns raw text without replacements applied
-    raw_result = {"text": "foo baz", "language": "de", "segments": []}
-
-    # Replacement: "foo" -> "bar"
-    replacements = [{"name": "foo", "replacement": "bar"}]
-
-    task = make_task()
-    with (
-        patch.object(reg, "resolve", return_value=_FAKE_INFO),
-        patch.object(reg, "run_stt", return_value=raw_result),
-        patch("resona_api.tasks_transcribe.write_md_file"),
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=replacements),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
-    ):
-        task._process_next_job()
-
-    with Session(engine) as session:
-        job = session.get(Job, job_id)
-
-    assert job.status == JobStatus.COMPLETED
-    # Raw transcript from engine
-    assert job.transcript == "foo baz"
-    # Postprocessed md with replacement applied
-    assert job.md == "bar baz"
-
-
-def test_md_equals_transcript_when_no_replacements():
-    """When no replacements are configured, md should equal the raw transcript."""
-    result = register_job("audio5.wav", "audio5.wav")
-    job_id = result["id"]
-    write_audio_file("audio5.wav")
-
-    raw_result = {"text": "hello world", "language": "de", "segments": []}
-
-    task = make_task()
-    with (
-        patch.object(reg, "resolve", return_value=_FAKE_INFO),
-        patch.object(reg, "run_stt", return_value=raw_result),
-        patch("resona_api.tasks_transcribe.write_md_file"),
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
-    ):
-        task._process_next_job()
-
-    with Session(engine) as session:
-        job = session.get(Job, job_id)
-
-    assert job.status == JobStatus.COMPLETED
-    assert job.transcript == "hello world"
-    assert job.md == "hello world"
+    # The profile provides "Befund" as the initial prompt
+    assert kwargs["prompt"] == "Befund"
 
 
 def test_processes_oldest_job_first():
@@ -217,9 +164,12 @@ def test_processes_oldest_job_first():
         patch.object(reg, "run_stt", return_value=ASR_RESULT),
         patch("resona_api.tasks_transcribe.write_md_file"),
         patch("resona_api.tasks_transcribe.update_job_attributes_from_result"),
-        patch("resona_api.tasks_transcribe.get_active_replacements", return_value=[]),
-        patch("resona_api.tasks_transcribe.get_active_initial_prompts_string", return_value=""),
+        patch("resona_api.tasks_transcribe.build_pipeline") as mock_bp,
     ):
+        mock_result = MagicMock()
+        mock_result.text = "raw text"
+        mock_result.data = {}
+        mock_bp.return_value.run.return_value = mock_result
         task._process_next_job()
 
     with Session(engine) as session:
@@ -227,3 +177,51 @@ def test_processes_oldest_job_first():
         j2 = session.get(Job, r2["id"])
     assert j1.status == JobStatus.COMPLETED
     assert j2.status == JobStatus.PENDING
+
+
+def test_profile_pipeline_replacements_and_extract():
+    """Profile pipeline: replacements applied to job.md, extract stored in
+    job.structured, and profile_config snapshot persisted."""
+    inline = json.dumps({
+        "name": "t",
+        "initial_prompt": ["Befund"],
+        "steps": [
+            {"type": "replacements", "rules": [{"pattern": "Komma", "replacement": ","}]},
+            {"type": "extract", "name": "f", "prompt": "extract"},
+        ],
+    })
+
+    result = register_job("audio_profile.wav", "audio_profile.wav", profile=inline)
+    job_id = result["id"]
+    write_audio_file("audio_profile.wav")
+
+    raw_result = {"text": "Hallo Komma Welt", "language": "de", "segments": []}
+
+    # llm_extract is called internally by build_pipeline when the extract step runs;
+    # patch it at the source module so the pipeline picks it up.
+    extract_return = {"f": "some value"}
+
+    task = make_task()
+    with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=raw_result),
+        patch("resona_api.tasks_transcribe.write_md_file"),
+        patch("resona_postprocess.pipeline.llm_extract", return_value=extract_return) as mock_extract,
+    ):
+        task._process_next_job()
+
+    with Session(engine) as session:
+        job = session.get(Job, job_id)
+
+    assert job.status == JobStatus.COMPLETED
+    # replacements step: "Komma" → ","
+    assert "," in job.md
+    assert "Komma" not in job.md
+    # extract step: structured data populated
+    assert job.structured is not None
+    structured = json.loads(job.structured)
+    assert "f" in structured
+    # profile_config snapshot persisted
+    assert job.profile_config is not None
+    pc = json.loads(job.profile_config)
+    assert pc["name"] == "t"

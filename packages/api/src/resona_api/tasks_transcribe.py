@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from threading import Thread
@@ -5,16 +6,15 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
-from resona_postprocess.pipeline import PostprocessPipeline
-from resona_postprocess.replacements import apply_replacements
+from resona_postprocess.pipeline import build_pipeline
+from resona_postprocess.profile import resolve_profile, ProfileError
 
 from . import engine_registry as reg
 from .formatting import write_md_file
 from .utils import update_job_attributes_from_result
 from .db.models import Job, JobStatus
 from .db.engine import engine
-from .db.utils import get_active_replacements, get_active_initial_prompts_string
-from .paths import FILE_PATH
+from .paths import FILE_PATH, PROFILES_PATH
 
 log = logging.getLogger(__name__)
 
@@ -59,30 +59,36 @@ class TranscribeTask(Thread):
                 if not os.path.exists(filepath):
                     raise FileNotFoundError(f"Audio file not found: {filepath}")
 
-                initial_prompt = get_active_initial_prompts_string()
+                try:
+                    profile = resolve_profile(job.profile or "default", PROFILES_PATH)
+                except ProfileError as e:
+                    log.warning("Job %s: profile %r invalid (%s); using default",
+                                job.id, job.profile, e)
+                    profile = resolve_profile("default", PROFILES_PATH)
+
+                job.profile_config = json.dumps(profile.to_dict(), ensure_ascii=False)
+
                 info = reg.resolve(job.engine or None, "stt", private=False)
                 asr_result = reg.run_stt(
                     info,
                     filepath,
                     language="de",
-                    prompt=initial_prompt,
+                    prompt=profile.initial_prompt_string(),
                     task="translate" if job.translate else "transcribe",
                 )
                 log.info(f"Job {job.id}: ASR completed via '{info.name}'")
 
                 update_job_attributes_from_result(job, asr_result)
 
-                replacements = get_active_replacements()
-                pipeline = PostprocessPipeline()
-                if replacements:
-                    pipeline.add(
-                        "replacements",
-                        lambda t, r=replacements: apply_replacements(t, r),
-                    )
-                job.md = pipeline.run(job.transcript)
+                result = build_pipeline(profile).run(job.transcript)
+                job.md = result.text
+                job.structured = (
+                    json.dumps(result.data, ensure_ascii=False) if result.data else None
+                )
 
                 try:
-                    write_md_file(job.id, job.filename, job.md, job.keepfile)
+                    write_md_file(job.id, job.filename, job.md, job.keepfile,
+                                  structured=job.structured)
                     log.info(f"Job {job.id}: wrote MD file")
                 except Exception as e_md:
                     log.error(f"Job {job.id}: failed to write MD file: {e_md}")
