@@ -113,3 +113,16 @@ def test_list_profiles(tmp_path):
         {"name": "a", "description": "AA", "steps": []}))
     out = list_profiles(tmp_path)
     assert {"name": "a", "description": "AA"} in out
+
+
+def test_from_dict_rejects_source_path_traversal():
+    data = _ok_profile()
+    data["steps"][0] = {"type": "replacements", "source": "../../../etc/x.json"}
+    with pytest.raises(ProfileError, match="source"):
+        Profile.from_dict(data)
+
+
+def test_from_dict_allows_plain_source_filename():
+    data = _ok_profile()
+    data["steps"][0] = {"type": "replacements", "source": "default_replacements.json"}
+    Profile.from_dict(data)  # must not raise
