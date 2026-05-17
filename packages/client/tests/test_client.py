@@ -254,3 +254,44 @@ def test_remove_prompt(client):
 def test_context_manager():
     with ResonaClient(base_url=BASE) as c:
         assert c.base_url == BASE
+
+
+# ── v1 Audio & Engine routes ──────────────────────────────────────────────────
+
+def test_list_engines(client):
+    with respx.mock:
+        respx.get(f"{BASE}/v1/engines").mock(
+            return_value=httpx.Response(200, json={
+                "engines": [{"name": "faster-whisper", "kind": "local",
+                              "capabilities": ["stt"], "private": True,
+                              "available": True, "models": ["large-v3"],
+                              "url": "http://localhost:7001", "provider": None}],
+                "default": "faster-whisper",
+            })
+        )
+        result = client.list_engines()
+    assert "engines" in result
+    assert result["engines"][0]["name"] == "faster-whisper"
+
+
+def test_create_transcription(client, audio_file):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/audio/transcriptions").mock(
+            return_value=httpx.Response(200, json={
+                "text": "hello world", "language": "de", "segments": []
+            })
+        )
+        result = client.create_transcription(audio_file, language="de")
+    assert result["text"] == "hello world"
+
+
+def test_create_speech(client):
+    fake_audio = b"\xff\xfb\x90\x00" * 100  # fake mp3 bytes
+    with respx.mock:
+        respx.post(f"{BASE}/v1/audio/speech").mock(
+            return_value=httpx.Response(200, content=fake_audio,
+                                        headers={"content-type": "audio/mpeg"})
+        )
+        result = client.create_speech("hello", voice="nova")
+    assert isinstance(result, bytes)
+    assert len(result) > 0

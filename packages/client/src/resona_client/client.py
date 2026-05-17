@@ -76,14 +76,18 @@ class ResonaClient:
         filepath: Path | str,
         keep: bool = True,
         translate: bool = False,
+        engine: Optional[str] = None,
     ) -> dict:
         """Upload an audio file and register it for async transcription. POST /jobs"""
         filepath = Path(filepath)
+        data: dict = {"keep": str(keep).lower(), "translate": str(translate).lower()}
+        if engine:
+            data["engine"] = engine
         with open(filepath, "rb") as f:
             resp = self._client.post(
                 f"{self.base_url}/jobs",
                 files={"audio_files": (filepath.name, f, "audio/wav")},
-                data={"keep": str(keep).lower(), "translate": str(translate).lower()},
+                data=data,
             )
         resp.raise_for_status()
         jobs = resp.json()
@@ -111,6 +115,84 @@ class ResonaClient:
                 return job
             time.sleep(poll)
         raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+
+    # ── v1 Audio & Engine routes ──────────────────────────────────────
+
+    def list_engines(self) -> dict:
+        """List every engine the gateway exposes, with capabilities and status. GET /v1/engines"""
+        resp = self._client.get(f"{self.base_url}/v1/engines")
+        resp.raise_for_status()
+        return resp.json()
+
+    def create_transcription(
+        self,
+        audio_path: "Path | str",
+        *,
+        model: str = "whisper-1",
+        language: Optional[str] = None,
+        prompt: Optional[str] = None,
+        response_format: str = "json",
+        engine: Optional[str] = None,
+        private: bool = False,
+    ) -> dict:
+        """Transcribe audio synchronously via the gateway. POST /v1/audio/transcriptions
+
+        Returns:
+            Dict with keys ``text``, ``language``, ``segments``.
+        """
+        audio_path = Path(audio_path)
+        data: dict = {
+            "model": model,
+            "response_format": response_format,
+            "private": str(private).lower(),
+        }
+        if language:
+            data["language"] = language
+        if prompt:
+            data["prompt"] = prompt
+        if engine:
+            data["engine"] = engine
+        with open(audio_path, "rb") as f:
+            resp = self._client.post(
+                f"{self.base_url}/v1/audio/transcriptions",
+                files={"file": (audio_path.name, f, "audio/wav")},
+                data=data,
+            )
+        resp.raise_for_status()
+        return resp.json()
+
+    def create_speech(
+        self,
+        text: str,
+        *,
+        model: str = "tts-1",
+        voice: str = "alloy",
+        response_format: str = "mp3",
+        speed: float = 1.0,
+        engine: Optional[str] = None,
+        private: bool = False,
+    ) -> bytes:
+        """Synthesise speech from text via the gateway. POST /v1/audio/speech
+
+        Returns:
+            Raw audio bytes in the requested format.
+        """
+        body: dict = {
+            "input": text,
+            "model": model,
+            "voice": voice,
+            "response_format": response_format,
+            "speed": speed,
+            "private": private,
+        }
+        if engine:
+            body["engine"] = engine
+        resp = self._client.post(
+            f"{self.base_url}/v1/audio/speech",
+            json=body,
+        )
+        resp.raise_for_status()
+        return resp.content
 
     # ── Replacement CRUD ──────────────────────────────────────────────
 
