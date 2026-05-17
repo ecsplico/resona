@@ -18,5 +18,6 @@ DATA_PATH: Path = _resolve("DATA_PATH", "data", Path.cwd())
 FILE_PATH: Path = _resolve("FILE_PATH", "files", DATA_PATH)
 MD_PATH: Path = _resolve("MD_PATH", "md", DATA_PATH)
 DB_PATH: Path = _resolve("DB_PATH", "db", DATA_PATH)
+PROFILES_PATH: Path = _resolve("RESONA_PROFILES_DIR", "profiles", DATA_PATH)
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH / 'jjobs.sqlite'}")
