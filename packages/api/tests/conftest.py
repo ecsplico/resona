@@ -37,7 +37,7 @@ os.environ.setdefault("RESONA_ENGINE_URL", "http://test-engine:9999")
 def create_tables():
     """Create all DB tables once per session."""
     from resona_api.db.engine import engine
-    from resona_api.db.models import Job, Replacement, InitialPrompt  # register models
+    from resona_api.db.models import Job  # register models
     SQLModel.metadata.create_all(engine)
 
 
@@ -47,8 +47,6 @@ def clean_db(create_tables):
     from resona_api.db.engine import engine
     with Session(engine) as session:
         session.execute(text("DELETE FROM job"))
-        session.execute(text("DELETE FROM replacement"))
-        session.execute(text("DELETE FROM initialprompt"))
         session.commit()
 
 
