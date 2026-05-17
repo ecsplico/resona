@@ -1,61 +1,48 @@
-from unittest.mock import patch, MagicMock
-from resona_postprocess.llm import llm_postprocess
+import pytest
+import resona_postprocess.llm as llm_mod
+from resona_postprocess.llm import llm_transform, LLMUnavailableError
 
 
-@patch("resona_postprocess.llm.litellm")
-@patch("resona_postprocess.llm.config")
-def test_calls_litellm_completion(mock_config, mock_litellm):
-    mock_config.side_effect = lambda key, default="": {
-        "RESONA_LLM_MODEL": "gpt-4o-mini",
-        "RESONA_LLM_API_BASE": "",
-    }.get(key, default)
-
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "formatted text"
-    mock_litellm.completion.return_value = mock_response
-
-    result = llm_postprocess("raw text", prompt="Format this.")
-    assert result == "formatted text"
-    mock_litellm.completion.assert_called_once()
-
-    call_kwargs = mock_litellm.completion.call_args
-    messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
-    assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == "Format this."
-    assert messages[1]["content"] == "raw text"
+class _Msg:
+    def __init__(self, content): self.message = type("M", (), {"content": content})
 
 
-@patch("resona_postprocess.llm.litellm")
-@patch("resona_postprocess.llm.config")
-def test_explicit_model_overrides_env(mock_config, mock_litellm):
-    mock_config.side_effect = lambda key, default="": default
-
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "ok"
-    mock_litellm.completion.return_value = mock_response
-
-    llm_postprocess("text", prompt="p", model="ollama/llama3")
-
-    call_kwargs = mock_litellm.completion.call_args
-    assert call_kwargs.kwargs.get("model") == "ollama/llama3"
+class _Resp:
+    def __init__(self, content): self.choices = [_Msg(content)]
+    usage = None
 
 
-@patch("resona_postprocess.llm.litellm")
-@patch("resona_postprocess.llm.config")
-def test_api_base_passed_when_set(mock_config, mock_litellm):
-    mock_config.side_effect = lambda key, default="": {
-        "RESONA_LLM_MODEL": "gpt-4o-mini",
-        "RESONA_LLM_API_BASE": "http://localhost:11434",
-    }.get(key, default)
+def test_llm_transform_calls_model(monkeypatch):
+    captured = {}
 
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "ok"
-    mock_litellm.completion.return_value = mock_response
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _Resp("FORMATTED")
 
-    llm_postprocess("text", prompt="p")
+    monkeypatch.setattr(llm_mod, "litellm", type("L", (), {"completion": staticmethod(fake_completion)}))
+    out = llm_transform("raw", prompt="format", model="gpt-x", temperature=0.3)
+    assert out == "FORMATTED"
+    assert captured["model"] == "gpt-x"
+    assert captured["temperature"] == 0.3
+    assert captured["messages"][0]["content"] == "format"
+    assert captured["messages"][1]["content"] == "raw"
 
-    call_kwargs = mock_litellm.completion.call_args
-    assert call_kwargs.kwargs.get("api_base") == "http://localhost:11434"
+
+def test_llm_transform_raises_when_litellm_missing(monkeypatch):
+    monkeypatch.setattr(llm_mod, "litellm", None)
+    with pytest.raises(LLMUnavailableError):
+        llm_transform("raw", prompt="format")
+
+
+def test_llm_transform_retries_once(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky(**kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient")
+        return _Resp("OK")
+
+    monkeypatch.setattr(llm_mod, "litellm", type("L", (), {"completion": staticmethod(flaky)}))
+    assert llm_transform("raw", prompt="p") == "OK"
+    assert calls["n"] == 2
