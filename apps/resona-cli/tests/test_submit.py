@@ -90,6 +90,7 @@ def test_submit_no_server_exits_with_error(tmp_path):
         result = runner.invoke(app, ["submit", str(tmp_path / "a.wav")])
 
     assert result.exit_code != 0
+    assert "Error" in result.output
 
 
 def test_submit_no_files_exits(tmp_path):
