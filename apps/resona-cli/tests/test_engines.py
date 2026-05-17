@@ -1,6 +1,6 @@
 """Tests for resona_cli.engines CLI commands."""
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -254,3 +254,33 @@ def test_test_single_cloud_engine_by_name(isolated_config, monkeypatch):
     result = runner.invoke(app, ["engines", "test", "dg"])
     assert result.exit_code == 0
     assert "key set" in result.output
+
+
+# ── engines status ────────────────────────────────────────────────────────────
+
+def test_engines_status_shows_catalogue(isolated_config):
+    catalogue = {
+        "engines": [
+            {"name": "faster-whisper", "kind": "local", "capabilities": ["stt"],
+             "private": True, "available": True, "models": ["large-v3"]},
+            {"name": "openai", "kind": "cloud", "capabilities": ["stt", "tts"],
+             "private": False, "available": True, "models": ["whisper-1", "tts-1"]},
+        ],
+        "default": "faster-whisper",
+    }
+    mock_client = MagicMock()
+    mock_client.list_engines.return_value = catalogue
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        result = runner.invoke(app, ["engines", "status"])
+
+    assert result.exit_code == 0
+    assert "faster-whisper" in result.output
+    assert "openai" in result.output
+
+
+def test_engines_status_no_server_exits_nonzero(isolated_config):
+    with patch("resona_client.client.ResonaClient.from_config",
+                side_effect=RuntimeError("no server")):
+        result = runner.invoke(app, ["engines", "status"])
+    assert result.exit_code != 0
