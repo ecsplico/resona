@@ -104,15 +104,21 @@ class Profile:
 
 
 def bundled_default() -> "Profile":
-    """Return the `default` profile bundled with resona-postprocess."""
-    ref = resources.files("resona_postprocess").joinpath("profiles/default.json")
-    data = json.loads(ref.read_text(encoding="utf-8"))
+    """Return the `default` profile bundled with resona-postprocess.
+
+    Raises ProfileError if the bundled file is missing or unparseable.
+    """
+    try:
+        ref = resources.files("resona_postprocess").joinpath("profiles/default.json")
+        data = json.loads(ref.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise ProfileError(f"Cannot load bundled default profile: {e}") from e
     # base_dir=None: a 'source' of 'default_replacements.json' resolves via the
     # bundled-resource fallback in pipeline._load_rules.
     return Profile.from_dict(data, base_dir=None)
 
 
-def resolve_profile(ref, profiles_dir: Path | str) -> "Profile":
+def resolve_profile(ref: Profile | dict | str, profiles_dir: Path | str) -> "Profile":
     """Resolve a profile reference to a Profile.
 
     `ref` may be a Profile, a parsed dict, an inline JSON string, a filesystem
