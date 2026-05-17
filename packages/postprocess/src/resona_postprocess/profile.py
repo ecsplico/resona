@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 
 VALID_STEP_TYPES = {"replacements", "llm", "extract"}
@@ -100,3 +101,61 @@ class Profile:
     def initial_prompt_string(self) -> str:
         """Return initial-prompt phrases joined for the engine."""
         return ", ".join(self.initial_prompt)
+
+
+def bundled_default() -> "Profile":
+    """Return the `default` profile bundled with resona-postprocess."""
+    ref = resources.files("resona_postprocess").joinpath("profiles/default.json")
+    data = json.loads(ref.read_text(encoding="utf-8"))
+    # base_dir=None: a 'source' of 'default_replacements.json' resolves via the
+    # bundled-resource fallback in pipeline._load_rules.
+    return Profile.from_dict(data, base_dir=None)
+
+
+def resolve_profile(ref, profiles_dir: Path | str) -> "Profile":
+    """Resolve a profile reference to a Profile.
+
+    `ref` may be a Profile, a parsed dict, an inline JSON string, a filesystem
+    path to a .json file, or a profile name resolved against `profiles_dir`.
+    A file named `<name>.json` in `profiles_dir` shadows the bundled profile.
+    """
+    profiles_dir = Path(profiles_dir)
+    if isinstance(ref, Profile):
+        return ref
+    if isinstance(ref, dict):
+        return Profile.from_dict(ref)
+    if not isinstance(ref, str):
+        raise ProfileError(f"Cannot resolve profile from {type(ref).__name__}")
+
+    text = ref.strip()
+    if text.startswith("{"):
+        try:
+            return Profile.from_dict(json.loads(text))
+        except json.JSONDecodeError as e:
+            raise ProfileError(f"Invalid inline profile JSON: {e}") from e
+
+    path = Path(ref)
+    if path.suffix == ".json" and path.exists():
+        return Profile.from_file(path)
+
+    candidate = profiles_dir / f"{ref}.json"
+    if candidate.exists():
+        return Profile.from_file(candidate)
+    if ref == "default":
+        return bundled_default()
+    raise ProfileError(f"Profile not found: {ref}")
+
+
+def list_profiles(profiles_dir: Path | str) -> list[dict]:
+    """List `{name, description}` for every profile file in `profiles_dir`."""
+    profiles_dir = Path(profiles_dir)
+    out: list[dict] = []
+    if not profiles_dir.is_dir():
+        return out
+    for path in sorted(profiles_dir.glob("*.json")):
+        try:
+            p = Profile.from_file(path)
+            out.append({"name": p.name, "description": p.description})
+        except ProfileError:
+            continue
+    return out
