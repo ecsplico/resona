@@ -266,6 +266,30 @@ def test_watch_fallback_continues_on_per_file_error(tmp_path):
     assert result.exit_code == 0
 
 
+def test_watch_gateway_forwards_profile(tmp_path):
+    """Gateway path passes profile= to submit_job when --profile is given."""
+    audio_file = make_wav(tmp_path / "test.wav")
+
+    mock_client = MagicMock()
+    mock_client.submit_job.return_value = {"id": 42}
+
+    call_count = 0
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
+        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+    ):
+        result = runner.invoke(app, ["watch", str(tmp_path), "--profile", "cardiology"])
+
+    mock_client.submit_job.assert_called_once_with(audio_file, profile="cardiology")
+
+
 def test_watch_fallback_passes_model_and_language(tmp_path):
     """--model and --language are forwarded correctly."""
     make_wav(tmp_path / "audio.wav")
