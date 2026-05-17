@@ -1,65 +1,87 @@
 # Resona
 
-Audio transcription system built on OpenAI Whisper / faster-whisper, designed for German medical dictation. Structured as a uv workspace monorepo with independently deployable services.
+Modular audio transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation — usable for any language.
+
+Works standalone (no server needed), against a self-hosted stack, or with cloud STT/TTS providers. Engines are discovered via Python entry points; postprocessing is a separate layer the engine never sees.
 
 ## Architecture
 
 ```
-                ┌──────────────────────┐
-                │     resona (CLI)     │
-                │  transcribe / watch /│
-                │  rec / live / ui     │
-                └─────────┬────────────┘
-                          │ uses
-                ┌─────────▼────────────┐
-                │    resona-client     │
-                │    ResonaClient      │
-                └──┬───────────────┬───┘
-                   │               │
-        HTTP/REST  │               │  HTTP/REST
-                   │               │
-      ┌────────────▼──┐   ┌───────▼──────────────────────┐
-      │  resona-api   │   │  resona-engine-server         │
-      │  :7000        │──▶│  + engine package   :7001     │
-      │               │   │                              │
-      │ POST /jobs    │   │ POST /transcribe             │
-      │ GET  /jobs/   │   │ WS   /ws/transcribe          │
-      │ GET  /jobs/id │   │ WS   /ws/live                │
-      │ CRUD replace  │   │                              │
-      │ CRUD prompts  │   │ Stateless, no DB             │
-      │               │   │ depends on resona-asr-core   │
-      │ SQLite DB     │   └──────────────────────────────┘
-      │ File storage  │
-      └───────────────┘
+                    ┌──────────────────────┐
+                    │     resona CLI       │
+                    │  transcribe / watch /│
+                    │  rec / live / ui     │
+                    └─────────┬────────────┘
+                              │ uses
+                    ┌─────────▼────────────┐
+                    │   resona-client      │
+                    │   ResonaClient       │
+                    └──┬───────────────┬───┘
+                       │               │
+            HTTP/REST  │               │  HTTP/REST
+                       │               │
+          ┌────────────▼──┐   ┌───────▼──────────────────────┐
+          │  resona-api   │   │ resona-engine-server          │
+          │  :7000        │──▶│  + engine plugin              │
+          │               │   │                               │
+          │ POST /jobs    │   │ POST /transcribe              │
+          │ GET  /jobs/   │   │ WS   /ws/transcribe           │
+          │ GET  /job/id  │   │ WS   /ws/live                 │
+          │ CRUD replace  │   │                               │
+          │ CRUD prompts  │   │ Stateless, no DB              │
+          │               │   └───────────────────────────────┘
+          │ SQLite DB     │
+          │ Postprocessing│
+          └───────────────┘
 ```
 
-**resona-engine-server** is stateless — no database, no side effects. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in `resona-asr-core`. Engines are installed as separate packages (`resona-engine-faster-whisper`, `resona-engine-whisper`) and discovered via entry points.
+## Packages
 
-**resona-api** owns the job queue, SQLite database, and calls the engine over HTTP. Post-processing (replacements, formatting) is handled by `resona-postprocess` in the API layer — the engine returns raw transcripts.
+| Package | Port | Description |
+|---------|------|-------------|
+| `resona-asr-core` | — | Lean ASR contracts: protocol, registry, audio, live transcriber |
+| `resona-engine-server` + engine | 7001 | Stateless transcription server (GPU); depends on asr-core |
+| `resona-engine-faster-whisper` | — | CTranslate2 engine (default, recommended) |
+| `resona-engine-whisper` | — | Original OpenAI Whisper (PyTorch) engine |
+| `resona-engine-voxtral` | — | HuggingFace Transformers engine |
+| `resona-cloud-stt` | — | Cloud STT: Deepgram, ElevenLabs, OpenAI |
+| `resona-cloud-tts` | — | Cloud TTS: Deepgram, ElevenLabs, OpenAI |
+| `resona-postprocess` | — | Replacements + LLM pipeline |
+| `resona-api` | 7000 | Job queue, SQLite, postprocessing, OpenAI-compatible audio API |
+| `resona-client` | — | Python client library for resona-api |
+| `resona-cli` | — | CLI: transcribe, watch, rec, live, ui, speech, engines, replacements, prompts |
 
-This separation lets the engine run on a dedicated GPU machine while the API runs elsewhere.
+## Three paths to first transcription
 
-## Features
+=== "Local-only"
 
-- **Multiple ASR engines** — faster-whisper, openai-whisper, HuggingFace Transformers; installed as separate packages, discovered via entry points
-- **Cloud STT providers** — Deepgram, ElevenLabs, OpenAI as drop-in engines (`resona-cloud-stt`)
-- **Private engines** — mark local / own-infrastructure engines private; `--private` keeps audio off third-party services
-- **Async job queue** — submit audio files, poll for results, never block the caller
-- **Text replacements** — regex-based post-processing applied by the API (`resona-postprocess`)
-- **Initial prompts** — Whisper vocabulary hints stored per engine
-- **Live transcription** — VAD-chunked WebSocket streaming at 16 kHz
-- **TUI tools** — Textual-based recorder (`rec`), live UI (`live`), record-and-transcribe (`ui`)
-- **Engine config** — priority-ordered multi-server with SSH tunnel and Docker auto-start
+    No server required. The CLI spawns the engine in-process.
 
-## Quick links
+    ```bash
+    uv tool install --from ./apps/resona-cli resona-cli
+    resona transcribe recording.mp3
+    ```
 
-- [CLI Setup & Onboarding](onboarding.md) — install `resona` CLI and connect to a server
-- [Server Setup](getting-started.md) — run the services locally or via Docker
-- [Architecture](architecture.md) — service design and job lifecycle
-- [CLI Reference](cli.md) — all `resona` commands
-- [Engines & SSH](configuration/engines.md) — LAN, SSH tunnel, auto-start
-- [Environment Variables](configuration/environment.md) — all config knobs
-- [Client Library](reference/client.md) — Python API reference
+    Output is written next to the input file as `.txt`.
 
-!!! note "Legacy packages"
-    The old `ws-engine`, `ws-api`, `ws-client`, and `ws-cli` packages are retained for backward compatibility but are considered legacy. New deployments should use the `resona-*` packages.
+=== "Docker"
+
+    Full stack with job queue, persistence, and postprocessing.
+
+    ```bash
+    docker compose -f docker-compose.resona.yml up
+    resona transcribe recording.mp3   # CLI auto-connects to :7000
+    ```
+
+=== "Cloud"
+
+    Use a cloud STT provider — no GPU needed.
+
+    ```bash
+    export OPENAI_API_KEY=sk-...
+    resona transcribe recording.mp3 --engine openai
+    ```
+
+---
+
+[Get started →](getting-started/installation.md)
