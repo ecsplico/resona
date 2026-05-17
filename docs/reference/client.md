@@ -1,10 +1,10 @@
-# Client Library
+# resona-client
 
-The `resona-client` package provides the Python API for interacting with a resona-api server.
+`resona-client` is the Python client library for talking to a resona-api server. It handles authentication, job submission, polling, and full CRUD for replacements and prompts. Engine configuration — which servers to connect to, auto-start rules, and cloud provider registrations — lives in `~/.resona/config.json` and is managed through `EngineConfig` and `EngineEntry`.
 
 ## Installation
 
-`resona-client` is a workspace package. In production, install from the monorepo:
+`resona-client` is a workspace package. Add it from the monorepo:
 
 ```bash
 uv add resona-client --package my-project
@@ -15,15 +15,87 @@ uv add resona-client --package my-project
 ```python
 from resona_client.client import ResonaClient
 
-# Connect using env vars RESONA_API_URL / RESONA_API_KEY
+# Connect using RESONA_API_URL / RESONA_API_KEY env vars
 client = ResonaClient()
 
-# Or auto-resolve from ~/.resona/config.json
+# Or auto-resolve from ~/.resona/config.json (tries reachable engines in order)
 client = ResonaClient.from_config()
 
 job = client.submit_job("recording.wav")
 result = client.wait_for_job(job["id"])
-print(result["md"])  # transcript with replacements applied
+print(result["md"])   # formatted transcript with replacements applied
+```
+
+## Authentication
+
+The client sends `X-API-Key: <key>` with every request when `api_key` is provided or `RESONA_API_KEY` is set. If the server has auth disabled (no `RESONA_API_KEY` env var on the server), the header is omitted.
+
+```python
+client = ResonaClient(base_url="http://myserver:7000", api_key="secret")
+```
+
+## Job lifecycle
+
+Jobs progress through the states `PENDING → PROCESSING → COMPLETED | FAILED`. Use `wait_for_job()` to poll until the job reaches a terminal state.
+
+```python
+job = client.submit_job("dictation.mp3", engine="deepgram")
+result = client.wait_for_job(job["id"])
+
+if result["status"] == "completed":
+    print(result["transcript"])   # raw text
+    print(result["md"])           # formatted text (replacements applied)
+else:
+    print("failed:", result)
+```
+
+## v1 Audio routes
+
+The v1 routes call engines synchronously through the gateway and return results immediately — no job queue involved.
+
+```python
+# Transcribe synchronously
+result = client.create_transcription("file.wav", engine="faster-whisper", language="de")
+print(result["text"])
+
+# Transcribe with verbose output (segments + duration)
+result = client.create_transcription("file.wav", response_format="verbose_json")
+print(result["segments"])
+
+# Text-to-speech
+audio_bytes = client.create_speech("Hallo Welt", voice="alloy", engine="openai")
+with open("out.mp3", "wb") as f:
+    f.write(audio_bytes)
+
+# List available engines
+engines = client.list_engines()
+```
+
+## Engine configuration
+
+`EngineConfig` and `EngineEntry` describe which servers the client knows about. Manage them with `resona engines add/remove/list` from the CLI; or load and modify them programmatically.
+
+```python
+from resona_client.config import EngineConfig, EngineEntry, resolve_engine
+
+cfg = EngineConfig.load()
+print(cfg.default_engine)       # "faster-whisper"
+print([e.name for e in cfg.engines])
+
+# Check which entry would be used right now
+entry = resolve_engine()
+if entry:
+    print(entry.api_url)
+```
+
+## Context manager
+
+`ResonaClient` implements the context-manager protocol and closes the underlying httpx connection pool on exit:
+
+```python
+with ResonaClient() as client:
+    job = client.submit_job("audio.wav")
+    result = client.wait_for_job(job["id"])
 ```
 
 ---
@@ -34,24 +106,24 @@ print(result["md"])  # transcript with replacements applied
 
 ---
 
-## Engine configuration
-
-::: resona_client.config.EngineEntry
+## EngineConfig
 
 ::: resona_client.config.EngineConfig
 
-::: resona_client.config.resolve_engine
+---
 
-::: resona_client.config.is_reachable
+## EngineEntry
+
+::: resona_client.config.EngineEntry
 
 ---
 
-## Legacy: WhisperClient (ws-client)
+## resolve\_engine
 
-The `ws-client` package and its `WhisperClient` class are retained for backward compatibility. New code should use `ResonaClient` from `resona-client`.
+::: resona_client.config.resolve_engine
 
-```python
-# Legacy — still works, but deprecated
-from ws_client.client import WhisperClient
-client = WhisperClient()  # reads WS_API_URL / WS_API_KEY
-```
+---
+
+## is\_reachable
+
+::: resona_client.config.is_reachable
