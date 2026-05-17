@@ -135,6 +135,7 @@ class EngineConfig:
     engines: list[EngineEntry] = field(default_factory=list)
     default_engine: str = "faster-whisper"
     default_private: bool = False
+    default_profile: Optional[str] = None
 
     @classmethod
     def load(cls) -> "EngineConfig":
@@ -165,8 +166,9 @@ class EngineConfig:
                 engines.append(entry)
             default_engine = data.get("default_engine", data.get("default_backend", "faster-whisper"))
             default_private = bool(data.get("default_private", False))
+            default_profile = data.get("default_profile")
             return cls(engines=engines, default_engine=default_engine,
-                       default_private=default_private)
+                       default_private=default_private, default_profile=default_profile)
         except (json.JSONDecodeError, TypeError) as e:
             log.warning(f"Could not parse {CONFIG_FILE}: {e}")
             return cls()
@@ -177,6 +179,7 @@ class EngineConfig:
             "engines": [asdict(e) for e in self.engines],
             "default_engine": self.default_engine,
             "default_private": self.default_private,
+            "default_profile": self.default_profile,
         }
         CONFIG_FILE.write_text(json.dumps(data, indent=2))
 

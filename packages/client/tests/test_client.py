@@ -191,74 +191,29 @@ def test_wait_for_job_timeout(client):
                 client.wait_for_job(3, poll=0.0, timeout=0.001)
 
 
-# ── Replacements ──────────────────────────────────────────────────────────────
+# ── Profiles ──────────────────────────────────────────────────────────────────
 
-def test_list_replacements(client):
-    with respx.mock:
-        respx.get(f"{BASE}/replacements/").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        assert client.list_replacements() == []
-
-
-def test_add_replacement(client):
-    with respx.mock:
-        respx.post(f"{BASE}/replacements/").mock(
-            return_value=httpx.Response(200, json={"id": 1, "name": "x", "replacement": "y"})
-        )
-        result = client.add_replacement("x", "y")
-    assert result["id"] == 1
+@respx.mock
+def test_list_profiles():
+    respx.get("http://t/profiles").mock(return_value=httpx.Response(
+        200, json={"profiles": [{"name": "a", "description": "AA"}]}))
+    c = ResonaClient(base_url="http://t")
+    assert c.list_profiles() == [{"name": "a", "description": "AA"}]
 
 
-def test_delete_replacement(client):
-    with respx.mock:
-        respx.delete(f"{BASE}/replacements/1").mock(
-            return_value=httpx.Response(200, json={"ok": True})
-        )
-        client.delete_replacement(1)  # should not raise
+@respx.mock
+def test_put_profile():
+    route = respx.put("http://t/profiles/a").mock(return_value=httpx.Response(200, json={}))
+    ResonaClient(base_url="http://t").put_profile("a", {"name": "a", "steps": []})
+    assert route.called
 
 
-# ── Prompts ───────────────────────────────────────────────────────────────────
-
-def test_list_prompts(client):
-    with respx.mock:
-        respx.get(f"{BASE}/prompts/").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        assert client.list_prompts() == []
-
-
-def test_add_prompt(client):
-    with respx.mock:
-        respx.post(f"{BASE}/prompts/").mock(
-            return_value=httpx.Response(200, json={"id": 3, "phrase": "test phrase"})
-        )
-        result = client.add_prompt("test phrase")
-    assert result["phrase"] == "test phrase"
-
-
-def test_activate_prompt(client):
-    with respx.mock:
-        respx.put(f"{BASE}/prompts/2/activate").mock(
-            return_value=httpx.Response(200, json={"ok": True})
-        )
-        client.activate_prompt(2)  # should not raise
-
-
-def test_deactivate_prompt(client):
-    with respx.mock:
-        respx.put(f"{BASE}/prompts/2/deactivate").mock(
-            return_value=httpx.Response(200, json={"ok": True})
-        )
-        client.deactivate_prompt(2)
-
-
-def test_remove_prompt(client):
-    with respx.mock:
-        respx.delete(f"{BASE}/prompts/2").mock(
-            return_value=httpx.Response(200, json={"ok": True})
-        )
-        client.remove_prompt(2)
+@respx.mock
+def test_submit_job_sends_profile(tmp_path):
+    f = tmp_path / "a.wav"; f.write_bytes(b"x")
+    route = respx.post("http://t/jobs").mock(return_value=httpx.Response(200, json=[{"id": 1}]))
+    ResonaClient(base_url="http://t").submit_job(f, profile="arzt")
+    assert b"arzt" in route.calls[0].request.content
 
 
 # ── Context manager ───────────────────────────────────────────────────────────
