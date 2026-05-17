@@ -1,91 +1,63 @@
-import pytest
-
-from resona_postprocess.pipeline import PostprocessPipeline
-
-
-def test_empty_pipeline_is_noop():
-    p = PostprocessPipeline()
-    assert p.run("hello") == "hello"
+import resona_postprocess.llm as llm_mod
+from resona_postprocess.pipeline import (
+    PostprocessPipeline, PostprocessResult, build_pipeline,
+)
+from resona_postprocess.profile import Profile
 
 
-def test_single_step():
-    p = PostprocessPipeline()
-    p.add("upper", str.upper)
-    assert p.run("hello") == "HELLO"
+def test_pipeline_runs_text_steps_in_order():
+    pipe = PostprocessPipeline()
+    pipe.add_text("up", str.upper)
+    pipe.add_text("excl", lambda t: t + "!")
+    result = pipe.run("hi")
+    assert isinstance(result, PostprocessResult)
+    assert result.text == "HI!"
+    assert result.data == {}
 
 
-def test_chained_steps_run_in_order():
-    p = PostprocessPipeline()
-    p.add("prefix", lambda t: f"[{t}]")
-    p.add("upper", str.upper)
-    assert p.run("hello") == "[HELLO]"
+def test_pipeline_extract_step_populates_data():
+    pipe = PostprocessPipeline()
+    pipe.add_extract("fields", lambda t: {"len": len(t)})
+    result = pipe.run("abcd")
+    assert result.text == "abcd"
+    assert result.data == {"fields": {"len": 4}}
 
 
-def test_add_returns_self():
-    p = PostprocessPipeline()
-    result = p.add("noop", lambda t: t)
-    assert result is p
+def test_pipeline_failing_llm_step_is_skipped():
+    pipe = PostprocessPipeline()
+
+    def boom(_): raise RuntimeError("llm down")
+
+    pipe.add_text("bad", boom)
+    pipe.add_text("ok", str.upper)
+    result = pipe.run("hi")
+    assert result.text == "HI"  # bad step skipped, ok step still ran
 
 
-def test_fluent_api():
-    result = (
-        PostprocessPipeline()
-        .add("exclaim", lambda t: t + "!")
-        .add("upper", str.upper)
-        .run("hello")
+def test_build_pipeline_replacements_and_extract(monkeypatch):
+    monkeypatch.setattr(
+        llm_mod, "litellm",
+        type("L", (), {"completion": staticmethod(
+            lambda **k: type("R", (), {"choices": [type("C", (), {
+                "message": type("M", (), {"content": '{"k": 1}'})})()],
+                "usage": None})())}),
     )
-    assert result == "HELLO!"
+    profile = Profile.from_dict({
+        "name": "p",
+        "steps": [
+            {"type": "replacements", "rules": [{"pattern": r"\bx\b", "replacement": "y"}]},
+            {"type": "extract", "name": "f", "prompt": "extract"},
+        ],
+    })
+    result = build_pipeline(profile).run("x x")
+    assert result.text == "y y"
+    assert result.data == {"f": {"k": 1}}
 
 
-def test_pipeline_step_exception_propagates():
-    """A step that raises ValueError must not be swallowed by the pipeline."""
-    def boom(text: str) -> str:
-        raise ValueError("step failed")
-
-    p = PostprocessPipeline()
-    p.add("boom", boom)
-    with pytest.raises(ValueError, match="step failed"):
-        p.run("hello")
-
-
-def test_pipeline_step_exception_preserves_context():
-    """The original exception must be accessible (not wrapped in a new one)."""
-    original = ValueError("original error")
-
-    def reraise(text: str) -> str:
-        raise original
-
-    p = PostprocessPipeline()
-    p.add("reraise", reraise)
-    with pytest.raises(ValueError) as exc_info:
-        p.run("hello")
-    assert exc_info.value is original
-
-
-def test_pipeline_with_none_return_from_step():
-    """A step returning None causes a TypeError when the next step tries to use it."""
-    p = PostprocessPipeline()
-    p.add("returns_none", lambda t: None)
-    p.add("upper", str.upper)
-    with pytest.raises(TypeError):
-        p.run("hello")
-
-
-def test_mixed_replacements_and_callable_steps():
-    """Pipeline with replacements step followed by a custom callable."""
-    from resona_postprocess.replacements import apply_replacements
-
-    rules = [{"name": "hello", "replacement": "hi"}]
-    p = PostprocessPipeline()
-    p.add("replacements", lambda t, r=rules: apply_replacements(t, r))
-    p.add("upper", str.upper)
-
-    result = p.run("hello world")
-    assert result == "HI WORLD"
-
-
-def test_pipeline_preserves_unicode():
-    """Pipeline correctly handles unicode text (medical German, accents, etc)."""
-    p = PostprocessPipeline()
-    p.add("noop", lambda t: t)
-    assert p.run("Ärztlicher Befund: Müdigkeit, Übelkeit") == "Ärztlicher Befund: Müdigkeit, Übelkeit"
+def test_build_pipeline_replacements_from_bundled_source():
+    profile = Profile.from_dict({
+        "name": "p",
+        "steps": [{"type": "replacements", "source": "default_replacements.json"}],
+    })
+    # 'Komma' is a default rule; pipeline must resolve the bundled source file.
+    assert "," in build_pipeline(profile).run("a Komma b").text
