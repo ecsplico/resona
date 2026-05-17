@@ -1,4 +1,5 @@
 import glob as _glob
+import json
 from pathlib import Path
 from typing import Optional
 import typer
@@ -9,8 +10,12 @@ from .engine import InProcessEngine
 from resona_client.client import ResonaClient
 from resona_client.config import EngineConfig
 from .engines import BUILTIN_ENGINES
+from resona_postprocess.profile import resolve_profile, ProfileError
+from resona_postprocess.pipeline import build_pipeline
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
+
+_PROFILES_DIR = Path.home() / ".resona" / "profiles"
 
 
 def _expand_inputs(inputs: list[str], recursive: bool) -> list[Path]:
@@ -47,6 +52,17 @@ def _expand_inputs(inputs: list[str], recursive: bool) -> list[Path]:
     return out
 
 
+def _resolve_profile_arg(profile_arg: Optional[str]) -> Optional[str]:
+    """If profile_arg is a path to an existing .json file, read and return its text.
+    Otherwise return the name string as-is (or None)."""
+    if profile_arg is None:
+        return None
+    p = Path(profile_arg)
+    if p.suffix == ".json" and p.exists():
+        return p.read_text(encoding="utf-8")
+    return profile_arg
+
+
 def transcribe_files(
     inputs: list[str] = typer.Argument(
         ..., help="Audio files, glob patterns, or directories.", metavar="INPUTS..."),
@@ -64,6 +80,8 @@ def transcribe_files(
         help="Engine name forwarded to the gateway, or a built-in local engine for fallback."),
     private: Optional[bool] = typer.Option(None, "--private/--no-private",
         help="Require a private engine (forwarded to gateway)."),
+    profile: Optional[str] = typer.Option(None, "--profile",
+        help="Profile name or path to a profile JSON file."),
 ):
     """Transcribe audio files. Uses the gateway by default; falls back to a local engine."""
     files = _expand_inputs(inputs, recursive=recursive)
@@ -77,7 +95,7 @@ def transcribe_files(
     try:
         client = ResonaClient.from_config(auto_start=False)
         _transcribe_via_gateway(client, files, output_dir, model, language,
-                                 engine, want_private)
+                                 engine, want_private, profile)
         return
     except (httpx.ConnectError, httpx.TimeoutException, RuntimeError):
         pass
@@ -86,7 +104,9 @@ def transcribe_files(
     # Local engines are inherently private; --private is honoured by the fallback
     # path naturally (no audio leaves the machine).
     _transcribe_local_fallback(files, output_dir, model, language,
-                                engine_timeout, local_engine_name)
+                                engine_timeout, local_engine_name,
+                                profile=profile,
+                                default_profile=cfg.default_profile)
 
 
 def _transcribe_via_gateway(
@@ -97,9 +117,11 @@ def _transcribe_via_gateway(
     language: str,
     engine: Optional[str],
     private: bool,
+    profile: Optional[str] = None,
 ) -> None:
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_profile = _resolve_profile_arg(profile)
     for filepath in files:
         try:
             kwargs: dict = {"language": language, "private": private}
@@ -107,6 +129,8 @@ def _transcribe_via_gateway(
                 kwargs["model"] = model
             if engine:
                 kwargs["engine"] = engine
+            if resolved_profile is not None:
+                kwargs["profile"] = resolved_profile
             result = client.create_transcription(filepath, **kwargs)
             transcript = result.get("text", "")
             out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
@@ -123,11 +147,22 @@ def _transcribe_local_fallback(
     language: str,
     engine_timeout: float,
     engine: str = "faster-whisper",
+    *,
+    profile: Optional[str] = None,
+    default_profile: Optional[str] = None,
 ) -> None:
-    from resona_postprocess.sources import build_pipeline_from_config
+    ref = profile or default_profile or "default"
+    try:
+        prof = resolve_profile(ref, _PROFILES_DIR)
+    except ProfileError as e:
+        typer.echo(
+            f"Profile {ref!r} could not be loaded ({e}); falling back to 'default'.",
+            err=True,
+        )
+        prof = resolve_profile("default", _PROFILES_DIR)
 
     local_engine, cleanup = _resolve_local_engine(model, engine_timeout, engine)
-    pipeline = build_pipeline_from_config()
+    pipeline = build_pipeline(prof)
 
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -137,9 +172,15 @@ def _transcribe_local_fallback(
             try:
                 result = local_engine.transcribe(filepath, language=language)
                 raw_text = result.get("text", "")
-                transcript = pipeline.run(raw_text)
+                pp_result = pipeline.run(raw_text)
                 out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
-                out_path.write_text(transcript, encoding="utf-8")
+                out_path.write_text(pp_result.text, encoding="utf-8")
+                if pp_result.data:
+                    sidecar = out_path.with_suffix(".json")
+                    sidecar.write_text(
+                        json.dumps(pp_result.data, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
                 print(f"Transcribed {filepath.name} -> {out_path}")
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 typer.echo(f"Failed to transcribe {filepath.name}: {e}", err=True)

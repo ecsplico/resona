@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from resona_cli.main import app
+from resona_postprocess.pipeline import PostprocessResult
 
 runner = CliRunner()
 
@@ -22,6 +23,23 @@ def make_wav(path: Path) -> Path:
         w.writeframes(struct.pack("<" + "h" * 160, *([0] * 160)))
     path.write_bytes(buf.getvalue())
     return path
+
+
+def _noop_pipeline():
+    """Return a mock pipeline whose .run() returns a PostprocessResult."""
+    p = MagicMock()
+    p.run.side_effect = lambda t: PostprocessResult(text=t, data={})
+    return p
+
+
+def _mock_resolve_and_pipeline(pipeline=None):
+    """Return mock resolve_profile and build_pipeline for watch tests."""
+    if pipeline is None:
+        pipeline = _noop_pipeline()
+    mock_profile = MagicMock()
+    mock_resolve = MagicMock(return_value=mock_profile)
+    mock_build = MagicMock(return_value=pipeline)
+    return mock_resolve, mock_build
 
 
 def test_watch_submits_new_file_and_stops(tmp_path):
@@ -117,7 +135,7 @@ def test_watch_ignores_non_audio_files(tmp_path):
     mock_client.submit_job.assert_not_called()
 
 
-# ── Fallback tests ────────────────────────────────────────────────────
+# ── Fallback tests ────────────────────────────────────────────────
 import httpx
 from unittest.mock import MagicMock
 
@@ -135,6 +153,8 @@ def test_watch_fallback_used_when_no_server(tmp_path):
     audio_file = make_wav(tmp_path / "test.wav")
     mock_engine = _make_local_engine_watch()
 
+    mock_resolve, mock_build = _mock_resolve_and_pipeline()
+
     call_count = 0
 
     def fake_sleep(_):
@@ -147,7 +167,8 @@ def test_watch_fallback_used_when_no_server(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=MagicMock(run=lambda t: t)),
+        patch("resona_cli.watch.resolve_profile", mock_resolve),
+        patch("resona_cli.watch.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -159,6 +180,8 @@ def test_watch_fallback_writes_txt_next_to_audio(tmp_path):
     make_wav(tmp_path / "speech.wav")
     mock_engine = _make_local_engine_watch(transcript="Watch result")
 
+    mock_resolve, mock_build = _mock_resolve_and_pipeline()
+
     call_count = 0
 
     def fake_sleep(_):
@@ -171,7 +194,8 @@ def test_watch_fallback_writes_txt_next_to_audio(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=MagicMock(run=lambda t: t)),
+        patch("resona_cli.watch.resolve_profile", mock_resolve),
+        patch("resona_cli.watch.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -186,6 +210,8 @@ def test_watch_fallback_respects_output_dir(tmp_path):
     out_dir = tmp_path / "out"
     mock_engine = _make_local_engine_watch(transcript="Output dir result")
 
+    mock_resolve, mock_build = _mock_resolve_and_pipeline()
+
     call_count = 0
 
     def fake_sleep(_):
@@ -198,7 +224,8 @@ def test_watch_fallback_respects_output_dir(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=MagicMock(run=lambda t: t)),
+        patch("resona_cli.watch.resolve_profile", mock_resolve),
+        patch("resona_cli.watch.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path), "--output-dir", str(out_dir)])
 
@@ -218,6 +245,8 @@ def test_watch_fallback_continues_on_per_file_error(tmp_path):
         {"text": "ok", "language": "de", "segments": []},
     ]
 
+    mock_resolve, mock_build = _mock_resolve_and_pipeline()
+
     def fake_sleep(_):
         nonlocal call_count
         call_count += 1
@@ -228,7 +257,8 @@ def test_watch_fallback_continues_on_per_file_error(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=MagicMock(run=lambda t: t)),
+        patch("resona_cli.watch.resolve_profile", mock_resolve),
+        patch("resona_cli.watch.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -240,6 +270,8 @@ def test_watch_fallback_passes_model_and_language(tmp_path):
     """--model and --language are forwarded correctly."""
     make_wav(tmp_path / "audio.wav")
     mock_engine = _make_local_engine_watch()
+
+    mock_resolve, mock_build = _mock_resolve_and_pipeline()
 
     call_count = 0
 
@@ -253,7 +285,8 @@ def test_watch_fallback_passes_model_and_language(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_postprocess.sources.build_pipeline_from_config", return_value=MagicMock(run=lambda t: t)),
+        patch("resona_cli.watch.resolve_profile", mock_resolve),
+        patch("resona_cli.watch.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path), "--model", "small", "--language", "fr"])
 
