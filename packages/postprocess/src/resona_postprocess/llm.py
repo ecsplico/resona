@@ -1,5 +1,6 @@
 """LLM-based postprocessing via litellm."""
 
+import json as _json
 import logging
 import os
 
@@ -86,3 +87,36 @@ def llm_postprocess(text: str, *, prompt: str, model: str | None = None,
                     api_base: str | None = None) -> str:
     """Deprecated alias for :func:`llm_transform`."""
     return llm_transform(text, prompt=prompt, model=model, api_base=api_base)
+
+
+def llm_extract(
+    text: str,
+    *,
+    prompt: str,
+    model: str | None = None,
+    api_base: str | None = None,
+    temperature: float | None = None,
+) -> dict:
+    """Extract structured data from text. Returns a parsed JSON object.
+
+    On a malformed LLM response, returns ``{"_raw": <response string>}`` so a
+    job never hard-fails on a bad extraction.
+    """
+    model = model or config("RESONA_LLM_MODEL", default="gpt-4o-mini")
+    api_base = api_base or config("RESONA_LLM_API_BASE", default="") or None
+    raw = _completion(
+        model=model,
+        api_base=api_base,
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": text},
+        ],
+        temperature=temperature,
+        max_tokens=None,
+        response_format={"type": "json_object"},
+    )
+    try:
+        parsed = _json.loads(raw)
+    except (_json.JSONDecodeError, TypeError):
+        return {"_raw": raw}
+    return parsed if isinstance(parsed, dict) else {"_raw": raw}
