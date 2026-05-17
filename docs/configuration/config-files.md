@@ -1,23 +1,28 @@
 # Config Files
 
-Resona reads three optional config files from `~/.resona/`. None are required — sensible defaults apply when they are absent.
+Resona reads optional config files from `~/.resona/`. None are required — sensible defaults apply
+when they are absent.
 
 ```
 ~/.resona/
-├── config.json          # engines, auto-start settings, default_engine, default_private
-├── replacements.json    # override default text replacement rules
-└── postprocess.json     # full pipeline: replacements + LLM steps
+├── config.json          # engines, auto-start settings, default_engine, default_profile, default_private
+└── profiles/            # postprocessing profiles (JSON files)
+    ├── default.json     # optional: override the bundled default profile
+    └── my-profile.json  # any named profile
 ```
 
 ## config.json
 
-Controls engine selection for the `resona` CLI. Defines which resona-api servers and cloud providers are available, which one is the default, and whether private-only mode is active.
+Controls engine selection and the default profile for the `resona` CLI. Defines which resona-api
+servers and cloud providers are available, which one is the default, and whether private-only mode
+is active.
 
 ### Annotated example
 
 ```json
 {
   "default_engine": "faster-whisper",
+  "default_profile": "medical-de",
   "default_private": false,
   "engines": [
     {
@@ -46,6 +51,7 @@ Controls engine selection for the `resona` CLI. Defines which resona-api servers
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_engine` | string | `"faster-whisper"` | Engine name used when `--engine` is not passed on the CLI |
+| `default_profile` | string | `"default"` | Profile name used when `--profile` is not passed; the bundled `default` profile applies if absent |
 | `default_private` | boolean | `false` | When `true`, `resona transcribe` refuses non-private engines by default — equivalent to always passing `--private` |
 | `engines` | array | `[]` | Ordered list of engine entries |
 
@@ -81,78 +87,22 @@ When `resona transcribe` runs, it resolves the engine in this order:
 3. `default_engine` in `config.json`
 4. Hardcoded fallback: `"faster-whisper"`
 
-## replacements.json
+## profiles/
 
-A simple list of regex-based text substitutions applied after transcription. This file overrides the bundled German dictation defaults.
+The `~/.resona/profiles/` directory holds postprocessing profile JSON files for local (no-server)
+use. Each file is named `<profile-name>.json`.
 
-### Format
+To add a profile:
 
-```json
-[
-  {"name": "\\s*Komma", "replacement": ","},
-  {"name": "\\s*Punkt", "replacement": "."},
-  {"name": "\\s*Absatz", "replacement": "\n"},
-  {"name": "Monique", "replacement": "Monic"}
-]
+```bash
+mkdir -p ~/.resona/profiles/
+cp my-profile.json ~/.resona/profiles/
+resona transcribe dictation.mp3 --profile my-profile
 ```
 
-Each object has two fields:
+When a resona-api server is running, profiles are stored server-side in `RESONA_PROFILES_DIR` and
+can be managed with `resona profiles push/pull/list/show/delete`. The CLI passes the profile name
+(or inline JSON) to the server with each job submission.
 
-| Field | Description |
-|-------|-------------|
-| `name` | Regular expression pattern (Python `re` syntax, case-insensitive) |
-| `replacement` | Replacement string; supports `\n` for newlines and standard regex back-references |
-
-Patterns are applied in order. Matching is case-insensitive.
-
-### Override semantics
-
-If `~/.resona/replacements.json` exists, it **replaces** the bundled `default_replacements.json` entirely. There is no merging. To extend the defaults, copy `default_replacements.json` from `packages/postprocess/src/resona_postprocess/default_replacements.json` into `~/.resona/replacements.json` and add your entries.
-
-This file has no effect when `~/.resona/postprocess.json` exists and does not include a `replacements` step that references it.
-
-## postprocess.json
-
-Defines a full postprocessing pipeline as an ordered list of steps. Use this when you need more than simple replacements — for example, an LLM formatting step after replacements.
-
-### Format
-
-```json
-{
-  "steps": [
-    {"type": "replacements", "source": "replacements.json"},
-    {"type": "llm", "name": "format", "prompt": "Format this medical text.", "model": "ollama/llama3"}
-  ]
-}
-```
-
-### Step types
-
-**`replacements`**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `type` | yes | `"replacements"` |
-| `source` | yes | Path to a replacements JSON file. Relative paths resolve relative to `~/.resona/`. |
-
-**`llm`**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `type` | yes | `"llm"` |
-| `name` | no | Human-readable label for this step |
-| `prompt` | yes | System prompt sent to the LLM along with the current text |
-| `model` | no | litellm model name, e.g. `"gpt-4o-mini"`, `"ollama/llama3"`. Defaults to `RESONA_LLM_MODEL`. |
-
-!!! tip "Relative paths in source"
-    The `source` field in a `replacements` step resolves relative to `~/.resona/`. So `"source": "replacements.json"` reads `~/.resona/replacements.json`. You can also use an absolute path.
-
-### Config resolution order
-
-The postprocess pipeline is built from the first file found:
-
-1. `~/.resona/postprocess.json` — full pipeline definition (takes priority)
-2. `~/.resona/replacements.json` — replacements-only pipeline
-3. Bundled `default_replacements.json` — German dictation defaults (Komma, Punkt, Absatz, medical headings)
-
-If none of these files exist, the bundled defaults are active automatically and no configuration is needed.
+See [Postprocessing Profiles](../guide/postprocessing.md) for the profile file format and a full
+example.

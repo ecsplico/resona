@@ -22,6 +22,7 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | `RESONA_ENGINE_KEY` | _(unset)_ | API key sent to engine-server in the `X-API-Key` header |
 | `RESONA_API_KEY` | _(unset)_ | API key required from clients; auth is disabled when not set |
 | `DATA_PATH` | `./data` | Root directory for all persistent data (audio files, SQLite DB, transcripts) |
+| `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` | Directory where named profile JSON files are stored and served by `GET /profiles/` |
 | `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-client / resona CLI
@@ -31,12 +32,13 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | `RESONA_API_URL` | `http://localhost:7000` | resona-api base URL |
 | `RESONA_API_KEY` | _(unset)_ | API key sent to resona-api (`X-API-Key` header) |
 
-## resona-postprocess
+## resona-postprocess / resona-cli (local mode)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for postprocessing pipeline steps |
+| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for `llm` and `extract` pipeline steps that do not specify `model` |
 | `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint, e.g. a local Ollama instance; passed to litellm |
+| `RESONA_PROFILES_DIR` | `~/.resona/profiles/` | Directory where the CLI looks for named profile files in local (no-server) mode |
 
 ## Cloud provider keys
 

@@ -2,7 +2,7 @@
 
 The `resona` command is the main entry point for all end-user operations. It covers transcription,
 directory watching, TUI-based recording, live transcription, speech synthesis, and management of
-engines, text replacements, and initial prompts.
+engines and postprocessing profiles.
 
 Run `resona --help` or `resona <subcommand> --help` to see up-to-date flag descriptions at any
 time.
@@ -33,6 +33,7 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--engine NAME` | (auto) | Built-in engine name, `config.json` server entry, or cloud entry |
+| `--profile NAME` | (from `config.json`) | Profile name, inline JSON profile, or path to a `.json` profile file |
 | `--language LANG` | `de` | Language hint (ISO 639-1 code) |
 | `--model NAME` | (engine default) | Model name override forwarded to the engine |
 | `--output-dir DIR` | (input file directory) | Write transcripts here instead of next to the source file |
@@ -43,7 +44,7 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 **Examples**
 
 ```bash
-# Transcribe a single file — engine selected automatically
+# Transcribe a single file — engine and profile selected automatically
 resona transcribe dictation.mp3
 
 # Transcribe a directory, writing output to a separate folder
@@ -57,6 +58,12 @@ resona transcribe meeting.mp3 --engine whisper --model medium
 
 # Require a private (local) engine — refuse to use cloud
 resona transcribe patient-notes.mp3 --private
+
+# Apply a named postprocessing profile
+resona transcribe dictation.mp3 --profile medical-de
+
+# Apply an inline profile (replacements only, no server needed)
+resona transcribe dictation.mp3 --profile '{"name":"x","steps":[{"type":"replacements","rules":[{"pattern":"Komma","replacement":","}]}]}'
 
 # Recurse into subdirectories
 resona transcribe ./inbox/ --recursive --output-dir ./out/
@@ -87,6 +94,7 @@ resona watch DIRECTORY [OPTIONS]
 |------|---------|-------------|
 | `--recursive` / `-r` | off | Watch subdirectories too |
 | `--poll-interval SECS` | `1.0` | Seconds between directory scans |
+| `--profile NAME` | (from `config.json`) | Profile name or inline JSON applied to each job submitted |
 | `--output-dir DIR` | (input file directory) | Write transcripts here (local fallback mode only) |
 | `--language LANG` | `de` | Language hint (local fallback mode only) |
 | `--model NAME` | (engine default) | Whisper model name (local fallback mode only) |
@@ -295,82 +303,58 @@ Output columns: `Name`, `Kind`, `Capabilities`, `Available`, `Models`.
 
 ---
 
-## replacements
+## profiles
 
-Manage text replacement rules stored in the resona-api database. These rules are applied to every
-transcript that passes through the gateway's postprocessing pipeline.
-
-!!! note "Server required"
-    The `replacements` subcommands communicate with resona-api. For local-only (file-based)
-    replacements, edit `~/.resona/replacements.json` directly. See [Text Replacements](replacements.md).
-
-### replacements list
-
-```bash
-resona replacements list
-```
-
-### replacements add
-
-```bash
-resona replacements add PATTERN REPLACEMENT
-```
-
-`PATTERN` is a case-insensitive regular expression. `REPLACEMENT` is the literal string to
-substitute.
-
-```bash
-resona replacements add "\\bKomma\\b" ","
-resona replacements add "\\bPunkt\\b" "."
-resona replacements add "Monique" "Monic"
-```
-
-### replacements delete
-
-```bash
-resona replacements delete ID
-```
-
----
-
-## prompts
-
-Manage initial transcription prompts stored in the resona-api database. Active prompts are
-concatenated and passed to the engine as an `initial_prompt`, which biases the model towards
-specific vocabulary or formatting styles.
+Manage postprocessing profiles stored on the resona-api server. A profile is a JSON file that
+bundles an `initial_prompt` list and an ordered pipeline of steps (replacements, LLM formatting,
+structured extraction). See [Postprocessing Profiles](postprocessing.md) for the full format.
 
 !!! note "Server required"
-    The `prompts` subcommands communicate with resona-api.
+    The `profiles` subcommands communicate with resona-api. For local-only use, place profile JSON
+    files in `~/.resona/profiles/` and reference them with `--profile NAME`.
 
-### prompts list
+### profiles list
+
+List all profiles stored on the server.
 
 ```bash
-resona prompts list
+resona profiles list
 ```
 
-### prompts add
+Output columns: `NAME`, `DESCRIPTION`.
+
+### profiles show
+
+Display the full JSON of a profile stored on the server.
 
 ```bash
-resona prompts add "PHRASE"
+resona profiles show my-profile
 ```
 
-Example:
+### profiles push
+
+Upload a local profile JSON file to the server.
 
 ```bash
-resona prompts add "Dr. Schmidt, Frau Müller, Psychopathologischer Befund"
+resona profiles push my-profile.json
 ```
 
-### prompts activate / deactivate
+The profile's `name` field determines the server-side name. If a profile with the same name
+already exists it is replaced.
 
-Only active prompts are passed to the engine. Activating a prompt deactivates all others.
+### profiles pull
+
+Download a profile from the server and save it to a local file.
 
 ```bash
-resona prompts activate 3
-resona prompts deactivate 3
+resona profiles pull my-profile               # saves to my-profile.json
+resona profiles pull my-profile output.json   # saves to output.json
 ```
 
-### prompts remove
+### profiles delete
+
+Delete a profile from the server.
 
 ```bash
-resona prompts remove ID
+resona profiles delete my-profile
 ```

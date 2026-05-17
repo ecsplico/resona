@@ -1,49 +1,58 @@
 # Postprocessing Pipeline
 
-Postprocessing is the layer between raw engine output and the final stored transcript. The engine returns exactly what the model produced; everything else — text normalisation, dictation-command expansion, LLM reformatting — is the pipeline's responsibility.
+Postprocessing is the layer between raw engine output and the final stored transcript. The engine returns exactly what the model produced; everything else — text normalisation, dictation-command expansion, LLM reformatting, structured data extraction — is the pipeline's responsibility.
 
-## Core concept
+## Profiles
 
-The pipeline is a composable chain of `str → str` steps. Each step receives the output of the previous step and returns a transformed string. Steps are pure functions with no side effects; they never touch audio files or the database.
+A **profile** is a JSON file (or inline JSON string) that groups three things:
 
-```
-raw transcript
-      │
-      ▼
- ReplacementStep   ← regex rules, case-insensitive
-      │
-      ▼
- LLMStep (optional) ← litellm, any OpenAI-compatible endpoint
-      │
-      ▼
- ... more steps ...
-      │
-      ▼
- final Markdown output
+1. An **initial_prompt** list — phrases passed to the ASR engine to bias vocabulary.
+2. An ordered list of **steps** — the postprocessing pipeline.
+3. Metadata: `name` and `description`.
+
+```json
+{
+  "name": "my-profile",
+  "description": "German medical dictation with LLM formatting",
+  "initial_prompt": ["Befund", "Diagnose", "Medikation"],
+  "steps": [
+    {
+      "type": "replacements",
+      "rules": [
+        {"pattern": "\\bKomma\\b", "replacement": ","},
+        {"pattern": "\\bPunkt\\b",  "replacement": "."},
+        {"pattern": "\\bAbsatz\\b", "replacement": "\n"}
+      ]
+    },
+    {
+      "type": "llm",
+      "name": "format",
+      "prompt": "Format this medical dictation as a structured clinical note.",
+      "model": "ollama/llama3"
+    }
+  ]
+}
 ```
 
 ## Step types
 
-### ReplacementStep
+### replacements
 
-Applies a list of regex replacement rules in order. Rules are case-insensitive by default. Each rule is a dict with `pattern` and `replacement` keys; the replacement may reference capture groups.
+Applies a list of regex replacement rules in order. Rules are case-insensitive by default. Each rule has `pattern` and `replacement` keys; the replacement may reference capture groups.
 
-```python
-from resona_postprocess.replacements import apply_replacements
+Supply either:
+- `rules` — inline array of rule objects
+- `source` — path to a JSON file containing the rules array (relative to the profile's directory or `~/.resona/profiles/`)
 
-rules = [
-    {"pattern": r"\bKomma\b",  "replacement": ","},
-    {"pattern": r"\bPunkt\b",  "replacement": "."},
-    {"pattern": r"\bAbsatz\b", "replacement": "\n"},
-]
-result = apply_replacements(text, rules)
+```json
+{"type": "replacements", "rules": [{"pattern": "\\bKomma\\b", "replacement": ","}]}
 ```
 
 The standalone `apply_replacements(text, rules)` function is available for use outside a full pipeline.
 
-### LLMStep
+### llm
 
-Sends text through a language model using [litellm](https://github.com/BerriAI/litellm). Any OpenAI-compatible endpoint is supported. The step is configured with a system prompt and an optional model identifier.
+Sends the current text to a language model using [litellm](https://github.com/BerriAI/litellm). The model's response replaces the text. Any OpenAI-compatible endpoint is supported.
 
 ```json
 {
@@ -55,94 +64,45 @@ Sends text through a language model using [litellm](https://github.com/BerriAI/l
 }
 ```
 
-LLM steps add latency. Use them only when rule-based replacements are insufficient.
+Fields:
 
-## PostprocessPipeline
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | yes | `"llm"` |
+| `name` | no | Label for this step (used in logs) |
+| `prompt` | yes | System prompt sent to the model |
+| `model` | no | litellm model string; overrides `RESONA_LLM_MODEL` |
+| `api_base` | no | Custom API endpoint; overrides `RESONA_LLM_API_BASE` |
+| `temperature` | no | Sampling temperature |
+| `max_tokens` | no | Maximum tokens to generate |
 
-`PostprocessPipeline` accepts a list of step objects and chains them:
+### extract
 
-```python
-from resona_postprocess.pipeline import PostprocessPipeline
-from resona_postprocess.replacements import ReplacementStep
-from resona_postprocess.llm import LLMStep
-
-pipeline = PostprocessPipeline([
-    ReplacementStep(rules),
-    LLMStep(prompt="...", model="gpt-4o-mini"),
-])
-result = pipeline.run(raw_text)
-```
-
-## build_pipeline_from_config()
-
-`build_pipeline_from_config()` in `resona_postprocess.sources` constructs a pipeline from the user's configuration, following this resolution order:
-
-1. `~/.resona/postprocess.json` — full pipeline config with explicit steps
-2. `~/.resona/replacements.json` — replacement rules only (no LLM steps)
-3. Bundled `default_replacements.json` — German medical dictation defaults
-
-Only the first matching source is used. If none of the user files exist, the bundled defaults are active automatically.
-
-### postprocess.json format
+Sends the current text to a language model and returns **structured JSON data**. The text is not modified; instead the extracted data is stored alongside the transcript (in `job.structured` server-side).
 
 ```json
 {
-  "steps": [
-    {"type": "replacements", "source": "replacements.json"},
-    {
-      "type": "llm",
-      "name": "format",
-      "prompt": "Format this medical text as structured Markdown.",
-      "model": "ollama/llama3",
-      "api_base": "http://localhost:11434"
-    }
-  ]
+  "type": "extract",
+  "name": "icd_codes",
+  "prompt": "Return a JSON object {\"codes\": [...]} listing all ICD-10 codes mentioned.",
+  "model": "gpt-4o-mini"
 }
 ```
 
-Relative paths in `source` resolve relative to `~/.resona/`.
+## PostprocessResult
 
-## Where the pipeline runs
+`build_pipeline(profile).run(text)` returns a `PostprocessResult`:
 
-### Server mode (TranscribeTask)
-
-```
-engine returns {text, language, segments}
-    ↓
-TranscribeTask fetches active replacements from SQLite DB
-    ↓
-builds PostprocessPipeline from DB replacements
-    ↓
-md = pipeline.run(text)
-    ↓
-stores md in Job row, writes .md file to MD_PATH/
-    ↓
-sets job status = COMPLETED
+```python
+@dataclass
+class PostprocessResult:
+    text: str         # final postprocessed text (all llm/replacements steps applied)
+    data: dict        # accumulated output from all extract steps, keyed by step name
 ```
 
-The pipeline runs in the `resona-api` process, after the engine call completes and before results are stored. Replacements are managed via the CRUD API (`GET/POST/PATCH/DELETE /replacements`) and stored in SQLite.
+## The bundled default profile
 
-### Local mode (CLI process)
-
-```
-engine returns {text, language, segments}
-    ↓
-CLI calls build_pipeline_from_config()
-    reads ~/.resona/postprocess.json  (or bundled defaults)
-    ↓
-md = pipeline.run(text)
-    ↓
-writes <input>.txt  (or --output-dir/<name>.txt)
-```
-
-In local mode there is no database. The pipeline is built from config files every time `resona transcribe` runs.
-
-!!! note "Postprocessing never runs inside the engine"
-    The engine is unaware of replacements, prompts, or LLM steps. This is enforced by the [Stateless Engine Contract](engine-contract.md). If you find yourself wanting to add replacement logic to an engine, move it to `resona-postprocess` instead.
-
-## Default replacements (bundled)
-
-The bundled `default_replacements.json` covers German medical dictation commands out of the box:
+`resona-postprocess` ships a `profiles/default.json` that covers German medical dictation out of the box. It is used automatically when no profile is specified.
 
 | Spoken | Written |
 |--------|---------|
@@ -157,4 +117,47 @@ The bundled `default_replacements.json` covers German medical dictation commands
 
 Plus medical section headings (`Verlauf`, `Medikation`, `Psychopathologischer Befund`, `Procedere`) and common name corrections.
 
-To override the defaults, create `~/.resona/replacements.json` with your own rules, or create `~/.resona/postprocess.json` for a full pipeline with LLM steps.
+## Profile resolution
+
+`resolve_profile(ref, profiles_dir)` accepts any of:
+- A `Profile` object — returned as-is
+- A `dict` — parsed as a profile
+- A string starting with `{` — parsed as inline JSON
+- A string ending with `.json` that exists on disk — loaded from that path
+- A plain name string — looked up as `<profiles_dir>/<name>.json`; falls back to the bundled `default` profile when `name == "default"`
+
+## Where the pipeline runs
+
+### Server mode (TranscribeTask)
+
+```
+engine returns {text, language, segments}
+    ↓
+TranscribeTask resolves profile (job.profile or "default") from RESONA_PROFILES_DIR
+    ↓
+builds PostprocessPipeline from the profile
+    ↓
+result = pipeline.run(text)
+    ↓
+stores result.text as job.md
+stores result.data as job.structured (JSON)
+writes .md file to MD_PATH/
+sets job status = COMPLETED
+```
+
+The engine receives `profile.initial_prompt_string()` as its `initial_prompt`. It never receives replacement rules — postprocessing is entirely the API layer's responsibility.
+
+### Local mode (CLI process)
+
+```
+engine returns {text, language, segments}
+    ↓
+CLI resolves profile (--profile flag or config.json default_profile or bundled "default")
+    ↓
+result = build_pipeline(profile).run(text)
+    ↓
+writes <input>.txt  (or --output-dir/<name>.txt)
+```
+
+!!! note "Postprocessing never runs inside the engine"
+    The engine is unaware of profiles, replacements, or LLM steps. This is enforced by the [Stateless Engine Contract](engine-contract.md).
