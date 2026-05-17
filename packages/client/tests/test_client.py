@@ -123,6 +123,18 @@ def test_submit_job_returns_first_element(client, audio_file):
     assert result["id"] == 1
 
 
+def test_submit_job_with_engine(client, audio_file):
+    with respx.mock:
+        route = respx.post(f"{BASE}/jobs").mock(
+            return_value=httpx.Response(200, json=[{"id": 10}])
+        )
+        client.submit_job(audio_file, engine="deepgram")
+    assert route.called
+    # Verify engine was included in the request
+    request = route.calls[0].request
+    assert b"deepgram" in request.content
+
+
 def test_get_job(client):
     with respx.mock:
         respx.get(f"{BASE}/job/5").mock(
@@ -264,8 +276,7 @@ def test_list_engines(client):
             return_value=httpx.Response(200, json={
                 "engines": [{"name": "faster-whisper", "kind": "local",
                               "capabilities": ["stt"], "private": True,
-                              "available": True, "models": ["large-v3"],
-                              "url": "http://localhost:7001", "provider": None}],
+                              "available": True, "models": ["large-v3"]}],
                 "default": "faster-whisper",
             })
         )
