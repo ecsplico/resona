@@ -1,6 +1,6 @@
 # Resona
 
-Modular audio transcription platform with pluggable ASR engines and composable postprocessing. Designed for German medical dictation but usable for any language. Built as a uv workspace monorepo.
+Resona is a modular audio transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation but usable for any language. Built as a uv workspace monorepo.
 
 ## Architecture
 
@@ -33,10 +33,6 @@ Modular audio transcription platform with pluggable ASR engines and composable p
           └───────────────┘
 ```
 
-**resona-engine-server** is stateless -- no database, no side effects, no postprocessing. It owns all GPU-heavy inference. The lean ASR contracts (protocol, registry, audio loader, live transcriber) live in a separate package — `resona-asr-core` — so they can be reused without the FastAPI dependency tree. **resona-api** owns the job queue, SQLite database, and applies postprocessing (replacements + optional LLM) after getting raw text from the engine. This allows the engine to run on a dedicated GPU machine while the API runs elsewhere.
-
-Engines are discovered via Python entry points (`resona.engines` group). Each engine is a separate package with its own Dockerfile.
-
 ## Packages
 
 | Package | Port | Description |
@@ -55,359 +51,31 @@ Engines are discovered via Python entry points (`resona.engines` group). Each en
 
 ## Quick start
 
-### Prerequisites
-
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- ffmpeg
-- NVIDIA GPU with CUDA (for the engine)
-
-### Local development
+### Local-only (no server)
 
 ```bash
-# Install all workspace packages
 uv sync --all-packages --no-build-isolation-package openai-whisper
-
-# Start the engine (GPU required, separate terminal)
-uv run resona-engine-faster-whisper
-
-# Start the API (CPU-only, separate terminal)
-uv run resona-api
-
-# Verify
-curl http://localhost:7001/health
-curl http://localhost:7000/health
+uv run resona transcribe recording.mp3
 ```
 
-### Docker (recommended for deployment)
+No server needed — the CLI spawns a local `faster-whisper` engine automatically.
+
+### Docker
 
 ```bash
 cp .env.example .env   # set RESONA_API_KEY at minimum
-
 docker compose -f docker-compose.resona.yml up -d
-
-curl http://localhost:7001/health
-curl http://localhost:7000/health
-```
-
-The engine container requires a GPU and is health-checked before the API starts.
-
-### Local-only mode (no server)
-
-If no server is reachable, the CLI automatically transcribes locally. The default install bundles the `faster-whisper` engine, so the CLI runs it in-process by default — no extra to install.
-
-```bash
-# Transcribe files -- starts a local engine automatically
-uv run resona transcribe ./recordings/ --output-dir ./transcripts/
-
-# Or a single file / quoted glob
-uv run resona transcribe recording.mp3
-uv run resona transcribe "recordings/*.mp3"
-
-# Use a different engine
-uv run resona transcribe ./recordings/ --engine whisper
-
-# Set a default engine so you don't need --engine every time
-# Edit ~/.resona/config.json and set "default_engine": "whisper"
-```
-
-## CLI usage
-
-```bash
-# Transcribe a file, glob, or directory
-resona transcribe ./recordings/ --output-dir ./out/ --language de
 resona transcribe recording.mp3
-resona transcribe "recordings/*.mp3"
-
-# Use a specific engine (built-in local, server, or cloud)
-resona transcribe ./audio/ --engine faster-whisper
-resona transcribe ./audio/ --engine deepgram
-resona transcribe ./audio/ --engine my-gpu-server
-
-# Require a private engine (local or resona-api marked private: true)
-resona transcribe ./audio/ --private
-
-# Watch a directory and auto-submit new files
-resona watch ./inbox/ --recursive --poll-interval 2.0
-
-# Record audio (terminal UI)
-resona rec
-
-# Live transcription (terminal UI, streams to engine via WebSocket)
-resona live
-
-# Record, transcribe, and display result (terminal UI)
-resona ui
-
-# Manage engines (server and cloud)
-resona engines add gpu-server http://gpu-machine:7000
-resona engines add home http://localhost:7000 --ssh user@homeserver.com
-resona engines add deepgram --type cloud --provider deepgram
-resona engines add elevenlabs --type cloud --provider elevenlabs
-resona engines add openai --type cloud --provider openai
-resona engines add deepgram-nova --type cloud --provider deepgram --model nova-2
-resona engines list
-resona engines test
-
-# Manage text replacements (spoken -> written corrections)
-resona replacements list
-resona replacements add "Komma" ","
-resona replacements delete 3
-
-# Manage Whisper initial prompts (vocabulary hints)
-resona prompts list
-resona prompts add "Befund, Diagnose, Therapie"
-resona prompts activate 2
 ```
 
-## Text replacements
-
-Replacements are regex patterns applied to transcribed text after inference. They convert spoken punctuation, formatting commands, and name corrections into the desired written form.
-
-Default replacements are bundled and active out of the box (German dictation commands like "Komma" -> `,`, "Punkt" -> `.`, "Absatz" -> newline, medical section headings, etc.).
-
-**Server mode:** resona-api stores replacements in SQLite and applies them via `PostprocessPipeline` after the engine returns raw text.
-
-**Local mode:** The CLI reads from `~/.resona/replacements.json` (or falls back to bundled defaults). You can also configure a full pipeline with LLM steps in `~/.resona/postprocess.json`.
-
-### Customizing replacements
-
-Override the defaults by creating `~/.resona/replacements.json`:
-
-```json
-[
-  {"name": "\\s*Komma", "replacement": ","},
-  {"name": "\\s*Punkt", "replacement": "."},
-  {"name": "\\s*Absatz", "replacement": "\n"},
-  {"name": "Monique", "replacement": "Monic"}
-]
-```
-
-### Adding LLM postprocessing
-
-Create `~/.resona/postprocess.json` to chain replacements with LLM formatting:
-
-```json
-{
-  "steps": [
-    {
-      "type": "replacements",
-      "source": "replacements.json"
-    },
-    {
-      "type": "llm",
-      "name": "format-medical",
-      "prompt": "Format this medical transcription with proper paragraphs and punctuation. Do not change the content.",
-      "model": "ollama/llama3"
-    }
-  ]
-}
-```
-
-LLM postprocessing uses [litellm](https://docs.litellm.ai/) -- supports OpenAI, Anthropic, Ollama, vLLM, and 100+ other providers. Set the model string and any required API keys (e.g. `OPENAI_API_KEY`).
-
-## Engine selection
-
-### Local engines
-
-Three built-in local engines run on your GPU:
-
-| Engine | Command | Best for |
-|---------|---------|----------|
-| `faster-whisper` (default) | `resona-engine-faster-whisper` | Production use, fastest inference |
-| `whisper` | `resona-engine-whisper` | Full OpenAI Whisper compatibility |
-| `voxtral` | `resona-engine-voxtral` | HuggingFace models (Voxtral, etc.) |
+### Install CLI tool
 
 ```bash
-# Select engine for the engine server process
-RESONA_ENGINE=whisper uv run resona-engine-whisper
-
-# Select engine for local fallback in CLI
-resona transcribe ./audio/ --engine voxtral
+uv tool install --from ./apps/resona-cli resona-cli
+resona transcribe recording.mp3
 ```
 
-### Cloud engines
-
-Three cloud providers are supported via `resona-cloud-stt`. API keys are read from environment variables and are never stored in `config.json`.
-
-| Provider | `--provider` | API key env var | Default model |
-|----------|-------------|-----------------|---------------|
-| Deepgram | `deepgram` | `DEEPGRAM_API_KEY` | `nova-3` |
-| ElevenLabs | `elevenlabs` | `ELEVENLABS_API_KEY` | `scribe_v1` |
-| OpenAI Whisper API | `openai` | `OPENAI_API_KEY` | `whisper-1` |
-
-```bash
-# Register a cloud engine entry
-resona engines add deepgram --type cloud --provider deepgram
-
-# Transcribe using a cloud engine
-export DEEPGRAM_API_KEY=your-key
-resona transcribe ./audio/ --engine deepgram
-
-# Transcribe using a private (local/server) engine only
-resona transcribe ./audio/ --private
-```
-
-### Privacy
-
-`--private` / `--no-private` controls whether cloud engines are allowed:
-
-- Local built-in engines are always private.
-- `resona-api` server entries are private when explicitly marked `"private": true` in `config.json`.
-- Cloud engines are **never** private — `--private` will refuse them.
-
-Set `"default_private": true` in `~/.resona/config.json` to make `--private` the default for all invocations.
-
-### The `--engine` flag (unified selector)
-
-`--engine NAME` resolves in this order:
-
-1. A built-in local engine name (`faster-whisper`, `whisper`, `voxtral`)
-2. A `config.json` entry name (server or cloud)
-3. Error if not found
-
-```bash
-# Default engine in config (applies when --engine is not given)
-# ~/.resona/config.json: {"default_engine": "deepgram", "engines": [...]}
-```
-
-### resona-api unified STT/TTS API
-
-`resona-api` exposes an OpenAI-compatible audio API at `:7000`. Cloud engines are activated automatically when their API key env var is present — no extra configuration required.
-
-```
-GET  /v1/engines                      list all available engines (local + cloud)
-POST /v1/audio/transcriptions         STT: multipart audio_file + optional engine, language, prompt
-POST /v1/audio/speech                 TTS: JSON body {input, voice, model, engine, response_format}
-```
-
-To enable cloud engines, export the provider API key and they appear automatically:
-
-```bash
-export DEEPGRAM_API_KEY=…          # activates deepgram STT + TTS
-export ELEVENLABS_API_KEY=…        # activates elevenlabs STT + TTS
-export OPENAI_API_KEY=…            # activates openai STT + TTS
-```
-
-For multi-engine deployments set `RESONA_ENGINE_URLS` to a comma-separated list of engine-server URLs. Use `RESONA_DEFAULT_ENGINE` to pin the default engine for unspecified requests.
-
-### Install personas
-
-| Persona | Command |
-|---------|---------|
-| Default (record, live, local faster-whisper) | `uv tool install --from ./apps/resona-cli resona-cli` |
-| Default + Whisper (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[whisper]'` |
-| Default + Voxtral (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[voxtral]'` |
-
-The default install is torch-free and needs no extra index — it includes the record/live TUIs and the `faster-whisper` engine. The `[whisper]`/`[voxtral]` extras pull a stable PyTorch build from the cu130 index; if `uv tool install` does not inherit the workspace's pytorch index, use `uv run resona` from inside the workspace, or `uv pip install --extra-index-url https://download.pytorch.org/whl/cu130 'resona-cli[whisper]'`.
-
-## Configuration
-
-### Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RESONA_ENGINE` | `faster-whisper` | Engine to load (per engine-server process) |
-| `RESONA_ENGINE_URLS` | `http://localhost:7001` | Comma-separated list of engine-server URLs (used by API) |
-| `RESONA_DEFAULT_ENGINE` | _(first available)_ | Default engine name for unspecified API requests |
-| `RESONA_ENGINE_KEY` | _(unset)_ | Engine API key; auth disabled if unset |
-| `RESONA_API_URL` | `http://localhost:7000` | API URL (used by client/CLI) |
-| `RESONA_API_KEY` | _(unset)_ | API key; auth disabled if unset |
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM for postprocessing |
-| `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint (e.g. Ollama) |
-| `DEEPGRAM_API_KEY` | _(unset)_ | Deepgram API key — activates Deepgram STT + TTS automatically |
-| `ELEVENLABS_API_KEY` | _(unset)_ | ElevenLabs API key — activates ElevenLabs STT + TTS automatically |
-| `OPENAI_API_KEY` | _(unset)_ | OpenAI API key — activates OpenAI Whisper STT + TTS automatically |
-| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model name |
-| `DEFAULT_WHISPER_MODEL` | `large-v3` | OpenAI Whisper model name |
-| `DEFAULT_VOXTRAL_MODEL` | `openai/whisper-large-v3` | HuggingFace model ID |
-| `DATA_PATH` | `./data` | Root data directory (API) |
-| `LOGLEVEL` | `info` | Log level |
-
-### Config files
-
-```
-~/.resona/
-├── config.json          # Engines (server + cloud), auto-start, default_engine, default_private
-├── replacements.json    # Override default text replacement rules
-└── postprocess.json     # Full pipeline config: replacements + LLM steps
-```
-
-## API reference
-
-### Engine (:7001)
-
-```
-GET  /health              returns {status: "ok", engine: str, models: [str]}
-POST /transcribe          multipart: audio_file, task, language, initial_prompt, vad_filter, word_timestamps
-WS   /ws/transcribe       WebSocket batch transcription
-WS   /ws/live             WebSocket live transcription with VAD
-```
-
-`POST /transcribe` returns:
-```json
-{"text": "raw transcript", "language": "de", "segments": [{"start": 0.0, "end": 1.5, "text": "..."}]}
-```
-
-No `md` field, no replacements -- the engine is stateless.
-
-### API (:7000)
-
-All endpoints require `X-API-Key` header when `RESONA_API_KEY` is configured.
-
-```
-GET  /health
-POST /jobs                multipart: audio_files[], keep, translate
-POST /jobs/registerfile   body: filename
-GET  /job/{id}
-GET  /jobs/
-GET  /replacements/
-POST /replacements/       body: {name, replacement}
-DELETE /replacements/{id}
-GET  /prompts/
-POST /prompts/            body: {phrase}
-PUT  /prompts/{id}/activate
-PUT  /prompts/{id}/deactivate
-DELETE /prompts/{id}
-
-# OpenAI-compatible audio API
-GET  /v1/engines                      list local + cloud engines with capabilities
-POST /v1/audio/transcriptions         STT: multipart audio_file; optional: engine, language, prompt
-POST /v1/audio/speech                 TTS: JSON {input, voice, model, engine, response_format}
-```
-
-Job lifecycle: `PENDING` -> `PROCESSING` -> `COMPLETED` | `FAILED`
-
-The `engine` field on a completed job records which engine processed it.
-
-## Data storage
-
-Audio files are kept permanently (`keepfile=True`). Directory layout under `DATA_PATH`:
-
-```
-data/
-  files/      # uploaded audio files (never auto-deleted)
-  db/         # SQLite database
-  md/         # generated markdown transcripts
-```
-
-## Development
-
-```bash
-# Run tests
-uv run pytest                              # all packages
-uv run pytest packages/api/tests/          # single package
-uv run pytest -k test_transcribe           # single test
-
-# Add a dependency to a package
-uv add --package resona-api httpx
-
-# Documentation (MkDocs Material)
-uv run mkdocs serve     # dev server at :8000
-uv run mkdocs build     # static site to site/
-```
-
-Note: `uv sync` alone only installs workspace root dev deps. Always use `uv sync --all-packages` to install all workspace members.
+> Full documentation: https://ecsplico.github.io/resona/
 
 ## License
 

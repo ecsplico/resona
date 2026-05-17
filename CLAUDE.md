@@ -255,6 +255,21 @@ uv run resona transcribe ./audio/ --output-dir ./out/
 uv run resona transcribe ./audio/ --engine whisper --language en
 ```
 
+### Editable vs. copied installs
+
+`uv sync --all-packages` installs every workspace package into the workspace
+`.venv` editable — `uv run resona <cmd>` from the repo root picks up source
+edits to any package immediately. **This is the dev loop.**
+
+`uv tool install` (Install personas below) **copies** the packages into an
+isolated tool env; that copy is not editable. After editing code, an installed
+tool must be refreshed with
+`uv tool install --reinstall --from ./apps/resona-cli resona-cli`. Note that
+`--editable` would only make `resona-cli` itself editable, not its workspace
+dependencies (`resona-postprocess`, `resona-asr-core`, …) — so `uv run` from the
+workspace is the only fully-editable path. Reserve `uv tool install` for testing
+the end-user personas.
+
 ### Install personas
 
 | Persona | Command |
@@ -263,14 +278,7 @@ uv run resona transcribe ./audio/ --engine whisper --language en
 | Default + Whisper (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[whisper]'` |
 | Default + Voxtral (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[voxtral]'` |
 
-The default install is torch-free: it bundles the record/live TUIs and the
-CTranslate2-based `faster-whisper` engine (via the `nvidia-cublas-cu12` /
-`nvidia-cudnn-cu12` wheels and `soxr` for resampling), so `uv tool install`
-works without any extra index.
-
-⚠️ The `[whisper]`/`[voxtral]` extras pull a stable PyTorch build from the cu130 index. `uv tool install` does NOT inherit the workspace's pytorch index, so these may fail to resolve torch. Workarounds:
-- Stay inside the workspace and use `uv run resona <command>`.
-- Or: `uv pip install --extra-index-url https://download.pytorch.org/whl/cu130 'resona-cli[whisper]'` into a managed venv.
+See [docs/getting-started/installation.md](docs/getting-started/installation.md) for details including PyTorch extras.
 
 ```bash
 # Documentation
@@ -325,40 +333,7 @@ Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API
 
 ### Key environment variables
 
-| Variable | Package | Purpose | Default |
-|----------|---------|---------|---------|
-| `RESONA_ENGINE` | engine-server | Engine selection | `faster-whisper` |
-| `RESONA_ENGINE_URLS` | api | Comma-separated list of engine-server URLs | `http://localhost:7001` |
-| `RESONA_DEFAULT_ENGINE` | api | Default engine name for unspecified requests | (system picks first available) |
-| `RESONA_ENGINE_KEY` | engine-server | Engine auth key | (none, auth disabled) |
-| `RESONA_API_URL` | client | API server URL | `http://localhost:7000` |
-| `RESONA_API_KEY` | api, client | API auth key | (none, auth disabled) |
-| `RESONA_LLM_MODEL` | postprocess | Default LLM model | `gpt-4o-mini` |
-| `RESONA_LLM_API_BASE` | postprocess | Custom LLM endpoint | (none) |
-| `DEEPGRAM_API_KEY` | cloud-stt, cloud-tts | Deepgram API key | (required for Deepgram) |
-| `ELEVENLABS_API_KEY` | cloud-stt, cloud-tts | ElevenLabs API key | (required for ElevenLabs) |
-| `OPENAI_API_KEY` | cloud-stt, cloud-tts | OpenAI API key | (required for OpenAI) |
-| `DEFAULT_FASTWHISPER_MODEL` | engine-faster-whisper | Model name | `large-v3` |
-| `DEFAULT_WHISPER_MODEL` | engine-whisper | Model name | `large-v3` |
-| `DEFAULT_VOXTRAL_MODEL` | engine-voxtral | HuggingFace model ID | `openai/whisper-large-v3` |
-| `DATA_PATH` | api | Root data directory | `./data` |
-
-> **Cloud engine auto-activation:** Cloud STT/TTS providers (`deepgram`, `elevenlabs`, `openai`) are activated automatically by `engine_registry.py` when their respective API key env var is present. No explicit `RESONA_CLOUD_ENGINE` configuration is needed — set the key and the engine appears in `GET /v1/engines`.
-
-### Config files
-
-```
-~/.resona/
-├── config.json          ← engines (server + cloud), auto-start settings, default_engine, default_private
-├── replacements.json    ← override default text replacement rules
-└── postprocess.json     ← full pipeline config: replacements + LLM steps
-```
-
-`config.json` supports cloud engine entries: `{"name": "deepgram", "type": "cloud", "provider": "deepgram"}`. API keys are read from env vars at call time — they are never stored in `config.json`.
-
-`default_private: true` in `config.json` makes `resona transcribe` refuse non-private engines by default (equivalent to always passing `--private`).
-
-If neither `postprocess.json` nor `replacements.json` exists, bundled default replacements are used automatically.
+See [docs/configuration/environment.md](docs/configuration/environment.md) for the full env var reference.
 
 ### Engine resolution order (`resona transcribe`)
 
