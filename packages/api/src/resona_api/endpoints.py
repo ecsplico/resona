@@ -58,6 +58,7 @@ async def submit_jobs(
     audio_files: List[UploadFile] = File(...),
     keep: bool = Form(True),
     translate: bool = Form(False),
+    engine: Optional[str] = Form(default=None),
     api_key: str = Depends(verify_api_key)
 ):
     """Upload one or more audio files and register them for async transcription."""
@@ -75,7 +76,7 @@ async def submit_jobs(
             content = await audio_file.read()
             await buffer.write(content)
 
-        job = register_job(filename=name_new, upload_name=name_original, keep=keep, translate=translate)
+        job = register_job(filename=name_new, upload_name=name_original, keep=keep, translate=translate, engine=engine)
         jobs.append(job)
 
     return jobs

@@ -7,17 +7,17 @@ import io
 import struct
 import wave
 from threading import Event
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from resona_api import engine_registry as reg
 from resona_api.db.engine import engine as db_engine
 from resona_api.db.models import Replacement
 from resona_api.db.utils import register_job
-from resona_api.engine_client import EngineClient
 from resona_api.tasks_transcribe import TranscribeTask
 
 
@@ -29,6 +29,17 @@ def _make_wav_bytes() -> bytes:
         w.setframerate(16000)
         w.writeframes(struct.pack("<" + "h" * 160, *([0] * 160)))
     return buf.getvalue()
+
+
+_FAKE_INFO = reg.EngineInfo(
+    name="test-engine",
+    kind="local",
+    capabilities=["stt"],
+    private=True,
+    available=True,
+    models=[],
+    url="http://test-engine:9999",
+)
 
 
 @pytest.fixture
@@ -74,16 +85,15 @@ def test_full_job_lifecycle_with_postprocessing(lifecycle_client, clean_db):
         audio_file = file_path / job.filename
     audio_file.write_bytes(_make_wav_bytes())
 
-    # 5. Mock engine client and process the job
-    mock_engine_client = MagicMock(spec=EngineClient)
-    mock_engine_client.transcribe.return_value = {
-        "text": "hello world",
-        "language": "de",
-        "segments": [],
-    }
+    # 5. Process the job via the registry
+    asr_result = {"text": "hello world", "language": "de", "segments": []}
 
-    task = TranscribeTask(shutdown_event=Event(), engine_client=mock_engine_client)
-    with patch("resona_api.tasks_transcribe.write_md_file"):
+    task = TranscribeTask(shutdown_event=Event())
+    with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=asr_result) as mock_run_stt,
+        patch("resona_api.tasks_transcribe.write_md_file"),
+    ):
         task._process_next_job()
 
     # 6. Verify job is COMPLETED with correct fields
@@ -93,9 +103,9 @@ def test_full_job_lifecycle_with_postprocessing(lifecycle_client, clean_db):
     assert job["transcript"] == "hello world"   # raw text from engine
     assert job["md"] == "GOODBYE world"          # postprocessed with replacement
 
-    # 7. Verify engine was called WITHOUT replacements
-    mock_engine_client.transcribe.assert_called_once()
-    _, kwargs = mock_engine_client.transcribe.call_args
+    # 7. Verify run_stt was called WITHOUT replacements
+    mock_run_stt.assert_called_once()
+    _, kwargs = mock_run_stt.call_args
     assert "replacements" not in kwargs
 
 
@@ -123,15 +133,14 @@ def test_job_lifecycle_no_replacements(lifecycle_client, clean_db):
         audio_file = file_path / job.filename
     audio_file.write_bytes(_make_wav_bytes())
 
-    mock_engine_client = MagicMock(spec=EngineClient)
-    mock_engine_client.transcribe.return_value = {
-        "text": "plain text output",
-        "language": "de",
-        "segments": [],
-    }
+    asr_result = {"text": "plain text output", "language": "de", "segments": []}
 
-    task = TranscribeTask(shutdown_event=Event(), engine_client=mock_engine_client)
-    with patch("resona_api.tasks_transcribe.write_md_file"):
+    task = TranscribeTask(shutdown_event=Event())
+    with (
+        patch.object(reg, "resolve", return_value=_FAKE_INFO),
+        patch.object(reg, "run_stt", return_value=asr_result),
+        patch("resona_api.tasks_transcribe.write_md_file"),
+    ):
         task._process_next_job()
 
     resp = lifecycle_client.get(f"/job/{job_id}")
