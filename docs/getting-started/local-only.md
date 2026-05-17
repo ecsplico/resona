@@ -12,7 +12,7 @@ Local-only mode lets you transcribe audio without running any server. The CLI ha
 | `resona live` | Yes | — |
 | `resona watch` | No | resona-api (:7000) |
 | Job queue (`GET /jobs`) | No | resona-api (:7000) |
-| Replacements CRUD | No | resona-api (:7000) |
+| Profiles CRUD | No | resona-api (:7000) |
 
 ## How it activates
 
