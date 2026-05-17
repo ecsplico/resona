@@ -174,7 +174,7 @@ The `conftest.py` fixtures that make this work:
 @pytest.fixture(scope="session", autouse=True)
 def create_tables():
     from resona_api.db.engine import engine
-    from resona_api.db.models import Job, Replacement, InitialPrompt
+    from resona_api.db.models import Job
     SQLModel.metadata.create_all(engine)
 
 
@@ -183,8 +183,6 @@ def clean_db(create_tables):
     from resona_api.db.engine import engine
     with Session(engine) as session:
         session.execute(text("DELETE FROM job"))
-        session.execute(text("DELETE FROM replacement"))
-        session.execute(text("DELETE FROM initialprompt"))
         session.commit()
 ```
 
