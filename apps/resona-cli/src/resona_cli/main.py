@@ -8,6 +8,7 @@ from .prompts import prompts_app
 from .watch import watch_directory
 from .transcribe import transcribe_files
 from .submit import submit_files
+from .speech import speak
 
 app = typer.Typer(help="resona CLI")
 
@@ -17,6 +18,7 @@ app.add_typer(prompts_app, name="prompts", help="Manage initial transcription pr
 app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
 app.command("submit")(submit_files)
+app.command("speech")(speak)
 
 
 def _check_missing(modules):
