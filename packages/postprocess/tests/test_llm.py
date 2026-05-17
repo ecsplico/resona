@@ -46,3 +46,23 @@ def test_llm_transform_retries_once(monkeypatch):
     monkeypatch.setattr(llm_mod, "litellm", type("L", (), {"completion": staticmethod(flaky)}))
     assert llm_transform("raw", prompt="p") == "OK"
     assert calls["n"] == 2
+
+
+from resona_postprocess.llm import llm_extract
+
+
+def test_llm_extract_parses_json(monkeypatch):
+    monkeypatch.setattr(
+        llm_mod, "litellm",
+        type("L", (), {"completion": staticmethod(lambda **k: _Resp('{"diagnose": "x"}'))}),
+    )
+    assert llm_extract("raw", prompt="extract") == {"diagnose": "x"}
+
+
+def test_llm_extract_malformed_json_keeps_raw(monkeypatch):
+    monkeypatch.setattr(
+        llm_mod, "litellm",
+        type("L", (), {"completion": staticmethod(lambda **k: _Resp("not json"))}),
+    )
+    out = llm_extract("raw", prompt="extract")
+    assert out == {"_raw": "not json"}
