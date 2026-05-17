@@ -1,0 +1,6 @@
+[build]
+  command = "pip install uv && uv sync --all-packages --no-build-isolation-package openai-whisper && uv run mkdocs build"
+  publish = "site"
+
+[build.environment]
+  PYTHON_VERSION = "3.12"
