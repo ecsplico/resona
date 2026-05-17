@@ -60,3 +60,56 @@ def test_from_dict_rejects_llm_without_prompt():
 def test_to_dict_roundtrip():
     p = Profile.from_dict(_ok_profile())
     assert Profile.from_dict(p.to_dict()).steps == p.steps
+
+
+import json as _json
+from resona_postprocess.profile import (
+    resolve_profile, list_profiles, bundled_default,
+)
+
+
+def test_bundled_default_loads():
+    p = bundled_default()
+    assert p.name == "default"
+    assert any(s["type"] == "replacements" for s in p.steps)
+
+
+def test_resolve_profile_by_name(tmp_path):
+    (tmp_path / "arzt.json").write_text(_json.dumps(
+        {"name": "arzt", "steps": []}))
+    p = resolve_profile("arzt", tmp_path)
+    assert p.name == "arzt"
+
+
+def test_resolve_profile_inline_json(tmp_path):
+    p = resolve_profile('{"name": "inline", "steps": []}', tmp_path)
+    assert p.name == "inline"
+
+
+def test_resolve_profile_dict(tmp_path):
+    p = resolve_profile({"name": "d", "steps": []}, tmp_path)
+    assert p.name == "d"
+
+
+def test_resolve_profile_default_falls_back_to_bundled(tmp_path):
+    p = resolve_profile("default", tmp_path)
+    assert p.name == "default"
+
+
+def test_resolve_profile_file_shadows_bundled(tmp_path):
+    (tmp_path / "default.json").write_text(_json.dumps(
+        {"name": "default", "description": "user", "steps": []}))
+    p = resolve_profile("default", tmp_path)
+    assert p.description == "user"
+
+
+def test_resolve_profile_unknown_raises(tmp_path):
+    with pytest.raises(ProfileError, match="not found"):
+        resolve_profile("nope", tmp_path)
+
+
+def test_list_profiles(tmp_path):
+    (tmp_path / "a.json").write_text(_json.dumps(
+        {"name": "a", "description": "AA", "steps": []}))
+    out = list_profiles(tmp_path)
+    assert {"name": "a", "description": "AA"} in out
