@@ -168,3 +168,56 @@ def test_engines(
             any_ok = True
 
     raise typer.Exit(0 if any_ok else 1)
+
+
+@engines_app.command("status")
+def engines_status():
+    """Show the live gateway catalogue of available engines and their status."""
+    from resona_client.client import ResonaClient
+
+    try:
+        client = ResonaClient.from_config(auto_start=False)
+        data = client.list_engines()
+    except RuntimeError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error reaching gateway: {e}", err=True)
+        raise typer.Exit(1)
+
+    engines = data.get("engines", [])
+    default_name = data.get("default")
+
+    if not engines:
+        typer.echo("No engines in catalogue.")
+        return
+
+    try:
+        from rich.table import Table
+        from rich.console import Console
+
+        table = Table(title="Engine Catalogue")
+        table.add_column("Name")
+        table.add_column("Kind")
+        table.add_column("Capabilities")
+        table.add_column("Available")
+        table.add_column("Models")
+        for e in engines:
+            name = e["name"]
+            if name == default_name:
+                name = f"[bold]{name}[/bold] (default)"
+            avail = "[green]✓[/green]" if e.get("available") else "[red]✗[/red]"
+            caps = ", ".join(e.get("capabilities", []))
+            models = ", ".join(e.get("models", [])) or "-"
+            table.add_row(name, e.get("kind", ""), caps, avail, models)
+        Console().print(table)
+    except ImportError:
+        typer.echo(f"  {'NAME':<22}{'KIND':<9}{'CAPS':<12}{'AVAIL':<8}MODELS")
+        for e in engines:
+            name = e["name"]
+            if name == default_name:
+                name += " (default)"
+            avail = "✓" if e.get("available") else "✗"
+            caps = ",".join(e.get("capabilities", []))
+            models = ",".join(e.get("models", [])) or "-"
+            typer.echo(f"  {name:<22}{e.get('kind', ''):<9}{caps:<12}{avail:<8}{models}")
