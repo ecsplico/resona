@@ -37,3 +37,19 @@ def test_invalid_regex_skipped():
 
 def test_empty_replacements():
     assert apply_replacements("hello", []) == "hello"
+
+
+def test_apply_replacements_new_pattern_key():
+    rules = [{"pattern": r"\bKomma\b", "replacement": ","}]
+    assert apply_replacements("a Komma b", rules) == "a , b"
+
+
+def test_apply_replacements_legacy_name_key():
+    rules = [{"name": r"\bKomma\b", "replacement": ","}]
+    assert apply_replacements("a Komma b", rules) == "a , b"
+
+
+def test_apply_replacements_skips_invalid_pattern():
+    rules = [{"pattern": "[", "replacement": "x"},
+             {"pattern": r"\bok\b", "replacement": "OK"}]
+    assert apply_replacements("ok", rules) == "OK"
