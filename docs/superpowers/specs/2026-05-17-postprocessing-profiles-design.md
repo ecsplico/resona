@@ -176,10 +176,13 @@ This package becomes the single home of the profile concept.
   `steps: list[dict]`.
 - `Profile.from_dict(data)` / `Profile.from_file(path)` — parse and validate.
   Validation fails fast at load time, not mid-job: unknown step types, missing
-  required fields, and uncompilable regex patterns raise a clear error.
+  required fields, uncompilable regex patterns, and duplicate `extract`-step
+  `name`s all raise a clear error.
 - `resolve_profile(ref, profiles_dir)` — `ref` is a profile name (resolved to
   `profiles_dir/<name>.json`), a filesystem path, or an already-parsed dict
-  (inline submission). Returns a `Profile`.
+  (inline submission). Returns a `Profile`. A name found as a file in
+  `profiles_dir` shadows the bundled profile of the same name; `bundled_default()`
+  is used only when no file matches.
 - `list_profiles(profiles_dir)` — enumerate available profiles (name +
   description).
 - `bundled_default()` — return the shipped `default` profile.
@@ -327,8 +330,11 @@ The local fallback and `transcribe` use it when `--profile` is absent.
   after upgrade, reads the old `Replacement` / `InitialPrompt` tables if they
   exist and exports them to `~/.resona/profiles/default.json` (active
   replacements as a `replacements` step, active initial prompt as
-  `initial_prompt`). It then drops the two tables. If the tables do not exist,
-  it is a no-op.
+  `initial_prompt`). It then drops the two tables via raw SQL (the SQLModel
+  classes no longer exist to call `.__table__.drop()`). If the tables do not
+  exist, it is a no-op. The written `default.json` shadows the bundled
+  `default` profile, so a migrated install keeps its prior config and a fresh
+  install uses the bundled one.
 - **Bundled default:** any job/request with no `profile` resolves to the
   shipped `default` profile, so behavior is unchanged for non-adopters.
 - **Field-name compatibility:** the replacements loader accepts the legacy
