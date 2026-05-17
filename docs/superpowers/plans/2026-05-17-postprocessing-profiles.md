@@ -339,7 +339,6 @@ git commit -m "feat(postprocess): add Profile dataclass with validation"
 **Files:**
 - Modify: `packages/postprocess/src/resona_postprocess/profile.py`
 - Create: `packages/postprocess/src/resona_postprocess/profiles/default.json`
-- Modify: `packages/postprocess/pyproject.toml` (package-data inclusion)
 - Test: `packages/postprocess/tests/test_profile.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -486,13 +485,15 @@ def list_profiles(profiles_dir: Path | str) -> list[dict]:
     return out
 ```
 
-- [ ] **Step 5: Ensure package data ships**
+- [ ] **Step 5: Confirm package data ships**
 
-In `packages/postprocess/pyproject.toml`, confirm the build includes JSON data
-files. If a `[tool.hatch.build.targets.wheel]` or `[tool.setuptools.package-data]`
-section already includes `default_replacements.json`, extend its glob to cover
-`profiles/*.json`. If JSON files are picked up automatically (hatchling default),
-no change is needed — verify by running step 6.
+`packages/postprocess/pyproject.toml` uses `[tool.hatch.build.targets.wheel]`
+with `packages = ["src/resona_postprocess"]`, which includes **all** files under
+the package (including non-`.py` data like `default_replacements.json` and the
+new `profiles/default.json`) automatically. No `pyproject.toml` change is
+needed. Verify by running step 6 — `test_bundled_default_loads` exercises the
+bundled path. If that test cannot find the file, only then add `profiles/*.json`
+to a package-data glob.
 
 - [ ] **Step 6: Run tests** — `uv run pytest packages/postprocess/tests/test_profile.py -v` → PASS.
 
@@ -501,7 +502,6 @@ no change is needed — verify by running step 6.
 ```bash
 git add packages/postprocess/src/resona_postprocess/profile.py \
         packages/postprocess/src/resona_postprocess/profiles/default.json \
-        packages/postprocess/pyproject.toml \
         packages/postprocess/tests/test_profile.py
 git commit -m "feat(postprocess): profile resolution, listing, bundled default"
 ```
@@ -952,15 +952,24 @@ def build_pipeline(profile: Profile) -> PostprocessPipeline:
     return pipe
 ```
 
-- [ ] **Step 4: Delete `sources.py`**
+- [ ] **Step 4: Delete `sources.py` and its now-broken tests**
 
 ```bash
 git rm packages/postprocess/src/resona_postprocess/sources.py
+git rm packages/postprocess/tests/test_sources.py
+git rm packages/postprocess/tests/test_mixed_pipeline.py
 ```
 
-If a `tests/test_sources.py` exists, delete it too. Grep for other importers:
-`grep -rn "build_pipeline_from_config\|resona_postprocess.sources" --include=*.py .`
-Each hit is fixed in a later task (CLI in Task 15); note any unexpected hit.
+Both `test_sources.py` and `test_mixed_pipeline.py` import
+`from resona_postprocess.sources import build_pipeline_from_config` and will fail
+to collect once `sources.py` is gone — they must be removed in this task so the
+suite stays green. The new `test_pipeline.py` (Step 1) already covers the
+replacements + LLM + extract combination that `test_mixed_pipeline.py` tested.
+
+Then grep for any other importers:
+`grep -rn "build_pipeline_from_config\|resona_postprocess.sources\|llm_postprocess" --include=*.py packages apps`
+The remaining hits are `apps/resona-cli/src/resona_cli/transcribe.py` and
+`watch.py` — both fixed in Task 15. Note any unexpected hit.
 
 - [ ] **Step 5: Run tests** — `uv run pytest packages/postprocess/tests/ -v` → PASS.
 
@@ -979,6 +988,8 @@ git commit -m "feat(postprocess): result-carrying pipeline and build_pipeline"
 - Modify: `packages/api/src/resona_api/db/models.py`
 - Modify: `packages/api/src/resona_api/db/engine.py`
 - Modify: `packages/api/src/resona_api/db/utils.py`
+- Delete: `packages/api/src/resona_api/db/presets.py`
+- Modify: `packages/api/tests/test_db_utils.py`
 - Test: `packages/api/tests/test_db.py` (create if absent)
 
 - [ ] **Step 1: Write the failing test**
@@ -1019,9 +1030,13 @@ In `db/models.py`:
 Update the `Job` docstring to document the new fields.
 
 In `db/engine.py`:
-- Remove `Replacement, InitialPrompt` from the `from .models import ...` line and
-  remove the `populate_default_replacements` / `populate_initial_prompts`
-  functions and the `from .presets import ...` lines.
+- Change `from .models import Job, Replacement, InitialPrompt` to
+  `from .models import Job`.
+- Delete the two `from .presets import ...` lines.
+- Delete the `populate_default_replacements` and `populate_initial_prompts`
+  functions entirely.
+- After deleting those functions, `select` and `Session` are no longer used —
+  change the SQLModel import to `from sqlmodel import SQLModel, create_engine`.
 - Extend `create_db_and_tables()`'s idempotent-migration block to add the new
   `Job` columns to pre-existing databases:
 
@@ -1038,6 +1053,13 @@ def create_db_and_tables():
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {col} VARCHAR"))
         conn.commit()
     log.info("Database tables created successfully.")
+```
+
+Delete the now-dead presets module — the migration helper (Task 8) reads from
+the legacy DB tables, not from `presets.py`, so nothing references it anymore:
+
+```bash
+git rm packages/api/src/resona_api/db/presets.py
 ```
 
 In `db/utils.py`:
@@ -1063,13 +1085,20 @@ def register_job(filename: str, upload_name: str, keep: bool = True,
                 "result": f"/job/{job.id}"}
 ```
 
-- [ ] **Step 4: Run tests** — `uv run pytest packages/api/tests/test_db.py -v` → PASS.
+- [ ] **Step 4: Update `test_db_utils.py`**
+
+`packages/api/tests/test_db_utils.py` has tests for the now-deleted
+`get_active_replacements()` and `get_active_initial_prompts_string()` helpers.
+Delete those test functions. If a test exercises `register_job`, leave it; add a
+case asserting a passed `profile` is persisted on the returned/fetched job.
+
+- [ ] **Step 5: Run tests** — `uv run pytest packages/api/tests/test_db.py packages/api/tests/test_db_utils.py -v` → PASS.
   (Other API tests will fail until later tasks — that is expected.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add packages/api/src/resona_api/db/ packages/api/tests/test_db.py
+git add packages/api/src/resona_api/db/ packages/api/tests/test_db.py packages/api/tests/test_db_utils.py
 git commit -m "refactor(api): drop config tables, add profile fields to Job"
 ```
 
@@ -1427,12 +1456,12 @@ git commit -m "feat(api): profile file store and /profiles CRUD router"
 **Files:**
 - Modify: `packages/api/src/resona_api/endpoints.py`
 - Modify: `packages/api/src/resona_api/app.py`
-- Test: `packages/api/tests/test_jobs.py` (or the existing endpoint test file)
+- Modify: `packages/api/tests/test_endpoints.py`
 
 - [ ] **Step 1: Write the failing test**
 
-Add to the existing jobs/endpoint test module (find it with
-`ls packages/api/tests/`; create `test_jobs.py` if none covers `/jobs`):
+Add to `packages/api/tests/test_endpoints.py` (this is the existing module that
+covers `/jobs`, `/replacements/`, and `/prompts/`):
 
 ```python
 def test_submit_job_accepts_profile(client, tmp_audio):
@@ -1465,6 +1494,10 @@ In `endpoints.py`:
 - Remove now-unused imports (`Replacement`, `InitialPrompt`, `BaseModel` if no
   longer referenced).
 
+In `test_endpoints.py`:
+- Delete every test that hits `/replacements/` or `/prompts/` — those routes no
+  longer exist and the tests would fail. Keep the job-related tests.
+
 In `app.py`:
 - Change the import to `from .db.engine import create_db_and_tables` (drop the
   `populate_*` names).
@@ -1486,12 +1519,12 @@ from .profiles_routes import router as profiles_router
 app.include_router(profiles_router)
 ```
 
-- [ ] **Step 4: Run tests** — `uv run pytest packages/api/tests/test_jobs.py -v` → PASS.
+- [ ] **Step 4: Run tests** — `uv run pytest packages/api/tests/test_endpoints.py -v` → PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/api/src/resona_api/endpoints.py packages/api/src/resona_api/app.py packages/api/tests/
+git add packages/api/src/resona_api/endpoints.py packages/api/src/resona_api/app.py packages/api/tests/test_endpoints.py
 git commit -m "feat(api): job profile field, remove config routes, wire migration"
 ```
 
@@ -1501,17 +1534,22 @@ git commit -m "feat(api): job profile field, remove config routes, wire migratio
 
 **Files:**
 - Modify: `packages/api/src/resona_api/tasks_transcribe.py`
-- Modify: `packages/api/src/resona_api/formatting.py` (sidecar writer — inspect first)
-- Test: `packages/api/tests/test_tasks_transcribe.py`
+- Modify: `packages/api/tests/test_tasks.py` (existing worker tests)
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Update the existing worker tests**
 
-Create `packages/api/tests/test_tasks_transcribe.py`. Mirror the engine-mocking
-approach the existing API tests use (`reg.run_stt` / `EngineClient`). The test
-should: register a job with an inline profile that has a `replacements` step and
-an `extract` step, mock the engine to return fixed text, mock
-`resona_postprocess.llm.litellm`, run one `_process_next_job()` iteration, then
-assert:
+`packages/api/tests/test_tasks.py` already tests `TranscribeTask._process_next_job`
+against the **old** code path — it relies on `get_active_initial_prompts_string`,
+the inline `apply_replacements` block, and DB replacements. Rewriting the worker
+(Step 3) breaks those tests. In this step, update `test_tasks.py`:
+
+- Remove or rewrite any test asserting DB-replacement behavior or referencing the
+  removed helpers.
+- Add a new test for the profile path. Mirror the engine-mocking approach the
+  file already uses (`reg.run_stt` / `EngineClient`). Register a job with an
+  inline profile that has a `replacements` step and an `extract` step, mock the
+  engine to return fixed text, mock `resona_postprocess.llm.litellm`, run one
+  `_process_next_job()` iteration, then assert:
 
 ```python
 def test_job_runs_profile_pipeline(...):
@@ -1594,12 +1632,12 @@ Add `from pathlib import Path` if not already imported. Remove the old
 `get_active_initial_prompts_string` / `get_active_replacements` /
 `PostprocessPipeline` / `apply_replacements` imports.
 
-- [ ] **Step 4: Run tests** — `uv run pytest packages/api/tests/test_tasks_transcribe.py -v` → PASS.
+- [ ] **Step 4: Run tests** — `uv run pytest packages/api/tests/test_tasks.py -v` → PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/api/src/resona_api/tasks_transcribe.py packages/api/tests/test_tasks_transcribe.py
+git add packages/api/src/resona_api/tasks_transcribe.py packages/api/tests/test_tasks.py
 git commit -m "feat(api): run profile pipeline in the transcribe worker"
 ```
 
@@ -1925,11 +1963,18 @@ git add apps/resona-cli/ && git commit -m "feat(cli): resona profiles subcommand
 
 ---
 
-## Task 15: `transcribe --profile` for both CLI paths
+## Task 15: `transcribe` & `watch` profile support for both CLI paths
 
 **Files:**
 - Modify: `apps/resona-cli/src/resona_cli/transcribe.py`
+- Modify: `apps/resona-cli/src/resona_cli/watch.py`
 - Test: `apps/resona-cli/tests/test_transcribe.py`
+- Test: `apps/resona-cli/tests/test_watch.py`
+
+**Why `watch.py` is here:** `watch.py`'s `_watch_local_fallback` also imports
+`build_pipeline_from_config` (deleted in Task 6) and calls `pipeline.run()`
+expecting a `str`. After Task 6 it would `ModuleNotFoundError` at runtime. It is
+fixed in this task alongside `transcribe.py`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2008,12 +2053,28 @@ _PROFILES_DIR = Path.home() / ".resona" / "profiles"
 `result = pipeline.run(raw_text)`, write `result.text` to the `.txt`/`.md` output
 and, when `result.data` is non-empty, write a `<stem>.json` sidecar next to it.
 
-- [ ] **Step 4: Run tests** — `uv run pytest apps/resona-cli/tests/ -v` → PASS.
+- [ ] **Step 4: Fix `watch.py`**
 
-- [ ] **Step 5: Commit**
+Apply the same change to `watch.py`'s `_watch_local_fallback`:
+- Add a `--profile` option to `watch_directory` (same `typer.Option` as above)
+  and thread it into `_watch_local_fallback` as a parameter.
+- Replace `from resona_postprocess.sources import build_pipeline_from_config`
+  and `pipeline = build_pipeline_from_config()` with the same
+  `resolve_profile` + `build_pipeline` block used in `transcribe.py` (resolving
+  `profile or EngineConfig.load().default_profile or "default"` against
+  `~/.resona/profiles/`).
+- `pipeline.run()` now returns a `PostprocessResult` — change line ~97
+  `out_path.write_text(transcript, ...)` to use `result.text`, and write a
+  `<stem>.json` sidecar when `result.data` is non-empty.
+- The gateway path of `watch` only calls `client.submit_job(f)` — pass
+  `profile=profile` to that call too so watched uploads honour the profile.
+
+- [ ] **Step 5: Run tests** — `uv run pytest apps/resona-cli/tests/ -v` → PASS.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/resona-cli/ && git commit -m "feat(cli): transcribe --profile for gateway and local fallback"
+git add apps/resona-cli/ && git commit -m "feat(cli): transcribe & watch --profile for gateway and local fallback"
 ```
 
 ---
@@ -2029,9 +2090,16 @@ git add apps/resona-cli/ && git commit -m "feat(cli): transcribe --profile for g
 - [ ] **Step 1: Full test sweep**
 
 Run: `uv run pytest`
-Expected: all packages PASS. Fix any cross-package fallout (e.g. a lingering
-import of `resona_postprocess.sources`, `Replacement`, or removed client methods).
-`grep -rn "build_pipeline_from_config\|get_active_replacements\|InitialPrompt\|add_replacement" --include=*.py packages apps` should return nothing in non-test source.
+Expected: all packages PASS. Fix any cross-package fallout — a lingering import
+of `resona_postprocess.sources`, `db.presets`, `Replacement`/`InitialPrompt`, or
+a removed client method. Pay attention to `packages/api/tests/test_job_lifecycle.py`
+(end-to-end job test): if it asserts replacement behavior, update it to register
+a job with a profile and assert the profile pipeline ran.
+
+This grep should return nothing in non-test source:
+`grep -rn "build_pipeline_from_config\|get_active_replacements\|get_active_initial_prompts\|InitialPrompt\|Replacement\|db.presets\|add_replacement\|llm_postprocess" --include=*.py packages apps`
+(`llm_postprocess` may still appear as the deprecated alias definition in
+`llm.py` itself — that single hit is expected.)
 
 - [ ] **Step 2: Update `CLAUDE.md`**
 
