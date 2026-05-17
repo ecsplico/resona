@@ -73,6 +73,18 @@ logs service="":
 rebuild:
     docker compose -f docker-compose.resona.yml up -d --build
 
+# Start only the faster-whisper engine + API
+up-faster-whisper:
+    docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
+
+# Start only the whisper (PyTorch) engine + API
+up-whisper:
+    docker compose -f docker-compose.resona.yml --profile whisper up -d
+
+# Start only the voxtral engine + API
+up-voxtral:
+    docker compose -f docker-compose.resona.yml --profile voxtral up -d
+
 # ── Tests ─────────────────────────────────────────────────────────────
 
 # Run all tests (pass extra args: just test -k test_transcribe)
@@ -131,3 +143,14 @@ docs:
 # Build static docs to site/
 docs-build:
     uv run mkdocs build
+
+# ── Code quality ──────────────────────────────────────────────────────
+
+# Auto-format all Python files and apply safe lint fixes
+format:
+    uv run ruff format .
+    uv run ruff check --fix .
+
+# Check for lint issues without modifying files
+lint:
+    uv run ruff check .
