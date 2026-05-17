@@ -447,6 +447,43 @@ def test_transcribe_fallback_private_flag_runs_local(tmp_path):
     mock_engine.transcribe.assert_called_once()
 
 
+def test_transcribe_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):
+    """When pipeline.run() returns non-empty data, a <stem>.json sidecar is written."""
+    make_wav(tmp_path / "report.wav")
+    out_dir = tmp_path / "out"
+    mock_engine = MagicMock()
+    mock_engine.transcribe.return_value = {"text": "raw", "language": "de", "segments": []}
+    mock_engine.__enter__ = lambda s: mock_engine
+    mock_engine.__exit__ = MagicMock(return_value=False)
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.run.return_value = PostprocessResult(
+        text="processed", data={"fields": {"x": 1}}
+    )
+    mock_profile = MagicMock()
+    mock_resolve = MagicMock(return_value=mock_profile)
+    mock_build = MagicMock(return_value=mock_pipeline)
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config",
+              side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
+        patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
+        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
+        patch("resona_cli.transcribe.build_pipeline", mock_build),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
+
+    assert result.exit_code == 0
+    txt_path = out_dir / "report.txt"
+    sidecar_path = out_dir / "report.json"
+    assert txt_path.exists(), "transcript .txt file should be written"
+    assert txt_path.read_text() == "processed"
+    assert sidecar_path.exists(), "sidecar .json file should be written when data is non-empty"
+    sidecar_data = json.loads(sidecar_path.read_text())
+    assert sidecar_data == {"fields": {"x": 1}}
+
+
 def test_transcribe_fallback_resolves_profile_name(tmp_path):
     """Local fallback resolves --profile NAME via resolve_profile and runs build_pipeline."""
     make_wav(tmp_path / "audio.wav")

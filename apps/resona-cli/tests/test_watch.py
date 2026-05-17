@@ -290,6 +290,47 @@ def test_watch_gateway_forwards_profile(tmp_path):
     mock_client.submit_job.assert_called_once_with(audio_file, profile="cardiology")
 
 
+def test_watch_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):
+    """When pipeline.run() returns non-empty data, a <stem>.json sidecar is written."""
+    make_wav(tmp_path / "report.wav")
+    mock_engine = _make_local_engine_watch(transcript="raw")
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.run.return_value = PostprocessResult(
+        text="processed", data={"fields": {"x": 1}}
+    )
+    mock_profile = MagicMock()
+    mock_resolve = MagicMock(return_value=mock_profile)
+    mock_build = MagicMock(return_value=mock_pipeline)
+
+    call_count = 0
+
+    def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 1:
+            raise KeyboardInterrupt
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
+        patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
+        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+        patch("resona_cli.watch.resolve_profile", mock_resolve),
+        patch("resona_cli.watch.build_pipeline", mock_build),
+    ):
+        result = runner.invoke(app, ["watch", str(tmp_path)])
+
+    import json
+    assert result.exit_code == 0
+    txt_path = tmp_path / "report.txt"
+    sidecar_path = tmp_path / "report.json"
+    assert txt_path.exists(), "transcript .txt file should be written"
+    assert txt_path.read_text() == "processed"
+    assert sidecar_path.exists(), "sidecar .json file should be written when data is non-empty"
+    sidecar_data = json.loads(sidecar_path.read_text())
+    assert sidecar_data == {"fields": {"x": 1}}
+
+
 def test_watch_fallback_passes_model_and_language(tmp_path):
     """--model and --language are forwarded correctly."""
     make_wav(tmp_path / "audio.wav")

@@ -10,6 +10,7 @@ from .engine import InProcessEngine
 from resona_client.client import ResonaClient
 from resona_client.config import EngineConfig
 from .engines import BUILTIN_ENGINES
+from .profiles import resolve_profile_arg as _resolve_profile_arg
 from resona_postprocess.profile import resolve_profile, ProfileError
 from resona_postprocess.pipeline import build_pipeline
 
@@ -50,17 +51,6 @@ def _expand_inputs(inputs: list[str], recursive: bool) -> list[Path]:
             typer.echo(f"Not found: {raw}", err=True)
 
     return out
-
-
-def _resolve_profile_arg(profile_arg: Optional[str]) -> Optional[str]:
-    """If profile_arg is a path to an existing .json file, read and return its text.
-    Otherwise return the name string as-is (or None)."""
-    if profile_arg is None:
-        return None
-    p = Path(profile_arg)
-    if p.suffix == ".json" and p.exists():
-        return p.read_text(encoding="utf-8")
-    return profile_arg
 
 
 def transcribe_files(
