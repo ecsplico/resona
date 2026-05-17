@@ -1,5 +1,6 @@
 services:
-  engine:
+  engine-faster-whisper:
+    profiles: ["faster-whisper"]
     build:
       context: .
       dockerfile: packages/engine-faster-whisper/Dockerfile
@@ -24,6 +25,58 @@ services:
       start_period: 300s
     restart: unless-stopped
 
+  engine-whisper:
+    profiles: ["whisper"]
+    build:
+      context: .
+      dockerfile: packages/engine-whisper/Dockerfile
+    ports:
+      - "7002:7001"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      RESONA_ENGINE: whisper
+      DEFAULT_WHISPER_MODEL: large-v3
+      LOGLEVEL: info
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    restart: unless-stopped
+
+  engine-voxtral:
+    profiles: ["voxtral"]
+    build:
+      context: .
+      dockerfile: packages/engine-voxtral/Dockerfile
+    ports:
+      - "7003:7001"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      RESONA_ENGINE: voxtral
+      DEFAULT_VOXTRAL_MODEL: openai/whisper-large-v3
+      LOGLEVEL: info
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -33,12 +86,9 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      RESONA_ENGINE_URL: http://engine:7001
+      RESONA_ENGINE_URLS: http://engine-faster-whisper:7001,http://engine-whisper:7001,http://engine-voxtral:7001
       DATA_PATH: /app/data
       LOGLEVEL: info
     env_file:
       - .env
-    depends_on:
-      engine:
-        condition: service_healthy
     restart: unless-stopped
