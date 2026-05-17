@@ -284,3 +284,40 @@ def test_engines_status_no_server_exits_nonzero(isolated_config):
                 side_effect=RuntimeError("no server")):
         result = runner.invoke(app, ["engines", "status"])
     assert result.exit_code != 0
+
+
+def test_engines_status_marks_default(isolated_config):
+    catalogue = {
+        "engines": [
+            {"name": "faster-whisper", "kind": "local", "capabilities": ["stt"],
+             "private": True, "available": True, "models": ["large-v3"]},
+        ],
+        "default": "faster-whisper",
+    }
+    mock_client = MagicMock()
+    mock_client.list_engines.return_value = catalogue
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        result = runner.invoke(app, ["engines", "status"])
+
+    assert result.exit_code == 0
+    assert "default" in result.output
+
+
+def test_engines_status_empty_catalogue(isolated_config):
+    mock_client = MagicMock()
+    mock_client.list_engines.return_value = {"engines": [], "default": None}
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        result = runner.invoke(app, ["engines", "status"])
+
+    assert result.exit_code == 0
+    assert "No engines" in result.output
+
+
+def test_engines_status_gateway_error_exits_nonzero(isolated_config):
+    import httpx
+    with patch("resona_client.client.ResonaClient.from_config",
+               side_effect=httpx.ConnectError("refused")):
+        result = runner.invoke(app, ["engines", "status"])
+    assert result.exit_code != 0

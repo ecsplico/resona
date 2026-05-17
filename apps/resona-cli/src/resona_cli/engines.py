@@ -3,6 +3,7 @@ from typing import Optional
 
 import typer
 
+from resona_client.client import ResonaClient
 from resona_client.config import EngineConfig, EngineEntry, is_reachable
 
 engines_app = typer.Typer(no_args_is_help=True, help="Manage engine server addresses.")
@@ -173,16 +174,11 @@ def test_engines(
 @engines_app.command("status")
 def engines_status():
     """Show the live gateway catalogue of available engines and their status."""
-    from resona_client.client import ResonaClient
-
     try:
         client = ResonaClient.from_config(auto_start=False)
         data = client.list_engines()
-    except RuntimeError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
     except Exception as e:
-        typer.echo(f"Error reaching gateway: {e}", err=True)
+        typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
     engines = data.get("engines", [])
