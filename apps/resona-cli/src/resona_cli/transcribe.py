@@ -80,9 +80,11 @@ def transcribe_files(
                                  engine, want_private)
         return
     except (httpx.ConnectError, httpx.TimeoutException, RuntimeError):
-        typer.echo("No server reachable — running engine locally.", err=True)
+        pass
 
     local_engine_name = engine if engine in BUILTIN_ENGINES else cfg.default_engine
+    # Local engines are inherently private; --private is honoured by the fallback
+    # path naturally (no audio leaves the machine).
     _transcribe_local_fallback(files, output_dir, model, language,
                                 engine_timeout, local_engine_name)
 
@@ -123,10 +125,6 @@ def _transcribe_local_fallback(
     engine: str = "faster-whisper",
 ) -> None:
     from resona_postprocess.sources import build_pipeline_from_config
-
-    if not files:
-        print("No audio files found.")
-        return
 
     local_engine, cleanup = _resolve_local_engine(model, engine_timeout, engine)
     pipeline = build_pipeline_from_config()

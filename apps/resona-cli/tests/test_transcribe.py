@@ -358,3 +358,25 @@ def test_transcribe_uses_in_process_engine_when_available(tmp_path):
     assert result.exit_code == 0
     mock_engine.transcribe.assert_called_once()
     assert (out_dir / "audio.txt").read_text() == "hi"
+
+
+def test_transcribe_fallback_private_flag_runs_local(tmp_path):
+    """--private with no gateway still runs the local engine (local is inherently private)."""
+    make_wav(tmp_path / "audio.wav")
+    mock_engine = MagicMock()
+    mock_engine.transcribe.return_value = {"text": "local", "language": "de", "segments": []}
+    mock_engine.__enter__ = lambda s: mock_engine
+    mock_engine.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config",
+              side_effect=RuntimeError("no server")),
+        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
+        patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
+        patch("resona_postprocess.sources.build_pipeline_from_config",
+              return_value=_noop_pipeline()),
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--private"])
+
+    assert result.exit_code == 0
+    mock_engine.transcribe.assert_called_once()
