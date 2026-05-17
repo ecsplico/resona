@@ -21,8 +21,9 @@ resona/
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) engine
     ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers engine
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
+    ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
     ├── postprocess/        ← resona-postprocess: replacements + LLM pipeline
-    ├── api/                ← resona-api: job queue + DB + postprocessing, :7000
+    ├── api/                ← resona-api: job queue + DB + postprocessing + unified STT/TTS API, :7000
     └── client/             ← resona-client: httpx client library
 ```
 
@@ -68,6 +69,7 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 
 ### resona-engine-server
 - `app.py` — FastAPI app: `/health`, `POST /transcribe`, `WS /ws/transcribe`, `WS /ws/live`
+  - `/health` returns `{status: "ok", engine: str, models: [str]}`
 - `auth.py` — optional `RESONA_ENGINE_KEY` auth
 - `ws_transcribe.py`, `ws_live.py` — WebSocket endpoint handlers
 - `run.py` — uvicorn entry point
@@ -92,6 +94,14 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `providers/elevenlabs.py` — POSTs audio to ElevenLabs Speech-to-Text; default model `scribe_v1`; key env var `ELEVENLABS_API_KEY`
 - `providers/openai.py` — POSTs audio to OpenAI Whisper API; default model `whisper-1`; key env var `OPENAI_API_KEY`
 
+### resona-cloud-tts
+- `types.py` — `SpeechResult` TypedDict: `{audio: bytes, content_type: str}`
+- `errors.py` — `CloudTTSError` (base), `MissingAPIKeyError(env_var)` (env var not set), `ProviderHTTPError(provider, status_code, body)` (non-2xx response)
+- `registry.py` — `PROVIDERS` (set), `PROVIDER_ENV_KEYS` (name → env var), `DEFAULT_MODELS` (name → model), `DEFAULT_VOICES` (name → voice), `CONTENT_TYPES` (name → MIME type), `get_provider(name)` (returns provider module)
+- `providers/openai.py` — `synthesize(text, *, api_key, model, voice, response_format, options)` → POSTs to `https://api.openai.com/v1/audio/speech`; Bearer auth; default model `tts-1`; key env var `OPENAI_API_KEY`
+- `providers/elevenlabs.py` — POSTs to `https://api.elevenlabs.io/v1/text-to-speech/{voice_id}`; `xi-api-key` header; key env var `ELEVENLABS_API_KEY`
+- `providers/deepgram.py` — POSTs to `https://api.deepgram.com/v1/speak`; Token auth; voice overrides model; key env var `DEEPGRAM_API_KEY`
+
 ### resona-postprocess
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
 - `llm.py` — `llm_postprocess(text, prompt, model, api_base)` via litellm
@@ -102,9 +112,11 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 ### resona-api
 - `app.py` — FastAPI lifespan: creates DB, starts `TranscribeTask`, instantiates `EngineClient`
 - `endpoints.py` — REST routes: jobs, replacements, prompts
+- `audio_routes.py` (NEW) — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`
+- `engine_registry.py` (NEW) — multi-backend catalogue: probes local engine `/health` endpoints, checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)`, error hierarchy
 - `tasks_transcribe.py` — background thread: dequeues PENDING jobs, calls engine, **applies postprocessing locally**
 - `engine_client.py` — `EngineClient.transcribe()`: POSTs to engine (no replacements sent)
-- `db/models.py` — `Job`, `Replacement`, `InitialPrompt` SQLModel tables
+- `db/models.py` — `Job`, `Replacement`, `InitialPrompt` SQLModel tables; `Job` has an `engine: Optional[str]` field recording which engine handled the job
 - `db/engine.py` — SQLite engine + `create_db_and_tables()`
 - `db/utils.py` — `register_job()`, `get_active_replacements()`, `get_active_initial_prompts_string()`
 - `db/presets.py` — default replacements and initial prompts seeded on first DB creation
@@ -316,22 +328,22 @@ Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API
 | Variable | Package | Purpose | Default |
 |----------|---------|---------|---------|
 | `RESONA_ENGINE` | engine-server | Engine selection | `faster-whisper` |
-| `RESONA_ENGINE_URL` | api | Engine service URL | `http://localhost:7001` |
+| `RESONA_ENGINE_URLS` | api | Comma-separated list of engine-server URLs | `http://localhost:7001` |
+| `RESONA_DEFAULT_ENGINE` | api | Default engine name for unspecified requests | (system picks first available) |
 | `RESONA_ENGINE_KEY` | engine-server | Engine auth key | (none, auth disabled) |
 | `RESONA_API_URL` | client | API server URL | `http://localhost:7000` |
 | `RESONA_API_KEY` | api, client | API auth key | (none, auth disabled) |
 | `RESONA_LLM_MODEL` | postprocess | Default LLM model | `gpt-4o-mini` |
 | `RESONA_LLM_API_BASE` | postprocess | Custom LLM endpoint | (none) |
-| `RESONA_CLOUD_ENGINE` | api | Cloud provider name for job routing (`deepgram`/`elevenlabs`/`openai`) | (none, uses local engine) |
-| `RESONA_CLOUD_MODEL` | api | Cloud provider model override | (provider default) |
-| `RESONA_CLOUD_OPTIONS` | api | Cloud provider options as JSON object | (none) |
-| `DEEPGRAM_API_KEY` | cloud-stt | Deepgram API key | (required for Deepgram) |
-| `ELEVENLABS_API_KEY` | cloud-stt | ElevenLabs API key | (required for ElevenLabs) |
-| `OPENAI_API_KEY` | cloud-stt | OpenAI API key | (required for OpenAI) |
+| `DEEPGRAM_API_KEY` | cloud-stt, cloud-tts | Deepgram API key | (required for Deepgram) |
+| `ELEVENLABS_API_KEY` | cloud-stt, cloud-tts | ElevenLabs API key | (required for ElevenLabs) |
+| `OPENAI_API_KEY` | cloud-stt, cloud-tts | OpenAI API key | (required for OpenAI) |
 | `DEFAULT_FASTWHISPER_MODEL` | engine-faster-whisper | Model name | `large-v3` |
 | `DEFAULT_WHISPER_MODEL` | engine-whisper | Model name | `large-v3` |
 | `DEFAULT_VOXTRAL_MODEL` | engine-voxtral | HuggingFace model ID | `openai/whisper-large-v3` |
 | `DATA_PATH` | api | Root data directory | `./data` |
+
+> **Cloud engine auto-activation:** Cloud STT/TTS providers (`deepgram`, `elevenlabs`, `openai`) are activated automatically by `engine_registry.py` when their respective API key env var is present. No explicit `RESONA_CLOUD_ENGINE` configuration is needed — set the key and the engine appears in `GET /v1/engines`.
 
 ### Config files
 

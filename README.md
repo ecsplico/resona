@@ -47,6 +47,7 @@ Engines are discovered via Python entry points (`resona.engines` group). Each en
 | `resona-engine-whisper` | -- | Original OpenAI Whisper (PyTorch) engine |
 | `resona-engine-voxtral` | -- | HuggingFace Transformers engine (Voxtral, Whisper, etc.) |
 | `resona-cloud-stt` | -- | Cloud STT providers: Deepgram, ElevenLabs, OpenAI Whisper API |
+| `resona-cloud-tts` | -- | Cloud TTS providers: OpenAI, ElevenLabs, Deepgram |
 | `resona-postprocess` | -- | Composable pipeline: regex replacements + LLM via litellm |
 | `resona-api` | 7000 | Job queue + SQLite + postprocessing, calls engine via HTTP |
 | `resona-client` | -- | httpx client library for the resona-api REST interface |
@@ -270,15 +271,25 @@ Set `"default_private": true` in `~/.resona/config.json` to make `--private` the
 # ~/.resona/config.json: {"default_engine": "deepgram", "engines": [...]}
 ```
 
-### resona-api cloud routing
+### resona-api unified STT/TTS API
 
-When `RESONA_CLOUD_ENGINE` is set, `resona-api` routes jobs to the cloud provider instead of the local engine server:
+`resona-api` exposes an OpenAI-compatible audio API at `:7000`. Cloud engines are activated automatically when their API key env var is present — no extra configuration required.
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `RESONA_CLOUD_ENGINE` | Cloud provider name (`deepgram`/`elevenlabs`/`openai`) | (unset — uses local engine) |
-| `RESONA_CLOUD_MODEL` | Provider model override | (provider default) |
-| `RESONA_CLOUD_OPTIONS` | Provider options as a JSON object | (none) |
+```
+GET  /v1/engines                      list all available engines (local + cloud)
+POST /v1/audio/transcriptions         STT: multipart audio_file + optional engine, language, prompt
+POST /v1/audio/speech                 TTS: JSON body {input, voice, model, engine, response_format}
+```
+
+To enable cloud engines, export the provider API key and they appear automatically:
+
+```bash
+export DEEPGRAM_API_KEY=…          # activates deepgram STT + TTS
+export ELEVENLABS_API_KEY=…        # activates elevenlabs STT + TTS
+export OPENAI_API_KEY=…            # activates openai STT + TTS
+```
+
+For multi-engine deployments set `RESONA_ENGINE_URLS` to a comma-separated list of engine-server URLs. Use `RESONA_DEFAULT_ENGINE` to pin the default engine for unspecified requests.
 
 ### Install personas
 
@@ -296,19 +307,17 @@ The default install is torch-free and needs no extra index — it includes the r
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_ENGINE` | `faster-whisper` | Engine to load |
-| `RESONA_ENGINE_URL` | `http://localhost:7001` | Engine URL (used by API) |
+| `RESONA_ENGINE` | `faster-whisper` | Engine to load (per engine-server process) |
+| `RESONA_ENGINE_URLS` | `http://localhost:7001` | Comma-separated list of engine-server URLs (used by API) |
+| `RESONA_DEFAULT_ENGINE` | _(first available)_ | Default engine name for unspecified API requests |
 | `RESONA_ENGINE_KEY` | _(unset)_ | Engine API key; auth disabled if unset |
 | `RESONA_API_URL` | `http://localhost:7000` | API URL (used by client/CLI) |
 | `RESONA_API_KEY` | _(unset)_ | API key; auth disabled if unset |
 | `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM for postprocessing |
 | `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint (e.g. Ollama) |
-| `RESONA_CLOUD_ENGINE` | _(unset)_ | Cloud provider for API job routing (`deepgram`/`elevenlabs`/`openai`) |
-| `RESONA_CLOUD_MODEL` | _(provider default)_ | Cloud provider model override |
-| `RESONA_CLOUD_OPTIONS` | _(unset)_ | Cloud provider options as JSON object |
-| `DEEPGRAM_API_KEY` | _(unset)_ | Deepgram API key (required when using Deepgram) |
-| `ELEVENLABS_API_KEY` | _(unset)_ | ElevenLabs API key (required when using ElevenLabs) |
-| `OPENAI_API_KEY` | _(unset)_ | OpenAI API key (required when using OpenAI cloud engine) |
+| `DEEPGRAM_API_KEY` | _(unset)_ | Deepgram API key — activates Deepgram STT + TTS automatically |
+| `ELEVENLABS_API_KEY` | _(unset)_ | ElevenLabs API key — activates ElevenLabs STT + TTS automatically |
+| `OPENAI_API_KEY` | _(unset)_ | OpenAI API key — activates OpenAI Whisper STT + TTS automatically |
 | `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model name |
 | `DEFAULT_WHISPER_MODEL` | `large-v3` | OpenAI Whisper model name |
 | `DEFAULT_VOXTRAL_MODEL` | `openai/whisper-large-v3` | HuggingFace model ID |
@@ -329,7 +338,7 @@ The default install is torch-free and needs no extra index — it includes the r
 ### Engine (:7001)
 
 ```
-GET  /health
+GET  /health              returns {status: "ok", engine: str, models: [str]}
 POST /transcribe          multipart: audio_file, task, language, initial_prompt, vad_filter, word_timestamps
 WS   /ws/transcribe       WebSocket batch transcription
 WS   /ws/live             WebSocket live transcription with VAD
@@ -360,9 +369,16 @@ POST /prompts/            body: {phrase}
 PUT  /prompts/{id}/activate
 PUT  /prompts/{id}/deactivate
 DELETE /prompts/{id}
+
+# OpenAI-compatible audio API
+GET  /v1/engines                      list local + cloud engines with capabilities
+POST /v1/audio/transcriptions         STT: multipart audio_file; optional: engine, language, prompt
+POST /v1/audio/speech                 TTS: JSON {input, voice, model, engine, response_format}
 ```
 
 Job lifecycle: `PENDING` -> `PROCESSING` -> `COMPLETED` | `FAILED`
+
+The `engine` field on a completed job records which engine processed it.
 
 ## Data storage
 
