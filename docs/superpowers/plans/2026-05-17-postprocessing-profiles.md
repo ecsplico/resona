@@ -750,13 +750,13 @@ def llm_extract(
     )
     try:
         parsed = _json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except (_json.JSONDecodeError, TypeError):
         return {"_raw": raw}
     return parsed if isinstance(parsed, dict) else {"_raw": raw}
 ```
 
-Note: `json` is already imported at module top via `import json as _json`; the
-`except` clause references `_json` — use `_json.JSONDecodeError` consistently.
+Note: place `import json as _json` with the other imports at the top of `llm.py`
+(not mid-file); the `except` clause must reference `_json.JSONDecodeError`.
 
 - [ ] **Step 4: Run tests** — `uv run pytest packages/postprocess/tests/test_llm.py -v` → PASS.
 
@@ -968,8 +968,13 @@ replacements + LLM + extract combination that `test_mixed_pipeline.py` tested.
 
 Then grep for any other importers:
 `grep -rn "build_pipeline_from_config\|resona_postprocess.sources\|llm_postprocess" --include=*.py packages apps`
-The remaining hits are `apps/resona-cli/src/resona_cli/transcribe.py` and
-`watch.py` — both fixed in Task 15. Note any unexpected hit.
+The remaining hits are `apps/resona-cli/src/resona_cli/transcribe.py`,
+`watch.py`, and their test files — all fixed in Task 15. Note any unexpected hit.
+
+**Expected:** after this task the `resona-postprocess` suite is green, but the
+`resona-cli` suite goes red (its tests still patch the deleted `sources` module)
+and stays red until Task 15. That is intentional sequencing — do not try to fix
+the CLI here.
 
 - [ ] **Step 5: Run tests** — `uv run pytest packages/postprocess/tests/ -v` → PASS.
 
@@ -989,6 +994,7 @@ git commit -m "feat(postprocess): result-carrying pipeline and build_pipeline"
 - Modify: `packages/api/src/resona_api/db/engine.py`
 - Modify: `packages/api/src/resona_api/db/utils.py`
 - Delete: `packages/api/src/resona_api/db/presets.py`
+- Modify: `packages/api/tests/conftest.py`
 - Modify: `packages/api/tests/test_db_utils.py`
 - Test: `packages/api/tests/test_db.py` (create if absent)
 
@@ -1085,20 +1091,37 @@ def register_job(filename: str, upload_name: str, keep: bool = True,
                 "result": f"/job/{job.id}"}
 ```
 
-- [ ] **Step 4: Update `test_db_utils.py`**
+- [ ] **Step 4: Update `conftest.py`** (blocking — affects the whole API suite)
+
+`packages/api/tests/conftest.py` references the removed models in two
+session/autouse fixtures that run before *every* API test. Update it:
+- In the `create_tables` fixture, change
+  `from resona_api.db.models import Job, Replacement, InitialPrompt` to
+  `from resona_api.db.models import Job`.
+- In the `clean_db` fixture, delete the two lines
+  `session.execute(text("DELETE FROM replacement"))` and
+  `session.execute(text("DELETE FROM initialprompt"))`. Keep `DELETE FROM job`.
+
+Without this step, conftest fails at import (`ImportError`) and every API test
+file (`test_audio_routes.py`, `test_cloud_routing.py`, `test_engine_*`, …) errors
+out at collection, not just the ones this plan edits directly.
+
+- [ ] **Step 5: Update `test_db_utils.py`**
 
 `packages/api/tests/test_db_utils.py` has tests for the now-deleted
 `get_active_replacements()` and `get_active_initial_prompts_string()` helpers.
 Delete those test functions. If a test exercises `register_job`, leave it; add a
 case asserting a passed `profile` is persisted on the returned/fetched job.
 
-- [ ] **Step 5: Run tests** — `uv run pytest packages/api/tests/test_db.py packages/api/tests/test_db_utils.py -v` → PASS.
-  (Other API tests will fail until later tasks — that is expected.)
+- [ ] **Step 6: Run tests** — `uv run pytest packages/api/tests/test_db.py packages/api/tests/test_db_utils.py -v` → PASS.
+  (Other API tests still fail until later tasks — expected; this task only
+  guarantees conftest no longer errors at collection.)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/api/src/resona_api/db/ packages/api/tests/test_db.py packages/api/tests/test_db_utils.py
+git add packages/api/src/resona_api/db/ packages/api/tests/conftest.py \
+        packages/api/tests/test_db.py packages/api/tests/test_db_utils.py
 git commit -m "refactor(api): drop config tables, add profile fields to Job"
 ```
 
@@ -1534,6 +1557,7 @@ git commit -m "feat(api): job profile field, remove config routes, wire migratio
 
 **Files:**
 - Modify: `packages/api/src/resona_api/tasks_transcribe.py`
+- Modify: `packages/api/src/resona_api/formatting.py` (sidecar writer)
 - Modify: `packages/api/tests/test_tasks.py` (existing worker tests)
 
 - [ ] **Step 1: Update the existing worker tests**
@@ -1583,7 +1607,7 @@ import json
 from resona_postprocess.pipeline import build_pipeline
 from resona_postprocess.profile import resolve_profile, ProfileError
 
-from .paths import FILE_PATH, MD_PATH, PROFILES_PATH
+from .paths import FILE_PATH, PROFILES_PATH
 ```
 
 Inside the `try:` body:
@@ -1613,31 +1637,57 @@ Inside the `try:` body:
                 )
 ```
 
-Then extend the MD-writing block to also write a `.json` sidecar when
-`job.structured` is set. Inspect `formatting.write_md_file` first to match its
-filename convention; write the sidecar next to the `.md` file:
+The MD filename is computed *inside* `formatting.write_md_file` (it is
+date-prefixed and id-suffixed: `"{date} {filepart} ({id}).md"`). To keep the
+sidecar beside the `.md` and avoid duplicating that naming logic, extend
+`write_md_file` itself rather than computing a name in `tasks_transcribe.py`.
+
+In `formatting.py`, change `write_md_file` to accept an optional `structured`
+argument and write a `.json` sidecar next to the `.md`:
+
+```python
+def write_md_file(id: int, filename: str, md: str, keepfile: bool,
+                  structured: str | None = None):
+    """Write a transcription result to a markdown file with metadata.
+
+    When `structured` is given, also write it as a `.json` sidecar beside the
+    `.md` file (same name, `.json` extension).
+    """
+    # ... unchanged body up to and including the `with open(md_filename ...)` block ...
+    try:
+        with open(md_filename, "w", encoding="utf-8") as file:
+            # ... unchanged ...
+            file.write(md)
+        if structured:
+            json_filename = md_filename[:-3] + ".json"
+            with open(json_filename, "w", encoding="utf-8") as jf:
+                jf.write(structured)
+    except IOError as e:
+        log.error(f"Error writing markdown file {md_filename}: {e}")
+```
+
+In `tasks_transcribe.py`, pass the structured JSON through:
 
 ```python
                 try:
-                    write_md_file(job.id, job.filename, job.md, job.keepfile)
-                    if job.structured:
-                        sidecar = MD_PATH / f"{Path(job.filename).stem}.json"
-                        sidecar.write_text(job.structured, encoding="utf-8")
+                    write_md_file(job.id, job.filename, job.md, job.keepfile,
+                                  structured=job.structured)
                     log.info(f"Job {job.id}: wrote MD file")
                 except Exception as e_md:
                     log.error(f"Job {job.id}: failed to write MD file: {e_md}")
 ```
 
-Add `from pathlib import Path` if not already imported. Remove the old
-`get_active_initial_prompts_string` / `get_active_replacements` /
-`PostprocessPipeline` / `apply_replacements` imports.
+Remove the old `get_active_initial_prompts_string` / `get_active_replacements` /
+`PostprocessPipeline` / `apply_replacements` imports from `tasks_transcribe.py`.
 
 - [ ] **Step 4: Run tests** — `uv run pytest packages/api/tests/test_tasks.py -v` → PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/api/src/resona_api/tasks_transcribe.py packages/api/tests/test_tasks.py
+git add packages/api/src/resona_api/tasks_transcribe.py \
+        packages/api/src/resona_api/formatting.py \
+        packages/api/tests/test_tasks.py
 git commit -m "feat(api): run profile pipeline in the transcribe worker"
 ```
 
@@ -2010,6 +2060,17 @@ Adapt signatures to whatever the final helper functions expose; the key
 assertions are: gateway path passes `profile` through to the client, and the
 local fallback resolves a `--profile` path/name into a `Profile` and runs
 `build_pipeline`.
+
+**Rewrite the existing `sources` patches.** `apps/resona-cli/tests/test_transcribe.py`
+and `apps/resona-cli/tests/test_watch.py` currently patch
+`resona_postprocess.sources.build_pipeline_from_config` (≈10 and ≈5 occurrences
+respectively). `sources.py` was deleted in Task 6, so `mock.patch` resolves the
+target at call time and raises `ModuleNotFoundError`. Every such `patch(...)`
+must be rewritten to patch the new path — typically
+`resona_cli.transcribe.build_pipeline` / `resona_cli.transcribe.resolve_profile`
+(and the `watch.py` equivalents) — and the mocked pipeline's `.run()` must return
+a `PostprocessResult(text=..., data={})`, not a bare string. Audit both files
+with `grep -n "sources\|build_pipeline_from_config" apps/resona-cli/tests/test_transcribe.py apps/resona-cli/tests/test_watch.py` and fix every hit.
 
 - [ ] **Step 2: Run test** — FAIL.
 
