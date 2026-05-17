@@ -1,5 +1,9 @@
 site_name: Resona
-site_description: Modular audio transcription platform with pluggable ASR engines
+site_description: Modular audio transcription platform with pluggable ASR engines and composable postprocessing
+site_url: https://ecsplico.github.io/resona/
+repo_url: https://github.com/ecsplico/resona
+repo_name: ecsplico/resona
+edit_uri: edit/main/docs/
 
 theme:
   name: material
@@ -19,8 +23,12 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.indexes
+    - navigation.instant
     - navigation.top
+    - navigation.footer
     - content.code.copy
+    - content.code.annotate
     - toc.follow
 
 plugins:
@@ -37,12 +45,9 @@ plugins:
             - packages/engine-whisper/src
             - packages/engine-voxtral/src
             - packages/cloud-stt/src
+            - packages/cloud-tts/src
             - packages/postprocess/src
             - apps/resona-cli/src
-            - packages/ws-client/src
-            - packages/ws-api/src
-            - packages/ws-engine/src
-            - apps/cli/src
           options:
             docstring_style: google
             show_root_heading: true
@@ -54,22 +59,40 @@ plugins:
 
 nav:
   - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+    - Local-Only Mode: getting-started/local-only.md
   - User Guide:
-    - CLI Setup & Onboarding: onboarding.md
-    - Server Setup: getting-started.md
-  - Architecture: architecture.md
-  - CLI Reference: cli.md
+    - CLI Reference: guide/cli.md
+    - Engine Selection: guide/engines.md
+    - Text Replacements: guide/replacements.md
+    - Postprocessing: guide/postprocessing.md
+    - Speech Synthesis: guide/tts.md
+    - Privacy: guide/privacy.md
+  - Server Setup:
+    - Docker Deployment: server/docker.md
+    - Full-Stack (uv): server/full-stack.md
   - Configuration:
-    - Engines & SSH: configuration/engines.md
     - Environment Variables: configuration/environment.md
+    - Config Files: configuration/config-files.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Stateless Engine Contract: architecture/engine-contract.md
+    - Job Lifecycle: architecture/job-lifecycle.md
+    - Postprocessing Pipeline: architecture/postprocessing.md
   - API Reference:
-    - Client Library: reference/client.md
-    - resona-api Internals: reference/ws-api.md
-    - resona-engine Internals: reference/engine.md
-
-validation:
-  links:
-    not_found: ignore
+    - resona-client: reference/client.md
+    - resona-api: reference/api.md
+    - resona-engine-server: reference/engine-server.md
+    - resona-asr-core: reference/asr-core.md
+    - resona-cloud-stt: reference/cloud-stt.md
+    - resona-cloud-tts: reference/cloud-tts.md
+    - resona-postprocess: reference/postprocess.md
+  - Development:
+    - Dev Workflow: development/workflow.md
+    - Adding an Engine: development/adding-engine.md
+    - Testing: development/testing.md
 
 not_in_nav: |
   superpowers/**
