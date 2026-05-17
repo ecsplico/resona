@@ -7,6 +7,7 @@ from .replacements import replacements_app
 from .prompts import prompts_app
 from .watch import watch_directory
 from .transcribe import transcribe_files
+from .submit import submit_files
 
 app = typer.Typer(help="resona CLI")
 
@@ -15,6 +16,7 @@ app.add_typer(replacements_app, name="replacements", help="Manage text replaceme
 app.add_typer(prompts_app, name="prompts", help="Manage initial transcription prompts.")
 app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
+app.command("submit")(submit_files)
 
 
 def _check_missing(modules):
