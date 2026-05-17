@@ -1,100 +1,82 @@
 # Environment Variables
 
-All configuration is read with `python-decouple`: environment variables take precedence over values in `.env`. Copy `.env.example` to `.env` to get started.
+All configuration is read with [`python-decouple`](https://github.com/HBNetwork/python-decouple): environment variables take precedence over values in a `.env` file. Copy `.env.example` to `.env` to get started.
+
+!!! note "Exception: resona-client"
+    `resona-client` uses `os.getenv()` for `RESONA_API_URL` and `RESONA_API_KEY` because it has no `python-decouple` dependency. All other packages use `config()` from `python-decouple`.
 
 ## resona-engine-server (`:7001`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_ENGINE` | `faster-whisper` | Engine to load: `faster-whisper`, `whisper`, or any installed entry-point name |
-| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | Model name/path for faster-whisper engine |
-| `DEFAULT_WHISPER_MODEL` | `large-v3` | Model name/path for openai-whisper engine |
-| `DEFAULT_TRANSFORMER_MODEL` | — | HuggingFace model ID for transformer engines |
-| `RESONA_ENGINE_KEY` | _(unset)_ | Optional API key for the engine; auth disabled if not set |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed CORS origins |
-| `LOGLEVEL` | `info` | Log level (`debug`, `info`, `warning`, `error`) |
+| `RESONA_ENGINE` | `faster-whisper` | Engine to load per engine-server process: `faster-whisper`, `whisper`, or `voxtral` |
+| `RESONA_ENGINE_KEY` | _(unset)_ | Optional API key for the engine; auth is disabled when not set |
+| `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-api (`:7000`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_ENGINE_URL` | `http://localhost:7001` | URL of the resona-engine service |
-| `RESONA_ENGINE_KEY` | _(unset)_ | API key sent to the engine (`X-API-Key`) |
-| `RESONA_API_KEY` | _(unset)_ | API key required from clients; auth disabled if not set |
-| `RESONA_CLOUD_ENGINE` | _(unset)_ | Cloud provider for job routing: `deepgram`, `elevenlabs`, or `openai`. When set, jobs are transcribed via the cloud provider instead of the local engine |
-| `RESONA_CLOUD_MODEL` | _(provider default)_ | Cloud provider model override |
-| `RESONA_CLOUD_OPTIONS` | _(unset)_ | Cloud provider options as a JSON object |
-| `DATA_PATH` | `./data` | Root directory for all data |
-| `FILE_PATH` | `$DATA_PATH/files` | Audio file storage directory |
-| `DB_PATH` | `$DATA_PATH/db` | SQLite database directory |
-| `LOGLEVEL` | `info` | Log level |
-
-## resona-postprocess
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for postprocessing steps |
-| `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint (e.g. local Ollama); uses litellm |
-
-## resona-cloud-stt
-
-Cloud STT provider API keys. Each is required only for the provider in use; they
-are read at call time and never stored in `~/.resona/config.json`.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEEPGRAM_API_KEY` | _(unset)_ | API key for the Deepgram provider |
-| `ELEVENLABS_API_KEY` | _(unset)_ | API key for the ElevenLabs provider |
-| `OPENAI_API_KEY` | _(unset)_ | API key for the OpenAI Whisper provider |
+| `RESONA_ENGINE_URLS` | `http://localhost:7001` | Comma-separated list of engine-server URLs; the API probes all and load-balances across reachable ones |
+| `RESONA_DEFAULT_ENGINE` | _(first available)_ | Engine name to use for requests that do not specify one |
+| `RESONA_ENGINE_KEY` | _(unset)_ | API key sent to engine-server in the `X-API-Key` header |
+| `RESONA_API_KEY` | _(unset)_ | API key required from clients; auth is disabled when not set |
+| `DATA_PATH` | `./data` | Root directory for all persistent data (audio files, SQLite DB, transcripts) |
+| `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-client / resona CLI
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_API_URL` | `http://localhost:7000` | resona-api base URL (overrides `~/.resona/config.json`) |
-| `RESONA_API_KEY` | _(empty)_ | API key for resona-api (`X-API-Key` header) |
-| `FILE_PATH` | `./data/files` | Output directory for recorded audio |
-| `SAMPLE_RATE` | `44100` | Microphone sample rate (Hz) |
-| `CHANNELS` | `1` | Microphone channel count |
-| `MD_PATH` | `./data/md` | Directory for saved Markdown transcripts |
+| `RESONA_API_URL` | `http://localhost:7000` | resona-api base URL |
+| `RESONA_API_KEY` | _(unset)_ | API key sent to resona-api (`X-API-Key` header) |
 
-## Docker Compose
+## resona-postprocess
 
-When using `docker compose -f docker-compose.resona.yml`, variables are loaded from the `.env` file in the project root. The engine variables can also be set inline in `docker-compose.resona.yml`.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for postprocessing pipeline steps |
+| `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint, e.g. a local Ollama instance; passed to litellm |
+
+## Cloud provider keys
+
+Cloud STT and TTS providers are activated **automatically** when their API key variable is present. No additional configuration is needed — set the key and the provider appears in `GET /v1/engines`.
+
+API keys are read from environment variables at call time and are never stored in `~/.resona/config.json`.
+
+| Variable | Provider | Activates |
+|----------|----------|-----------|
+| `DEEPGRAM_API_KEY` | Deepgram | Deepgram STT (`nova-3`) + TTS |
+| `ELEVENLABS_API_KEY` | ElevenLabs | ElevenLabs STT (`scribe_v1`) + TTS |
+| `OPENAI_API_KEY` | OpenAI | OpenAI Whisper API (`whisper-1`) + TTS (`tts-1`) |
+
+## Model names
+
+Override the default model loaded by each local engine:
+
+| Variable | Default | Engine |
+|----------|---------|--------|
+| `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | resona-engine-faster-whisper (CTranslate2) |
+| `DEFAULT_WHISPER_MODEL` | `large-v3` | resona-engine-whisper (PyTorch) |
+| `DEFAULT_VOXTRAL_MODEL` | `openai/whisper-large-v3` | resona-engine-voxtral (HuggingFace Transformers) |
+
+## Docker and .env file
+
+When using `docker compose -f docker-compose.resona.yml`, variables are loaded from the `.env` file in the project root via the `env_file` directive on the API service. Engine containers have their key variables hard-coded in `docker-compose.resona.yml` and can be overridden by adding them to `.env`.
 
 ```bash
 cp .env.example .env
-# Edit .env
-docker compose -f docker-compose.resona.yml up -d
+# Edit .env, then:
+docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
 ```
 
 !!! tip "API key setup"
-    If you set `RESONA_API_KEY` in `.env`, all clients must send `X-API-Key: <key>` with every request. Set the same value in `RESONA_API_KEY` for the `resona` CLI (or export it in your shell).
+    If you set `RESONA_API_KEY` in `.env`, all clients must send `X-API-Key: <key>` with every request. Export the same value as `RESONA_API_KEY` in your shell (or add it to `~/.bashrc`) so the `resona` CLI picks it up automatically.
 
----
-
-## Legacy variables (ws-* packages)
-
-The following variables are used by the legacy `ws-engine`, `ws-api`, `ws-client`, and `ws-cli` packages. They are retained for backward compatibility.
-
-### ws-engine (`:7001`, legacy)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ASR_MODE` | `faster-whisper` | Engine: `faster-whisper`, `whisper`, `transformer`, `whisper-tf` |
-| `ENGINE_API_KEY` | _(unset)_ | Optional API key for ws-engine |
-
-### ws-api (`:7000`, legacy)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENGINE_URL` | `http://localhost:7001` | URL of ws-engine |
-| `ENGINE_API_KEY` | _(unset)_ | API key sent to ws-engine |
-| `WS_API_KEY` | _(unset)_ | API key required from clients |
-
-### ws-client / ws-cli (legacy)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WS_API_URL` | `http://localhost:7000` | ws-api base URL |
-| `WS_API_KEY` | _(empty)_ | API key for ws-api |
+!!! tip "Custom LLM endpoint"
+    To use a local Ollama instance for postprocessing instead of OpenAI, set:
+    ```bash
+    RESONA_LLM_MODEL=ollama/llama3
+    RESONA_LLM_API_BASE=http://localhost:11434
+    ```
+    Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works here.
