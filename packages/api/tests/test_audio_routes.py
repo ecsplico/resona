@@ -102,3 +102,20 @@ def test_speech_private_yields_409(client):
             json={"input": "geheim", "private": True},
         )
     assert resp.status_code == 409
+
+
+def test_transcription_applies_profile(client, wav_bytes):
+    info = _catalogue()[0]
+    inline = ('{"name":"t","steps":[{"type":"replacements",'
+              '"rules":[{"pattern":"Komma","replacement":","}]}]}')
+    with patch.object(reg, "resolve", return_value=info), \
+         patch.object(reg, "run_stt",
+                       return_value={"text": "a Komma b", "language": "de",
+                                     "segments": []}):
+        resp = client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("a.wav", wav_bytes, "audio/wav")},
+            data={"profile": inline},
+        )
+    assert resp.status_code == 200
+    assert "," in resp.json()["text"]

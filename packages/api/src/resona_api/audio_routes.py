@@ -9,9 +9,10 @@ from pydantic import BaseModel
 
 from . import engine_registry as reg
 from .auth import verify_api_key
-from .db.utils import get_active_replacements
 from .endpoints import validate_audio_file
-from resona_postprocess.replacements import apply_replacements
+from .paths import PROFILES_PATH
+from resona_postprocess.pipeline import build_pipeline
+from resona_postprocess.profile import resolve_profile, ProfileError
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -66,6 +67,7 @@ async def create_transcription(
     response_format: str = Form(default="json"),
     engine: str | None = Form(default=None),
     private: bool = Form(default=False),
+    profile: str | None = Form(default=None),
     api_key: str = Depends(verify_api_key),
 ):
     """OpenAI-compatible synchronous speech-to-text."""
@@ -89,23 +91,31 @@ async def create_transcription(
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    text = result.get("text", "")
-    replacements = get_active_replacements()
-    if replacements:
-        text = apply_replacements(text, replacements)
+    try:
+        prof = resolve_profile(profile or "default", PROFILES_PATH)
+    except ProfileError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid profile: {exc}")
+    pp = build_pipeline(prof).run(result.get("text", ""))
+    text = pp.text
 
     if response_format == "text":
         return PlainTextResponse(text)
     if response_format == "verbose_json":
         segments = result.get("segments", [])
         duration = segments[-1]["end"] if segments else 0.0
-        return JSONResponse({
+        payload: dict = {
             "text": text,
             "language": result.get("language", language),
             "duration": duration,
             "segments": segments,
-        })
-    return JSONResponse({"text": text})
+        }
+        if pp.data:
+            payload["structured"] = pp.data
+        return JSONResponse(payload)
+    payload = {"text": text}
+    if pp.data:
+        payload["structured"] = pp.data
+    return JSONResponse(payload)
 
 
 class SpeechRequest(BaseModel):

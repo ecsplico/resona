@@ -9,13 +9,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
 from .tasks_transcribe import TranscribeTask
-from .db.engine import create_db_and_tables, populate_default_replacements, populate_initial_prompts
+from .db.engine import create_db_and_tables
 
 log = logging.getLogger(__name__)
 
 tags_metadata = [
     {"name": "Job", "description": "Transcription jobs."},
-    {"name": "Config", "description": "Replacements and prompts configuration."},
+    {"name": "Config", "description": "Postprocessing profiles configuration."},
     {"name": "Audio", "description": "OpenAI-compatible speech API."},
     {"name": "Engines", "description": "Engine discovery."},
 ]
@@ -29,8 +29,10 @@ async def lifespan(app: FastAPI):
 
     log.info("Initializing database...")
     create_db_and_tables()
-    populate_default_replacements()
-    populate_initial_prompts()
+    from .db.engine import engine as _db_engine
+    from .migration import migrate_config_tables_to_profile
+    from .paths import PROFILES_PATH
+    migrate_config_tables_to_profile(_db_engine, PROFILES_PATH)
 
     shutdown_event = Event()
 
@@ -67,8 +69,10 @@ async def health():
 
 from .endpoints import router
 from .audio_routes import router as audio_router
+from .profiles_routes import router as profiles_router
 app.include_router(router)
 app.include_router(audio_router)
+app.include_router(profiles_router)
 
 try:
     app.mount("/static", StaticFiles(directory='webapp', html=True), name="static")

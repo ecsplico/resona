@@ -10,8 +10,6 @@ FILE_PATH = os.environ.get("FILE_PATH", "")
 # ── /health ───────────────────────────────────────────────────────────────────
 
 def test_health(client):
-    from resona_api.app import app
-    from fastapi.testclient import TestClient
     # health is on the main app, not the router — test via a fresh client
     # but the router doesn't have /health, so just verify the router works at all
     resp = client.get("/jobs/")
@@ -105,98 +103,16 @@ def test_register_file_existing(client):
     assert "id" in resp.json()
 
 
-# ── Replacement CRUD ──────────────────────────────────────────────────────────
-
-def test_list_replacements_empty(client):
-    resp = client.get("/replacements/")
+def test_submit_job_accepts_profile(client, wav_bytes):
+    resp = client.post(
+        "/jobs",
+        files={"audio_files": ("a.wav", wav_bytes, "audio/wav")},
+        data={"profile": "arztbrief"},
+    )
     assert resp.status_code == 200
-    assert resp.json() == []
-
-
-def test_add_replacement(client):
-    resp = client.post("/replacements/", json={"name": "foo", "replacement": "bar"})
-    assert resp.status_code == 200
-    r = resp.json()
-    assert r["name"] == "foo"
-    assert r["replacement"] == "bar"
-    assert r["active"] is True
-    assert "id" in r
-
-
-def test_add_replacement_duplicate(client):
-    client.post("/replacements/", json={"name": "foo", "replacement": "bar"})
-    resp = client.post("/replacements/", json={"name": "foo", "replacement": "baz"})
-    assert resp.status_code == 409
-
-
-def test_delete_replacement(client):
-    r = client.post("/replacements/", json={"name": "todelete", "replacement": "x"}).json()
-    resp = client.delete(f"/replacements/{r['id']}")
-    assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
-    assert client.get("/replacements/").json() == []
-
-
-def test_delete_replacement_not_found(client):
-    resp = client.delete("/replacements/99999")
-    assert resp.status_code == 404
-
-
-# ── Prompt CRUD ───────────────────────────────────────────────────────────────
-
-def test_list_prompts_empty(client):
-    resp = client.get("/prompts/")
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
-def test_add_prompt(client):
-    resp = client.post("/prompts/", json={"phrase": "hello whisper"})
-    assert resp.status_code == 200
-    p = resp.json()
-    assert p["phrase"] == "hello whisper"
-    assert p["active"] is True
-
-
-def test_add_prompt_duplicate(client):
-    client.post("/prompts/", json={"phrase": "dup"})
-    resp = client.post("/prompts/", json={"phrase": "dup"})
-    assert resp.status_code == 409
-
-
-def test_activate_prompt_deactivates_others(client):
-    p1 = client.post("/prompts/", json={"phrase": "first"}).json()
-    p2 = client.post("/prompts/", json={"phrase": "second"}).json()
-
-    client.put(f"/prompts/{p2['id']}/activate")
-    prompts = {p["id"]: p for p in client.get("/prompts/").json()}
-    assert prompts[p1["id"]]["active"] is False
-    assert prompts[p2["id"]]["active"] is True
-
-
-def test_activate_prompt_not_found(client):
-    resp = client.put("/prompts/99999/activate")
-    assert resp.status_code == 404
-
-
-def test_deactivate_prompt(client):
-    p = client.post("/prompts/", json={"phrase": "active"}).json()
-    resp = client.put(f"/prompts/{p['id']}/deactivate")
-    assert resp.status_code == 200
-    updated = client.get("/prompts/").json()[0]
-    assert updated["active"] is False
-
-
-def test_delete_prompt(client):
-    p = client.post("/prompts/", json={"phrase": "todelete"}).json()
-    resp = client.delete(f"/prompts/{p['id']}")
-    assert resp.status_code == 200
-    assert client.get("/prompts/").json() == []
-
-
-def test_delete_prompt_not_found(client):
-    resp = client.delete("/prompts/99999")
-    assert resp.status_code == 404
+    job = resp.json()[0]
+    fetched = client.get(f"/job/{job['id']}").json()
+    assert fetched["profile"] == "arztbrief"
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
