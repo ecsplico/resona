@@ -26,7 +26,7 @@ def speak(
     private: bool = typer.Option(False, "--private",
         help="Require a private engine."),
     play: bool = typer.Option(False, "--play",
-        help="Pipe audio to a local player (mpv, ffplay, afplay) instead of saving."),
+        help="Pipe audio to a local player (aplay, afplay, mpv) instead of saving."),
 ):
     """Synthesise speech from TEXT via the gateway TTS engine."""
     if play and output == "-":
@@ -82,8 +82,7 @@ def _play_audio(data: bytes, fmt: str) -> None:
         try:
             subprocess.run(["afplay", tmp], check=False)
         finally:
-            import os
-            os.unlink(tmp)
+            Path(tmp).unlink(missing_ok=True)
         return
     if shutil.which("mpv"):
         subprocess.run(["mpv", "--no-video", "--really-quiet", "-"], input=data, check=False)
