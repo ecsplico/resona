@@ -77,12 +77,15 @@ class ResonaClient:
         keep: bool = True,
         translate: bool = False,
         engine: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> dict:
         """Upload an audio file and register it for async transcription. POST /jobs"""
         filepath = Path(filepath)
         data: dict = {"keep": str(keep).lower(), "translate": str(translate).lower()}
         if engine:
             data["engine"] = engine
+        if profile:
+            data["profile"] = profile
         with open(filepath, "rb") as f:
             resp = self._client.post(
                 f"{self.base_url}/jobs",
@@ -134,6 +137,7 @@ class ResonaClient:
         response_format: str = "json",
         engine: Optional[str] = None,
         private: bool = False,
+        profile: Optional[str] = None,
     ) -> dict:
         """Transcribe audio synchronously via the gateway. POST /v1/audio/transcriptions
 
@@ -153,6 +157,8 @@ class ResonaClient:
             data["prompt"] = prompt
         if engine:
             data["engine"] = engine
+        if profile:
+            data["profile"] = profile
         with open(audio_path, "rb") as f:
             resp = self._client.post(
                 f"{self.base_url}/v1/audio/transcriptions",
@@ -195,97 +201,29 @@ class ResonaClient:
         resp.raise_for_status()
         return resp.content
 
-    # ── Replacement CRUD ──────────────────────────────────────────────
+    # ── Profile CRUD ──────────────────────────────────────────────────
 
-    def list_replacements(self) -> list[dict]:
-        """List all text replacement rules. GET /replacements/
+    def list_profiles(self) -> list[dict]:
+        """List stored profiles. GET /profiles"""
+        resp = self._client.get(f"{self.base_url}/profiles")
+        resp.raise_for_status()
+        return resp.json()["profiles"]
 
-        Returns:
-            List of replacement dicts with keys ``id``, ``name``, ``replacement``, ``active``.
-        """
-        resp = self._client.get(f"{self.base_url}/replacements/")
+    def get_profile(self, name: str) -> dict:
+        """Fetch one profile. GET /profiles/{name}"""
+        resp = self._client.get(f"{self.base_url}/profiles/{name}")
         resp.raise_for_status()
         return resp.json()
 
-    def add_replacement(self, name: str, replacement: str) -> dict:
-        """Create a new text replacement rule. POST /replacements/
-
-        Args:
-            name: Regex pattern to match (applied case-insensitively).
-            replacement: Substitution text.
-
-        Returns:
-            Created replacement dict with assigned ``id``.
-        """
-        resp = self._client.post(
-            f"{self.base_url}/replacements/",
-            json={"name": name, "replacement": replacement},
-        )
+    def put_profile(self, name: str, profile: dict) -> dict:
+        """Create or replace a profile. PUT /profiles/{name}"""
+        resp = self._client.put(f"{self.base_url}/profiles/{name}", json=profile)
         resp.raise_for_status()
         return resp.json()
 
-    def delete_replacement(self, replacement_id: int) -> None:
-        """Delete a replacement rule. DELETE /replacements/{id}
-
-        Args:
-            replacement_id: ID of the replacement to delete.
-        """
-        resp = self._client.delete(f"{self.base_url}/replacements/{replacement_id}")
-        resp.raise_for_status()
-
-    # ── Prompt CRUD ───────────────────────────────────────────────────
-
-    def list_prompts(self) -> list[dict]:
-        """List all initial prompt phrases. GET /prompts/
-
-        Returns:
-            List of prompt dicts with keys ``id``, ``phrase``, ``active``.
-        """
-        resp = self._client.get(f"{self.base_url}/prompts/")
-        resp.raise_for_status()
-        return resp.json()
-
-    def add_prompt(self, phrase: str) -> dict:
-        """Add a new initial prompt phrase. POST /prompts/
-
-        Args:
-            phrase: Vocabulary hint passed to the transcription engine as ``initial_prompt``.
-
-        Returns:
-            Created prompt dict with assigned ``id``.
-        """
-        resp = self._client.post(
-            f"{self.base_url}/prompts/",
-            json={"phrase": phrase},
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    def activate_prompt(self, prompt_id: int) -> None:
-        """Activate a prompt phrase, deactivating all others. PUT /prompts/{id}/activate
-
-        Args:
-            prompt_id: ID of the prompt to activate.
-        """
-        resp = self._client.put(f"{self.base_url}/prompts/{prompt_id}/activate")
-        resp.raise_for_status()
-
-    def deactivate_prompt(self, prompt_id: int) -> None:
-        """Deactivate a prompt phrase without activating another. PUT /prompts/{id}/deactivate
-
-        Args:
-            prompt_id: ID of the prompt to deactivate.
-        """
-        resp = self._client.put(f"{self.base_url}/prompts/{prompt_id}/deactivate")
-        resp.raise_for_status()
-
-    def remove_prompt(self, prompt_id: int) -> None:
-        """Delete a prompt phrase. DELETE /prompts/{id}
-
-        Args:
-            prompt_id: ID of the prompt to remove.
-        """
-        resp = self._client.delete(f"{self.base_url}/prompts/{prompt_id}")
+    def delete_profile(self, name: str) -> None:
+        """Delete a profile. DELETE /profiles/{name}"""
+        resp = self._client.delete(f"{self.base_url}/profiles/{name}")
         resp.raise_for_status()
 
     def close(self):
