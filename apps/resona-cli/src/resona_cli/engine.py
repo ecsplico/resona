@@ -76,7 +76,8 @@ def get_transcriber(*args, **kwargs):
 def _load_audio(path: Path):
     """Re-exposed wrapper so tests can patch this symbol without touching asr-core directly."""
     _, fn = _import_asr_core()
-    return fn(str(path))
+    with open(path, "rb") as f:
+        return fn(f)
 
 
 class InProcessEngine:
