@@ -58,6 +58,34 @@ def test_in_process_engine_calls_registry(tmp_path):
     mock_transcriber.transcribe.assert_called_once()
 
 
+def test_load_audio_passes_file_object_not_path(tmp_path):
+    """_load_audio opens the file and hands a file object to asr-core's load_audio.
+
+    Regression: it previously passed str(path); load_audio calls .read() on its
+    argument, which raises AttributeError on a str.
+    """
+    from resona_cli.engine import _load_audio
+
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake-audio-bytes")
+
+    received = {}
+
+    def fake_load_audio(file, *args, **kwargs):
+        received["arg"] = file
+        received["data"] = file.read()  # AttributeError if file is a str
+        return np.zeros(16000, dtype=np.float32)
+
+    with patch(
+        "resona_cli.engine._import_asr_core",
+        return_value=(MagicMock(), fake_load_audio),
+    ):
+        _load_audio(audio)
+
+    assert hasattr(received["arg"], "read")
+    assert received["data"] == b"fake-audio-bytes"
+
+
 def test_in_process_engine_missing_extra_gives_install_hint(monkeypatch):
     """If resona-asr-core isn't installed, InProcessEngine raises ImportError with hint."""
     from resona_cli.engine import InProcessEngine
