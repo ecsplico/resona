@@ -18,8 +18,11 @@ explicit = true
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu130" }]
 
+# openai-whisper's setup.py imports `pkg_resources`, which setuptools 81 (Feb 2026)
+# removed. Pin the build env to setuptools<81 until upstream openai-whisper migrates
+# off pkg_resources. Tracked at: https://github.com/openai/whisper/discussions/2410
 [tool.uv.extra-build-dependencies]
-openai-whisper = ["setuptools", "wheel"]
+openai-whisper = ["setuptools<81", "wheel"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
