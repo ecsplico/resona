@@ -53,5 +53,7 @@ models/
 Thumbs.db
 
 # ── Legacy ──────────────────────────────────────────────────────────
+# Do NOT add `src/` here — every workspace package uses a src-layout
+# (packages/*/src/ and apps/resona-cli/src/), and hatchling honors
+# .gitignore at build time. An `src/` rule produces empty wheels.
 whisper-*
-src/

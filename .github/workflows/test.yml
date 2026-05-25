@@ -11,6 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        # libportaudio2  → required by `sounddevice` (imported by test_micrec)
+        # ffmpeg         → required by `resona_asr_core.audio.load_audio()`
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg
+
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
