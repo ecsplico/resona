@@ -24,9 +24,6 @@ __pycache__/
 **/test/
 *.md
 
-# Legacy
-src/
-
 # Env files (secrets)
 .env
 .env.*
