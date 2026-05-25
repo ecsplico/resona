@@ -41,6 +41,34 @@ install-cli-voxtral:
         --index https://download.pytorch.org/whl/cu130 \
         --from ./apps/resona-cli 'resona-cli[voxtral]'
 
+# ── Install from GitHub (no clone needed) ─────────────────────────────
+# Same as the local-path recipes above, but pulls straight from the public
+# repo — useful for end users who don't want to clone. Pass a ref (tag,
+# branch, or commit) as the argument; defaults to `main`.
+#   just install-cli-gh                 → installs from main
+#   just install-cli-gh v0.1.0          → installs from tag v0.1.0
+# Requires the repo to be public (or `gh auth setup-git` for private).
+
+# Default install from GitHub: record/live TUIs + faster-whisper (torch-free)
+install-cli-gh ref="main":
+    uv tool install --force \
+        --from "git+https://github.com/ecsplico/resona.git@{{ ref }}#subdirectory=apps/resona-cli" \
+        resona-cli
+
+# From GitHub + OpenAI Whisper (PyTorch) engine
+install-cli-gh-whisper ref="main":
+    uv tool install --force \
+        --index https://download.pytorch.org/whl/cu130 \
+        --from "git+https://github.com/ecsplico/resona.git@{{ ref }}#subdirectory=apps/resona-cli" \
+        'resona-cli[whisper]'
+
+# From GitHub + Voxtral / HuggingFace Transformers engine
+install-cli-gh-voxtral ref="main":
+    uv tool install --force \
+        --index https://download.pytorch.org/whl/cu130 \
+        --from "git+https://github.com/ecsplico/resona.git@{{ ref }}#subdirectory=apps/resona-cli" \
+        'resona-cli[voxtral]'
+
 # Uninstall the resona-cli tool
 uninstall-cli:
     uv tool uninstall resona-cli
@@ -73,6 +101,35 @@ logs service="":
 rebuild:
     docker compose -f docker-compose.resona.yml up -d --build
 
+# ── Build images (no start) ───────────────────────────────────────────
+# Engine builds need their profile to be selected — services behind a
+# profile are invisible to compose otherwise. The api has no profile, so
+# `build-api` works without one.
+
+# Build every image (all engines + api)
+build:
+    docker compose -f docker-compose.resona.yml \
+        --profile faster-whisper --profile whisper --profile voxtral \
+        build
+
+# Build only the faster-whisper engine image
+build-faster-whisper:
+    docker compose -f docker-compose.resona.yml --profile faster-whisper build engine-faster-whisper
+
+# Build only the whisper (PyTorch) engine image
+build-whisper:
+    docker compose -f docker-compose.resona.yml --profile whisper build engine-whisper
+
+# Build only the voxtral engine image
+build-voxtral:
+    docker compose -f docker-compose.resona.yml --profile voxtral build engine-voxtral
+
+# Build only the API image
+build-api:
+    docker compose -f docker-compose.resona.yml build api
+
+# ── Start backend containers ──────────────────────────────────────────
+
 # Start only the faster-whisper engine + API
 up-faster-whisper:
     docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
@@ -84,6 +141,21 @@ up-whisper:
 # Start only the voxtral engine + API
 up-voxtral:
     docker compose -f docker-compose.resona.yml --profile voxtral up -d
+
+# Start the faster-whisper engine + API on a CPU-only host (no NVIDIA GPU)
+up-cpu:
+    docker compose -f docker-compose.resona.yml -f docker-compose.cpu.yml \
+        --profile faster-whisper up -d
+
+# ── GHCR pre-built images ─────────────────────────────────────────────
+# Once a tagged release runs the release workflow, images are available at
+# ghcr.io/ecsplico/resona-*. `pull` fetches the latest without rebuilding.
+
+# Pull the latest pre-built images from GHCR
+pull:
+    docker compose -f docker-compose.resona.yml \
+        --profile faster-whisper --profile whisper --profile voxtral \
+        pull
 
 # ── Tests ─────────────────────────────────────────────────────────────
 
