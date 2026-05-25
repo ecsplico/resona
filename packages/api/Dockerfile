@@ -15,6 +15,13 @@ RUN uv sync --package resona-api --frozen --no-dev --no-editable --compile-bytec
 # ---- runtime ----
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="resona-api"
+LABEL org.opencontainers.image.description="Resona job queue, SQLite DB, and postprocessing API on :7000 (OpenAI-compatible /v1/audio routes)"
+LABEL org.opencontainers.image.source="https://github.com/ecsplico/resona"
+LABEL org.opencontainers.image.documentation="https://ecsplico.github.io/resona/"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.vendor="Resona contributors"
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
