@@ -28,7 +28,7 @@ jobs:
         run: pip install uv
 
       - name: Install workspace packages
-        run: uv sync --all-packages --no-build-isolation-package openai-whisper
+        run: uv sync --all-packages
 
       - name: Deploy docs
         run: uv run mkdocs gh-deploy --force

@@ -17,7 +17,7 @@ For production multi-machine deployments, see [Docker Deployment](docker.md).
 - All workspace packages installed:
 
 ```bash
-uv sync --all-packages --no-build-isolation-package openai-whisper
+uv sync --all-packages
 ```
 
 ## Start the stack

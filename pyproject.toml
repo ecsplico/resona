@@ -6,6 +6,10 @@ requires-python = ">=3.12"
 [tool.uv.workspace]
 members = ["packages/*", "apps/resona-cli"]
 
+# pytorch-cu130 is declared here so workspace dev (`uv sync --all-packages`)
+# resolves torch to the CUDA wheels for engine-whisper / engine-voxtral. It is
+# also declared in apps/resona-cli/pyproject.toml so it travels with
+# `uv tool install --from ./apps/resona-cli` — workspace-level indexes do not.
 [[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"

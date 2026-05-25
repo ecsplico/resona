@@ -27,6 +27,15 @@ dependencies = [
 [project.optional-dependencies]
 whisper = ["resona-engine-whisper"]
 voxtral = ["resona-engine-voxtral"]
+all = ["resona-engine-whisper", "resona-engine-voxtral"]
+
+# PyTorch index for the [whisper] / [voxtral] extras.
+# Declared on the CLI package (not the workspace root) so it travels with
+# `uv tool install --from ./apps/resona-cli` — workspace indexes do not.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
 
 [tool.uv.sources]
 resona-client = { workspace = true }
@@ -36,6 +45,7 @@ resona-asr-core = { workspace = true }
 resona-engine-faster-whisper = { workspace = true }
 resona-engine-whisper = { workspace = true }
 resona-engine-voxtral = { workspace = true }
+torch = [{ index = "pytorch-cu130" }]
 
 [project.scripts]
 resona = "resona_cli.main:app"

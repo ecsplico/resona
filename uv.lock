@@ -2195,6 +2195,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "resona-engine-voxtral" },
+    { name = "resona-engine-whisper" },
+]
 voxtral = [
     { name = "resona-engine-voxtral" },
 ]
@@ -2212,7 +2216,9 @@ requires-dist = [
     { name = "resona-client", editable = "packages/client" },
     { name = "resona-cloud-stt", editable = "packages/cloud-stt" },
     { name = "resona-engine-faster-whisper", editable = "packages/engine-faster-whisper" },
+    { name = "resona-engine-voxtral", marker = "extra == 'all'", editable = "packages/engine-voxtral" },
     { name = "resona-engine-voxtral", marker = "extra == 'voxtral'", editable = "packages/engine-voxtral" },
+    { name = "resona-engine-whisper", marker = "extra == 'all'", editable = "packages/engine-whisper" },
     { name = "resona-engine-whisper", marker = "extra == 'whisper'", editable = "packages/engine-whisper" },
     { name = "resona-postprocess", editable = "packages/postprocess" },
     { name = "sounddevice", specifier = ">=0.5.1" },
@@ -2221,7 +2227,7 @@ requires-dist = [
     { name = "textual", specifier = ">=3.2.0" },
     { name = "typer", specifier = ">=0.15.3" },
 ]
-provides-extras = ["whisper", "voxtral"]
+provides-extras = ["whisper", "voxtral", "all"]
 
 [[package]]
 name = "resona-client"
