@@ -33,12 +33,12 @@ jobs:
           - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile }
           - { name: resona-api,                   dockerfile: packages/api/Dockerfile }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Build (no push)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
