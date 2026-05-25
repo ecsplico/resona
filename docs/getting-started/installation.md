@@ -16,10 +16,10 @@ Clone the repo and sync all packages in one step:
 ```bash
 git clone https://github.com/ecsplico/resona.git
 cd resona
-uv sync --all-packages --no-build-isolation-package openai-whisper
+uv sync --all-packages
 ```
 
-`--no-build-isolation-package openai-whisper` is required because the legacy `openai-whisper` package does not declare its build-time dependencies.
+The legacy `openai-whisper` package does not declare its build-time dependencies; the workspace root's `[tool.uv.extra-build-dependencies]` block supplies `setuptools` and `wheel` so `uv sync` succeeds without a manual `--no-build-isolation-package` flag.
 
 Run commands through `uv run` while inside the workspace:
 
@@ -54,6 +54,28 @@ The **default install is torch-free**: it bundles faster-whisper via CTranslate2
         --extra-index-url https://download.pytorch.org/whl/cu130 \
         'resona-cli[whisper]'
       ```
+
+## macOS
+
+The default persona (`faster-whisper`) is CPU-only and torch-free — it works out of the box on Apple Silicon and Intel Macs:
+
+```bash
+uv tool install --from ./apps/resona-cli resona-cli
+resona transcribe recording.mp3
+```
+
+The `[whisper]` and `[voxtral]` extras pull PyTorch from a CUDA-Linux wheel index (`pytorch-cu130`) that has no macOS wheels — installing them straight will fail. Install PyTorch from PyPI first, then add the extra without the CUDA index:
+
+```bash
+uv tool install --from ./apps/resona-cli --with torch 'resona-cli[whisper]'
+# or, for an existing tool environment
+uv tool install --reinstall --from ./apps/resona-cli --with torch 'resona-cli[whisper]'
+```
+
+This installs the default PyPI torch wheel, which on Apple Silicon ships with **MPS** (Metal Performance Shaders) support. Resona's `_detect_device()` picks `cuda` → `mps` → `cpu`, so MPS is selected automatically when CUDA is not available and torch reports `mps.is_available()`.
+
+!!! note "No CUDA on Mac"
+    macOS has no CUDA support — the cu130 wheels would not work even if they were published for Mac. The MPS path is the only GPU acceleration on Apple Silicon.
 
 ## `uv run resona` vs installed `resona`
 

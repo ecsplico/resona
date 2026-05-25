@@ -23,9 +23,41 @@ tags_metadata = [
 transcribe_task = None
 
 
+def _validate_env() -> None:
+    """Fail fast on misconfiguration; log resolved config summary."""
+    from .paths import DATA_PATH, DB_PATH, FILE_PATH, PROFILES_PATH
+    from .engine_registry import _engine_urls
+
+    urls = _engine_urls()
+    if not urls:
+        raise RuntimeError("RESONA_ENGINE_URLS is empty — set at least one engine-server URL")
+
+    for label, path in (("DATA_PATH", DATA_PATH), ("DB_PATH", DB_PATH),
+                        ("FILE_PATH", FILE_PATH), ("PROFILES_PATH", PROFILES_PATH)):
+        if not path.is_dir():
+            raise RuntimeError(f"{label}={path} is not a directory")
+        probe = path / ".write_probe"
+        try:
+            probe.touch(); probe.unlink()
+        except OSError as exc:
+            raise RuntimeError(f"{label}={path} is not writable: {exc}") from exc
+
+    api_key_set = bool(config("RESONA_API_KEY", default=""))
+    if not api_key_set:
+        log.warning("RESONA_API_KEY is unset — clients can hit the API without auth")
+
+    log.info("Resolved config:")
+    log.info("  DATA_PATH          = %s", DATA_PATH)
+    log.info("  RESONA_PROFILES_DIR= %s", PROFILES_PATH)
+    log.info("  RESONA_ENGINE_URLS = %s", ",".join(urls))
+    log.info("  RESONA_API_KEY     = %s", "set" if api_key_set else "unset")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global transcribe_task
+
+    _validate_env()
 
     log.info("Initializing database...")
     create_db_and_tables()

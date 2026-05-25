@@ -84,11 +84,34 @@ services:
     ports:
       - "7000:7000"
     volumes:
-      - ./data:/app/data
+      # Split per-purpose named volumes — matches the subdirs created by
+      # packages/api/src/resona_api/paths.py. Migration from a previous
+      # `./data:/app/data` bind mount: copy ./data/{files,md,db,profiles}
+      # into the corresponding named volume before first start.
+      - resona-audio:/app/data/files
+      - resona-md:/app/data/md
+      - resona-db:/app/data/db
+      - resona-profiles:/app/data/profiles
     environment:
       RESONA_ENGINE_URLS: http://engine-faster-whisper:7001,http://engine-whisper:7001,http://engine-voxtral:7001
       DATA_PATH: /app/data
       LOGLEVEL: info
     env_file:
       - .env
+    depends_on:
+      engine-faster-whisper:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
+
+volumes:
+  resona-audio:
+  resona-md:
+  resona-db:
+  resona-profiles:

@@ -1,0 +1,19 @@
+# CPU-only override for hosts without an NVIDIA GPU.
+#
+# Strips the GPU device reservation from `engine-faster-whisper` (CTranslate2
+# falls back to CPU automatically) and switches to a smaller default model
+# so transcription stays usable on a CPU.
+#
+# Usage:
+#   docker compose -f docker-compose.resona.yml -f docker-compose.cpu.yml up
+#
+# The whisper / voxtral engines are PyTorch-based and impractical on CPU,
+# so this override does not provide CPU paths for them.
+
+services:
+  engine-faster-whisper:
+    environment:
+      RESONA_ENGINE: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: small
+      LOGLEVEL: info
+    deploy: !reset {}

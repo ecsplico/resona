@@ -271,7 +271,7 @@ Manage server-side profiles with `resona profiles list|show|push|pull|delete`.
 
 ```bash
 # Install all packages
-uv sync --all-packages --no-build-isolation-package openai-whisper
+uv sync --all-packages
 
 # Run individual services
 uv run resona-engine-faster-whisper   # :7001, needs GPU

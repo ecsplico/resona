@@ -10,13 +10,14 @@ run services, add dependencies, and know when you need to reinstall the tool.
 ### 1. Install all packages once
 
 ```bash
-uv sync --all-packages --no-build-isolation-package openai-whisper
+uv sync --all-packages
 ```
 
 This installs every workspace package into `.venv` in **editable mode**. All
 Python source under `src/` is live — changes to any package take effect the
-next time the process starts. The `--no-build-isolation-package openai-whisper`
-flag is needed because `openai-whisper` ships without a PEP-517 build backend.
+next time the process starts. The workspace root supplies the missing build
+dependencies for `openai-whisper` via `[tool.uv.extra-build-dependencies]`,
+so no `--no-build-isolation-package` flag is needed.
 
 ### 2. Run everything through `uv run`
 

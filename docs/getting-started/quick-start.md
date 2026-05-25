@@ -11,7 +11,7 @@ uv tool install --from ./apps/resona-cli resona-cli
 Or, if you have the workspace cloned:
 
 ```bash
-uv sync --all-packages --no-build-isolation-package openai-whisper
+uv sync --all-packages
 ```
 
 See [Installation](installation.md) for prerequisites and persona details.

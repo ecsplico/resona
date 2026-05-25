@@ -54,7 +54,7 @@ Resona is a modular audio transcription platform with pluggable ASR engines and 
 ### Local-only (no server)
 
 ```bash
-uv sync --all-packages --no-build-isolation-package openai-whisper
+uv sync --all-packages
 uv run resona transcribe recording.mp3
 ```
 
@@ -68,12 +68,7 @@ docker compose -f docker-compose.resona.yml up -d
 resona transcribe recording.mp3
 ```
 
-### Install CLI tool
-
-```bash
-uv tool install --from ./apps/resona-cli resona-cli
-resona transcribe recording.mp3
-```
+For end-user install (`uv tool install`), PyTorch extras, macOS, and per-persona variants see [Installation](https://ecsplico.github.io/resona/getting-started/installation/).
 
 > Full documentation: https://ecsplico.github.io/resona/
 
