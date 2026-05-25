@@ -57,7 +57,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v6
+      # setup-uv dropped moving major tags in v8 — pin a specific version.
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock

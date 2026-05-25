@@ -16,7 +16,8 @@ jobs:
         # ffmpeg         → required by `resona_asr_core.audio.load_audio()`
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg
 
-      - uses: astral-sh/setup-uv@v6
+      # setup-uv dropped moving major tags in v8 — pin a specific version.
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
