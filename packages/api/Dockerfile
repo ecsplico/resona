@@ -9,6 +9,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock* ./
 COPY packages/api/ ./packages/api/
+COPY packages/cloud-stt/ ./packages/cloud-stt/
+COPY packages/cloud-tts/ ./packages/cloud-tts/
 COPY packages/postprocess/ ./packages/postprocess/
 RUN uv sync --package resona-api --frozen --no-dev --no-editable --compile-bytecode
 
