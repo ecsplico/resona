@@ -5,8 +5,27 @@ build-backend = "hatchling.build"
 [project]
 name = "resona-api"
 version = "0.1.0"
-description = "Job queue, database, and postprocessing API for Resona"
+description = "Resona job queue + SQLite + postprocessing API on :7000, with OpenAI-compatible /v1/audio routes"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
 requires-python = ">=3.12"
+keywords = ["asr", "transcription", "fastapi", "api", "speech-to-text", "openai-compatible", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastapi>=0.115.7",
     "uvicorn>=0.34.0",
@@ -16,10 +35,16 @@ dependencies = [
     "python-multipart>=0.0.20",
     "python-decouple>=3.8",
     "python-dotenv>=1.1.0",
-    "resona-cloud-stt",
-    "resona-cloud-tts",
-    "resona-postprocess",
+    "resona-cloud-stt>=0.1.0",
+    "resona-cloud-tts>=0.1.0",
+    "resona-postprocess>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
 
 [tool.uv.sources]
 resona-cloud-stt = { workspace = true }

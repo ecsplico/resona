@@ -30,6 +30,13 @@ RUN find /app/.venv -name "*.a" -delete \
 # ---- runtime ----
 FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
 
+LABEL org.opencontainers.image.title="resona-engine-faster-whisper"
+LABEL org.opencontainers.image.description="Faster-whisper (CTranslate2) ASR engine for Resona; HTTP/WS on :7001"
+LABEL org.opencontainers.image.source="https://github.com/ecsplico/resona"
+LABEL org.opencontainers.image.documentation="https://ecsplico.github.io/resona/"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.vendor="Resona contributors"
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

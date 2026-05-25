@@ -5,24 +5,49 @@ build-backend = "hatchling.build"
 [project]
 name = "resona-cli"
 version = "0.1.0"
-description = "CLI tool for Resona transcription platform"
+description = "Command-line interface for Resona — a modular transcription platform with pluggable ASR engines"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
 requires-python = ">=3.12"
+keywords = ["asr", "speech-to-text", "transcription", "cli", "dictation", "whisper", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "httpx>=0.28.1",
     "typer>=0.15.3",
     "python-dotenv>=1.1.0",
     "python-decouple>=3.8",
-    "resona-client",
-    "resona-cloud-stt",
-    "resona-postprocess",
+    "resona-client>=0.1.0",
+    "resona-cloud-stt>=0.1.0",
+    "resona-postprocess>=0.1.0",
     "textual>=3.2.0",
     "sounddevice>=0.5.1",
     "soundfile>=0.13.1",
     "numpy>=2.1.3",
     "soxr>=0.5",
-    "resona-asr-core",
-    "resona-engine-faster-whisper",
+    "resona-asr-core>=0.1.0",
+    "resona-engine-faster-whisper>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
 
 [project.optional-dependencies]
 whisper = ["resona-engine-whisper"]

@@ -5,12 +5,35 @@ build-backend = "hatchling.build"
 [project]
 name = "resona-client"
 version = "0.1.0"
-description = "HTTP client library for Resona API"
+description = "HTTP client library for the Resona API — wraps job, profile, and OpenAI-compatible audio routes"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
 requires-python = ">=3.12"
+keywords = ["asr", "transcription", "http", "client", "api", "speech-to-text", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "httpx>=0.28.1",
-    "resona-cloud-stt",
+    "resona-cloud-stt>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resona_client"]

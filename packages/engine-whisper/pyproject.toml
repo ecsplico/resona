@@ -5,14 +5,37 @@ build-backend = "hatchling.build"
 [project]
 name = "resona-engine-whisper"
 version = "0.1.0"
-description = "OpenAI Whisper (PyTorch) backend for Resona"
+description = "OpenAI Whisper (PyTorch) backend for Resona — the reference implementation"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
 requires-python = ">=3.12"
+keywords = ["asr", "whisper", "openai-whisper", "pytorch", "transcription", "speech-to-text", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
-    "resona-asr-core",
-    "resona-engine-server",
+    "resona-asr-core>=0.1.0",
+    "resona-engine-server>=0.1.0",
     "openai-whisper>=20240930",
     "torch>=2.10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
 
 [tool.uv.sources]
 resona-asr-core = { workspace = true }

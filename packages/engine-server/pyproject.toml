@@ -5,8 +5,27 @@ build-backend = "hatchling.build"
 [project]
 name = "resona-engine-server"
 version = "0.1.0"
-description = "FastAPI HTTP/WS server that exposes a Resona ASR backend"
+description = "FastAPI HTTP/WS server that exposes a Resona ASR backend on :7001 (stateless — no DB, no postprocessing)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
 requires-python = ">=3.12"
+keywords = ["asr", "speech-to-text", "fastapi", "websocket", "transcription", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastapi>=0.115.7",
     "uvicorn>=0.34.0",
@@ -14,8 +33,14 @@ dependencies = [
     "websockets>=16.0",
     "python-decouple>=3.8",
     "numpy>=2.1.3",
-    "resona-asr-core",
+    "resona-asr-core>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
 
 [tool.uv.sources]
 resona-asr-core = { workspace = true }
