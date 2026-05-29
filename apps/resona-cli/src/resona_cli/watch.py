@@ -7,8 +7,6 @@ import httpx
 
 from .local_engine import LocalEngine
 from .profiles import resolve_profile_arg as _resolve_profile_arg
-from resona_postprocess.profile import resolve_profile, ProfileError
-from resona_postprocess.pipeline import build_pipeline
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
@@ -88,6 +86,9 @@ def _watch_local_fallback(
         f"No server reachable — starting local engine (engine={engine}).",
         err=True,
     )
+
+    from resona_postprocess.profile import resolve_profile, ProfileError
+    from resona_postprocess.pipeline import build_pipeline
 
     ref = profile or default_profile or "default"
     try:

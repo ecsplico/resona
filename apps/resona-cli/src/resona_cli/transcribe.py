@@ -1,9 +1,38 @@
 import glob as _glob
+import itertools
 import json
+import sys
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 import typer
 import httpx
+
+
+@contextmanager
+def _spinner(label: str):
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    stop = threading.Event()
+
+    def _spin():
+        for frame in itertools.cycle(frames):
+            if stop.is_set():
+                break
+            sys.stderr.write(f"\r{frame} {label}")
+            sys.stderr.flush()
+            time.sleep(0.1)
+        sys.stderr.write("\r" + " " * (len(label) + 2) + "\r")
+        sys.stderr.flush()
+
+    t = threading.Thread(target=_spin, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join()
 
 from .local_engine import LocalEngine
 from .engine import InProcessEngine
@@ -11,9 +40,6 @@ from resona_client.client import ResonaClient
 from resona_client.config import EngineConfig
 from .engines import BUILTIN_ENGINES
 from .profiles import resolve_profile_arg as _resolve_profile_arg
-from resona_postprocess.profile import resolve_profile, ProfileError
-from resona_postprocess.pipeline import build_pipeline
-
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
 _PROFILES_DIR = Path.home() / ".resona" / "profiles"
@@ -121,7 +147,8 @@ def _transcribe_via_gateway(
                 kwargs["engine"] = engine
             if resolved_profile is not None:
                 kwargs["profile"] = resolved_profile
-            result = client.create_transcription(filepath, **kwargs)
+            with _spinner(f"Transcribing {filepath.name}…"):
+                result = client.create_transcription(filepath, **kwargs)
             transcript = result.get("text", "")
             out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
             out_path.write_text(transcript, encoding="utf-8")
@@ -141,6 +168,9 @@ def _transcribe_local_fallback(
     profile: Optional[str] = None,
     default_profile: Optional[str] = None,
 ) -> None:
+    from resona_postprocess.profile import resolve_profile, ProfileError
+    from resona_postprocess.pipeline import build_pipeline
+
     ref = profile or default_profile or "default"
     try:
         prof = resolve_profile(ref, _PROFILES_DIR)
@@ -160,7 +190,8 @@ def _transcribe_local_fallback(
     try:
         for filepath in files:
             try:
-                result = local_engine.transcribe(filepath, language=language)
+                with _spinner(f"Transcribing {filepath.name}…"):
+                    result = local_engine.transcribe(filepath, language=language)
                 raw_text = result.get("text", "")
                 pp_result = pipeline.run(raw_text)
                 out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"

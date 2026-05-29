@@ -31,8 +31,8 @@ dependencies = [
     # faster-whisper 1.1.1 imports `requests` but does not declare it; it used
     # to arrive via huggingface-hub <1.0, which has since moved to httpx.
     "requests>=2.31",
-    "nvidia-cublas-cu12>=12.3",
-    "nvidia-cudnn-cu12>=9.0,<10",
+    "nvidia-cublas-cu12>=12.3; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12>=9.0,<10; sys_platform == 'linux'",
 ]
 
 [project.urls]
