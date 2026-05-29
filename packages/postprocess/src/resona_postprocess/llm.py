@@ -2,14 +2,6 @@
 
 import json as _json
 import logging
-import os
-
-os.environ.setdefault("LITELLM_LOG", "ERROR")
-
-try:
-    import litellm
-except ImportError:  # pragma: no cover
-    litellm = None  # type: ignore[assignment]
 
 from decouple import config
 
@@ -25,7 +17,11 @@ class LLMUnavailableError(RuntimeError):
 def _completion(*, model, api_base, messages, temperature, max_tokens,
                 response_format=None):
     """Call litellm.completion with one retry on transient failure."""
-    if litellm is None:
+    import os
+    os.environ.setdefault("LITELLM_LOG", "ERROR")
+    try:
+        import litellm
+    except ImportError:
         raise LLMUnavailableError(
             "LLM postprocessing requires the 'litellm' package. "
             "Install it: pip install litellm"
