@@ -227,8 +227,8 @@ def test_transcribe_fallback_used_when_no_server(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
@@ -252,8 +252,8 @@ def test_transcribe_fallback_on_connect_error(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
@@ -275,8 +275,8 @@ def test_transcribe_fallback_writes_text_next_to_audio(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path)])
 
@@ -298,8 +298,8 @@ def test_transcribe_fallback_respects_output_dir(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
@@ -320,8 +320,8 @@ def test_transcribe_fallback_passes_model_and_language(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path),
                              "--model", "large-v3", "--language", "en"])
@@ -345,8 +345,8 @@ def test_transcribe_fallback_builtin_engine_forwarded(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "whisper"])
 
@@ -372,8 +372,8 @@ def test_transcribe_fallback_non_builtin_engine_uses_default(tmp_path):
         patch("resona_client.config.EngineConfig.load", return_value=mock_cfg),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine) as mock_le_cls,
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "deepgram"])
 
@@ -399,8 +399,8 @@ def test_transcribe_fallback_applies_postprocess_pipeline(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
@@ -420,8 +420,8 @@ def test_transcribe_uses_in_process_engine_when_available(tmp_path):
         patch("resona_client.client.ResonaClient.from_config",
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["transcribe", str(tmp_path),
                                       "--output-dir", str(out_dir)])
@@ -446,8 +446,8 @@ def test_transcribe_fallback_private_flag_runs_local(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["transcribe", str(tmp_path), "--private"])
 
@@ -477,8 +477,8 @@ def test_transcribe_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
@@ -512,8 +512,8 @@ def test_transcribe_fallback_resolves_profile_name(tmp_path):
               side_effect=RuntimeError("no server")),
         patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
         patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_cli.transcribe.resolve_profile", mock_resolve),
-        patch("resona_cli.transcribe.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["transcribe", str(tmp_path),
                              "--output-dir", str(out_dir), "--profile", "medical"])
