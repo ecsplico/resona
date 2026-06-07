@@ -175,8 +175,8 @@ def test_watch_fallback_used_when_no_server(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_cli.watch.resolve_profile", mock_resolve),
-        patch("resona_cli.watch.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -202,8 +202,8 @@ def test_watch_fallback_writes_md_next_to_audio(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_cli.watch.resolve_profile", mock_resolve),
-        patch("resona_cli.watch.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -232,8 +232,8 @@ def test_watch_fallback_respects_output_dir(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_cli.watch.resolve_profile", mock_resolve),
-        patch("resona_cli.watch.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path), "--output-dir", str(out_dir)])
 
@@ -265,8 +265,8 @@ def test_watch_fallback_continues_on_per_file_error(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_cli.watch.resolve_profile", mock_resolve),
-        patch("resona_cli.watch.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -323,8 +323,8 @@ def test_watch_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine),
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_cli.watch.resolve_profile", mock_resolve),
-        patch("resona_cli.watch.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         result = runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -358,8 +358,8 @@ def test_watch_fallback_passes_model_and_language(tmp_path):
         patch("resona_client.client.ResonaClient.from_config", side_effect=RuntimeError("no server")),
         patch("resona_cli.watch.LocalEngine", return_value=mock_engine) as mock_le_cls,
         patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
-        patch("resona_cli.watch.resolve_profile", mock_resolve),
-        patch("resona_cli.watch.build_pipeline", mock_build),
+        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
+        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
     ):
         runner.invoke(app, ["watch", str(tmp_path), "--model", "small", "--language", "fr"])
 
