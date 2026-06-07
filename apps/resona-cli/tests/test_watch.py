@@ -14,6 +14,14 @@ from resona_postprocess.pipeline import PostprocessResult
 runner = CliRunner()
 
 
+def read_md_body(path: Path) -> str:
+    """Return the markdown body (after the YAML frontmatter), stripped."""
+    text = path.read_text()
+    assert text.startswith("---\n"), "expected YAML frontmatter"
+    _, _, body = text[4:].partition("\n---\n")
+    return body.strip()
+
+
 def make_wav(path: Path) -> Path:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -175,8 +183,8 @@ def test_watch_fallback_used_when_no_server(tmp_path):
     mock_engine.transcribe.assert_called_once()
 
 
-def test_watch_fallback_writes_txt_next_to_audio(tmp_path):
-    """Fallback writes <stem>.txt next to audio file."""
+def test_watch_fallback_writes_md_next_to_audio(tmp_path):
+    """Fallback writes <stem>.md next to audio file."""
     make_wav(tmp_path / "speech.wav")
     mock_engine = _make_local_engine_watch(transcript="Watch result")
 
@@ -199,9 +207,9 @@ def test_watch_fallback_writes_txt_next_to_audio(tmp_path):
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
-    txt = tmp_path / "speech.txt"
-    assert txt.exists()
-    assert txt.read_text() == "Watch result"
+    md = tmp_path / "speech.md"
+    assert md.exists()
+    assert read_md_body(md) == "Watch result"
 
 
 def test_watch_fallback_respects_output_dir(tmp_path):
@@ -229,8 +237,8 @@ def test_watch_fallback_respects_output_dir(tmp_path):
     ):
         runner.invoke(app, ["watch", str(tmp_path), "--output-dir", str(out_dir)])
 
-    txt = out_dir / "speech.txt"
-    assert txt.exists()
+    md = out_dir / "speech.md"
+    assert md.exists()
 
 
 def test_watch_fallback_continues_on_per_file_error(tmp_path):
@@ -322,10 +330,10 @@ def test_watch_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):
 
     import json
     assert result.exit_code == 0
-    txt_path = tmp_path / "report.txt"
+    md_path = tmp_path / "report.md"
     sidecar_path = tmp_path / "report.json"
-    assert txt_path.exists(), "transcript .txt file should be written"
-    assert txt_path.read_text() == "processed"
+    assert md_path.exists(), "transcript .md file should be written"
+    assert read_md_body(md_path) == "processed"
     assert sidecar_path.exists(), "sidecar .json file should be written when data is non-empty"
     sidecar_data = json.loads(sidecar_path.read_text())
     assert sidecar_data == {"fields": {"x": 1}}

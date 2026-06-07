@@ -5,10 +5,13 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import typer
 import httpx
+
+from .markdown_output import write_markdown as _write_markdown
 
 
 @contextmanager
@@ -150,8 +153,15 @@ def _transcribe_via_gateway(
             with _spinner(f"Transcribing {filepath.name}…"):
                 result = client.create_transcription(filepath, **kwargs)
             transcript = result.get("text", "")
-            out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
-            out_path.write_text(transcript, encoding="utf-8")
+            out_path = (output_dir or filepath.parent) / f"{filepath.stem}.md"
+            _write_markdown(out_path, transcript, {
+                "source": filepath.name,
+                "language": result.get("language") or language,
+                "engine": engine,
+                "model": model,
+                "profile": profile,
+                "transcribed_at": datetime.now(timezone.utc).isoformat(),
+            })
             print(f"Transcribed {filepath.name} -> {out_path}")
         except httpx.HTTPStatusError as e:
             typer.echo(f"Failed to transcribe {filepath.name}: {e}", err=True)
@@ -194,8 +204,15 @@ def _transcribe_local_fallback(
                     result = local_engine.transcribe(filepath, language=language)
                 raw_text = result.get("text", "")
                 pp_result = pipeline.run(raw_text)
-                out_path = (output_dir or filepath.parent) / f"{filepath.stem}.txt"
-                out_path.write_text(pp_result.text, encoding="utf-8")
+                out_path = (output_dir or filepath.parent) / f"{filepath.stem}.md"
+                _write_markdown(out_path, pp_result.text, {
+                    "source": filepath.name,
+                    "language": result.get("language") or language,
+                    "engine": engine,
+                    "model": model,
+                    "profile": prof.name,
+                    "transcribed_at": datetime.now(timezone.utc).isoformat(),
+                })
                 if pp_result.data:
                     sidecar = out_path.with_suffix(".json")
                     sidecar.write_text(
