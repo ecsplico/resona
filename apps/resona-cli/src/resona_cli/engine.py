@@ -61,7 +61,7 @@ def _import_asr_core():
     """Import asr-core's registry and audio loader. Raises ImportError with install hint."""
     try:
         from resona_asr_core.registry import get_transcriber as _get_transcriber
-        from resona_asr_core.audio import load_audio as _load_audio_fn
+        from resona_asr_core.audio import load_audio_path as _load_audio_fn
     except ImportError as e:
         raise ImportError(f"{e}\n\n{_INSTALL_HINT}") from e
     return _get_transcriber, _load_audio_fn
@@ -74,10 +74,14 @@ def get_transcriber(*args, **kwargs):
 
 
 def _load_audio(path: Path):
-    """Re-exposed wrapper so tests can patch this symbol without touching asr-core directly."""
+    """Re-exposed wrapper so tests can patch this symbol without touching asr-core directly.
+
+    Uses asr-core's path-based loader so ffmpeg gets a seekable input — this
+    handles non-faststart MP4/M4A files (e.g. iOS Voice Memos) that the
+    stream-based loader cannot decode.
+    """
     _, fn = _import_asr_core()
-    with open(path, "rb") as f:
-        return fn(f)
+    return fn(path)
 
 
 class InProcessEngine:
