@@ -70,7 +70,7 @@ resona-asr-core = { workspace = true }
 resona-engine-faster-whisper = { workspace = true }
 resona-engine-whisper = { workspace = true }
 resona-engine-voxtral = { workspace = true }
-torch = [{ index = "pytorch-cu130" }]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
 
 [project.scripts]
 resona = "resona_cli.main:app"
