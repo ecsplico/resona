@@ -16,7 +16,9 @@ url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu130" }]
+# CUDA wheels only exist for Linux. On macOS/Windows, fall back to the default
+# PyPI index (CPU/MPS wheels) so `uv sync --all-packages` resolves there too.
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
 
 # openai-whisper's setup.py imports `pkg_resources`, which setuptools 81 (Feb 2026)
 # removed. Pin the build env to setuptools<81 until upstream openai-whisper migrates
