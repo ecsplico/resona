@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import verify_api_key
 from resona_asr_core.registry import get_transcriber
-from resona_asr_core.audio import load_audio, SAMPLE_RATE
+from resona_asr_core.audio import load_audio, load_audio_path, SAMPLE_RATE
 from .ws_transcribe import transcribe_websocket
 from .ws_live import live_transcribe_websocket
 
@@ -31,8 +31,7 @@ _model_lock = threading.Lock()
 def _run_asr(file, task: str = "transcribe", language: str = "de", **asr_options) -> dict:
     """Load audio and run transcription using the registered backend."""
     if isinstance(file, str):
-        with open(file, "rb") as f:
-            audio = load_audio(f, sr=SAMPLE_RATE)
+        audio = load_audio_path(file, sr=SAMPLE_RATE)
     else:
         audio = load_audio(file, sr=SAMPLE_RATE)
 
