@@ -1,11 +1,13 @@
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import typer
 import httpx
 
 from .local_engine import LocalEngine
+from .markdown_output import write_markdown as _write_markdown
 from .profiles import resolve_profile_arg as _resolve_profile_arg
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
@@ -120,8 +122,15 @@ def _watch_local_fallback(
                                 result = engine_obj.transcribe(f, language=language)
                                 raw_text = result.get("text", "")
                                 pp_result = pipeline.run(raw_text)
-                                out_path = (output_dir or f.parent) / f"{f.stem}.txt"
-                                out_path.write_text(pp_result.text, encoding="utf-8")
+                                out_path = (output_dir or f.parent) / f"{f.stem}.md"
+                                _write_markdown(out_path, pp_result.text, {
+                                    "source": f.name,
+                                    "language": result.get("language") or language,
+                                    "engine": engine,
+                                    "model": model,
+                                    "profile": prof.name,
+                                    "transcribed_at": datetime.now(timezone.utc).isoformat(),
+                                })
                                 if pp_result.data:
                                     sidecar = out_path.with_suffix(".json")
                                     sidecar.write_text(

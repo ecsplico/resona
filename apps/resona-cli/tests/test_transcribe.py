@@ -16,6 +16,14 @@ from resona_postprocess.pipeline import PostprocessResult
 runner = CliRunner()
 
 
+def read_md_body(path: Path) -> str:
+    """Return the markdown body (after the YAML frontmatter), stripped."""
+    text = path.read_text()
+    assert text.startswith("---\n"), "expected YAML frontmatter"
+    _, _, body = text[4:].partition("\n---\n")
+    return body.strip()
+
+
 def make_wav(path: Path) -> Path:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -89,9 +97,9 @@ def test_transcribe_gateway_writes_output_files(tmp_path):
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
-    txt_files = list(out_dir.glob("*.txt"))
-    assert len(txt_files) == 1
-    assert txt_files[0].read_text() == "transcribed text"
+    md_files = list(out_dir.glob("*.md"))
+    assert len(md_files) == 1
+    assert read_md_body(md_files[0]) == "transcribed text"
 
 
 def test_transcribe_gateway_forwards_engine_flag(tmp_path):
@@ -272,7 +280,7 @@ def test_transcribe_fallback_writes_text_next_to_audio(tmp_path):
     ):
         runner.invoke(app, ["transcribe", str(tmp_path)])
 
-    assert (tmp_path / "speech.txt").read_text() == "Hello world"
+    assert read_md_body(tmp_path / "speech.md") == "Hello world"
 
 
 def test_transcribe_fallback_respects_output_dir(tmp_path):
@@ -295,7 +303,7 @@ def test_transcribe_fallback_respects_output_dir(tmp_path):
     ):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
-    assert (out_dir / "speech.txt").read_text() == "Output text"
+    assert read_md_body(out_dir / "speech.md") == "Output text"
 
 
 def test_transcribe_fallback_passes_model_and_language(tmp_path):
@@ -397,7 +405,7 @@ def test_transcribe_fallback_applies_postprocess_pipeline(tmp_path):
         runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
     mock_pipeline.run.assert_called_once_with("hello")
-    assert (out_dir / "audio.txt").read_text() == "HELLO"
+    assert read_md_body(out_dir / "audio.md") == "HELLO"
 
 
 def test_transcribe_uses_in_process_engine_when_available(tmp_path):
@@ -420,7 +428,7 @@ def test_transcribe_uses_in_process_engine_when_available(tmp_path):
 
     assert result.exit_code == 0
     mock_engine.transcribe.assert_called_once()
-    assert (out_dir / "audio.txt").read_text() == "hi"
+    assert read_md_body(out_dir / "audio.md") == "hi"
 
 
 def test_transcribe_fallback_private_flag_runs_local(tmp_path):
@@ -475,10 +483,10 @@ def test_transcribe_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):
         result = runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
     assert result.exit_code == 0
-    txt_path = out_dir / "report.txt"
+    md_path = out_dir / "report.md"
     sidecar_path = out_dir / "report.json"
-    assert txt_path.exists(), "transcript .txt file should be written"
-    assert txt_path.read_text() == "processed"
+    assert md_path.exists(), "transcript .md file should be written"
+    assert read_md_body(md_path) == "processed"
     assert sidecar_path.exists(), "sidecar .json file should be written when data is non-empty"
     sidecar_data = json.loads(sidecar_path.read_text())
     assert sidecar_data == {"fields": {"x": 1}}
@@ -516,4 +524,4 @@ def test_transcribe_fallback_resolves_profile_name(tmp_path):
     assert call_args.args[0] == "medical"
     # build_pipeline called with the resolved profile
     mock_build.assert_called_once_with(mock_profile)
-    assert (out_dir / "audio.txt").read_text() == "profiled"
+    assert read_md_body(out_dir / "audio.md") == "profiled"
