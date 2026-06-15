@@ -1,19 +1,30 @@
-"""Deepgram provider — POST raw audio bytes to /v1/listen."""
+"""Deepgram provider — batch POST to /v1/listen, plus a live streaming session."""
+import json
 import logging
 import mimetypes
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 
 from ..errors import ProviderHTTPError
 from ..registry import DEFAULT_MODELS
+from ..streaming import StreamTranscript
 from ..types import TranscriptionResult
 
 log = logging.getLogger(__name__)
 
 _URL = "https://api.deepgram.com/v1/listen"
+_WS_URL = "wss://api.deepgram.com/v1/listen"
 _TIMEOUT = 600.0
 _OPTION_KEYS = {"smart_format", "diarize", "punctuate", "numerals"}
+
+
+def _qval(value) -> str:
+    """Render a query-param value the Deepgram way (lowercase booleans)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def _filter_options(options: dict | None) -> dict:
@@ -68,3 +79,78 @@ def transcribe(
         language=language or "",
         segments=[{"start": start, "end": end, "text": text}],
     )
+
+
+# ── Live streaming ───────────────────────────────────────────────────
+
+async def open_stream(
+    *,
+    api_key: str,
+    model: str | None = None,
+    language: str | None = None,
+    sample_rate: int = 16000,
+    interim_results: bool = False,
+    options: dict | None = None,
+) -> "_DeepgramStream":
+    """Open a Deepgram live WebSocket and return a normalized session."""
+    import websockets  # lazy: streaming-only dependency
+
+    params: dict = {
+        "model": model or DEFAULT_MODELS["deepgram"],
+        "encoding": "linear16",
+        "sample_rate": str(sample_rate),
+        "channels": "1",
+        "interim_results": "true" if interim_results else "false",
+        "punctuate": "true",
+    }
+    if language:
+        params["language"] = language
+    for key, value in _filter_options(options).items():
+        params[key] = _qval(value)
+
+    url = f"{_WS_URL}?{urlencode(params)}"
+    ws = await websockets.connect(
+        url,
+        additional_headers={"Authorization": f"Token {api_key}"},
+        max_size=None,
+    )
+    return _DeepgramStream(ws)
+
+
+class _DeepgramStream:
+    """Normalized Deepgram live session: binary PCM up, ``Results`` down."""
+
+    def __init__(self, ws):
+        self._ws = ws
+
+    async def send_audio(self, pcm: bytes) -> None:
+        await self._ws.send(pcm)  # Deepgram takes raw binary frames
+
+    async def finish(self) -> None:
+        try:
+            await self._ws.send(json.dumps({"type": "CloseStream"}))
+        except Exception:  # noqa: BLE001 - already closing
+            pass
+
+    async def close(self) -> None:
+        try:
+            await self._ws.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __aiter__(self):
+        return self._results()
+
+    async def _results(self):
+        async for raw in self._ws:
+            if isinstance(raw, (bytes, bytearray)):
+                continue
+            try:
+                msg = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if msg.get("type") != "Results":
+                continue  # Metadata / UtteranceEnd / SpeechStarted ignored
+            alternatives = msg.get("channel", {}).get("alternatives") or []
+            text = alternatives[0].get("transcript", "") if alternatives else ""
+            yield StreamTranscript(text=text, is_final=bool(msg.get("is_final")))

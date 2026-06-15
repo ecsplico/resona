@@ -8,11 +8,16 @@ Protocol:
     {"type": "config", "language": "de"}
 
   Server -> Client:
-    {"type": "partial", "text": "unstable text...", "confirmed": "stable text"}
-    {"type": "final", "text": "confirmed stable text"}
+    {"type": "partial", "text": "unstable text...", "confirmed": "stable text", "delta": "newly confirmed"}
+    {"type": "final", "text": "confirmed stable text", "delta": "newly confirmed"}
     {"type": "stopped"}
     {"type": "error", "message": "..."}
     {"type": "keepalive"}
+
+  ``delta`` carries only the words confirmed in this step (never the cumulative
+  transcript) so proxies can forward incremental finals without re-deriving them.
+
+Query params: ?language=de selects the transcription language.
 """
 import asyncio
 import base64
@@ -26,6 +31,17 @@ from resona_asr_core.live_transcriber import LiveTranscriber, SAMPLE_RATE
 logger = logging.getLogger(__name__)
 
 
+def _resample_to_16k(audio: np.ndarray, src_rate: int) -> np.ndarray:
+    """Linear-resample a mono float32 waveform to 16 kHz (fallback for non-16k clients)."""
+    if src_rate == SAMPLE_RATE or len(audio) == 0:
+        return audio
+    n_target = int(round(len(audio) / src_rate * SAMPLE_RATE))
+    if n_target <= 0:
+        return np.array([], dtype=np.float32)
+    src_idx = np.linspace(0, len(audio) - 1, n_target)
+    return np.interp(src_idx, np.arange(len(audio)), audio).astype(np.float32)
+
+
 async def live_transcribe_websocket(websocket: WebSocket):
     """Handle a WebSocket connection for live transcription."""
     logger.info("Live WebSocket connection attempt")
@@ -37,7 +53,8 @@ async def live_transcribe_websocket(websocket: WebSocket):
         logger.error(f"Failed to accept live WebSocket: {e}", exc_info=True)
         raise
 
-    transcriber = LiveTranscriber(language="de")
+    language = websocket.query_params.get("language") or "de"
+    transcriber = LiveTranscriber(language=language)
     processing = True
 
     async def process_loop():
@@ -63,11 +80,13 @@ async def live_transcribe_websocket(websocket: WebSocket):
                         "type": "partial",
                         "text": result.partial,
                         "confirmed": result.confirmed,
+                        "delta": result.confirmed_delta,
                     })
                 elif result.confirmed:
                     await websocket.send_json({
                         "type": "final",
                         "text": result.confirmed,
+                        "delta": result.confirmed_delta,
                     })
             except WebSocketDisconnect:
                 break
@@ -100,7 +119,7 @@ async def live_transcribe_websocket(websocket: WebSocket):
                     audio_float32 = audio_int16.astype(np.float32) / 32768.0
 
                     if sample_rate != SAMPLE_RATE:
-                        logger.warning(f"Sample rate mismatch: {sample_rate} vs {SAMPLE_RATE}")
+                        audio_float32 = _resample_to_16k(audio_float32, sample_rate)
 
                     transcriber.add_audio(audio_float32)
 
@@ -117,6 +136,7 @@ async def live_transcribe_websocket(websocket: WebSocket):
                         await websocket.send_json({
                             "type": "final",
                             "text": result.confirmed,
+                            "delta": result.confirmed_delta,
                         })
 
                     await websocket.send_json({"type": "stopped"})

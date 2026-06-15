@@ -1,5 +1,7 @@
 import sys
 import os
+from typing import Optional
+
 import typer
 
 from .engines import engines_app
@@ -46,8 +48,46 @@ def rec():
     run_mic_rec_app()
 
 
+_ENGINE_EXTRA = {"whisper": "whisper", "voxtral": "voxtral", "mlx-whisper": "mlx", "parakeet": "parakeet"}
+
+
+def _resolve_live_engine(engine: Optional[str]) -> str:
+    """Pick the in-process engine for `resona live`: flag > RESONA_ENGINE > platform default.
+
+    Validates the engine is installed and exports RESONA_ENGINE so the
+    in-process transcriber singleton loads it. Exits with an install hint when
+    the requested engine is not available.
+    """
+    from resona_asr_core.registry import list_engine_names, platform_preferred_engine
+
+    installed = list_engine_names()
+    selected = engine or os.getenv("RESONA_ENGINE") or platform_preferred_engine()
+    if selected not in installed:
+        hint = _ENGINE_EXTRA.get(selected)
+        extra = (
+            f"\nInstall it with:  uv tool install --reinstall --from ./apps/resona-cli "
+            f"'resona-cli[{hint}]'" if hint else ""
+        )
+        typer.echo(
+            f"Engine {selected!r} is not installed. Available: {', '.join(installed)}.{extra}",
+            err=True,
+        )
+        raise typer.Exit(2)
+    os.environ["RESONA_ENGINE"] = selected
+    return selected
+
+
 @app.command()
-def live():
+def live(
+    language: str = typer.Option("de", "--language", "-l", help="Transcription language (e.g. de, en)."),
+    engine: Optional[str] = typer.Option(None, "--engine", "-e",
+        help="Local engine to run in-process (default: platform best — MLX on Apple Silicon, else faster-whisper)."),
+    remote: Optional[str] = typer.Option(None, "--remote", "-r",
+        help="Stream to a remote server instead of running locally. Without --engine: "
+             "an engine-server /ws/live (e.g. ws://host:7001). With --engine: a resona-api "
+             "/v1/listen gateway (e.g. http://host:7000), where --engine picks the backend "
+             "(deepgram, elevenlabs, or a local engine name)."),
+):
     """Launch the live transcription TUI."""
     _require_modules("textual", "sounddevice", "soundfile", "soxr", "resona_asr_core")
     import logging
@@ -55,6 +95,16 @@ def live():
     import sounddevice as sd
 
     load_dotenv()
+
+    if remote:
+        _require_modules("websockets")
+        if engine:
+            typer.echo(f"Live (remote gateway): {remote} engine={engine}", err=True)
+        else:
+            typer.echo(f"Live (remote): {remote}", err=True)
+    else:
+        selected_engine = _resolve_live_engine(engine)
+        typer.echo(f"Live engine: {selected_engine}", err=True)
 
     logging.root.handlers.clear()
     logging.root.addHandler(logging.NullHandler())
@@ -77,7 +127,11 @@ def live():
         raise typer.Exit(1)
 
     from .live_ui import WSLiveApp
-    WSLiveApp().run()
+    WSLiveApp(
+        language=language,
+        remote=remote,
+        remote_engine=engine if remote else None,
+    ).run()
 
 
 @app.command()

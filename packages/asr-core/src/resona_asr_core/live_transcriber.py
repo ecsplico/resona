@@ -21,6 +21,7 @@ from threading import Lock
 from typing import Optional, NamedTuple
 
 from resona_asr_core.registry import get_transcriber
+from resona_asr_core.protocol import StreamingTranscriber
 
 log = logging.getLogger(__name__)
 
@@ -66,11 +67,26 @@ class LiveTranscriber:
         self._audio_event_sync: threading.Event = threading.Event()
         self._last_processed_buffer_end: float = 0.0
         self._stale_cycles: int = 0
+        # Native streaming state (used only when the engine is a StreamingTranscriber)
+        self._session = None
+        self._native: bool = False
 
     def _get_transcriber(self):
-        """Lazy-load the transcriber (expensive model init)."""
+        """Lazy-load the transcriber (expensive model init).
+
+        If the registered engine implements :class:`StreamingTranscriber`, open a
+        native :class:`StreamSession` and route audio through it (low-latency,
+        no overlapping re-transcription). Otherwise fall back to the windowed
+        local-agreement path below.
+        """
         if self._transcriber is None:
             self._transcriber = get_transcriber()
+            if isinstance(self._transcriber, StreamingTranscriber):
+                self._session = self._transcriber.stream_session(
+                    language=self.language, task=self.task
+                )
+                self._native = True
+                log.info("LiveTranscriber using native streaming session")
         return self._transcriber
 
     def add_audio(self, audio: np.ndarray) -> None:
@@ -97,7 +113,90 @@ class LiveTranscriber:
 
     def has_enough_audio(self) -> bool:
         """Check if buffer has enough audio for transcription."""
+        if self._native:
+            # Native streaming engines decode short increments cheaply.
+            return self.buffer_duration() >= MIN_NEW_AUDIO_SECONDS
         return self.buffer_duration() >= MIN_CHUNK_SECONDS
+
+    # ── Native streaming path (StreamingTranscriber engines) ─────────
+
+    def _update_to_result(self, update) -> Optional[TranscriptionResult]:
+        """Map a StreamUpdate dict to a TranscriptionResult, accumulating confirmed text."""
+        if not update:
+            return None
+        delta = (update.get("confirmed_delta") or "").strip()
+        partial = (update.get("partial") or "").strip()
+        language = update.get("language") or self.language
+        if delta:
+            self._confirmed_text = (
+                f"{self._confirmed_text} {delta}".strip() if self._confirmed_text else delta
+            )
+        if not delta and not partial:
+            return None
+        return TranscriptionResult(
+            confirmed=self._confirmed_text,
+            partial=partial,
+            language=language,
+            confirmed_delta=delta,
+        )
+
+    def _drain_buffer(self) -> np.ndarray:
+        """Atomically take and clear the whole buffer (native feed unit)."""
+        with self._lock:
+            audio = self.buffer.copy()
+            self.buffer = np.array([], dtype=np.float32)
+            self._last_processed_buffer_end = 0.0
+        return audio
+
+    def _native_process_sync(self) -> Optional[TranscriptionResult]:
+        audio = self._drain_buffer()
+        if len(audio) == 0:
+            return None
+        try:
+            update = self._session.feed(audio)
+        except Exception as e:
+            log.error(f"Native stream feed error: {e}", exc_info=True)
+            return None
+        return self._update_to_result(update)
+
+    def _native_flush_sync(self) -> Optional[TranscriptionResult]:
+        audio = self._drain_buffer()
+        try:
+            if len(audio):
+                self._session.feed(audio)
+            update = self._session.flush()
+        except Exception as e:
+            log.error(f"Native stream flush error: {e}", exc_info=True)
+            return TranscriptionResult(self._confirmed_text, "", self.language)
+        result = self._update_to_result(update)
+        if result is None:
+            return TranscriptionResult(self._confirmed_text, "", self.language)
+        return result
+
+    async def _native_process(self, loop) -> Optional[TranscriptionResult]:
+        audio = self._drain_buffer()
+        if len(audio) == 0:
+            return None
+        try:
+            update = await loop.run_in_executor(_executor, self._session.feed, audio)
+        except Exception as e:
+            log.error(f"Native stream feed error: {e}", exc_info=True)
+            return None
+        return self._update_to_result(update)
+
+    async def _native_flush(self, loop) -> Optional[TranscriptionResult]:
+        audio = self._drain_buffer()
+        try:
+            if len(audio):
+                await loop.run_in_executor(_executor, self._session.feed, audio)
+            update = await loop.run_in_executor(_executor, self._session.flush)
+        except Exception as e:
+            log.error(f"Native stream flush error: {e}", exc_info=True)
+            return TranscriptionResult(self._confirmed_text, "", self.language)
+        result = self._update_to_result(update)
+        if result is None:
+            return TranscriptionResult(self._confirmed_text, "", self.language)
+        return result
 
     def _transcribe_sync(self, audio: np.ndarray) -> dict:
         """Run transcription synchronously (called in thread pool)."""
@@ -257,6 +356,10 @@ class LiveTranscriber:
         if not self.has_enough_audio():
             return None
 
+        self._get_transcriber()
+        if self._native:
+            return self._native_process_sync()
+
         audio_chunk = self._get_transcription_audio()
 
         try:
@@ -269,6 +372,9 @@ class LiveTranscriber:
 
     def flush_sync(self) -> Optional[TranscriptionResult]:
         """Process remaining buffer synchronously. Call from a background thread."""
+        self._get_transcriber()
+        if self._native:
+            return self._native_flush_sync()
         with self._lock:
             if len(self.buffer) < int(SAMPLE_RATE * 0.1):
                 return TranscriptionResult(
@@ -327,9 +433,14 @@ class LiveTranscriber:
         if not self.has_enough_audio():
             return None
 
+        loop = asyncio.get_event_loop()
+        if self._transcriber is None:
+            await loop.run_in_executor(_executor, self._get_transcriber)
+        if self._native:
+            return await self._native_process(loop)
+
         audio_chunk = self._get_transcription_audio()
 
-        loop = asyncio.get_event_loop()
         try:
             result = await loop.run_in_executor(_executor, self._transcribe_sync, audio_chunk)
         except Exception as e:
@@ -340,6 +451,11 @@ class LiveTranscriber:
 
     async def flush(self) -> Optional[TranscriptionResult]:
         """Process any remaining audio in the buffer (final call)."""
+        loop = asyncio.get_event_loop()
+        if self._transcriber is None:
+            await loop.run_in_executor(_executor, self._get_transcriber)
+        if self._native:
+            return await self._native_flush(loop)
         with self._lock:
             if len(self.buffer) < int(SAMPLE_RATE * 0.1):
                 return TranscriptionResult(
@@ -408,3 +524,7 @@ class LiveTranscriber:
         self._stale_cycles = 0
         self._audio_event.clear()
         self._audio_event_sync.clear()
+        if self._native and self._transcriber is not None:
+            self._session = self._transcriber.stream_session(
+                language=self.language, task=self.task
+            )

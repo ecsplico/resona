@@ -3,42 +3,33 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "resona-api"
+name = "resona-engine-parakeet"
 version = "0.1.0"
-description = "Resona job queue + SQLite + postprocessing API on :7000, with OpenAI-compatible /v1/audio routes"
+description = "NVIDIA Parakeet (NeMo FastConformer) backend for Resona — fast multilingual CUDA/CPU transcription"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "mortegro", email = "mortegro@gmx.de" },
 ]
 requires-python = ">=3.12"
-keywords = ["asr", "transcription", "fastapi", "api", "speech-to-text", "openai-compatible", "resona"]
+keywords = ["asr", "parakeet", "nemo", "fastconformer", "nvidia", "transcription", "speech-to-text", "resona"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Framework :: FastAPI",
+    "Environment :: GPU :: NVIDIA CUDA",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
-    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Internet :: WWW/HTTP",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "fastapi>=0.115.7",
-    "uvicorn>=0.34.0",
-    "sqlmodel>=0.0.22",
-    "httpx>=0.28.1",
-    "websockets>=13.0",
-    "aiofiles>=24.1.0",
-    "python-multipart>=0.0.20",
-    "python-decouple>=3.8",
-    "python-dotenv>=1.1.0",
-    "resona-cloud-stt>=0.1.0",
-    "resona-cloud-tts>=0.1.0",
-    "resona-postprocess>=0.1.0",
+    "resona-asr-core>=0.1.0",
+    "resona-engine-server>=0.1.0",
+    # NeMo is Linux/CUDA-first; gated so a macOS `uv sync --all-packages` stays
+    # green. The entry point still registers there — selecting the engine errors.
+    "nemo_toolkit[asr]>=2.0.0; sys_platform == 'linux'",
 ]
 
 [project.urls]
@@ -48,12 +39,14 @@ Repository = "https://github.com/ecsplico/resona"
 Issues = "https://github.com/ecsplico/resona/issues"
 
 [tool.uv.sources]
-resona-cloud-stt = { workspace = true }
-resona-cloud-tts = { workspace = true }
-resona-postprocess = { workspace = true }
+resona-asr-core = { workspace = true }
+resona-engine-server = { workspace = true }
+
+[project.entry-points."resona.engines"]
+parakeet = "resona_engine_parakeet.transcriber:ParakeetTranscriber"
 
 [project.scripts]
-resona-api = "resona_api.run:main"
+resona-engine-parakeet = "resona_engine_server.run:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/resona_api"]
+packages = ["src/resona_engine_parakeet"]

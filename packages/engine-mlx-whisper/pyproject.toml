@@ -3,29 +3,31 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "resona-cloud-stt"
+name = "resona-engine-mlx-whisper"
 version = "0.1.0"
-description = "Cloud speech-to-text providers (Deepgram, ElevenLabs, OpenAI) for Resona"
+description = "Apple Silicon (MLX/Metal) Whisper backend for Resona — fast local GPU transcription on macOS"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "mortegro", email = "mortegro@gmx.de" },
 ]
 requires-python = ">=3.12"
-keywords = ["asr", "stt", "speech-to-text", "deepgram", "elevenlabs", "openai", "whisper", "resona"]
+keywords = ["asr", "whisper", "mlx", "apple-silicon", "metal", "transcription", "speech-to-text", "resona"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
-    "Operating System :: OS Independent",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "httpx>=0.28.1",
-    "websockets>=13.0",
+    "resona-asr-core>=0.1.0",
+    "resona-engine-server>=0.1.0",
+    # mlx-whisper only resolves on Apple Silicon; the engine is macOS-only.
+    "mlx-whisper>=0.4.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.urls]
@@ -34,5 +36,15 @@ Documentation = "https://ecsplico.github.io/resona/"
 Repository = "https://github.com/ecsplico/resona"
 Issues = "https://github.com/ecsplico/resona/issues"
 
+[tool.uv.sources]
+resona-asr-core = { workspace = true }
+resona-engine-server = { workspace = true }
+
+[project.entry-points."resona.engines"]
+mlx-whisper = "resona_engine_mlx_whisper.transcriber:MlxWhisperTranscriber"
+
+[project.scripts]
+resona-engine-mlx-whisper = "resona_engine_server.run:main"
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/resona_cloud_stt"]
+packages = ["src/resona_engine_mlx_whisper"]

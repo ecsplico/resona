@@ -102,9 +102,11 @@ async def health():
 from .endpoints import router
 from .audio_routes import router as audio_router
 from .profiles_routes import router as profiles_router
+from .streaming_routes import router as streaming_router
 app.include_router(router)
 app.include_router(audio_router)
 app.include_router(profiles_router)
+app.include_router(streaming_router)
 
 try:
     app.mount("/static", StaticFiles(directory='webapp', html=True), name="static")

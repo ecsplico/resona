@@ -77,6 +77,32 @@ services:
       start_period: 300s
     restart: unless-stopped
 
+  engine-parakeet:
+    profiles: ["parakeet"]
+    build:
+      context: .
+      dockerfile: packages/engine-parakeet/Dockerfile
+    ports:
+      - "7004:7001"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      RESONA_ENGINE: parakeet
+      DEFAULT_PARAKEET_MODEL: nvidia/parakeet-tdt-0.6b-v3
+      LOGLEVEL: info
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -93,7 +119,7 @@ services:
       - resona-db:/app/data/db
       - resona-profiles:/app/data/profiles
     environment:
-      RESONA_ENGINE_URLS: http://engine-faster-whisper:7001,http://engine-whisper:7001,http://engine-voxtral:7001
+      RESONA_ENGINE_URLS: http://engine-faster-whisper:7001,http://engine-whisper:7001,http://engine-voxtral:7001,http://engine-parakeet:7001
       DATA_PATH: /app/data
       LOGLEVEL: info
     env_file:
