@@ -20,6 +20,8 @@ resona/
     ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 engine (default)
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) engine
     ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers engine
+    ├── engine-mlx-whisper/ ← resona-engine-mlx-whisper: MLX/Metal Whisper engine (macOS Apple Silicon GPU)
+    ├── engine-parakeet/    ← resona-engine-parakeet: NVIDIA Parakeet (NeMo FastConformer) engine (Linux CUDA/CPU, multilingual)
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
     ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
     ├── postprocess/        ← resona-postprocess: profile-based postprocessing pipeline (replacements + LLM + extract)
@@ -57,15 +59,15 @@ The registry in `resona_asr_core/registry.py` discovers engines at runtime:
 - `get_transcriber()` returns a thread-safe singleton
 - Each engine's `[project.scripts]` points to `resona_engine_server.run:main` — same FastAPI app, different engine
 
-Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
+Available engines: `faster-whisper` (default), `whisper`, `voxtral`, `mlx-whisper` (macOS Apple Silicon GPU), `parakeet` (NVIDIA NeMo, Linux CUDA/CPU).
 
 ## Package responsibilities
 
 ### resona-asr-core
-- `protocol.py` — `Transcriber` Protocol + `TranscriptionResult` TypedDict
-- `registry.py` — entry-point discovery, singleton, device detection
+- `protocol.py` — `Transcriber` Protocol + `TranscriptionResult` TypedDict; optional `StreamingTranscriber`/`StreamSession` protocols (`stream_session()` → `feed()`/`flush()` returning `StreamUpdate`) for engines that decode incrementally
+- `registry.py` — entry-point discovery, singleton, device detection (`_detect_device` → cuda/mps/cpu); `list_engine_names()`, `is_apple_silicon()`, `platform_preferred_engine()` (Apple Silicon → `mlx-whisper` when installed, else `faster-whisper`)
 - `audio.py` — `load_audio()`, `SAMPLE_RATE`
-- `live_transcriber.py` — VAD-based live transcription engine (numpy only)
+- `live_transcriber.py` — VAD-based live transcription engine (numpy only). Delegates to a native `StreamSession` when the engine implements `StreamingTranscriber`, otherwise uses the windowed local-agreement fallback
 
 ### resona-engine-server
 - `app.py` — FastAPI app: `/health`, `POST /transcribe`, `WS /ws/transcribe`, `WS /ws/live`
@@ -86,13 +88,23 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `transcriber.py` — `VoxtralTranscriber`: HuggingFace Transformers pipeline (supports Voxtral, Whisper, etc.)
 - Configured via `DEFAULT_VOXTRAL_MODEL` env var (default: `openai/whisper-large-v3`)
 
+### resona-engine-mlx-whisper
+- `transcriber.py` — `MlxWhisperTranscriber`: Whisper on Apple Silicon GPU via MLX/Metal (no CUDA/PyTorch). macOS-only — `mlx-whisper` dep is gated to `sys_platform == 'darwin' and platform_machine == 'arm64'`; no Docker image. `device` arg accepted but ignored (MLX always uses Metal). Drops faster-whisper-only kwargs (`vad_filter`/`vad_parameters`) so it works in the live pipeline.
+- Configured via `DEFAULT_MLXWHISPER_MODEL` env var (default: `mlx-community/whisper-large-v3-turbo`)
+
+### resona-engine-parakeet
+- `transcriber.py` — `ParakeetTranscriber`: NVIDIA Parakeet / FastConformer via NeMo (`ASRModel.from_pretrained`). Default `nvidia/parakeet-tdt-0.6b-v3` (multilingual, DE+EN). `nemo_toolkit[asr]` dep gated to `sys_platform == 'linux'` (Linux/CUDA-first; CPU works). NeMo imported lazily so the entry point registers on macOS but selecting it errors there. `transcribe()` accepts `language`/`vad_*`/`initial_prompt` for protocol compatibility and ignores them (NeMo auto-detects language); returns `segments=[]`, so the live fallback uses the text-split path.
+- Native cache-aware streaming is **opt-in** via `RESONA_PARAKEET_STREAMING` (default off) and only activates when the loaded model is cache-aware-capable; `stream_session` is bound only then, so otherwise the engine stays a plain `Transcriber` and `resona live` uses the windowed local-agreement fallback. `ParakeetStreamSession` drives NeMo `conformer_stream_step` over a `CacheAwareStreamingAudioBuffer`; experimental, needs GPU validation. `_text_delta`/`_hypothesis_text` are pure helpers.
+- Configured via `DEFAULT_PARAKEET_MODEL` env var (default: `nvidia/parakeet-tdt-0.6b-v3`)
+
 ### resona-cloud-stt
 - `types.py` — `TranscriptionResult` TypedDict: `{text, language, segments}`
 - `errors.py` — `CloudSTTError` (base), `MissingAPIKeyError` (env var not set), `ProviderHTTPError` (non-2xx response)
 - `registry.py` — `PROVIDERS` (set), `PROVIDER_ENV_KEYS` (name → env var), `DEFAULT_MODELS` (name → model), `get_provider(name)` (returns provider module)
-- `providers/deepgram.py` — POSTs raw audio to Deepgram `/v1/listen`; default model `nova-3`; key env var `DEEPGRAM_API_KEY`
-- `providers/elevenlabs.py` — POSTs audio to ElevenLabs Speech-to-Text; default model `scribe_v1`; key env var `ELEVENLABS_API_KEY`
-- `providers/openai.py` — POSTs audio to OpenAI Whisper API; default model `whisper-1`; key env var `OPENAI_API_KEY`
+- `streaming.py` — live (WebSocket) STT. `StreamTranscript{text, is_final}`, `STREAMING_PROVIDERS = {deepgram, elevenlabs}`, `supports_streaming(name)`, and `async open_stream(provider, *, api_key, model, language, sample_rate, interim_results, options)` → a provider session with `await send_audio(pcm)`, `await finish()`, `await close()`, and `async for t in session` yielding `StreamTranscript`. OpenAI has no realtime path wired
+- `providers/deepgram.py` — batch POSTs raw audio to Deepgram `/v1/listen`; plus `open_stream` → `_DeepgramStream` over `wss://api.deepgram.com/v1/listen` (binary PCM up, `Results` down, `CloseStream` to finish). Default model `nova-3`; key env var `DEEPGRAM_API_KEY`
+- `providers/elevenlabs.py` — batch POSTs audio to ElevenLabs Speech-to-Text; plus `open_stream` → `_ElevenLabsStream` over `wss://api.elevenlabs.io/v1/speech-to-text/realtime` (`input_audio_chunk` base64 frames, `commit_strategy=vad`, `partial_transcript`/`committed_transcript` down). Default model `scribe_v1`; key env var `ELEVENLABS_API_KEY`
+- `providers/openai.py` — POSTs audio to OpenAI Whisper API; default model `whisper-1`; key env var `OPENAI_API_KEY`. Batch only (no streaming)
 
 ### resona-cloud-tts
 - `types.py` — `SpeechResult` TypedDict: `{audio: bytes, content_type: str}`
@@ -115,7 +127,8 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `endpoints.py` — REST routes: jobs
 - `profiles_routes.py` — CRUD routes for profile files: `GET /profiles/`, `GET /profiles/{name}`, `PUT /profiles/{name}`, `DELETE /profiles/{name}`
 - `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`; accepts optional `profile` field
-- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)`, error hierarchy
+- `streaming_routes.py` — Deepgram-compatible live streaming: `WS /v1/listen`. Auth via `Authorization: Token <RESONA_API_KEY>` (also Bearer/X-API-Key/`?token=`). Query params `model`/`language`/`encoding`(linear16)/`sample_rate`/`interim_results` + Resona `engine`/`profile`. Resolves the engine, then dispatches: a **local** engine-server → `_run_local_bridge`/`_bridge` (proxy to its `/ws/live`); a **cloud** provider with a realtime API (Deepgram, ElevenLabs) → `_run_cloud_bridge`/`_bridge_cloud` (opens `resona_cloud_stt.streaming.open_stream`, bridges binary PCM ↔ provider session). Both emit Deepgram `Results`/`Metadata`. Cloud providers without streaming (OpenAI) are rejected. `_CLOUD_FINAL_DRAIN_SECONDS` bounds the post-stop drain for providers that don't close on commit (ElevenLabs)
+- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)`, `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
 - `tasks_transcribe.py` — background thread: dequeues PENDING jobs, resolves the job's profile via `resolve_profile`, calls engine with `profile.initial_prompt_string()`, **applies profile pipeline** after engine returns
 - `engine_client.py` — `EngineClient.transcribe()`: POSTs to engine (no replacements sent)
 - `migration.py` — on startup, exports legacy `Replacement`/`InitialPrompt` DB rows to a `default.json` profile file in `RESONA_PROFILES_DIR`; idempotent
@@ -139,7 +152,8 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `engines.py` — `resona engines` CRUD subcommands; `engines add --type cloud --provider <name>` registers cloud entries
 - `profiles.py` — `resona profiles` subcommand: `list`, `show`, `push`, `pull`, `delete` for server-side profile management
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
-- `live_ui.py` — `WSLiveApp`: live transcription TUI
+- `live_ui.py` — `WSLiveApp`: live transcription TUI. `live` subcommand accepts `--language/-l`, `--engine/-e` (in-process engine: flag → `RESONA_ENGINE` → `platform_preferred_engine()`; validated against installed engines, exported as `RESONA_ENGINE` so the `LiveTranscriber` singleton loads it), and `--remote/-r URL` (stream to a remote server). With `--remote` **and** `--engine`, the TUI hits a resona-api `/v1/listen` gateway and `--engine` picks the backend (`deepgram`/`elevenlabs`/local engine name) → cloud streaming from the TUI; with `--remote` alone it hits an engine-server `/ws/live`. `WSLiveApp(remote=, remote_engine=)` swaps in `GatewayLiveTranscriber` or `RemoteLiveTranscriber`; the worker/feed loops are unchanged because all backends share the same pull surface
+- `remote_live.py` — remote `live` backends over a `websockets` sync connection (sender + receiver threads), all exposing the `LiveTranscriber` pull surface (`add_audio`/`has_enough_audio`/`process_sync`/`flush_sync`/`get_full_transcript`/`_audio_event_sync`). `_BaseRemoteLive` holds the shared threading; subclasses define URL, finish frame, and message classifier: `RemoteLiveTranscriber` → engine-server `/ws/live` (`partial`/`final` JSON, `stop` to finish), `GatewayLiveTranscriber` → resona-api `/v1/listen` (Deepgram `Results`/`Metadata`, `CloseStream` to finish, `?engine=` selects backend, `RESONA_API_KEY` → `Authorization: Token`). Audio is the shared `{type:audio, data:base64 int16}` frame (accepted by both upstreams); `_pcm_b64` encodes 16 kHz float32 → base64 int16; `_build_ws_url` normalizes URLs + merges query params
 - `ui.py` — `WSUIApp`: record-and-transcribe TUI
 
 ## Import conventions
@@ -280,6 +294,10 @@ uv run resona-api                      # :7000, needs engine running
 # CLI tools
 uv run resona rec                      # recorder TUI
 uv run resona live                     # live transcription TUI
+uv run resona live --engine mlx-whisper --language en  # pick engine + language
+uv run resona live --remote ws://gpu-box:7001 --language de  # stream to a remote engine /ws/live
+uv run resona live --remote http://api-host:7000 --engine deepgram    # cloud streaming via resona-api /v1/listen
+uv run resona live --remote http://api-host:7000 --engine elevenlabs --language de
 uv run resona ui                       # record + transcribe
 uv run resona transcribe ./audio/      # transcribe a directory
 uv run resona transcribe one.mp3       # transcribe a single file
@@ -313,6 +331,8 @@ the end-user personas.
 | Default (record, live, local faster-whisper) | `uv tool install --from ./apps/resona-cli resona-cli` |
 | Default + Whisper (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[whisper]'` |
 | Default + Voxtral (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[voxtral]'` |
+| Default + MLX/Metal engine (macOS Apple Silicon) | `uv tool install --from ./apps/resona-cli 'resona-cli[mlx]'` |
+| Default + Parakeet (NeMo) engine (Linux CUDA/CPU) | `uv tool install --from ./apps/resona-cli 'resona-cli[parakeet]'` |
 
 See [docs/getting-started/installation.md](docs/getting-started/installation.md) for details including PyTorch extras.
 
@@ -357,9 +377,17 @@ COPY packages/engine-faster-whisper/ ./packages/engine-faster-whisper/
 RUN uv sync --package resona-engine-faster-whisper --frozen --no-dev
 ```
 
-Engine packages use `nvidia/cuda:12.8.0-runtime-ubuntu24.04`. The API uses `python:3.12-slim`. Do not add GPU deps to the API Dockerfile.
+GPU engine packages use a `nvidia/cuda:*-runtime-ubuntu24.04` base (faster-whisper on 12.8.0; whisper/voxtral on 13.0.1; parakeet on 12.8.0 to match PyPI torch's bundled CUDA 12.x, with `libsndfile1` added for NeMo/soundfile). The API uses `python:3.12-slim`. Do not add GPU deps to the API Dockerfile. `engine-mlx-whisper` has **no** Dockerfile — Metal cannot run in a Linux container; run it natively on macOS.
 
-Run with: `docker compose -f docker-compose.resona.yml up`
+Each engine is a compose service behind a `profiles: [<name>]` flag and is reachable on its own host port: faster-whisper `:7001`, whisper `:7002`, voxtral `:7003`, parakeet `:7004` (all map to container `:7001`); the API is always-on at `:7000`. `docker-compose.cpu.yml` is a CPU override for `engine-faster-whisper` only (the PyTorch/NeMo engines are impractical on CPU).
+
+```bash
+# default profile (api only — bring an engine up explicitly):
+docker compose -f docker-compose.resona.yml --profile faster-whisper up
+docker compose -f docker-compose.resona.yml --profile parakeet up
+# CPU-only faster-whisper:
+docker compose -f docker-compose.resona.yml -f docker-compose.cpu.yml --profile faster-whisper up
+```
 
 ## Environment and configuration
 

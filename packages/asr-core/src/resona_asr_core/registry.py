@@ -1,6 +1,7 @@
 """Engine discovery and singleton management via Python entry points."""
 
 import logging
+import platform
 from importlib.metadata import entry_points
 from threading import Lock
 
@@ -37,6 +38,30 @@ def _detect_device() -> str:
         return "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
     except ImportError:
         return "cpu"
+
+
+def list_engine_names() -> list[str]:
+    """Return the names of every installed engine (entry points in resona.engines)."""
+    return [ep.name for ep in entry_points(group=ENTRY_POINT_GROUP)]
+
+
+def is_apple_silicon() -> bool:
+    """True on an Apple Silicon (arm64) macOS host."""
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+
+def platform_preferred_engine() -> str:
+    """Best *installed* engine for this platform, used as a default selector.
+
+    Device strings stay per-engine (see :func:`_detect_device`); this only picks
+    which engine to load by default. On Apple Silicon the MLX (Metal GPU) engine
+    is preferred when installed; everywhere else the CTranslate2 faster-whisper
+    engine is the portable CPU/CUDA default.
+    """
+    installed = set(list_engine_names())
+    if is_apple_silicon() and "mlx-whisper" in installed:
+        return "mlx-whisper"
+    return "faster-whisper"
 
 
 def _load_from_entrypoint(engine: str | None = None) -> Transcriber:

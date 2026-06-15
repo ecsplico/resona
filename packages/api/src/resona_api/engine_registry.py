@@ -252,6 +252,20 @@ def _cloud_key(provider: str, error_cls) -> str:
     return key
 
 
+def cloud_api_key(provider: str) -> str:
+    """Resolve a cloud provider's API key, or raise ``EngineUnavailableError``.
+
+    Public wrapper over :func:`_cloud_key` for the streaming bridge, which needs
+    the key outside the sync ``run_stt`` dispatch path.
+    """
+    return _cloud_key(
+        provider,
+        lambda env: EngineUnavailableError(
+            f"cloud engine '{provider}' API key not set ({env})"
+        ),
+    )
+
+
 def run_stt(
     info: EngineInfo,
     audio_path: Path,

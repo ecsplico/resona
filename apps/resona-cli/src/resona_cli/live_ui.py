@@ -46,8 +46,12 @@ class WSLiveApp(MicRecApp):
     CSS_PATH = "live.tcss"
     TITLE = "Resona Live - Live Transcription"
 
-    def __init__(self):
+    def __init__(self, language: str = "de", remote: str | None = None,
+                 remote_engine: str | None = None):
         super().__init__()
+        self._language = language
+        self._remote = remote
+        self._remote_engine = remote_engine
         self._live_transcriber: LiveTranscriber | None = None
         self._live_thread: threading.Thread | None = None
         self._live_stop_event = threading.Event()
@@ -157,7 +161,17 @@ class WSLiveApp(MicRecApp):
         if self._session is not None:
             self._session.add_audio_observer(self._on_audio_chunk)
 
-        self._live_transcriber = LiveTranscriber(language="de")
+        if self._remote and self._remote_engine:
+            from .remote_live import GatewayLiveTranscriber
+            self._live_transcriber = GatewayLiveTranscriber(
+                self._remote, engine=self._remote_engine, language=self._language)
+            self._live_transcriber.start()
+        elif self._remote:
+            from .remote_live import RemoteLiveTranscriber
+            self._live_transcriber = RemoteLiveTranscriber(self._remote, language=self._language)
+            self._live_transcriber.start()
+        else:
+            self._live_transcriber = LiveTranscriber(language=self._language)
 
         self._live_thread = threading.Thread(
             target=self._live_transcription_worker,

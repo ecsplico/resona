@@ -146,3 +146,24 @@ def test_detect_device_cpu_when_nothing_available(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", None)
     monkeypatch.setitem(sys.modules, "ctranslate2", None)
     assert reg._detect_device() == "cpu"
+
+
+def test_platform_preferred_engine_apple_silicon_with_mlx(monkeypatch):
+    import resona_asr_core.registry as reg
+    monkeypatch.setattr(reg, "is_apple_silicon", lambda: True)
+    monkeypatch.setattr(reg, "list_engine_names", lambda: ["faster-whisper", "mlx-whisper"])
+    assert reg.platform_preferred_engine() == "mlx-whisper"
+
+
+def test_platform_preferred_engine_apple_silicon_without_mlx(monkeypatch):
+    import resona_asr_core.registry as reg
+    monkeypatch.setattr(reg, "is_apple_silicon", lambda: True)
+    monkeypatch.setattr(reg, "list_engine_names", lambda: ["faster-whisper"])
+    assert reg.platform_preferred_engine() == "faster-whisper"
+
+
+def test_platform_preferred_engine_non_apple(monkeypatch):
+    import resona_asr_core.registry as reg
+    monkeypatch.setattr(reg, "is_apple_silicon", lambda: False)
+    monkeypatch.setattr(reg, "list_engine_names", lambda: ["faster-whisper", "mlx-whisper"])
+    assert reg.platform_preferred_engine() == "faster-whisper"

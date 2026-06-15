@@ -28,6 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.28.1",
+    "websockets>=13.0",
     "typer>=0.15.3",
     "python-dotenv>=1.1.0",
     "python-decouple>=3.8",
@@ -52,7 +53,9 @@ Issues = "https://github.com/ecsplico/resona/issues"
 [project.optional-dependencies]
 whisper = ["resona-engine-whisper"]
 voxtral = ["resona-engine-voxtral"]
-all = ["resona-engine-whisper", "resona-engine-voxtral"]
+mlx = ["resona-engine-mlx-whisper"]
+parakeet = ["resona-engine-parakeet"]
+all = ["resona-engine-whisper", "resona-engine-voxtral", "resona-engine-mlx-whisper", "resona-engine-parakeet"]
 
 # PyTorch index for the [whisper] / [voxtral] extras.
 # Declared on the CLI package (not the workspace root) so it travels with
@@ -70,6 +73,8 @@ resona-asr-core = { workspace = true }
 resona-engine-faster-whisper = { workspace = true }
 resona-engine-whisper = { workspace = true }
 resona-engine-voxtral = { workspace = true }
+resona-engine-mlx-whisper = { workspace = true }
+resona-engine-parakeet = { workspace = true }
 torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
 
 [project.scripts]
