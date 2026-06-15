@@ -525,3 +525,23 @@ def test_transcribe_fallback_resolves_profile_name(tmp_path):
     # build_pipeline called with the resolved profile
     mock_build.assert_called_once_with(mock_profile)
     assert read_md_body(out_dir / "audio.md") == "profiled"
+
+
+def test_resolve_local_engine_name_explicit_builtin():
+    """An explicit built-in --engine is used verbatim."""
+    from resona_cli.transcribe import _resolve_local_engine_name
+    assert _resolve_local_engine_name("whisper", "auto") == "whisper"
+
+
+def test_resolve_local_engine_name_concrete_config_default():
+    """A concrete default_engine from config pins the engine (no env detection)."""
+    from resona_cli.transcribe import _resolve_local_engine_name
+    assert _resolve_local_engine_name(None, "voxtral") == "voxtral"
+
+
+def test_resolve_local_engine_name_auto_uses_recommended():
+    """default_engine='auto' defers to the environment-aware recommendation."""
+    from resona_cli import transcribe
+    with patch("resona_asr_core.registry.recommended_engine", return_value="mlx-whisper") as rec:
+        assert transcribe._resolve_local_engine_name(None, "auto") == "mlx-whisper"
+        rec.assert_called_once()

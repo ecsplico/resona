@@ -1,0 +1,173 @@
+{
+  "timestamp_utc": "2026-06-15T21:56:35.177092+00:00",
+  "hardware": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "processor": "arm",
+    "python": "3.12.13",
+    "logical_cpus": 18,
+    "chip": "Apple M5 Pro",
+    "memory_gb": 68.7,
+    "performance_cores": "6",
+    "efficiency_cores": "12",
+    "gpu_cores": null
+  },
+  "env": {},
+  "samples": {
+    "de": {
+      "audio_seconds": 621.4,
+      "ref_words": 990
+    },
+    "en": {
+      "audio_seconds": 625.9,
+      "ref_words": 1374
+    }
+  },
+  "results": [
+    {
+      "backend": "faster-whisper",
+      "label": "faster-whisper (CTranslate2, CPU)",
+      "model": "large-v3",
+      "language": "de",
+      "audio_seconds": 621.4,
+      "transcribe_seconds": 146.79,
+      "rtf": 0.2362,
+      "x_realtime": 4.23,
+      "wer": 0.0371,
+      "cer": 0.0152,
+      "ref_words": 997,
+      "load_seconds": 2.6
+    },
+    {
+      "backend": "faster-whisper",
+      "label": "faster-whisper (CTranslate2, CPU)",
+      "model": "large-v3",
+      "language": "en",
+      "audio_seconds": 625.9,
+      "transcribe_seconds": 84.67,
+      "rtf": 0.1353,
+      "x_realtime": 7.39,
+      "wer": 0.6739,
+      "cer": 0.6724,
+      "ref_words": 1386,
+      "load_seconds": 2.6
+    },
+    {
+      "backend": "mlx-whisper",
+      "label": "mlx-whisper (MLX GPU)",
+      "model": "mlx-community/whisper-large-v3-mlx",
+      "language": "de",
+      "audio_seconds": 621.4,
+      "transcribe_seconds": 66.29,
+      "rtf": 0.1067,
+      "x_realtime": 9.37,
+      "wer": 0.1785,
+      "cer": 0.1489,
+      "ref_words": 997,
+      "load_seconds": 0.0
+    },
+    {
+      "backend": "mlx-whisper",
+      "label": "mlx-whisper (MLX GPU)",
+      "model": "mlx-community/whisper-large-v3-mlx",
+      "language": "en",
+      "audio_seconds": 625.9,
+      "transcribe_seconds": 58.91,
+      "rtf": 0.0941,
+      "x_realtime": 10.63,
+      "wer": 0.3427,
+      "cer": 0.2501,
+      "ref_words": 1386,
+      "load_seconds": 0.0
+    },
+    {
+      "backend": "whisper-cpp",
+      "label": "whisper.cpp (Metal)",
+      "model": "large-v3",
+      "language": "de",
+      "audio_seconds": 621.4,
+      "transcribe_seconds": 73.63,
+      "rtf": 0.1185,
+      "x_realtime": 8.44,
+      "wer": 2.4473,
+      "cer": 1.5303,
+      "ref_words": 997,
+      "load_seconds": 0.79
+    },
+    {
+      "backend": "whisper-cpp",
+      "label": "whisper.cpp (Metal)",
+      "model": "large-v3",
+      "language": "en",
+      "audio_seconds": 625.9,
+      "transcribe_seconds": 57.67,
+      "rtf": 0.0921,
+      "x_realtime": 10.85,
+      "wer": 0.3499,
+      "cer": 0.2949,
+      "ref_words": 1386,
+      "load_seconds": 0.79
+    },
+    {
+      "backend": "lightning-mlx",
+      "label": "lightning-whisper-mlx (batched MLX GPU)",
+      "model": "large-v3",
+      "language": "de",
+      "audio_seconds": 621.4,
+      "transcribe_seconds": 35.41,
+      "rtf": 0.057,
+      "x_realtime": 17.55,
+      "wer": 0.2849,
+      "cer": 0.2226,
+      "ref_words": 997,
+      "load_seconds": 0.42
+    },
+    {
+      "backend": "lightning-mlx",
+      "label": "lightning-whisper-mlx (batched MLX GPU)",
+      "model": "large-v3",
+      "language": "en",
+      "audio_seconds": 625.9,
+      "transcribe_seconds": 44.65,
+      "rtf": 0.0713,
+      "x_realtime": 14.02,
+      "wer": 0.5245,
+      "cer": 0.4037,
+      "ref_words": 1386,
+      "load_seconds": 0.42
+    },
+    {
+      "backend": "whisper",
+      "label": "openai-whisper (PyTorch)",
+      "model": "large-v3",
+      "language": "de",
+      "audio_seconds": 621.4,
+      "transcribe_seconds": 250.69,
+      "rtf": 0.4034,
+      "x_realtime": 2.48,
+      "wer": 0.333,
+      "cer": 0.2551,
+      "ref_words": 997,
+      "load_seconds": 10.48
+    },
+    {
+      "backend": "whisper",
+      "label": "openai-whisper (PyTorch)",
+      "model": "large-v3",
+      "language": "en",
+      "audio_seconds": 625.9,
+      "transcribe_seconds": 170.54,
+      "rtf": 0.2725,
+      "x_realtime": 3.67,
+      "wer": 0.2424,
+      "cer": 0.1776,
+      "ref_words": 1386,
+      "load_seconds": 10.48
+    },
+    {
+      "backend": "voxtral",
+      "model": "openai/whisper-large-v3",
+      "skipped": "Could not load model openai/whisper-large-v3 with any of the following classes: (<class 'transformers.models.auto.modeling_auto.AutoModelForCTC'>, <class 'transformers.models.auto.modeling_auto.AutoModelForSpeechSeq2Seq'>, <class 'transformers.models.whisper.modeling_whisper.WhisperForConditionalGeneration'>). See the original errors:\n\nwhile loading with AutoModelForCTC, an error is thrown:\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/pipelines/base.py\", line 232, in load_model\n    model = model_class.from_pretrained(model, **kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py\", line 408, in from_pretrained\n    raise ValueError(\nValueError: Unrecognized configuration class <class 'transformers.models.whisper.configuration_whisper.WhisperConfig'> for this kind of AutoModel: AutoModelForCTC.\nModel type should be one of Data2VecAudioConfig, HubertConfig, LasrCTCConfig, ParakeetCTCConfig, SEWConfig, SEWDConfig, UniSpeechConfig, UniSpeechSatConfig, Wav2Vec2Config, Wav2Vec2BertConfig, Wav2Vec2ConformerConfig, WavLMConfig.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/pipelines/base.py\", line 248, in load_model\n    model = model_class.from_pretrained(model, **fp32_kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py\", line 408, in from_pretrained\n    raise ValueError(\nValueError: Unrecognized configuration class <class 'transformers.models.whisper.configuration_whisper.WhisperConfig'> for this kind of AutoModel: AutoModelForCTC.\nModel type should be one of Data2VecAudioConfig, HubertConfig, LasrCTCConfig, ParakeetCTCConfig, SEWConfig, SEWDConfig, UniSpeechConfig, UniSpeechSatConfig, Wav2Vec2Config, Wav2Vec2BertConfig, Wav2Vec2ConformerConfig, WavLMConfig.\n\nwhile loading with AutoModelForSpeechSeq2Seq, an error is thrown:\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 678, in _get_resolved_checkpoint_files\n    resolved_archive_file = cached_file(pretrained_model_name_or_path, filename, **cached_file_kwargs)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 278, in cached_file\n    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 512, in cached_files\n    raise e\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 422, in cached_files\n    hf_hub_download(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 997, in hf_hub_download\n    return _hf_hub_download_to_cache_dir(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1130, in _hf_hub_download_to_cache_dir\n    _get_metadata_or_catch_error(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1669, in _get_metadata_or_catch_error\n    metadata = get_hf_file_metadata(\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1591, in get_hf_file_metadata\n    response = _httpx_follow_relative_redirects_with_backoff(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 685, in _httpx_follow_relative_redirects_with_backoff\n    response = http_backoff(\n               ^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 559, in http_backoff\n    return next(\n           ^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 467, in _http_backoff_base\n    response = client.request(method=method, url=url, **kwargs)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 825, in request\n    return self.send(request, auth=auth, follow_redirects=follow_redirects)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 901, in send\n    raise RuntimeError(\"Cannot send a request, as the client has been closed.\")\nRuntimeError: Cannot send a request, as the client has been closed.\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/pipelines/base.py\", line 232, in load_model\n    model = model_class.from_pretrained(model, **kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py\", line 405, in from_pretrained\n    return model_class.from_pretrained(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 4153, in from_pretrained\n    checkpoint_files, sharded_metadata = _get_resolved_checkpoint_files(\n                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 758, in _get_resolved_checkpoint_files\n    raise OSError(\nOSError: Can't load the model for 'openai/whisper-large-v3'. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure 'openai/whisper-large-v3' is the correct path to a directory containing a file named pytorch_model.bin.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 678, in _get_resolved_checkpoint_files\n    resolved_archive_file = cached_file(pretrained_model_name_or_path, filename, **cached_file_kwargs)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 278, in cached_file\n    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 512, in cached_files\n    raise e\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 422, in cached_files\n    hf_hub_download(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 997, in hf_hub_download\n    return _hf_hub_download_to_cache_dir(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1130, in _hf_hub_download_to_cache_dir\n    _get_metadata_or_catch_error(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1669, in _get_metadata_or_catch_error\n    metadata = get_hf_file_metadata(\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1591, in get_hf_file_metadata\n    response = _httpx_follow_relative_redirects_with_backoff(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 685, in _httpx_follow_relative_redirects_with_backoff\n    response = http_backoff(\n               ^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 559, in http_backoff\n    return next(\n           ^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 467, in _http_backoff_base\n    response = client.request(method=method, url=url, **kwargs)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 825, in request\n    return self.send(request, auth=auth, follow_redirects=follow_redirects)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 901, in send\n    raise RuntimeError(\"Cannot send a request, as the client has been closed.\")\nRuntimeError: Cannot send a request, as the client has been closed.\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/pipelines/base.py\", line 248, in load_model\n    model = model_class.from_pretrained(model, **fp32_kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py\", line 405, in from_pretrained\n    return model_class.from_pretrained(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 4153, in from_pretrained\n    checkpoint_files, sharded_metadata = _get_resolved_checkpoint_files(\n                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 758, in _get_resolved_checkpoint_files\n    raise OSError(\nOSError: Can't load the model for 'openai/whisper-large-v3'. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure 'openai/whisper-large-v3' is the correct path to a directory containing a file named pytorch_model.bin.\n\nwhile loading with WhisperForConditionalGeneration, an error is thrown:\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 678, in _get_resolved_checkpoint_files\n    resolved_archive_file = cached_file(pretrained_model_name_or_path, filename, **cached_file_kwargs)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 278, in cached_file\n    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 512, in cached_files\n    raise e\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 422, in cached_files\n    hf_hub_download(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 997, in hf_hub_download\n    return _hf_hub_download_to_cache_dir(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1130, in _hf_hub_download_to_cache_dir\n    _get_metadata_or_catch_error(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1669, in _get_metadata_or_catch_error\n    metadata = get_hf_file_metadata(\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1591, in get_hf_file_metadata\n    response = _httpx_follow_relative_redirects_with_backoff(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 685, in _httpx_follow_relative_redirects_with_backoff\n    response = http_backoff(\n               ^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 559, in http_backoff\n    return next(\n           ^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 467, in _http_backoff_base\n    response = client.request(method=method, url=url, **kwargs)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 825, in request\n    return self.send(request, auth=auth, follow_redirects=follow_redirects)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 901, in send\n    raise RuntimeError(\"Cannot send a request, as the client has been closed.\")\nRuntimeError: Cannot send a request, as the client has been closed.\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/pipelines/base.py\", line 232, in load_model\n    model = model_class.from_pretrained(model, **kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 4153, in from_pretrained\n    checkpoint_files, sharded_metadata = _get_resolved_checkpoint_files(\n                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 758, in _get_resolved_checkpoint_files\n    raise OSError(\nOSError: Can't load the model for 'openai/whisper-large-v3'. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure 'openai/whisper-large-v3' is the correct path to a directory containing a file named pytorch_model.bin.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 678, in _get_resolved_checkpoint_files\n    resolved_archive_file = cached_file(pretrained_model_name_or_path, filename, **cached_file_kwargs)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 278, in cached_file\n    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 512, in cached_files\n    raise e\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/utils/hub.py\", line 422, in cached_files\n    hf_hub_download(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 997, in hf_hub_download\n    return _hf_hub_download_to_cache_dir(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1130, in _hf_hub_download_to_cache_dir\n    _get_metadata_or_catch_error(\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1669, in _get_metadata_or_catch_error\n    metadata = get_hf_file_metadata(\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py\", line 88, in _inner_fn\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/file_download.py\", line 1591, in get_hf_file_metadata\n    response = _httpx_follow_relative_redirects_with_backoff(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 685, in _httpx_follow_relative_redirects_with_backoff\n    response = http_backoff(\n               ^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 559, in http_backoff\n    return next(\n           ^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/huggingface_hub/utils/_http.py\", line 467, in _http_backoff_base\n    response = client.request(method=method, url=url, **kwargs)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 825, in request\n    return self.send(request, auth=auth, follow_redirects=follow_redirects)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/.cache/uv/archive-v0/gbpod9YZdhyQtkjo/lib/python3.12/site-packages/httpx/_client.py\", line 901, in send\n    raise RuntimeError(\"Cannot send a request, as the client has been closed.\")\nRuntimeError: Cannot send a request, as the client has been closed.\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/pipelines/base.py\", line 248, in load_model\n    model = model_class.from_pretrained(model, **fp32_kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 4153, in from_pretrained\n    checkpoint_files, sharded_metadata = _get_resolved_checkpoint_files(\n                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/matthias/devBench/resona/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py\", line 758, in _get_resolved_checkpoint_files\n    raise OSError(\nOSError: Can't load the model for 'openai/whisper-large-v3'. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure 'openai/whisper-large-v3' is the correct path to a directory containing a file named pytorch_model.bin.\n\n\n"
+    }
+  ]
+}

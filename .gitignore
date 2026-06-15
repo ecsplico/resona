@@ -10,6 +10,15 @@ files/
 md/
 inbox/
 
+# ── Model weights / benchmark artifacts ─────────────────────────────
+# lightning-whisper-mlx downloads here when LIGHTNING_MLX_MODELS_DIR is unset
+# and CWD-relative resolution kicks in; never commit multi-GB weights.
+mlx_models/
+# Benchmark sample audio cache (large .npy); results/ is kept as a record.
+benchmarks/cache/
+# Transient transcript dumps from benchmarks/_diagnose.py
+benchmarks/diagnose/
+
 # ── Python ──────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

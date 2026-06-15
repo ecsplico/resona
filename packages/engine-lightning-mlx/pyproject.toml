@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-engine-lightning-mlx"
+version = "0.1.0"
+description = "Lightning Whisper MLX backend for Resona — batched GPU transcription on Apple Silicon"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
+requires-python = ">=3.12"
+keywords = ["asr", "whisper", "mlx", "apple-silicon", "batched", "transcription", "speech-to-text", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "resona-asr-core>=0.1.0",
+    "resona-engine-server>=0.1.0",
+    # MLX-only; mac arm64 wheels. Marker keeps non-mac workspace syncs resolvable.
+    "lightning-whisper-mlx>=0.0.10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
+
+[tool.uv.sources]
+resona-asr-core = { workspace = true }
+resona-engine-server = { workspace = true }
+
+[project.entry-points."resona.engines"]
+lightning-mlx = "resona_engine_lightning_mlx.transcriber:LightningMLXTranscriber"
+
+[project.scripts]
+resona-engine-lightning-mlx = "resona_engine_server.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_engine_lightning_mlx"]

@@ -133,7 +133,9 @@ class EngineConfig:
     """
 
     engines: list[EngineEntry] = field(default_factory=list)
-    default_engine: str = "faster-whisper"
+    # "auto" => let the CLI pick an environment-appropriate local engine
+    # (resona_asr_core.registry.recommended_engine). A concrete name pins it.
+    default_engine: str = "auto"
     default_private: bool = False
     default_profile: Optional[str] = None
 
@@ -164,7 +166,7 @@ class EngineConfig:
                     log.warning(f"Skipping invalid engine entry: {e}")
                     continue
                 engines.append(entry)
-            default_engine = data.get("default_engine", data.get("default_backend", "faster-whisper"))
+            default_engine = data.get("default_engine", data.get("default_backend", "auto"))
             default_private = bool(data.get("default_private", False))
             default_profile = data.get("default_profile")
             return cls(engines=engines, default_engine=default_engine,

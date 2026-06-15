@@ -18,7 +18,7 @@ from fastapi import FastAPI, File, Form, UploadFile, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import verify_api_key
-from resona_asr_core.registry import get_transcriber
+from resona_asr_core.registry import get_transcriber, recommended_engine
 from resona_asr_core.audio import load_audio, load_audio_path, SAMPLE_RATE
 from .ws_transcribe import transcribe_websocket
 from .ws_live import live_transcribe_websocket
@@ -77,13 +77,18 @@ _MODEL_ENV = {
     "faster-whisper": ("DEFAULT_FASTWHISPER_MODEL", "large-v3"),
     "whisper": ("DEFAULT_WHISPER_MODEL", "large-v3"),
     "voxtral": ("DEFAULT_VOXTRAL_MODEL", "openai/whisper-large-v3"),
+    "mlx-whisper": ("DEFAULT_MLX_WHISPER_MODEL", "mlx-community/whisper-large-v3-mlx"),
+    "whisper-cpp": ("DEFAULT_WHISPERCPP_MODEL", "large-v3"),
+    "lightning-mlx": ("DEFAULT_LIGHTNING_MLX_MODEL", "large-v3"),
 }
 
 
 @app.get("/health")
 async def health():
     """Report liveness plus which engine and model this process serves."""
-    engine_name = config("RESONA_ENGINE", default="faster-whisper")
+    # Match the resolution in registry._load_from_entrypoint so /health reports
+    # the engine that actually loads (env override, else environment default).
+    engine_name = config("RESONA_ENGINE", default="") or recommended_engine()
     env_key, default_model = _MODEL_ENV.get(
         engine_name, ("DEFAULT_FASTWHISPER_MODEL", "large-v3")
     )
