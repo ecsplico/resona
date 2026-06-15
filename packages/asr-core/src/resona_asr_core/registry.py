@@ -1,6 +1,8 @@
 """Engine discovery and singleton management via Python entry points."""
 
 import logging
+import platform
+import sys
 from importlib.metadata import entry_points
 from threading import Lock
 
@@ -14,6 +16,42 @@ _transcriber: Transcriber | None = None
 _init_lock = Lock()
 
 ENTRY_POINT_GROUP = "resona.engines"
+
+# Per-environment default engine preference, informed by the benchmark suite
+# (see benchmarks/). Each tuple is tried in order; the first installed engine
+# wins. RESONA_ENGINE always overrides this.
+#
+# Apple Silicon: CTranslate2 (faster-whisper) is CPU-only, so the GPU-native
+# engines are several times faster at the same model size. mlx-whisper gives the
+# best speed+accuracy balance, then the batched lightning-mlx, then whisper.cpp.
+_APPLE_SILICON_PRIORITY = ("mlx-whisper", "lightning-mlx", "whisper-cpp", "faster-whisper")
+# CUDA / CPU Linux: faster-whisper (CTranslate2) uses the GPU when present and
+# the CPU otherwise — a solid default on both. (To be benchmarked on Linux.)
+_GENERIC_PRIORITY = ("faster-whisper", "whisper-cpp", "whisper", "voxtral")
+
+
+def _is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine() == "arm64"
+
+
+def installed_engines() -> list[str]:
+    """Names of all engines registered via the `resona.engines` entry points."""
+    return [ep.name for ep in entry_points(group=ENTRY_POINT_GROUP)]
+
+
+def recommended_engine(installed: list[str] | None = None) -> str:
+    """Best default engine for the current environment, limited to installed ones.
+
+    Apple Silicon prefers the GPU-native engines (mlx-whisper first); elsewhere
+    faster-whisper is preferred. Falls back to any installed engine, or the
+    `faster-whisper` name if nothing is discoverable.
+    """
+    available = set(installed if installed is not None else installed_engines())
+    priority = _APPLE_SILICON_PRIORITY if _is_apple_silicon() else _GENERIC_PRIORITY
+    for name in priority:
+        if name in available:
+            return name
+    return next(iter(sorted(available)), "faster-whisper")
 
 
 def _detect_device() -> str:
@@ -41,8 +79,11 @@ def _detect_device() -> str:
 
 def _load_from_entrypoint(engine: str | None = None) -> Transcriber:
     """Discover and instantiate a transcriber engine by name."""
-    name = engine or config("RESONA_ENGINE", default="faster-whisper")
-    eps = entry_points(group=ENTRY_POINT_GROUP)
+    eps = list(entry_points(group=ENTRY_POINT_GROUP))
+    # Priority: explicit arg > RESONA_ENGINE env > environment-aware default.
+    name = engine or config("RESONA_ENGINE", default="") or recommended_engine(
+        [ep.name for ep in eps]
+    )
     for ep in eps:
         if ep.name == name:
             cls = ep.load()

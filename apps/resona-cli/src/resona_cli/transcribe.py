@@ -48,6 +48,24 @@ EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 _PROFILES_DIR = Path.home() / ".resona" / "profiles"
 
 
+def _resolve_local_engine_name(engine: Optional[str], default_engine: str) -> str:
+    """Pick the engine to run locally when no server is reachable.
+
+    Priority: explicit built-in ``--engine`` > a concrete ``default_engine`` from
+    config > environment-aware default (``recommended_engine`` — GPU-native on
+    Apple Silicon, faster-whisper elsewhere), limited to engines installed here.
+    """
+    if engine and engine in BUILTIN_ENGINES:
+        return engine
+    if default_engine and default_engine != "auto":
+        return default_engine
+    try:
+        from resona_asr_core.registry import recommended_engine
+        return recommended_engine()
+    except Exception:
+        return "faster-whisper"
+
+
 def _expand_inputs(inputs: list[str], recursive: bool) -> list[Path]:
     """Expand file paths, glob patterns, and/or directories into audio files."""
     out: list[Path] = []
@@ -119,7 +137,7 @@ def transcribe_files(
     except (httpx.ConnectError, httpx.TimeoutException, RuntimeError):
         pass
 
-    local_engine_name = engine if engine in BUILTIN_ENGINES else cfg.default_engine
+    local_engine_name = _resolve_local_engine_name(engine, cfg.default_engine)
     # Local engines are inherently private; --private is honoured by the fallback
     # path naturally (no audio leaves the machine).
     _transcribe_local_fallback(files, output_dir, model, language,

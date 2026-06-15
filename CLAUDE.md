@@ -11,15 +11,19 @@ resona/
 ├── pyproject.toml          ← workspace root
 ├── uv.lock
 ├── docker-compose.resona.yml
+├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member)
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
     ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
     ├── engine-server/      ← resona-engine-server: FastAPI HTTP/WS app, :7001. Depends on asr-core.
-    ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 engine (default)
+    ├── engine-faster-whisper/ ← resona-engine-faster-whisper: CTranslate2 engine (default, CPU)
     ├── engine-whisper/     ← resona-engine-whisper: OpenAI Whisper (PyTorch) engine
     ├── engine-voxtral/     ← resona-engine-voxtral: HuggingFace Transformers engine
+    ├── engine-mlx-whisper/ ← resona-engine-mlx-whisper: Apple MLX engine (GPU, macOS arm64)
+    ├── engine-whispercpp/  ← resona-engine-whispercpp: whisper.cpp engine (Metal, via pywhispercpp)
+    ├── engine-lightning-mlx/ ← resona-engine-lightning-mlx: batched MLX engine (GPU, macOS arm64)
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
     ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
     ├── postprocess/        ← resona-postprocess: profile-based postprocessing pipeline (replacements + LLM + extract)
@@ -53,17 +57,20 @@ faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscribe
 ```
 
 The registry in `resona_asr_core/registry.py` discovers engines at runtime:
-- `RESONA_ENGINE` env var selects which engine to load (default: `faster-whisper`)
+- Engine selection priority: explicit arg to `get_transcriber()` > `RESONA_ENGINE` env var > **environment-aware default** (`recommended_engine()`)
+- `recommended_engine(installed=None)` picks the best installed engine for the host: on **Apple Silicon** it prefers the GPU-native engines (`mlx-whisper` → `lightning-mlx` → `whisper-cpp` → `faster-whisper`), informed by `benchmarks/`; elsewhere (CUDA/CPU Linux) it prefers `faster-whisper` (which uses the GPU when present). `installed_engines()` lists discoverable engines. `_is_apple_silicon()` gates the platform branch.
 - `get_transcriber()` returns a thread-safe singleton
 - Each engine's `[project.scripts]` points to `resona_engine_server.run:main` — same FastAPI app, different engine
 
-Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
+Available engines: `faster-whisper`, `whisper`, `voxtral`, `mlx-whisper`, `whisper-cpp`, `lightning-mlx`. The default is environment-aware (`recommended_engine()`): `mlx-whisper` on Apple Silicon when installed, else `faster-whisper`.
+
+On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backend). For GPU acceleration on a Mac at the same model size, use `mlx-whisper` / `lightning-mlx` (MLX) or `whisper-cpp` (Metal). See `benchmarks/` for a speed+accuracy comparison harness.
 
 ## Package responsibilities
 
 ### resona-asr-core
 - `protocol.py` — `Transcriber` Protocol + `TranscriptionResult` TypedDict
-- `registry.py` — entry-point discovery, singleton, device detection
+- `registry.py` — entry-point discovery, singleton, device detection (`_detect_device`), and environment-aware default engine selection (`recommended_engine`, `installed_engines`, `_is_apple_silicon`)
 - `audio.py` — `load_audio()`, `SAMPLE_RATE`
 - `live_transcriber.py` — VAD-based live transcription engine (numpy only)
 
@@ -75,8 +82,10 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 - `run.py` — uvicorn entry point
 
 ### resona-engine-faster-whisper
-- `transcriber.py` — `FastWhisperTranscriber`: CTranslate2 engine (default, recommended)
+- `transcriber.py` — `FastWhisperTranscriber`: CTranslate2 engine (default, recommended). CPU-only on Apple Silicon (CTranslate2 has no Metal backend); an `mps` device request is mapped to `cpu`.
 - Configured via `DEFAULT_FASTWHISPER_MODEL` env var
+- Throughput knobs (env): `FASTWHISPER_BATCHED` (default true — uses `BatchedInferencePipeline`), `FASTWHISPER_BATCH_SIZE` (8), `FASTWHISPER_BEAM_SIZE` (5; set 1 for greedy), `FASTWHISPER_CPU_THREADS` (0=auto; set to perf-core count), `FASTWHISPER_COMPUTE_TYPE`. `word_timestamps` falls back to the sequential (non-batched) path.
+- VAD-drop safety net: the batched pipeline's Silero VAD can silently discard large spans of speech on audio it misjudges. After a batched run, if the returned segments cover less than `FASTWHISPER_MIN_COVERAGE` (default 0.5) of the audio — checked only for clips ≥ `FASTWHISPER_MIN_COVERAGE_AUDIO_S` seconds (default 20) — the engine automatically re-runs on the sequential (non-VAD) path, which is slower but does not drop speech. Set `FASTWHISPER_MIN_COVERAGE=0` to disable.
 
 ### resona-engine-whisper
 - `transcriber.py` — `WhisperTranscriber`: original OpenAI Whisper (PyTorch)
@@ -85,6 +94,19 @@ Available engines: `faster-whisper` (default), `whisper`, `voxtral`.
 ### resona-engine-voxtral
 - `transcriber.py` — `VoxtralTranscriber`: HuggingFace Transformers pipeline (supports Voxtral, Whisper, etc.)
 - Configured via `DEFAULT_VOXTRAL_MODEL` env var (default: `openai/whisper-large-v3`)
+
+### resona-engine-mlx-whisper (Apple Silicon, GPU)
+- `transcriber.py` — `MLXWhisperTranscriber`: Whisper on the Apple GPU via the MLX framework. Lazy-imports `mlx_whisper`. Maps short model names (`large-v3`) to `mlx-community/*` repos.
+- Configured via `DEFAULT_MLX_WHISPER_MODEL` (default `mlx-community/whisper-large-v3-mlx`). macOS arm64 only (dependency gated by platform marker).
+
+### resona-engine-whispercpp (Metal)
+- `transcriber.py` — `WhisperCppTranscriber`: whisper.cpp via `pywhispercpp` (Metal on Mac, Accelerate elsewhere). Lazy-imports the model. Segment timestamps are 10ms units → seconds.
+- Configured via `DEFAULT_WHISPERCPP_MODEL` (default `large-v3`), `WHISPERCPP_N_THREADS` (0=auto).
+
+### resona-engine-lightning-mlx (Apple Silicon, GPU, batched)
+- `transcriber.py` — `LightningMLXTranscriber`: batched MLX inference via `lightning-whisper-mlx`. Transcribes from a path, so the waveform is written to a temp WAV; does **not** support `initial_prompt` (ignored with a warning).
+- Configured via `DEFAULT_LIGHTNING_MLX_MODEL` (default `large-v3`), `LIGHTNING_MLX_BATCH_SIZE` (12), `LIGHTNING_MLX_QUANT` (`none`/`4bit`/`8bit`). macOS arm64 only.
+- Note: `lightning-whisper-mlx` pins `tiktoken==0.3.3`; the workspace root relaxes this via `[tool.uv] override-dependencies = ["tiktoken>=0.7"]` to co-resolve with litellm.
 
 ### resona-cloud-stt
 - `types.py` — `TranscriptionResult` TypedDict: `{text, language, segments}`
@@ -313,6 +335,9 @@ the end-user personas.
 | Default (record, live, local faster-whisper) | `uv tool install --from ./apps/resona-cli resona-cli` |
 | Default + Whisper (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[whisper]'` |
 | Default + Voxtral (PyTorch) engine | `uv tool install --from ./apps/resona-cli 'resona-cli[voxtral]'` |
+| Default + Apple GPU engines (mac) | `uv tool install --from ./apps/resona-cli 'resona-cli[apple]'` |
+
+Apple-Silicon extras: `[mlx]` (mlx-whisper), `[whisper-cpp]` (whisper.cpp), `[lightning-mlx]` (batched MLX), or `[apple]` for all three.
 
 See [docs/getting-started/installation.md](docs/getting-started/installation.md) for details including PyTorch extras.
 
@@ -345,6 +370,20 @@ Mocking strategy:
 
 Audio fixtures: keep small WAV files (1-2 seconds, 16kHz mono) in `<pkg>/tests/fixtures/`.
 
+### Benchmarking backends
+
+`benchmarks/transcription_benchmark.py` compares every installed engine over the
+same ~10-min German + English audio (assembled from Google FLEURS, cached), and
+writes `benchmarks/results/benchmark_<ts>.{md,json}` with hardware, model, speed
+(RTF / × realtime) and accuracy (WER / CER). Engine unit tests mock the native
+libs; the benchmark runs real inference and is not part of `pytest`.
+
+```bash
+uv sync --all-packages
+uv run --with jiwer --with datasets --with soundfile \
+    python benchmarks/transcription_benchmark.py
+```
+
 ## Docker
 
 Each engine builds from the workspace root as context:
@@ -375,8 +414,8 @@ See [docs/configuration/environment.md](docs/configuration/environment.md) for t
 
 1. `--engine NAME` CLI flag: resolves a built-in local engine name (`faster-whisper`, `whisper`, `voxtral`), a `config.json` server entry, or a `config.json` cloud entry (highest priority)
 2. `--private` / `--no-private`: when private is required (via flag or `default_private`), non-private engines are skipped or refused; cloud engines are never private
-3. `default_engine` in `~/.resona/config.json`
-4. Hardcoded default: `"faster-whisper"`
+3. `default_engine` in `~/.resona/config.json` (a concrete name pins it)
+4. `default_engine` is `"auto"` (the default): the CLI calls `recommended_engine()` — `mlx-whisper` on Apple Silicon when installed, else `faster-whisper`. Resolved by `_resolve_local_engine_name()` in `transcribe.py` (shared by `watch`).
 
 ## What NOT to do
 

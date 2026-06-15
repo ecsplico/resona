@@ -30,8 +30,10 @@ def watch_directory(
     from resona_client.client import ResonaClient
     from resona_client.config import EngineConfig
 
+    from .transcribe import _resolve_local_engine_name
+
     cfg = EngineConfig.load()
-    resolved_engine = engine or cfg.default_engine
+    resolved_engine = _resolve_local_engine_name(engine, cfg.default_engine)
 
     try:
         client = ResonaClient.from_config()
