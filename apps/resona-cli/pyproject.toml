@@ -53,9 +53,25 @@ Issues = "https://github.com/ecsplico/resona/issues"
 [project.optional-dependencies]
 whisper = ["resona-engine-whisper"]
 voxtral = ["resona-engine-voxtral"]
+# Apple Silicon GPU-accelerated engines (mac arm64 only; no-ops elsewhere).
 mlx = ["resona-engine-mlx-whisper"]
+whisper-cpp = ["resona-engine-whispercpp"]
+lightning-mlx = ["resona-engine-lightning-mlx"]
+apple = [
+    "resona-engine-mlx-whisper",
+    "resona-engine-whispercpp",
+    "resona-engine-lightning-mlx",
+]
+# NVIDIA Parakeet (NeMo) — Linux CUDA/CPU.
 parakeet = ["resona-engine-parakeet"]
-all = ["resona-engine-whisper", "resona-engine-voxtral", "resona-engine-mlx-whisper", "resona-engine-parakeet"]
+all = [
+    "resona-engine-whisper",
+    "resona-engine-voxtral",
+    "resona-engine-mlx-whisper",
+    "resona-engine-whispercpp",
+    "resona-engine-lightning-mlx",
+    "resona-engine-parakeet",
+]
 
 # PyTorch index for the [whisper] / [voxtral] extras.
 # Declared on the CLI package (not the workspace root) so it travels with
@@ -74,6 +90,8 @@ resona-engine-faster-whisper = { workspace = true }
 resona-engine-whisper = { workspace = true }
 resona-engine-voxtral = { workspace = true }
 resona-engine-mlx-whisper = { workspace = true }
+resona-engine-whispercpp = { workspace = true }
+resona-engine-lightning-mlx = { workspace = true }
 resona-engine-parakeet = { workspace = true }
 torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
 

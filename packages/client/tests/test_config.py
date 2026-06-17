@@ -110,13 +110,15 @@ def test_load_default_engine_from_config(tmp_path, monkeypatch):
     assert cfg.default_engine == "voxtral"
 
 
-def test_load_default_engine_falls_back_to_faster_whisper(tmp_path, monkeypatch):
+def test_load_default_engine_falls_back_to_auto(tmp_path, monkeypatch):
+    """With no default_engine in config, the value is 'auto' (resolved by the CLI
+    to an environment-appropriate engine at run time)."""
     config_file = tmp_path / "config.json"
     config_file.write_text(json.dumps({"engines": []}))
     monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
     monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
     cfg = EngineConfig.load()
-    assert cfg.default_engine == "faster-whisper"
+    assert cfg.default_engine == "auto"
 
 
 def test_save_persists_default_engine(tmp_path, monkeypatch):

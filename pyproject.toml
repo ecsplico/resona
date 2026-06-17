@@ -3,6 +3,12 @@ name = "resona-workspace"
 version = "0.1.0"
 requires-python = ">=3.12"
 
+[tool.uv]
+# lightning-whisper-mlx pins tiktoken==0.3.3, which collides with the newer
+# tiktoken litellm (resona-postprocess) needs. Newer tiktoken is backward
+# compatible with Whisper's tokenizer use, so relax the pin workspace-wide.
+override-dependencies = ["tiktoken>=0.7"]
+
 [tool.uv.workspace]
 members = ["packages/*", "apps/resona-cli"]
 

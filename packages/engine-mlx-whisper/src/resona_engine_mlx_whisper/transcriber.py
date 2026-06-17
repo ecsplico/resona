@@ -1,9 +1,12 @@
-"""Apple Silicon (MLX/Metal) Whisper transcription backend for Resona.
+"""Apple MLX Whisper transcription backend for Resona.
 
-MLX runs Whisper on the Apple Silicon GPU (Metal) without CUDA or PyTorch,
-making it the recommended local engine on macOS. The model is an
-``mlx-community/...`` Hugging Face repo (weights are downloaded and cached on
-first use). ``whisper-large-v3-turbo`` is a good German+English default.
+Runs Whisper on the Apple Silicon GPU via the MLX framework. This is the
+recommended engine on Mac: same model sizes as faster-whisper but it offloads
+to the GPU instead of running on the CPU, typically a large speedup.
+
+Models are HuggingFace repos of MLX-converted weights, e.g.
+``mlx-community/whisper-large-v3-mlx``. A few friendly short names
+(``large-v3``, ``medium`` …) are mapped to their ``mlx-community`` repos.
 """
 
 import logging
@@ -15,44 +18,38 @@ from resona_asr_core.protocol import TranscriptionResult
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL: str = config(
-    "DEFAULT_MLXWHISPER_MODEL", default="mlx-community/whisper-large-v3-turbo"
-)
-
-# Decode options that mlx-whisper's transcribe() understands. Anything else
-# (notably faster-whisper's vad_filter / vad_parameters) is dropped so the live
-# pipeline can call this engine with the same kwargs it sends to faster-whisper.
-_PASSTHROUGH = {
-    "temperature",
-    "condition_on_previous_text",
-    "compression_ratio_threshold",
-    "logprob_threshold",
-    "no_speech_threshold",
-    "prepend_punctuations",
-    "append_punctuations",
-    "clip_timestamps",
+# Friendly short names -> mlx-community repos of pre-converted weights.
+_MODEL_ALIASES = {
+    "tiny": "mlx-community/whisper-tiny",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    "large": "mlx-community/whisper-large-v3-mlx",
+    "large-v2": "mlx-community/whisper-large-v2-mlx",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
 }
 
+DEFAULT_MODEL: str = config(
+    "DEFAULT_MLX_WHISPER_MODEL", default="mlx-community/whisper-large-v3-mlx"
+)
 
-class MlxWhisperTranscriber:
-    """Whisper on Apple Silicon via MLX (Metal GPU).
 
-    MLX always targets the Apple Silicon GPU, so ``device`` is accepted for
-    protocol compatibility but ignored. Configure the model repo via
-    ``DEFAULT_MLXWHISPER_MODEL``.
+def _resolve_repo(name: str) -> str:
+    return _MODEL_ALIASES.get(name, name)
+
+
+class MLXWhisperTranscriber:
+    """MLX-backed Whisper. GPU-accelerated on Apple Silicon.
+
+    Configure model via ``DEFAULT_MLX_WHISPER_MODEL`` (a HuggingFace repo or one
+    of the short aliases). The ``device`` argument is accepted for interface
+    compatibility but ignored — MLX always uses the Apple GPU.
     """
 
     def __init__(self, device: str = "mps", modelname: str | None = None):
-        self.model_repo = modelname or DEFAULT_MODEL
-        # Imported lazily so the entry point can register on non-Apple platforms
-        # without mlx-whisper installed; it only fails if this engine is selected.
-        import mlx_whisper
-
-        self._mlx_whisper = mlx_whisper
-        log.info(
-            "MLX Whisper ready (repo=%s; device=%s ignored, MLX uses Metal)",
-            self.model_repo, device,
-        )
+        self.model_repo = _resolve_repo(modelname or DEFAULT_MODEL)
+        log.info("MLX Whisper backend ready (model repo: %s)", self.model_repo)
 
     def transcribe(
         self,
@@ -65,20 +62,21 @@ class MlxWhisperTranscriber:
         vad_filter: bool = False,
         **kwargs,
     ) -> TranscriptionResult:
-        opts: dict = {
+        import mlx_whisper  # heavy/optional; imported lazily for fast startup
+
+        # mlx_whisper expects a float32 waveform (or path); ensure the dtype.
+        audio = np.asarray(audio, dtype=np.float32)
+        opts = {
+            "path_or_hf_repo": self.model_repo,
             "language": language,
             "task": task,
             "word_timestamps": word_timestamps,
+            **kwargs,
         }
         if initial_prompt:
             opts["initial_prompt"] = initial_prompt
-        for key, value in kwargs.items():
-            if key in _PASSTHROUGH:
-                opts[key] = value
 
-        result = self._mlx_whisper.transcribe(
-            audio, path_or_hf_repo=self.model_repo, **opts
-        )
+        result = mlx_whisper.transcribe(audio, **opts)
 
         return TranscriptionResult(
             text=result.get("text", ""),
