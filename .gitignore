@@ -34,6 +34,7 @@ dist/
 site/
 
 # ── Tooling caches ──────────────────────────────────────────────────
+.superpowers/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -66,3 +67,4 @@ Thumbs.db
 # (packages/*/src/ and apps/resona-cli/src/), and hatchling honors
 # .gitignore at build time. An `src/` rule produces empty wheels.
 whisper-*
+.claude/settings.local.json
