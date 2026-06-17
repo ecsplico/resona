@@ -130,10 +130,13 @@ class _BaseRemoteLive:
             self._ws = connect(self._url, **kwargs)
             log.info("Live remote connected: %s", self._url)
         except Exception as e:  # noqa: BLE001 - surface any connection failure
-            self._connect_error = e
             log.error("Live remote connection failed: %s", e)
+            # Queue the error and wake the consumer *before* publishing
+            # _connect_error, so any observer that sees the flag is guaranteed
+            # the error result is already enqueued.
             self._results.put(("error", str(e)))
             self._audio_event_sync.set()
+            self._connect_error = e
             return
 
         self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
@@ -146,15 +149,30 @@ class _BaseRemoteLive:
                 item = self._send_q.get(timeout=0.1)
             except queue.Empty:
                 continue
+            if not self._send(item):
+                return
+        # Drain any audio captured before the stop so it still reaches the
+        # upstream, then send the finish control frame.
+        while True:
             try:
-                self._ws.send(item)
-            except Exception as e:  # noqa: BLE001
-                log.error("Live remote send failed: %s", e)
+                item = self._send_q.get_nowait()
+            except queue.Empty:
+                break
+            if not self._send(item):
                 return
         try:
             self._ws.send(self._finish_frame())
         except Exception:  # noqa: BLE001
             pass
+
+    def _send(self, item: str) -> bool:
+        """Send one frame; return False (and log) if the socket errored."""
+        try:
+            self._ws.send(item)
+            return True
+        except Exception as e:  # noqa: BLE001
+            log.error("Live remote send failed: %s", e)
+            return False
 
     def _recv_loop(self) -> None:
         while not self._closed.is_set():
