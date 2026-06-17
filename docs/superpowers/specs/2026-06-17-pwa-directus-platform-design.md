@@ -43,7 +43,10 @@ Explicitly **out of scope** for v1 (noted where a v1 decision sets them up):
   deployed independently (Vercel / Netlify / Docker). It has nothing to import
   from the Python workspace; it talks to Directus and `resona-api` purely over
   HTTP. Node tooling (`package.json`, `node_modules`, Nuxt config) stays out of
-  the uv workspace.
+  the uv workspace. During implementation it is created as a **sibling
+  directory** (e.g. `../resona-pwa/`) with its own git repo — it is not
+  committed into this repo. The build order (§12) interleaves PWA and worker
+  steps, but each lands in its own repo.
 
 Directus itself is **not vendored** — it runs as an official Docker image
 (`directus/directus`) wired into `docker-compose.resona.yml`, with its schema
@@ -63,7 +66,9 @@ captured as a versioned snapshot file checked into this repo (see §6).
 
 The remap is **compose-level only** (host port → container `:7001`/`:7000`);
 no application code changes. Existing dev defaults (`:7000`/`:7001`) remain for
-non-compose `uv run`.
+non-compose `uv run`. The existing per-engine compose `profiles:` gating is
+preserved — each engine stays individually opt-in (`--profile faster-whisper`,
+etc.); only the host ports change.
 
 ## 4. Architecture
 
@@ -87,8 +92,11 @@ Two distinct transcription paths:
    sets `status=done`. The PWA polls the recording until done.
 2. **Live (streaming):** PWA opens a WebSocket **directly** to `resona-api`
    `WS /v1/listen` (Deepgram-compatible) for real-time partials. On stop, the
-   final transcript + the recorded audio are saved to Directus as a normal
-   recording with `status=done` (no re-transcription needed).
+   PWA itself writes both rows via the Directus SDK: the `recordings` row
+   (`status=done`, `source=live`) **and** its `transcripts` row — the worker
+   never sees it because it only polls `pending`. This means the row-level
+   policy must let a user **create** a `transcripts` row for a recording they
+   own (see §5).
 
 ## 5. Directus data model
 
@@ -125,9 +133,14 @@ as-is. Two custom collections:
 `error` with `error_message`. A live recording is written straight to `done`.
 
 **Access policy:** a non-admin role "user" with row-level filter
-`user_created = $CURRENT_USER` on both collections (read/create/update/delete
-own rows only). `transcripts` access is gated through the parent recording's
-ownership.
+`user_created = $CURRENT_USER` on `recordings` (read/create/update/delete own
+rows only). `transcripts` has no `user_created` of its own, so its policy is
+expressed through the relation: filter `recording.user_created = $CURRENT_USER`
+for read/update/delete, and a **create** permission validated against the same
+relational filter (the parent `recording` must be owned by the current user).
+This lets both the live path (PWA-created transcript) and a future user-facing
+edit work, while the batch worker writes transcripts with the service token
+(which bypasses the user policy).
 
 ## 6. Directus schema management
 
