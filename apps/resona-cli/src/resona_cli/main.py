@@ -48,7 +48,10 @@ def rec():
     run_mic_rec_app()
 
 
-_ENGINE_EXTRA = {"whisper": "whisper", "voxtral": "voxtral", "mlx-whisper": "mlx", "parakeet": "parakeet"}
+_ENGINE_EXTRA = {
+    "whisper": "whisper", "voxtral": "voxtral", "mlx-whisper": "mlx",
+    "whisper-cpp": "whisper-cpp", "lightning-mlx": "lightning-mlx", "parakeet": "parakeet",
+}
 
 
 def _resolve_live_engine(engine: Optional[str]) -> str:
@@ -58,10 +61,10 @@ def _resolve_live_engine(engine: Optional[str]) -> str:
     in-process transcriber singleton loads it. Exits with an install hint when
     the requested engine is not available.
     """
-    from resona_asr_core.registry import list_engine_names, platform_preferred_engine
+    from resona_asr_core.registry import installed_engines, recommended_engine
 
-    installed = list_engine_names()
-    selected = engine or os.getenv("RESONA_ENGINE") or platform_preferred_engine()
+    installed = installed_engines()
+    selected = engine or os.getenv("RESONA_ENGINE") or recommended_engine()
     if selected not in installed:
         hint = _ENGINE_EXTRA.get(selected)
         extra = (

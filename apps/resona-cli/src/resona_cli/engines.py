@@ -8,7 +8,8 @@ from resona_client.config import EngineConfig, EngineEntry, is_reachable
 
 engines_app = typer.Typer(no_args_is_help=True, help="Manage engine server addresses.")
 
-BUILTIN_ENGINES = ("faster-whisper", "whisper", "voxtral", "mlx-whisper", "parakeet")
+BUILTIN_ENGINES = ("faster-whisper", "whisper", "voxtral", "mlx-whisper",
+                   "whisper-cpp", "lightning-mlx", "parakeet")
 
 
 @engines_app.command("list")
