@@ -85,3 +85,19 @@ async def test_mark_done_and_error(base_url):
     assert json.loads(done.calls[0].request.content) == {"status": "done"}
     err = json.loads(done.calls[1].request.content)
     assert err == {"status": "error", "error_message": "boom"}
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_reclaim_stale_resets_old_transcribing(base_url):
+    respx.get(f"{base_url}/items/recordings").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "rec-old"}]})
+    )
+    patch = respx.patch(f"{base_url}/items/recordings/rec-old").mock(
+        return_value=httpx.Response(200, json={"data": {}})
+    )
+    client = DirectusClient(base_url=base_url, token=TOKEN)
+    n = await client.reclaim_stale(older_than_minutes=15)
+    await client.aclose()
+    assert n == 1
+    assert json.loads(patch.calls.last.request.content) == {"status": "pending"}

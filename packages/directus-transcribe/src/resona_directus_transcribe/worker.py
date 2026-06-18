@@ -1,6 +1,7 @@
 """Worker orchestration: poll loop + per-recording processing."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -43,3 +44,24 @@ async def process_one(
     finally:
         if audio_path is not None and audio_path.exists():
             audio_path.unlink()
+
+
+async def run_once(
+    directus: DirectusClient, transcribe: TranscribeClient, *,
+    tmp_dir: Path, concurrency: int = 2, stale_minutes: int = 15,
+) -> int:
+    """One poll cycle: reclaim stale, claim pending, process with a concurrency cap."""
+    await directus.reclaim_stale(older_than_minutes=stale_minutes)
+    pending = await directus.list_pending(limit=concurrency * 5)
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _guarded(rec: dict) -> bool:
+        async with sem:
+            if not await directus.claim(rec["id"]):
+                return False
+            await process_one(rec, directus, transcribe, tmp_dir=tmp_dir)
+            return True
+
+    results = await asyncio.gather(*(_guarded(r) for r in pending))
+    return sum(1 for r in results if r)
