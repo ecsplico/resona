@@ -29,7 +29,8 @@ resona/
     ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
     ├── postprocess/        ← resona-postprocess: profile-based postprocessing pipeline (replacements + LLM + extract)
     ├── api/                ← resona-api: job queue + DB + postprocessing + unified STT/TTS API, :7000
-    └── client/             ← resona-client: httpx client library
+    ├── client/             ← resona-client: httpx client library
+    └── directus-transcribe/ ← resona-directus-transcribe: glue worker that polls Directus for pending recordings and transcribes them via resona-api
 ```
 
 - `apps/` contains end-user applications (CLI tool, web front-end).
@@ -159,6 +160,13 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 ### resona-client
 - `client.py` — `ResonaClient`: all resona-api HTTP operations. Reads `RESONA_API_URL` / `RESONA_API_KEY`. Includes profile CRUD methods (`list_profiles`, `get_profile`, `push_profile`, `pull_profile`, `delete_profile`) and a `profile` argument on `submit_job` and `create_transcription`.
 - `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_profile`, `default_private`; `EngineEntry`: per-entry `type` (`resona-api` or `cloud`), `provider`, `model`, `options`, `private`; `resolve_engine(private_only=False)` — walks priority-ordered entries, optionally skipping non-private ones
+
+### resona-directus-transcribe
+Glue worker for the Directus-backed PWA platform (see `docs/superpowers/specs/2026-06-17-pwa-directus-platform-design.md`). Speaks only HTTP — no DB, no engine, never deletes the Directus-stored audio asset.
+- `client.py` — `DirectusClient`: async httpx wrapper over the Directus REST API (`list_pending`, `claim` → status `transcribing`, `download_audio`, `write_transcript`, `mark_done`, `mark_error`, `reclaim_stale`). `claim` is an optimistic (non-CAS) PATCH; `reclaim_stale` resets rows stuck in `transcribing` past a timeout back to `pending`.
+- `transcribe.py` — `TranscribeClient`: async client POSTing multipart `verbose_json` to resona-api `POST /v1/audio/transcriptions`. `structured` is best-effort (present only for profiles with an `extract` step).
+- `worker.py` — `process_one` (download → transcribe → write transcript → mark done; catches per-job errors, marks the recording `error`, always cleans up the temp file) and `run_once` (one poll cycle: reclaim stale, claim pending, process under an `asyncio.Semaphore` concurrency cap).
+- `run.py` — entry point: `load_settings()` (via `config()` — `DIRECTUS_URL`/`DIRECTUS_TOKEN`/`RESONA_API_URL`/`RESONA_API_KEY`/`TRANSCRIBE_POLL_INTERVAL`/`TRANSCRIBE_CONCURRENCY`/`TRANSCRIBE_STALE_MINUTES`) + an asyncio poll loop. Runs as the `directus-transcribe` compose service. Directus itself runs as the official image on `:7700` (see `directus/bootstrap.md`).
 
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
