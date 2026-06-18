@@ -1,6 +1,9 @@
 """Async httpx wrapper around the Directus REST API used by the worker."""
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
+
 import httpx
 
 
@@ -35,3 +38,40 @@ class DirectusClient:
         )
         resp.raise_for_status()
         return resp.json()["data"]["status"] == "transcribing"
+
+    async def download_audio(self, file_id: str, dest_dir: "Path") -> "Path":
+        resp = await self._client.get(f"{self.base_url}/assets/{file_id}")
+        resp.raise_for_status()
+        dest = dest_dir / f"{file_id}-{uuid.uuid4().hex}.audio"
+        dest.write_bytes(resp.content)
+        return dest
+
+    async def write_transcript(
+        self, *, recording_id: str, text: str, language: str | None,
+        segments: list | None, structured: dict | None, engine: str | None,
+    ) -> None:
+        resp = await self._client.post(
+            f"{self.base_url}/items/transcripts",
+            json={
+                "recording": recording_id,
+                "text": text,
+                "segments": segments,
+                "structured": structured,
+                "engine": engine,
+            },
+        )
+        resp.raise_for_status()
+
+    async def mark_done(self, recording_id: str) -> None:
+        resp = await self._client.patch(
+            f"{self.base_url}/items/recordings/{recording_id}",
+            json={"status": "done"},
+        )
+        resp.raise_for_status()
+
+    async def mark_error(self, recording_id: str, message: str) -> None:
+        resp = await self._client.patch(
+            f"{self.base_url}/items/recordings/{recording_id}",
+            json={"status": "error", "error_message": message[:1000]},
+        )
+        resp.raise_for_status()
