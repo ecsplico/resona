@@ -6,5 +6,6 @@ describe("app", () => {
 	it("mounts", async () => {
 		const wrapper = await mountSuspended(App);
 		expect(wrapper.html()).toBeTruthy();
+		expect(wrapper.html()).toContain("Resona");
 	});
 });
