@@ -1,1 +1,14 @@
 @import "tailwindcss";
+@import "./tokens.css";
+
+@theme {
+  --color-cream: #FBF5EC;
+  --color-tomato: #D96846;
+  --color-olive: #6B8E4E;
+  --color-butter: #E8A838;
+  --color-ink: #2A1E16;
+}
+
+html, body { background: var(--bg); color: var(--fg1); font-family: var(--font-body); }
+.font-display { font-family: var(--font-display); }
+.font-mono { font-family: var(--font-mono); }

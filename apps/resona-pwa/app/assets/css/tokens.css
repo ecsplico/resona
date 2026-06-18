@@ -1,0 +1,26 @@
+:root {
+  /* palette */
+  --cream:#FBF5EC; --cream-deep:#F4EBD9; --white:#FFFFFF;
+  --ink:#2A1E16; --ink-soft:#4A3A2E; --ink-mute:#75655A;
+  --tomato:#D96846; --tomato-deep:#B85032; --tomato-soft:#F3D1BE;
+  --olive:#6B8E4E; --olive-deep:#4E6B38; --olive-soft:#C8D8B4;
+  --butter:#E8A838; --butter-deep:#C48A1E; --butter-soft:#F5D88F;
+  --crust:#B8916A; --crust-deep:#8B6944; --crust-soft:#E2D2BE;
+  /* semantic */
+  --bg:var(--cream); --bg-raised:var(--white); --bg-sunken:var(--cream-deep);
+  --fg1:var(--ink); --fg2:var(--ink-soft); --fg3:var(--ink-mute); --fg-on-accent:var(--white);
+  --accent:var(--tomato); --accent-hover:var(--tomato-deep); --accent-soft:var(--tomato-soft);
+  --success:var(--olive); --warning:var(--butter); --danger:var(--tomato-deep);
+  --border:rgba(139,105,68,0.18); --border-strong:rgba(139,105,68,0.40);
+  --focus-ring:rgba(217,104,70,0.40);
+  /* shadow */
+  --shadow-soft:0 1px 2px rgba(88,52,28,0.06),0 2px 8px rgba(88,52,28,0.04);
+  --shadow-lift:0 4px 12px rgba(88,52,28,0.10),0 8px 24px rgba(88,52,28,0.06);
+  --shadow-deep:0 12px 32px rgba(88,52,28,0.14),0 4px 8px rgba(88,52,28,0.06);
+  /* radii */
+  --r-xs:4px; --r-sm:8px; --r-md:12px; --r-lg:20px; --r-full:999px;
+  /* fonts */
+  --font-display:"Fraunces","Cooper BT",Georgia,serif;
+  --font-body:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
