@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: packages/engine-faster-whisper/Dockerfile
     ports:
-      - "7001:7001"
+      - "7720:7001"
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
@@ -31,7 +31,7 @@ services:
       context: .
       dockerfile: packages/engine-whisper/Dockerfile
     ports:
-      - "7002:7001"
+      - "7722:7001"
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
@@ -57,7 +57,7 @@ services:
       context: .
       dockerfile: packages/engine-voxtral/Dockerfile
     ports:
-      - "7003:7001"
+      - "7723:7001"
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
@@ -83,7 +83,7 @@ services:
       context: .
       dockerfile: packages/engine-parakeet/Dockerfile
     ports:
-      - "7004:7001"
+      - "7721:7001"
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
@@ -108,7 +108,7 @@ services:
       context: .
       dockerfile: packages/api/Dockerfile
     ports:
-      - "7000:7000"
+      - "7710:7000"
     volumes:
       # Split per-purpose named volumes — matches the subdirs created by
       # packages/api/src/resona_api/paths.py. Migration from a previous
