@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -22,6 +24,7 @@ async def test_list_pending_filters_and_authenticates(base_url, recording):
     assert req.headers["Authorization"] == f"Bearer {TOKEN}"
     assert req.url.params["filter[status][_eq]"] == "pending"
     assert req.url.params["limit"] == "10"
+    assert req.url.params["sort"] == "date_created"
 
 
 @respx.mock
@@ -35,7 +38,6 @@ async def test_claim_patches_status_to_transcribing(base_url):
     await client.aclose()
 
     assert ok is True
-    import json
     assert json.loads(route.calls.last.request.content) == {"status": "transcribing"}
 
 
@@ -64,7 +66,6 @@ async def test_write_transcript_posts_payload(base_url):
         segments=[{"start": 0, "end": 1}], structured=None, engine="faster-whisper",
     )
     await client.aclose()
-    import json
     body = json.loads(route.calls.last.request.content)
     assert body["recording"] == "rec-1"
     assert body["text"] == "hallo"
@@ -81,7 +82,6 @@ async def test_mark_done_and_error(base_url):
     await client.mark_done("rec-1")
     await client.mark_error("rec-1", "boom")
     await client.aclose()
-    import json
     assert json.loads(done.calls[0].request.content) == {"status": "done"}
     err = json.loads(done.calls[1].request.content)
     assert err == {"status": "error", "error_message": "boom"}
