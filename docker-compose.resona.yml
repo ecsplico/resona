@@ -143,7 +143,8 @@ services:
     volumes:
       - directus-db:/directus/database
       - directus-uploads:/directus/uploads
-      - ./directus/schema-snapshot.yaml:/directus/schema-snapshot.yaml:ro
+      # writable: `directus schema snapshot` (bootstrap.md §4) writes here to export
+      - ./directus/schema-snapshot.yaml:/directus/schema-snapshot.yaml
     environment:
       SECRET: ${DIRECTUS_SECRET:-change-me-in-env}
       ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@example.com}
