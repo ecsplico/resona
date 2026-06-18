@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineNuxtConfig({
 	modules: ["@nuxt/eslint", "@nuxt/fonts", "@vueuse/nuxt", "@vite-pwa/nuxt"],
+	components: [{ path: "~/components", pathPrefix: false }],
 	devtools: { enabled: true },
 	app: {
 		head: {
