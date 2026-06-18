@@ -50,7 +50,12 @@ async def run_once(
     directus: DirectusClient, transcribe: TranscribeClient, *,
     tmp_dir: Path, concurrency: int = 2, stale_minutes: int = 15,
 ) -> int:
-    """One poll cycle: reclaim stale, claim pending, process with a concurrency cap."""
+    """One poll cycle: reclaim stale, claim pending, process with a concurrency cap.
+
+    Returns the number of recordings *claimed* (i.e. attempted). process_one
+    swallows per-job errors and marks them in Directus, so a returned count
+    includes jobs that ended in `error` — it is not a success count.
+    """
     await directus.reclaim_stale(older_than_minutes=stale_minutes)
     pending = await directus.list_pending(limit=concurrency * 5)
 

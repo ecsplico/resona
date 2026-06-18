@@ -86,17 +86,19 @@ class DirectusClient:
         )
         resp.raise_for_status()
 
-    async def reclaim_stale(self, older_than_minutes: int = 15) -> int:
+    async def reclaim_stale(self, older_than_minutes: int = 15, limit: int = 100) -> int:
         """Reset recordings stuck in `transcribing` back to `pending`.
 
-        Uses Directus relative-date filtering. Returns count reset.
+        Uses Directus relative-date filtering. Returns count reset. `limit`
+        caps how many stale rows are reclaimed per cycle; if more are stuck
+        they are picked up on subsequent cycles.
         """
         resp = await self._client.get(
             f"{self.base_url}/items/recordings",
             params={
                 "filter[status][_eq]": "transcribing",
                 "filter[date_updated][_lt]": f"$NOW(-{older_than_minutes} minutes)",
-                "limit": 100,
+                "limit": limit,
             },
         )
         resp.raise_for_status()
