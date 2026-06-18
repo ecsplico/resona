@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-directus-transcribe"
+version = "0.1.0"
+description = "Glue worker: transcribes pending Directus recordings via resona-api"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "mortegro", email = "mortegro@gmx.de" }]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "python-decouple>=3.8",
+]
+
+[project.scripts]
+resona-directus-transcribe = "resona_directus_transcribe.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_directus_transcribe"]
