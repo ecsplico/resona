@@ -15,6 +15,7 @@ snapshot (§4).
 | id | UUID | primary key |
 | user_created | M2O → directus_users | "User Created" special field |
 | date_created | timestamp | "Date Created" special field |
+| date_updated | timestamp | "Date Updated" special field — Directus bumps it on every update (e.g. the worker's `claim` PATCH); the worker's stale-claim recovery filters on it, so it MUST be present |
 | title | string | |
 | audio_file | M2O → directus_files | |
 | duration_seconds | float | |
