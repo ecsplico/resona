@@ -20,10 +20,11 @@ vi.mock("@directus/sdk", () => ({
 }));
 
 describe("useDirectus", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks();
-		// reset shared auth state between tests (singleton ref bleeds otherwise)
-		useDirectus().isAuthenticated.value = false;
+		// reset shared auth state between tests (singleton refs bleed otherwise)
+		mockClient.logout.mockResolvedValue(undefined);
+		await useDirectus().logout();
 	});
 
 	it("exposes the singleton client", () => {
@@ -82,8 +83,23 @@ describe("useDirectus", () => {
 		expect(d.isAuthenticated.value).toBe(false);
 	});
 
-	it("assetUrl builds the right URL", () => {
+	it("assetUrl returns a token-less URL before auth", () => {
 		const d = useDirectus();
 		expect(d.assetUrl("abc-123")).toBe("http://localhost:7700/assets/abc-123");
+	});
+
+	it("assetUrl appends the access token after restoreSession", async () => {
+		mockClient.getToken.mockResolvedValue("t");
+		const d = useDirectus();
+		await d.restoreSession();
+		expect(d.assetUrl("file-1")).toBe("http://localhost:7700/assets/file-1?access_token=t");
+	});
+
+	it("assetUrl appends the access token after login", async () => {
+		mockClient.login.mockResolvedValue({ access_token: "t" });
+		mockClient.getToken.mockResolvedValue("t");
+		const d = useDirectus();
+		await d.login("a@b.de", "pw");
+		expect(d.assetUrl("file-1")).toBe("http://localhost:7700/assets/file-1?access_token=t");
 	});
 });

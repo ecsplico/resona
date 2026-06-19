@@ -168,4 +168,26 @@ describe("live transcription page", () => {
 
 		expect(navigateTo).toHaveBeenCalledWith("/");
 	});
+
+	it("surfaces an error and does not navigate when saving fails", async () => {
+		request.mockReset();
+		request.mockRejectedValueOnce(new Error("network down"));
+
+		final.value = "Der Befund ist unauffällig.";
+		const w = await mountSuspended(LivePage);
+		await w.find("[data-testid=\"stop-live\"]").trigger("click");
+		await w.vm.$nextTick();
+
+		const input = w.find("[data-testid=\"title-input\"]").find("input");
+		await input.setValue("Visite Station 3");
+		await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+		await w.vm.$nextTick();
+		await new Promise(r => setTimeout(r, 0));
+		await w.vm.$nextTick();
+
+		expect(navigateTo).not.toHaveBeenCalled();
+		const err = w.find("[data-testid=\"live-save-error\"]");
+		expect(err.exists()).toBe(true);
+		expect(err.text()).toContain("Speichern fehlgeschlagen");
+	});
 });

@@ -13,6 +13,7 @@ const { client } = useDirectus();
 const sessionActive = ref(false);
 const showTitlePrompt = ref(false);
 const saving = ref(false);
+const saveError = ref<string | null>(null);
 const title = ref("");
 const capturedBlob = ref<Blob | null>(null);
 const capturedDuration = ref(0);
@@ -72,6 +73,7 @@ async function confirmSave(): Promise<void> {
 		return;
 	}
 	saving.value = true;
+	saveError.value = null;
 	try {
 		let fileId: string | null = null;
 		if (capturedBlob.value && capturedBlob.value.size > 0) {
@@ -95,6 +97,10 @@ async function confirmSave(): Promise<void> {
 		} as Partial<Transcript>));
 
 		void navigateTo("/");
+	}
+	catch {
+		// Keep the title prompt, captured blob and transcript so the user can retry.
+		saveError.value = "Speichern fehlgeschlagen. Bitte erneut versuchen.";
 	}
 	finally {
 		saving.value = false;
@@ -183,6 +189,13 @@ onMounted(() => {
 				label="Titel"
 				data-testid="title-input"
 			/>
+			<p
+				v-if="saveError"
+				class="live__error"
+				data-testid="live-save-error"
+			>
+				{{ saveError }}
+			</p>
 			<div class="live__save-actions">
 				<HButton
 					variant="secondary"
@@ -215,5 +228,6 @@ onMounted(() => {
 .live__controls { display:flex; justify-content:center; padding:28px 0 40px; }
 .live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent, #e0563a); color:var(--white, #fff); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }
 .live__save { display:flex; flex-direction:column; gap:14px; padding:20px; background:var(--crust, #241c16); }
+.live__error { color:var(--danger); font-size:14px; margin:0; }
 .live__save-actions { display:flex; gap:10px; justify-content:flex-end; }
 </style>

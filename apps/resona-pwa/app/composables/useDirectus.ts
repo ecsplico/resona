@@ -9,6 +9,7 @@ type ResonaDirectusClient = DirectusClient<Schema> & AuthenticationClient<Schema
 let client: ResonaDirectusClient | null = null;
 let directusUrl = "";
 const isAuthenticated: Ref<boolean> = ref(false);
+const accessToken: Ref<string> = ref("");
 
 function getClient(): ResonaDirectusClient {
 	if (!client) {
@@ -25,6 +26,7 @@ export function useDirectus() {
 
 	async function login(email: string, password: string): Promise<void> {
 		await directus.login({ email, password });
+		accessToken.value = (await directus.getToken()) ?? "";
 		isAuthenticated.value = true;
 	}
 
@@ -35,22 +37,27 @@ export function useDirectus() {
 		catch {
 			// ignore — clear local auth state regardless
 		}
+		accessToken.value = "";
 		isAuthenticated.value = false;
 	}
 
 	async function restoreSession(): Promise<boolean> {
 		try {
 			const token = await directus.getToken();
+			accessToken.value = token ?? "";
 			isAuthenticated.value = !!token;
 		}
 		catch {
+			accessToken.value = "";
 			isAuthenticated.value = false;
 		}
 		return isAuthenticated.value;
 	}
 
 	function assetUrl(fileId: string): string {
-		return `${directusUrl}/assets/${fileId}`;
+		return accessToken.value
+			? `${directusUrl}/assets/${fileId}?access_token=${accessToken.value}`
+			: `${directusUrl}/assets/${fileId}`;
 	}
 
 	return {
