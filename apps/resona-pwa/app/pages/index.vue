@@ -2,14 +2,18 @@
 import { onMounted, ref } from "vue";
 import type { Recording } from "~/types/directus";
 
-const { items, pending, error, list } = useRecordings();
+const { items, pending, error, list, refresh } = useRecordings();
+const recorder = useRecorder();
+const { saveRecording } = useUpload();
 
 const search = ref("");
 const since = ref("");
 
-// STUB: the full record flow (recorder sheet) is built in Task 14/15. For now
-// the FAB only flips this flag; nothing is mounted for it yet.
+// Record flow state: FAB -> HRecordingSheet (recording) -> SaveSheet (review).
 const showRecorder = ref(false);
+const showSave = ref(false);
+const pendingBlob = ref<Blob | null>(null);
+const pendingDuration = ref(0);
 
 function applyFilters(): void {
 	void list({ search: search.value, since: since.value });
@@ -25,9 +29,46 @@ function copyRecording(recording: Recording): void {
 	void navigator.clipboard?.writeText(recording.title);
 }
 
-function startRecording(): void {
-	// STUB: Task 14/15 will mount the recorder sheet when this is true.
+async function startRecording(): Promise<void> {
 	showRecorder.value = true;
+	await recorder.start();
+}
+
+async function stopRecording(): Promise<void> {
+	pendingDuration.value = recorder.elapsed.value;
+	const blob = await recorder.stop();
+	pendingBlob.value = blob;
+	showRecorder.value = false;
+	showSave.value = true;
+}
+
+async function cancelRecording(): Promise<void> {
+	await recorder.stop();
+	pendingBlob.value = null;
+	showRecorder.value = false;
+}
+
+async function onSave(payload: { title: string; language: string; profile: string; transcribe: boolean }): Promise<void> {
+	const blob = pendingBlob.value;
+	if (!blob) {
+		return;
+	}
+	await saveRecording({
+		blob,
+		title: payload.title,
+		language: payload.language,
+		profile: payload.profile,
+		transcribe: payload.transcribe,
+		duration_seconds: pendingDuration.value,
+	});
+	pendingBlob.value = null;
+	showSave.value = false;
+	await refresh();
+}
+
+function onDiscard(): void {
+	pendingBlob.value = null;
+	showSave.value = false;
 }
 
 onMounted(() => {
@@ -134,6 +175,23 @@ onMounted(() => {
 				/>
 			</svg>
 		</button>
+
+		<HRecordingSheet
+			v-if="showRecorder"
+			:elapsed="recorder.elapsed.value"
+			:levels="recorder.levels.value"
+			:paused="recorder.paused.value"
+			@pause="recorder.pause()"
+			@resume="recorder.resume()"
+			@stop="stopRecording"
+			@cancel="cancelRecording"
+		/>
+
+		<SaveSheet
+			v-if="showSave"
+			@save="onSave"
+			@discard="onDiscard"
+		/>
 	</div>
 </template>
 
