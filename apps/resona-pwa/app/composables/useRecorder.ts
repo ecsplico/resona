@@ -1,0 +1,199 @@
+import { ref, onScopeDispose } from "vue";
+import type { Ref } from "vue";
+
+const MIME = "audio/webm";
+
+function getAudioContextCtor(): typeof AudioContext | undefined {
+	const g = globalThis as Record<string, unknown>;
+	return (g.AudioContext ?? g.webkitAudioContext) as typeof AudioContext | undefined;
+}
+
+export function useRecorder() {
+	const recording: Ref<boolean> = ref(false);
+	const paused: Ref<boolean> = ref(false);
+	const elapsed: Ref<number> = ref(0);
+	const levels: Ref<number[]> = ref([]);
+
+	let recorder: MediaRecorder | null = null;
+	let stream: MediaStream | null = null;
+	let ownsStream = false;
+	let chunks: Blob[] = [];
+
+	let timer: ReturnType<typeof setInterval> | null = null;
+
+	let audioCtx: AudioContext | null = null;
+	let analyser: AnalyserNode | null = null;
+	let source: MediaStreamAudioSourceNode | null = null;
+	let rafTimer: ReturnType<typeof setInterval> | null = null;
+
+	function startTimer(): void {
+		if (timer !== null) {
+			return;
+		}
+		timer = setInterval(() => {
+			if (!paused.value) {
+				elapsed.value += 1;
+			}
+		}, 1000);
+	}
+
+	function stopTimer(): void {
+		if (timer !== null) {
+			clearInterval(timer);
+			timer = null;
+		}
+	}
+
+	function startLevels(src: MediaStream): void {
+		const Ctor = getAudioContextCtor();
+		if (!Ctor) {
+			// happy-dom / unsupported browser: leave levels empty.
+			return;
+		}
+		try {
+			audioCtx = new Ctor();
+			analyser = audioCtx.createAnalyser();
+			analyser.fftSize = 256;
+			source = audioCtx.createMediaStreamSource(src);
+			source.connect(analyser);
+
+			const buf = new Uint8Array(analyser.frequencyBinCount);
+			rafTimer = setInterval(() => {
+				if (!analyser || paused.value) {
+					return;
+				}
+				analyser.getByteTimeDomainData(buf);
+				let sum = 0;
+				for (let i = 0; i < buf.length; i += 1) {
+					const v = (buf[i]! - 128) / 128;
+					sum += v * v;
+				}
+				const rms = Math.sqrt(sum / buf.length);
+				const next = [...levels.value, rms];
+				levels.value = next.slice(-100);
+			}, 100);
+		}
+		catch {
+			// Audio analysis is best-effort; never let it break recording.
+			teardownLevels();
+		}
+	}
+
+	function teardownLevels(): void {
+		if (rafTimer !== null) {
+			clearInterval(rafTimer);
+			rafTimer = null;
+		}
+		try {
+			source?.disconnect();
+			analyser?.disconnect();
+		}
+		catch {
+			// nodes may already be detached
+		}
+		if (audioCtx && audioCtx.state !== "closed") {
+			void audioCtx.close();
+		}
+		source = null;
+		analyser = null;
+		audioCtx = null;
+	}
+
+	function stopTracks(): void {
+		if (stream && ownsStream) {
+			for (const track of stream.getTracks()) {
+				track.stop();
+			}
+		}
+		stream = null;
+		ownsStream = false;
+	}
+
+	function cleanup(): void {
+		stopTimer();
+		teardownLevels();
+		stopTracks();
+		recorder = null;
+	}
+
+	async function start(existing?: MediaStream): Promise<void> {
+		if (recording.value) {
+			return;
+		}
+
+		if (existing) {
+			stream = existing;
+			ownsStream = false;
+		}
+		else {
+			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			ownsStream = true;
+		}
+
+		chunks = [];
+		recorder = new MediaRecorder(stream, { mimeType: MIME });
+		recorder.ondataavailable = (e: BlobEvent) => {
+			if (e.data && e.data.size > 0) {
+				chunks.push(e.data);
+			}
+		};
+		recorder.start();
+
+		elapsed.value = 0;
+		levels.value = [];
+		recording.value = true;
+		paused.value = false;
+
+		startTimer();
+		startLevels(stream);
+	}
+
+	function pause(): void {
+		if (!recording.value || paused.value) {
+			return;
+		}
+		recorder?.pause();
+		paused.value = true;
+	}
+
+	function resume(): void {
+		if (!recording.value || !paused.value) {
+			return;
+		}
+		recorder?.resume();
+		paused.value = false;
+	}
+
+	function stop(): Promise<Blob> {
+		return new Promise<Blob>((resolve) => {
+			if (!recorder) {
+				resolve(new Blob([], { type: MIME }));
+				return;
+			}
+			const rec = recorder;
+			rec.onstop = () => {
+				const blob = new Blob(chunks, { type: MIME });
+				recording.value = false;
+				paused.value = false;
+				cleanup();
+				resolve(blob);
+			};
+			rec.stop();
+		});
+	}
+
+	onScopeDispose(() => {
+		cleanup();
+	});
+
+	return {
+		recording,
+		paused,
+		elapsed,
+		levels,
+		start,
+		pause,
+		resume,
+		stop,
+	};
+}
