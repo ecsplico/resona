@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import type { Ref } from "vue";
 
-withDefaults(
+const props = withDefaults(
 	defineProps<{ initialTitle?: string }>(),
 	{ initialTitle: "" },
 );
@@ -14,7 +14,7 @@ const emit = defineEmits<{
 
 const cfg = useRuntimeConfig().public;
 
-const title = ref("");
+const title = ref(props.initialTitle);
 const language = ref(cfg.defaultLanguage);
 const profile = ref(cfg.defaultProfile);
 const transcribe = ref(true);
