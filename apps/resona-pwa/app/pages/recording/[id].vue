@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { deleteItem } from "@directus/sdk";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import type { Transcript } from "~/types/directus";
 
 const route = useRoute();
 const id = String(route.params.id);
@@ -11,6 +12,17 @@ const { client, assetUrl } = useDirectus();
 const edit = useTranscriptEdit("");
 const seeded = ref(false);
 const savedText = ref("");
+
+const { toText, copy, downloadText, downloadMarkdown } = useExport();
+
+// Build a transcript snapshot that reflects the current (possibly edited) text
+// so exports and copies match what the user sees.
+function currentTranscript(): Transcript | null {
+	if (!transcript.value) {
+		return null;
+	}
+	return { ...transcript.value, text: edit.text.value };
+}
 
 // Seed the editable text once the transcript first appears. Polling stops once
 // the recording is terminal, so a single seed is enough; guard against
@@ -44,7 +56,24 @@ function goBack(): void {
 }
 
 function copyTranscript(): void {
-	void navigator.clipboard?.writeText(edit.text.value);
+	if (!recording.value) {
+		return;
+	}
+	void copy(toText(recording.value, currentTranscript()));
+}
+
+function exportTxt(): void {
+	if (!recording.value) {
+		return;
+	}
+	downloadText(recording.value, currentTranscript());
+}
+
+function exportMd(): void {
+	if (!recording.value) {
+		return;
+	}
+	downloadMarkdown(recording.value, currentTranscript());
 }
 
 function askDelete(): void {
@@ -130,6 +159,61 @@ onUnmounted(() => {
 							rx="2"
 						/>
 						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+					</svg>
+				</HIconButton>
+				<HIconButton
+					tone="cream"
+					aria-label="Als TXT exportieren"
+					data-testid="export-txt"
+					@click="exportTxt"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+						<polyline points="14 2 14 8 20 8" />
+						<line
+							x1="9"
+							y1="13"
+							x2="15"
+							y2="13"
+						/>
+						<line
+							x1="9"
+							y1="17"
+							x2="13"
+							y2="17"
+						/>
+					</svg>
+				</HIconButton>
+				<HIconButton
+					tone="cream"
+					aria-label="Als Markdown exportieren"
+					data-testid="export-md"
+					@click="exportMd"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+						<polyline points="14 2 14 8 20 8" />
+						<polyline points="8 18 8 13 10 15 12 13 12 18" />
 					</svg>
 				</HIconButton>
 				<HIconButton

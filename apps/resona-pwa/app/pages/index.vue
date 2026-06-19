@@ -5,6 +5,7 @@ import type { Recording } from "~/types/directus";
 const { items, pending, error, list, refresh } = useRecordings();
 const recorder = useRecorder();
 const { saveRecording } = useUpload();
+const { copy } = useExport();
 
 const search = ref("");
 const since = ref("");
@@ -26,9 +27,9 @@ function openRecording(recording: Recording): void {
 }
 
 function copyRecording(recording: Recording): void {
-	// STUB: real transcript copy arrives with useExport in Task 20. Copies the
-	// title as a placeholder for now.
-	void navigator.clipboard?.writeText(recording.title);
+	// The list does not load transcripts, so copy the title (routed through
+	// useExport for consistency with the detail page).
+	void copy(recording.title);
 }
 
 async function startRecording(): Promise<void> {
