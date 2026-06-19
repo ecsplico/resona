@@ -57,7 +57,7 @@ export function useRecorder() {
 			source = audioCtx.createMediaStreamSource(src);
 			source.connect(analyser);
 
-			const buf = new Uint8Array(analyser.frequencyBinCount);
+			const buf = new Uint8Array(analyser.fftSize);
 			rafTimer = setInterval(() => {
 				if (!analyser || paused.value) {
 					return;
