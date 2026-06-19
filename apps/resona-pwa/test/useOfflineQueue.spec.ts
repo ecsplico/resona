@@ -1,6 +1,11 @@
 import "fake-indexeddb/auto";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { effectScope } from "vue";
 import { useOfflineQueue } from "~/composables/useOfflineQueue";
+
+function setOnLine(value: boolean): void {
+	Object.defineProperty(navigator, "onLine", { configurable: true, value });
+}
 
 function makeItem(title: string): {
 	blob: Blob;
@@ -89,5 +94,91 @@ describe("useOfflineQueue", () => {
 		const id = await q.enqueue(makeItem("X"));
 		await q.remove(id);
 		expect(await q.pending()).toEqual([]);
+	});
+});
+
+describe("useOfflineQueue.startAutoSync", () => {
+	const originalOnLine = Object.getOwnPropertyDescriptor(
+		Object.getPrototypeOf(navigator),
+		"onLine",
+	);
+
+	beforeEach(async () => {
+		await useOfflineQueue().clearAll();
+	});
+
+	afterEach(() => {
+		if (originalOnLine) {
+			Object.defineProperty(navigator, "onLine", originalOnLine);
+		}
+	});
+
+	it("syncs pending items when an online event fires and navigator is online", async () => {
+		setOnLine(false);
+		const q = useOfflineQueue();
+		await q.enqueue(makeItem("A"));
+
+		const uploadFn = vi.fn(async () => ({ id: "rec" }));
+		const stop = q.startAutoSync(uploadFn);
+
+		// Offline at call time → no immediate sync.
+		expect(uploadFn).not.toHaveBeenCalled();
+
+		// Going online dispatches a real "online" event that the listener handles.
+		setOnLine(true);
+		window.dispatchEvent(new Event("online"));
+		// sync() is async (reads IndexedDB) — let microtasks/timers settle.
+		await vi.waitFor(() => expect(uploadFn).toHaveBeenCalledTimes(1));
+
+		stop();
+	});
+
+	it("triggers an immediate sync when already online at call time", async () => {
+		setOnLine(true);
+		const q = useOfflineQueue();
+		await q.enqueue(makeItem("A"));
+
+		const uploadFn = vi.fn(async () => ({ id: "rec" }));
+		const stop = q.startAutoSync(uploadFn);
+
+		await vi.waitFor(() => expect(uploadFn).toHaveBeenCalledTimes(1));
+
+		stop();
+	});
+
+	it("stop() removes the listener so later online events do not sync", async () => {
+		setOnLine(false);
+		const q = useOfflineQueue();
+		await q.enqueue(makeItem("A"));
+
+		const uploadFn = vi.fn(async () => ({ id: "rec" }));
+		const stop = q.startAutoSync(uploadFn);
+		stop();
+
+		setOnLine(true);
+		window.dispatchEvent(new Event("online"));
+		// Give any (erroneous) async sync a chance to run before asserting absence.
+		await new Promise(resolve => setTimeout(resolve, 10));
+
+		expect(uploadFn).not.toHaveBeenCalled();
+	});
+
+	it("disposing the effect scope removes the listener", async () => {
+		setOnLine(false);
+		const q = useOfflineQueue();
+		await q.enqueue(makeItem("A"));
+
+		const uploadFn = vi.fn(async () => ({ id: "rec" }));
+		const scope = effectScope();
+		scope.run(() => {
+			q.startAutoSync(uploadFn);
+		});
+		scope.stop();
+
+		setOnLine(true);
+		window.dispatchEvent(new Event("online"));
+		await new Promise(resolve => setTimeout(resolve, 10));
+
+		expect(uploadFn).not.toHaveBeenCalled();
 	});
 });

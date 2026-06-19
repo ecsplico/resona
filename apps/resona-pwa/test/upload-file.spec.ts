@@ -28,6 +28,14 @@ mockNuxtImport("useProfiles", () => () => ({ list: profileList }));
 
 mockNuxtImport("navigateTo", () => vi.fn());
 
+// The page reads the offline queue on mount and after save; the test env has no
+// IndexedDB, so stub the composable to a no-op empty queue.
+mockNuxtImport("useOfflineQueue", () => () => ({
+	pending: vi.fn().mockResolvedValue([]),
+	startAutoSync: vi.fn(),
+	pendingCount: ref(0),
+}));
+
 describe("upload existing audio file", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();

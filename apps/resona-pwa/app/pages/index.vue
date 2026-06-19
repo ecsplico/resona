@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import type { Recording } from "~/types/directus";
+import type { QueuedItem } from "~/composables/useOfflineQueue";
 
 const { items, pending, error, list, refresh } = useRecordings();
 const recorder = useRecorder();
 const { saveRecording } = useUpload();
 const { copy } = useExport();
+const queue = useOfflineQueue();
+const queued = ref<QueuedItem[]>([]);
+
+async function refreshQueued(): Promise<void> {
+	queued.value = await queue.pending();
+}
 
 const search = ref("");
 const since = ref("");
@@ -85,6 +92,7 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	pendingBlob.value = null;
 	showSave.value = false;
 	await refresh();
+	await refreshQueued();
 }
 
 function onDiscard(): void {
@@ -94,6 +102,22 @@ function onDiscard(): void {
 
 onMounted(() => {
 	void list();
+	void refreshQueued();
+	// Drain the offline queue to Directus whenever connectivity returns; refresh
+	// both lists after each successful upload so the row moves to the server list.
+	queue.startAutoSync(async (item: QueuedItem) => {
+		const created = await saveRecording({
+			blob: item.blob,
+			title: item.title,
+			language: item.language,
+			profile: item.profile,
+			transcribe: item.transcribe ?? true,
+			duration_seconds: item.duration_seconds ?? 0,
+		});
+		await refresh();
+		await refreshQueued();
+		return created;
+	});
 });
 </script>
 
@@ -129,6 +153,18 @@ onMounted(() => {
 					@change="applyFilters"
 				>
 			</label>
+		</div>
+
+		<div
+			v-if="queued.length > 0"
+			class="home__list home__queued"
+			data-testid="queued-list"
+		>
+			<QueuedListItem
+				v-for="item in queued"
+				:key="item.id"
+				:item="item"
+			/>
 		</div>
 
 		<div class="home__list">
@@ -264,6 +300,7 @@ onMounted(() => {
 .home__since-label { font-size:13px; font-weight:600; color:var(--crust-deep); margin-bottom:7px; }
 .home__since-input { border:1.5px solid var(--border-strong); border-radius:8px; padding:12px 14px; background:var(--white); font-family:var(--font-body); font-size:15px; color:var(--fg1); }
 .home__list { display:flex; flex-direction:column; gap:12px; padding:8px 20px 20px; }
+.home__queued { padding-bottom:0; }
 .home__error { color:var(--danger); font-size:14px; margin:0; }
 .home__hint { color:var(--fg3); font-size:15px; margin:0; text-align:center; padding:32px 0; }
 .home__fab { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); width:68px; height:68px; border-radius:50%; border:none; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }

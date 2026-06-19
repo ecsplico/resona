@@ -42,6 +42,14 @@ mockNuxtImport("useRecordings", () => () => ({
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
 
+// The page reads the offline queue on mount; the test env has no IndexedDB, so
+// stub the composable to return an empty queue and a no-op autosync.
+mockNuxtImport("useOfflineQueue", () => () => ({
+	pending: vi.fn().mockResolvedValue([]),
+	startAutoSync: vi.fn(),
+	pendingCount: ref(0),
+}));
+
 describe("index (recordings list) page", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
