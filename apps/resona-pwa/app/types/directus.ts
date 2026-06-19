@@ -10,6 +10,7 @@ export interface Recording {
 	status: "pending" | "transcribing" | "done" | "error";
 	error_message?: string | null;
 	source: "batch" | "live";
+	engine?: string;
 }
 export interface Transcript {
 	id: string;

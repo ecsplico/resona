@@ -16,6 +16,25 @@ export function useUpload() {
 	const uploading: Ref<boolean> = ref(false);
 	const error: Ref<string | null> = ref(null);
 
+	async function uploadBlob(blob: Blob, name = "recording"): Promise<string> {
+		uploading.value = true;
+		error.value = null;
+		try {
+			const { client } = useDirectus();
+			const form = new FormData();
+			form.append("file", blob, `${name || "recording"}.webm`);
+			const uploaded = await client.request(uploadFiles(form)) as { id: string };
+			return uploaded.id;
+		}
+		catch (err) {
+			error.value = err instanceof Error ? err.message : "Upload failed";
+			throw err;
+		}
+		finally {
+			uploading.value = false;
+		}
+	}
+
 	async function saveRecording(args: SaveArgs): Promise<Recording> {
 		uploading.value = true;
 		error.value = null;
@@ -50,6 +69,7 @@ export function useUpload() {
 	return {
 		uploading,
 		error,
+		uploadBlob,
 		saveRecording,
 	};
 }
