@@ -14,6 +14,8 @@ const showRecorder = ref(false);
 const showSave = ref(false);
 const pendingBlob = ref<Blob | null>(null);
 const pendingDuration = ref(0);
+const pendingTitle = ref("");
+const uploadInput = ref<HTMLInputElement | null>(null);
 
 function applyFilters(): void {
 	void list({ search: search.value, since: since.value });
@@ -38,8 +40,26 @@ async function stopRecording(): Promise<void> {
 	pendingDuration.value = recorder.elapsed.value;
 	const blob = await recorder.stop();
 	pendingBlob.value = blob;
+	pendingTitle.value = "";
 	showRecorder.value = false;
 	showSave.value = true;
+}
+
+function triggerUpload(): void {
+	uploadInput.value?.click();
+}
+
+function onUpload(event: Event): void {
+	const input = event.target as HTMLInputElement;
+	const file = input.files?.[0];
+	if (!file) {
+		return;
+	}
+	pendingBlob.value = file;
+	pendingDuration.value = 0;
+	pendingTitle.value = file.name.replace(/\.[^.]+$/, "");
+	showSave.value = true;
+	input.value = "";
 }
 
 async function cancelRecording(): Promise<void> {
@@ -176,6 +196,44 @@ onMounted(() => {
 			</svg>
 		</button>
 
+		<button
+			class="home__upload"
+			type="button"
+			data-testid="upload-trigger"
+			aria-label="Audiodatei hochladen"
+			@click="triggerUpload"
+		>
+			<svg
+				width="22"
+				height="22"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+				<polyline points="17 8 12 3 7 8" />
+				<line
+					x1="12"
+					y1="3"
+					x2="12"
+					y2="15"
+				/>
+			</svg>
+		</button>
+
+		<input
+			ref="uploadInput"
+			class="home__upload-input"
+			type="file"
+			accept="audio/*"
+			data-testid="upload-input"
+			@change="onUpload"
+		>
+
 		<HRecordingSheet
 			v-if="showRecorder"
 			:elapsed="recorder.elapsed.value"
@@ -189,6 +247,7 @@ onMounted(() => {
 
 		<SaveSheet
 			v-if="showSave"
+			:initial-title="pendingTitle"
 			@save="onSave"
 			@discard="onDiscard"
 		/>
@@ -207,4 +266,6 @@ onMounted(() => {
 .home__error { color:var(--danger); font-size:14px; margin:0; }
 .home__hint { color:var(--fg3); font-size:15px; margin:0; text-align:center; padding:32px 0; }
 .home__fab { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); width:68px; height:68px; border-radius:50%; border:none; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }
+.home__upload { position:fixed; right:24px; bottom:36px; width:52px; height:52px; border-radius:50%; border:1.5px solid var(--border-strong); background:var(--white); color:var(--fg1); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }
+.home__upload-input { display:none; }
 </style>
