@@ -62,7 +62,8 @@ describe("recording detail page", () => {
 
 	it("renders the transcript text when done", async () => {
 		const w = await mountSuspended(RecordingPage);
-		expect(w.text()).toContain("Hallo Welt");
+		const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+		expect(area.value).toContain("Hallo Welt");
 	});
 
 	it("starts polling on mount", async () => {

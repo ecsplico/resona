@@ -1,12 +1,40 @@
 <script setup lang="ts">
 import { deleteItem } from "@directus/sdk";
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const route = useRoute();
 const id = String(route.params.id);
 
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
 const { client, assetUrl } = useDirectus();
+
+const edit = useTranscriptEdit("");
+const seeded = ref(false);
+const savedText = ref("");
+
+// Seed the editable text once the transcript first appears. Polling stops once
+// the recording is terminal, so a single seed is enough; guard against
+// clobbering the user's edits on a later refresh.
+watch(transcript, (t) => {
+	if (t && !seeded.value) {
+		edit.text.value = t.text ?? "";
+		savedText.value = t.text ?? "";
+		seeded.value = true;
+	}
+}, { immediate: true });
+
+const dirty = computed(() => seeded.value && edit.text.value !== savedText.value);
+
+async function saveTranscript(): Promise<void> {
+	if (!transcript.value) {
+		return;
+	}
+	const target = edit.text.value;
+	await edit.saveEdit(transcript.value.id, target);
+	if (!edit.error.value) {
+		savedText.value = target;
+	}
+}
 
 const confirmingDelete = ref(false);
 const deleting = ref(false);
@@ -16,7 +44,7 @@ function goBack(): void {
 }
 
 function copyTranscript(): void {
-	void navigator.clipboard?.writeText(transcript.value?.text ?? "");
+	void navigator.clipboard?.writeText(edit.text.value);
 }
 
 function askDelete(): void {
@@ -198,11 +226,31 @@ onUnmounted(() => {
 					Transkribiert…
 				</p>
 
-				<p
-					v-else-if="recording.status === 'done' && transcript"
-					class="detail__transcript"
-					v-text="transcript.text"
-				/>
+				<template v-else-if="recording.status === 'done' && transcript">
+					<textarea
+						v-model="edit.text.value"
+						class="detail__edit"
+						data-testid="transcript-edit"
+						spellcheck="false"
+					/>
+					<p
+						v-if="edit.error.value"
+						class="detail__error"
+						data-testid="save-error"
+					>
+						{{ edit.error.value }}
+					</p>
+					<div class="detail__edit-actions">
+						<HButton
+							variant="primary"
+							:disabled="edit.saving.value || !dirty"
+							data-testid="save-transcript"
+							@click="saveTranscript"
+						>
+							{{ edit.saving.value ? "Speichert…" : "Speichern" }}
+						</HButton>
+					</div>
+				</template>
 
 				<p
 					v-else
@@ -230,4 +278,7 @@ onUnmounted(() => {
 .detail__error { color:var(--danger); font-size:14px; margin:0; }
 .detail__banner { background:var(--tomato-soft); color:var(--tomato-deep); border-radius:var(--r-md); padding:14px 16px; font-family:var(--font-body); font-size:14px; }
 .detail__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); margin:0; }
+.detail__edit { width:100%; min-height:240px; box-sizing:border-box; resize:vertical; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); background:var(--surface,transparent); border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:12px 14px; }
+.detail__edit:focus { outline:none; border-color:var(--accent); }
+.detail__edit-actions { display:flex; justify-content:flex-end; }
 </style>
