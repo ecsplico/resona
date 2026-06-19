@@ -38,5 +38,27 @@ export default defineNuxtConfig({
 			{ name: "JetBrains Mono", provider: "google" },
 		],
 	},
-	pwa: { registerType: "autoUpdate", manifest: false, devOptions: { enabled: false } },
+	pwa: {
+		registerType: "autoUpdate",
+		manifest: {
+			name: "Resona",
+			short_name: "Resona",
+			description: "Resona — medizinisches Diktat: aufnehmen, transkribieren, exportieren.",
+			theme_color: "#D96846",
+			background_color: "#FBF5EC",
+			display: "standalone",
+			start_url: "/",
+			icons: [
+				{ src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
+				{ src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
+				{ src: "/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+			],
+		},
+		workbox: {
+			runtimeCaching: [
+				{ urlPattern: /\/assets\//, handler: "CacheFirst" },
+			],
+		},
+		devOptions: { enabled: false },
+	},
 });

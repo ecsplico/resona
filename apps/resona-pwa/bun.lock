@@ -10,6 +10,7 @@
         "@tailwindcss/vite": "^4.1.17",
         "@vite-pwa/nuxt": "^1.1.1",
         "@vueuse/nuxt": "^14.3.0",
+        "idb-keyval": "^6.2.5",
         "nuxt": "^4.4.8",
         "tailwindcss": "^4.1.17",
         "vue": "^3.5.21",
@@ -20,6 +21,7 @@
         "@vue/test-utils": "^2.4.6",
         "@vueuse/core": "^14.3.0",
         "eslint": "^9.21.0",
+        "fake-indexeddb": "^6.2.5",
         "happy-dom": "^15.0.0",
         "typescript": "^5.8.3",
         "vitest": "^4.1.9",
@@ -1389,6 +1391,8 @@
     "human-signals": ["human-signals@5.0.0", "", {}, "sha512-AXcZb6vzzrFAUE61HnN4mpLqd/cSIwNQjtNWR0euPm6y0iqx3G4gOXaIDdtdDwZmhwe82LA6+zinmW4UBWVePQ=="],
 
     "idb": ["idb@7.1.1", "", {}, "sha512-gchesWBzyvGHRO9W8tzUWFDycow5gwjvFKfyV9FF32Y7F50yZMp7mP+T2mJIWFx49zicqyC4uefHM17o6xKIVQ=="],
+
+    "idb-keyval": ["idb-keyval@6.2.5", "", {}, "sha512-eKQkTnS0relYsSOYomx8ozIbmdsQCKUdhyuIaQ2DZgKuaxtyQQMkyD/wlnQN32pO3yutN1b1L8uqwcDKaJd7/Q=="],
 
     "ieee754": ["ieee754@1.2.1", "", {}, "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA=="],
 
