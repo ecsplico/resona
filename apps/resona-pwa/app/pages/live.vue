@@ -83,7 +83,6 @@ async function confirmSave(): Promise<void> {
 			audio_file: fileId ?? undefined,
 			language: cfg.defaultLanguage,
 			profile: cfg.defaultProfile,
-			engine: cfg.defaultEngine,
 			source: "live",
 			status: "done",
 			duration_seconds: capturedDuration.value,
