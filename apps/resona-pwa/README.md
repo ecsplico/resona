@@ -9,11 +9,14 @@ logic of its own.
 
 ## Quick start
 
-The PWA is the **frontend** only. It needs the Resona **backend** stack (Directus +
-resona-api + the directus-transcribe worker + a transcription engine) running first.
-Those live in the **resona monorepo** and come up with one compose command.
+The platform is split across **two stacks**:
 
-### 1. Backend (resona monorepo)
+1. **Transcription backend** — lives in the **resona monorepo**: resona-api + a
+   transcription engine. (Directus is no longer part of it.)
+2. **PWA data layer** — lives in **this repo**: Directus + the `directus-transcribe`
+   worker, plus the Nuxt frontend.
+
+### 1. Transcription backend (resona monorepo)
 
 From the monorepo root (the directory containing `docker-compose.resona.yml`):
 
@@ -21,22 +24,44 @@ From the monorepo root (the directory containing `docker-compose.resona.yml`):
 docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
 ```
 
-This brings up:
+This brings up the transcription-only stack:
+
+| Service | Host port | Role |
+|---------|-----------|------|
+| `api` (resona-api) | `:7710` | transcription API + live `/v1/listen` WebSocket |
+| `engine-faster-whisper` | `:7720` | the ASR engine resona-api calls |
+
+`api` is always-on; the **engine** is selected by a `--profile` flag (`faster-whisper`,
+`whisper`, `voxtral`, `parakeet`). CORS on resona-api must allow the PWA origin
+(e.g. `http://localhost:3000`).
+
+### 2. PWA data layer (this repo)
+
+```bash
+cp .env.stack.example .env  # then fill in secrets (Directus + worker)
+docker compose up -d        # → directus :7700 + directus-transcribe worker
+```
+
+> **Note on `.env`:** the **docker compose stack** reads `.env` seeded from
+> `.env.stack.example` (Directus + worker secrets: `DIRECTUS_*`, `RESONA_API_URL`, …).
+> The **frontend** (step 3) reads its own `.env` seeded from `.env.example`
+> (`NUXT_PUBLIC_*` keys). Both files end up named `.env` but feed different consumers
+> and their keys are disjoint, so they don't conflict — just be sure to seed each from
+> the right example.
+
+This brings up the data layer:
 
 | Service | Host port | Role |
 |---------|-----------|------|
 | `directus` | `:7700` | auth, data, file storage |
-| `api` (resona-api) | `:7710` | transcription API + live `/v1/listen` WebSocket |
-| `directus-transcribe` | — | worker that polls Directus and fills batch transcripts |
-| `engine-faster-whisper` | `:7720` | the ASR engine resona-api calls |
+| `directus-transcribe` | — | worker that polls Directus and fills batch transcripts via resona-api |
 
-`directus`, `api`, and `directus-transcribe` are always-on; the **engine** is selected by
-a `--profile` flag (`faster-whisper`, `whisper`, `voxtral`, `parakeet`). First run also
-needs Directus bootstrapped (collections + user role) — see the monorepo
-`directus/bootstrap.md`. CORS on both Directus and resona-api must allow the PWA origin
-(e.g. `http://localhost:3000`).
+The worker reaches the remote resona-api over the network via `RESONA_API_URL`
+(default `http://host.docker.internal:7710`). First run also needs Directus bootstrapped
+(collections + user role) — see `directus/bootstrap.md`. CORS on Directus must allow the
+PWA origin.
 
-### 2. Frontend (this repo)
+### 3. Frontend (this repo)
 
 ```bash
 bun install
@@ -62,10 +87,10 @@ There are **two transcription paths**:
 
 - **Batch** (record-then-save, or upload an existing file): the PWA uploads the audio
   to Directus and inserts a `recordings` row with `status=pending`, `source=batch`. The
-  **directus-transcribe** worker (running in the monorepo) polls Directus, claims the
-  row, transcribes it via resona-api, writes the `transcripts` row, and flips the
-  recording to `done`. The PWA polls the recording until it reaches a terminal state
-  (`done`/`error`).
+  **directus-transcribe** worker (running in this repo's compose stack) polls Directus,
+  claims the row, transcribes it via the remote resona-api, writes the `transcripts`
+  row, and flips the recording to `done`. The PWA polls the recording until it reaches a
+  terminal state (`done`/`error`).
 - **Live**: the PWA opens a WebSocket to resona-api `/v1/listen`, streams 16 kHz PCM
   from the microphone, and renders rolling partial/final text. On stop it writes the
   `recordings` (`source=live`, `status=done`) and `transcripts` rows itself.
@@ -84,14 +109,16 @@ There are **two transcription paths**:
 
 ## Prerequisites / backend dependencies
 
-The PWA requires a running Resona backend stack:
+The PWA requires both stacks running:
 
-1. **Directus** with the `recordings` and `transcripts` collections and the end-user
-   role provisioned. See the monorepo `directus/bootstrap.md` and the platform design
-   spec `docs/superpowers/specs/2026-06-17-pwa-directus-platform-design.md`.
-2. **resona-api** — for live transcription (and as the engine the worker calls).
-3. **directus-transcribe** worker — required for the **batch** path; without it,
-   uploaded/recorded files stay `pending` forever.
+1. **Directus** (this repo's compose stack) with the `recordings` and `transcripts`
+   collections and the end-user role provisioned. See `directus/bootstrap.md` and the
+   platform design spec
+   `docs/superpowers/specs/2026-06-17-pwa-directus-platform-design.md`.
+2. **resona-api** (the resona monorepo stack) — for live transcription (and as the API
+   the worker calls).
+3. **directus-transcribe** worker (this repo's compose stack) — required for the
+   **batch** path; without it, uploaded/recorded files stay `pending` forever.
 
 In development, **CORS on both Directus and resona-api must allow the PWA origin**
 (e.g. `http://localhost:3000`).
@@ -180,11 +207,13 @@ app/
 
 ## Manual E2E checklist
 
-Bring up the backend stack from the monorepo:
+Bring up both stacks:
 
 ```bash
+# Transcription backend — from the resona monorepo root:
 docker compose -f docker-compose.resona.yml --profile faster-whisper up
-# plus a running Directus (:7700) and the directus-transcribe worker
+# Data layer — from this repo (Directus :7700 + directus-transcribe worker):
+docker compose up
 ```
 
 Then verify against the running PWA (`bun run dev`):

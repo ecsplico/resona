@@ -13,23 +13,38 @@ reach into the Python monorepo — communicate over HTTP exclusively.
 
 ## How to start
 
-The PWA needs the backend stack running first. See **README.md → Quick start** for the
-canonical steps. In short:
+Two stacks are involved. See **README.md → Quick start** for the canonical steps. In
+short:
 
 ```bash
-# Backend — from the resona monorepo root:
+# Transcription backend — from the resona monorepo root (resona-api + engine only):
 docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
-#   directus :7700 · resona-api :7710 · directus-transcribe worker · engine :7720
+#   resona-api :7710 · engine :7720
+
+# Data layer — from this repo (Directus + the directus-transcribe worker):
+cp .env.stack.example .env  # Directus + worker secrets (NOT the frontend .env)
+docker compose up -d        #   directus :7700 · directus-transcribe worker
 
 # Frontend — from this repo:
 bun install
-cp .env.example .env
+cp .env.example .env        # frontend NUXT_PUBLIC_* vars (NOT the stack .env)
 bun run dev                 # → http://localhost:3000
 ```
 
-First backend run also needs Directus bootstrapped (collections + user role) per the
-monorepo `directus/bootstrap.md`. CORS on Directus and resona-api must allow the PWA
-origin.
+Two `.env` consumers, both named `.env`: the **compose stack** is seeded from
+`.env.stack.example` (`DIRECTUS_*` / `RESONA_API_URL`), the **Nuxt frontend** from
+`.env.example` (`NUXT_PUBLIC_*`). Keys are disjoint, so they don't conflict.
+
+First data-layer run also needs Directus bootstrapped (collections + user role) per
+`directus/bootstrap.md`. CORS on Directus and resona-api must allow the PWA origin.
+
+### Worker
+
+The `directus-transcribe` worker lives in `worker/` — a standalone Python service
+(`httpx` + `python-decouple`, no monorepo coupling). It bridges **this repo's** Directus
+→ the remote resona-api: polls for `pending` recordings, transcribes them via
+`RESONA_API_URL`, and writes the `transcripts` row. Build/run it via `docker compose`
+(the `directus-transcribe` service in this repo's `docker-compose.yml`).
 
 ## Backends
 
@@ -41,10 +56,11 @@ origin.
 ### Two transcription paths
 
 - **Batch** (record-then-save, or upload a file): PWA uploads audio to Directus + inserts
-  a `recordings` row `status=pending, source=batch`. The monorepo **directus-transcribe**
-  worker polls Directus, transcribes via resona-api, writes the `transcripts` row, flips
-  the recording to `done`. The PWA polls until terminal (`done`/`error`). Without the
-  worker running, batch rows stay `pending` forever.
+  a `recordings` row `status=pending, source=batch`. This repo's **directus-transcribe**
+  worker (in its compose stack) polls Directus, transcribes via the remote resona-api,
+  writes the `transcripts` row, flips the recording to `done`. The PWA polls until
+  terminal (`done`/`error`). Without the worker running, batch rows stay `pending`
+  forever.
 - **Live**: PWA opens a WebSocket to resona-api `/v1/listen`, streams 16 kHz PCM16 from
   the mic, renders rolling partial/final text. On stop the PWA itself writes the
   `recordings` (`source=live, status=done`) and `transcripts` rows.
@@ -94,7 +110,7 @@ app/
 Component auto-import is `pathPrefix: false` — components resolve by filename
 (`<HButton>`, `<QueuedListItem>`), regardless of subdirectory.
 
-## Directus schema (source of truth: monorepo `directus/bootstrap.md`)
+## Directus schema (source of truth: `directus/bootstrap.md`)
 
 - **recordings**: `id, user_created, date_created, date_updated, title, audio_file,
   duration_seconds, language, profile, status (pending|transcribing|done|error),
