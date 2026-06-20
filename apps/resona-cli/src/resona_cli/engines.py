@@ -1,4 +1,5 @@
 """CLI commands for managing resona engines."""
+import json
 from typing import Optional
 
 import typer
@@ -170,6 +171,105 @@ def test_engines(
             any_ok = True
 
     raise typer.Exit(0 if any_ok else 1)
+
+
+@engines_app.command("benchmark-select")
+def benchmark_select(
+    run: bool = typer.Option(
+        False, "--run/--no-run",
+        help="Run the benchmark first (uv run …); otherwise read existing results."),
+    results: Optional[str] = typer.Option(
+        None, "--results", "-r",
+        help="Results file or directory (default: ./benchmarks/results)."),
+    speed_floor: float = typer.Option(
+        1.0, "--speed-floor",
+        help="Minimum × realtime an engine must clear in every language."),
+    backends: str = typer.Option(
+        "all", "--backends", help="Backends to benchmark when --run (passed through)."),
+    target_seconds: float = typer.Option(
+        600.0, "--target-seconds", help="Approx audio length per language when --run."),
+    apply: bool = typer.Option(
+        True, "--apply/--dry-run",
+        help="Write the winner to config.json default_engine (--dry-run just prints)."),
+):
+    """Pick the best local engine from a benchmark and pin it as default_engine.
+
+    Selection rule: lowest average WER among engines that clear --speed-floor in
+    every benchmarked language. The winner is written to ~/.resona/config.json
+    and honoured by `resona transcribe`, `watch`, and `live`.
+    """
+    from pathlib import Path
+    from resona_asr_core.registry import installed_engines
+    from . import benchmark_select as bs
+
+    if run:
+        script = bs.find_benchmark_script()
+        if script is None:
+            typer.echo(
+                "Could not find benchmarks/transcription_benchmark.py. Run from "
+                "the repo root, or run the benchmark manually and pass --results.",
+                err=True,
+            )
+            raise typer.Exit(2)
+        typer.echo(f"Running benchmark: {script}", err=True)
+        code = bs.run_benchmark(script, backends=backends, target_seconds=target_seconds)
+        if code != 0:
+            typer.echo(f"Benchmark exited with code {code}.", err=True)
+            raise typer.Exit(code)
+
+    results_path = Path(results) if results else Path.cwd() / "benchmarks" / "results"
+    json_file = bs.latest_results_file(results_path)
+    if json_file is None:
+        typer.echo(
+            f"No benchmark results found at {results_path}. Run with --run, or "
+            f"point --results at a benchmark_*.json file or its directory.",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    try:
+        payload = json.loads(json_file.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        typer.echo(f"Could not read {json_file}: {e}", err=True)
+        raise typer.Exit(2)
+
+    installed = set(installed_engines())
+    winner, ranking = bs.select_best(
+        payload.get("results", []), speed_floor=speed_floor, installed=installed,
+    )
+
+    typer.echo(f"Benchmark: {json_file}")
+    typer.echo(f"Speed floor: {speed_floor:.2f}× realtime   Installed: {', '.join(sorted(installed))}")
+    typer.echo(f"  {'ENGINE':<18}{'AVG WER':<10}{'MIN ×RT':<10}{'LANGS':<10}NOTE")
+    for c in ranking:
+        mark = "→ " if c is winner else "  "
+        note = c.reason if not c.clears_floor else ("best" if c is winner else "")
+        typer.echo(
+            f"{mark}{c.backend:<18}{c.avg_wer:<10.4f}{c.min_x_realtime:<10.2f}"
+            f"{','.join(c.languages):<10}{note}"
+        )
+
+    if winner is None:
+        typer.echo(
+            f"\nNo engine cleared the {speed_floor:.2f}× speed floor. "
+            f"Lower --speed-floor and retry.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if not apply:
+        typer.echo(f"\n[dry-run] Would set default_engine = {winner.backend}")
+        return
+
+    cfg = EngineConfig.load()
+    previous = cfg.default_engine
+    cfg.default_engine = winner.backend
+    cfg.save()
+    typer.echo(
+        f"\nSet default_engine: {previous} → "
+        + typer.style(winner.backend, fg=typer.colors.GREEN)
+        + f"  (avg WER {winner.avg_wer:.4f}, ≥ {winner.min_x_realtime:.2f}× realtime)"
+    )
 
 
 @engines_app.command("status")
