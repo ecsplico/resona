@@ -7,6 +7,45 @@ review, edit, and export the resulting transcripts. The app is browser-only
 (`ssr: false`) and talks to its backends over HTTP/WebSocket — it holds no server
 logic of its own.
 
+## Quick start
+
+The PWA is the **frontend** only. It needs the Resona **backend** stack (Directus +
+resona-api + the directus-transcribe worker + a transcription engine) running first.
+Those live in the **resona monorepo** and come up with one compose command.
+
+### 1. Backend (resona monorepo)
+
+From the monorepo root (the directory containing `docker-compose.resona.yml`):
+
+```bash
+docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
+```
+
+This brings up:
+
+| Service | Host port | Role |
+|---------|-----------|------|
+| `directus` | `:7700` | auth, data, file storage |
+| `api` (resona-api) | `:7710` | transcription API + live `/v1/listen` WebSocket |
+| `directus-transcribe` | — | worker that polls Directus and fills batch transcripts |
+| `engine-faster-whisper` | `:7720` | the ASR engine resona-api calls |
+
+`directus`, `api`, and `directus-transcribe` are always-on; the **engine** is selected by
+a `--profile` flag (`faster-whisper`, `whisper`, `voxtral`, `parakeet`). First run also
+needs Directus bootstrapped (collections + user role) — see the monorepo
+`directus/bootstrap.md`. CORS on both Directus and resona-api must allow the PWA origin
+(e.g. `http://localhost:3000`).
+
+### 2. Frontend (this repo)
+
+```bash
+bun install
+cp .env.example .env        # defaults already point at :7700 / :7710
+bun run dev                 # → http://localhost:3000
+```
+
+Open `http://localhost:3000`, log in with a Directus user, and record/upload/dictate.
+
 ## Architecture
 
 Resona PWA is a **standalone repository** (it is not part of the Python monorepo) and
