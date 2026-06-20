@@ -60,9 +60,14 @@ class MLXWhisperTranscriber:
         initial_prompt: str | None = None,
         word_timestamps: bool = False,
         vad_filter: bool = False,
+        vad_parameters: dict | None = None,
         **kwargs,
     ) -> TranscriptionResult:
         import mlx_whisper  # heavy/optional; imported lazily for fast startup
+
+        # vad_filter/vad_parameters are faster-whisper-only knobs; mlx_whisper
+        # has no VAD path and forwards unknown kwargs to DecodingOptions, so they
+        # must be consumed here rather than passed through.
 
         # mlx_whisper expects a float32 waveform (or path); ensure the dtype.
         audio = np.asarray(audio, dtype=np.float32)
