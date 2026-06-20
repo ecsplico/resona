@@ -55,16 +55,21 @@ _ENGINE_EXTRA = {
 
 
 def _resolve_live_engine(engine: Optional[str]) -> str:
-    """Pick the in-process engine for `resona live`: flag > RESONA_ENGINE > platform default.
+    """Pick the in-process engine for `resona live`.
 
-    Validates the engine is installed and exports RESONA_ENGINE so the
-    in-process transcriber singleton loads it. Exits with an install hint when
-    the requested engine is not available.
+    Order: flag > RESONA_ENGINE > config.json default_engine (when pinned) >
+    platform default. Validates the engine is installed and exports
+    RESONA_ENGINE so the in-process transcriber singleton loads it. Exits with
+    an install hint when the requested engine is not available.
     """
     from resona_asr_core.registry import installed_engines, recommended_engine
+    from resona_client.config import EngineConfig
 
     installed = installed_engines()
-    selected = engine or os.getenv("RESONA_ENGINE") or recommended_engine()
+    configured = EngineConfig.load().default_engine
+    # "auto" means "let the platform decide" — don't treat it as a pin.
+    pinned = configured if configured and configured != "auto" else None
+    selected = engine or os.getenv("RESONA_ENGINE") or pinned or recommended_engine()
     if selected not in installed:
         hint = _ENGINE_EXTRA.get(selected)
         extra = (
@@ -94,10 +99,22 @@ def live(
     """Launch the live transcription TUI."""
     _require_modules("textual", "sounddevice", "soundfile", "soxr", "resona_asr_core")
     import logging
+    import threading
     from dotenv import load_dotenv
     import sounddevice as sd
 
     load_dotenv()
+
+    # Pre-empt tqdm's lazy multiprocessing write-lock with a threading lock.
+    # When the ASR model loads inside the Textual app, Textual has already
+    # redirected the stdio fds; tqdm's first progress bar would otherwise try
+    # to spawn multiprocessing's resource_tracker via fork_exec and crash with
+    # "ValueError: bad value(s) in fds_to_keep". A threading lock spawns nothing.
+    try:
+        from tqdm import tqdm as _tqdm
+        _tqdm.set_lock(threading.RLock())
+    except Exception:
+        pass
 
     if remote:
         _require_modules("websockets")
