@@ -22,7 +22,10 @@ services:
       CORS_ENABLED: "true"
       CORS_ORIGIN: ${PWA_ORIGIN:-http://localhost:3000}
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8055/server/health"]
+      # 127.0.0.1, not localhost: inside the container `localhost` resolves to ::1
+      # (IPv6) first, but Directus binds IPv4 0.0.0.0 — wget to ::1 is refused and
+      # the container would never report healthy, blocking the worker's depends_on.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8055/server/health"]
       interval: 30s
       timeout: 10s
       retries: 5
