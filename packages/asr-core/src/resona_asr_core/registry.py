@@ -8,6 +8,7 @@ from threading import Lock
 
 from decouple import config
 
+from .model_cache import configure_model_cache
 from .protocol import Transcriber
 
 log = logging.getLogger(__name__)
@@ -79,6 +80,9 @@ def _detect_device() -> str:
 
 def _load_from_entrypoint(engine: str | None = None) -> Transcriber:
     """Discover and instantiate a transcriber engine by name."""
+    # Share the model cache (with Voicebox etc.) before any engine imports a
+    # model library — see model_cache.configure_model_cache.
+    configure_model_cache()
     eps = list(entry_points(group=ENTRY_POINT_GROUP))
     # Priority: explicit arg > RESONA_ENGINE env > environment-aware default.
     name = engine or config("RESONA_ENGINE", default="") or recommended_engine(
