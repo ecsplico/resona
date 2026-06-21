@@ -38,6 +38,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "resona-cloud-stt>=0.1.0",
     "resona-cloud-tts>=0.1.0",
+    "resona-tts-local>=0.1.0",
     "resona-postprocess>=0.1.0",
 ]
 
@@ -50,6 +51,7 @@ Issues = "https://github.com/ecsplico/resona/issues"
 [tool.uv.sources]
 resona-cloud-stt = { workspace = true }
 resona-cloud-tts = { workspace = true }
+resona-tts-local = { workspace = true }
 resona-postprocess = { workspace = true }
 
 [project.scripts]

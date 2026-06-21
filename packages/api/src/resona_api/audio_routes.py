@@ -128,6 +128,7 @@ class SpeechRequest(BaseModel):
     speed: float | None = None
     engine: str | None = None
     private: bool = False
+    language: str | None = None
 
 
 @router.post("/v1/audio/speech", tags=["Audio"])
@@ -135,7 +136,7 @@ def create_speech(
     body: SpeechRequest,
     api_key: str = Depends(verify_api_key),
 ):
-    """OpenAI-compatible synchronous text-to-speech (cloud engines only)."""
+    """OpenAI-compatible synchronous text-to-speech (local or cloud engines)."""
     try:
         info = reg.resolve(body.engine, "tts", body.private)
     except reg.EngineError as exc:
@@ -148,6 +149,7 @@ def create_speech(
             voice=body.voice,
             response_format=body.response_format,
             speed=body.speed,
+            language=body.language,
         )
     except Exception as exc:
         raise _http_error(exc)
