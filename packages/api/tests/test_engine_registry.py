@@ -164,3 +164,34 @@ def test_run_tts_cloud_dispatches_to_provider(monkeypatch):
                           [], provider="openai")
     result = reg.run_tts(info, "hallo")
     assert result["audio"] == b"sound"
+
+
+def test_catalogue_includes_local_tts_engines(monkeypatch):
+    monkeypatch.setenv("RESONA_ENGINE_URLS", "http://x:7001")
+    import respx, httpx
+    with respx.mock:
+        respx.get("http://x:7001/health").mock(side_effect=httpx.ConnectError("x"))
+        by_name = {e.name: e for e in reg.build_catalogue()}
+    kokoro = by_name["kokoro"]
+    assert kokoro.kind == "local-tts"
+    assert kokoro.capabilities == ["tts"]
+    assert kokoro.private is True
+    assert kokoro.available is True
+
+
+def test_run_tts_local_dispatches_to_engine(monkeypatch):
+    captured = {}
+
+    class FakeEngine:
+        def synthesize(self, text, *, voice=None, language="en"):
+            captured.update(text=text, voice=voice, language=language)
+            return {"audio": b"RIFFwav", "content_type": "audio/wav",
+                    "sample_rate": 24000}
+
+    monkeypatch.setattr(
+        "resona_tts_local.registry.get_engine", lambda name: FakeEngine()
+    )
+    info = reg.EngineInfo("kokoro", "local-tts", ["tts"], True, True, ["Kokoro"])
+    result = reg.run_tts(info, "hallo", voice="af_heart", language="de")
+    assert result == {"audio": b"RIFFwav", "content_type": "audio/wav"}
+    assert captured == {"text": "hallo", "voice": "af_heart", "language": "de"}
