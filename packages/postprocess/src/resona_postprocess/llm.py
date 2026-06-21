@@ -9,9 +9,32 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 120.0
 
+_UNSET = object()
+# Resolved lazily on first use (keeps the heavy `import litellm` out of CLI
+# startup). ``_UNSET`` = not yet attempted; ``None`` = attempted/unavailable.
+# Exposed at module scope so tests can monkeypatch it directly.
+litellm = _UNSET
+
 
 class LLMUnavailableError(RuntimeError):
     """Raised when an LLM step is requested but litellm is not installed."""
+
+
+def _resolve_litellm():
+    """Import litellm on first use, caching the module (or None) at module scope."""
+    global litellm
+    if litellm is _UNSET:
+        try:
+            import litellm as _litellm
+            litellm = _litellm
+        except ImportError:
+            litellm = None
+    if litellm is None:
+        raise LLMUnavailableError(
+            "LLM postprocessing requires the 'litellm' package. "
+            "Install it: pip install litellm"
+        )
+    return litellm
 
 
 def _completion(*, model, api_base, messages, temperature, max_tokens,
@@ -19,13 +42,7 @@ def _completion(*, model, api_base, messages, temperature, max_tokens,
     """Call litellm.completion with one retry on transient failure."""
     import os
     os.environ.setdefault("LITELLM_LOG", "ERROR")
-    try:
-        import litellm
-    except ImportError:
-        raise LLMUnavailableError(
-            "LLM postprocessing requires the 'litellm' package. "
-            "Install it: pip install litellm"
-        )
+    litellm = _resolve_litellm()
     kwargs = {
         "model": model,
         "api_base": api_base,
