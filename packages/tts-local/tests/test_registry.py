@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from resona_tts_local import registry
@@ -26,8 +28,13 @@ def test_unknown_engine_raises():
         registry.get_engine("does-not-exist")
 
 
-def test_missing_native_lib_raises_unavailable():
-    # chatterbox-tts is not installed in the dev env → clear, actionable error.
+def test_missing_native_lib_raises_unavailable(monkeypatch):
+    # Force the native lib import to fail (a None entry in sys.modules makes
+    # importlib raise ImportError) so the test is deterministic whether or not
+    # chatterbox-tts happens to be installed in the dev env → clear, actionable
+    # error instead of an attempt to load real weights.
+    monkeypatch.setitem(sys.modules, "chatterbox", None)
+    monkeypatch.setitem(sys.modules, "chatterbox.mtl_tts", None)
     with pytest.raises(EngineUnavailableError):
         registry.get_engine("chatterbox").synthesize("hi")
 
