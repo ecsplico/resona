@@ -206,6 +206,27 @@ watch dir:
 engines:
     uv run resona engines list
 
+# ── Local TTS engines (resona-tts-local) ──────────────────────────────
+# Install local/offline TTS engine libraries into the workspace venv. The
+# engine code ships with `just install`; these add the native model libs.
+# kokoro + qwen are lockable extras; chatterbox needs --no-deps because its
+# conservative pins (numpy<2/torch==2.6) can't co-lock (it runs fine on the
+# modern stack anyway — verified).
+
+# Kokoro-82M — tiny, CPU-realtime, cross-platform (start here)
+tts-kokoro:
+    uv pip install -e './packages/tts-local[kokoro]'
+
+# Qwen3-TTS — Apple Silicon, MLX-native via mlx-audio
+tts-qwen:
+    uv pip install -e './packages/tts-local[qwen]'
+
+# Chatterbox Multilingual + Turbo — installed --no-deps + its pure deps
+tts-chatterbox:
+    uv pip install --no-deps chatterbox-tts
+    uv pip install librosa s3tokenizer diffusers resemble-perth conformer \
+        omegaconf pykakasi pyloudnorm spacy-pkuseg einops
+
 # ── Docs ──────────────────────────────────────────────────────────────
 
 # Start the MkDocs dev server with live reload on :8000
