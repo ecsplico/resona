@@ -112,6 +112,32 @@ def _cloud_engines() -> list[EngineInfo]:
     return out
 
 
+def _local_tts_engines() -> list[EngineInfo]:
+    """In-process local TTS engines (Kokoro, Chatterbox, Qwen…).
+
+    Registered (and reported available) whenever ``resona-tts-local`` is
+    installed; the engine's heavy model library is loaded lazily on first use,
+    so an uninstalled native extra surfaces as a clear error at synthesis time
+    rather than hiding the engine from the catalogue.
+    """
+    try:
+        from resona_tts_local.registry import ENGINE_INFO, installed_engines
+    except ImportError:
+        return []
+    out: list[EngineInfo] = []
+    for name in installed_engines():
+        info = ENGINE_INFO.get(name, {})
+        out.append(EngineInfo(
+            name=name,
+            kind="local-tts",
+            capabilities=["tts"],
+            private=True,
+            available=True,
+            models=[info.get("display_name", name)],
+        ))
+    return out
+
+
 def build_catalogue() -> list[EngineInfo]:
     """Probe every local backend + cloud provider; dedupe local engine names."""
     catalogue: list[EngineInfo] = []
@@ -127,6 +153,7 @@ def build_catalogue() -> list[EngineInfo]:
         if info.available:
             seen[info.name] = url
         catalogue.append(info)
+    catalogue.extend(_local_tts_engines())
     catalogue.extend(_cloud_engines())
     return catalogue
 
@@ -300,8 +327,20 @@ def run_tts(
     voice: str | None = None,
     response_format: str = "mp3",
     speed: float | None = None,
+    language: str | None = None,
 ) -> dict:
-    """Dispatch a TTS request to a cloud engine; return a SpeechResult dict."""
+    """Dispatch a TTS request to a local or cloud engine; return a SpeechResult."""
+    if info.kind == "local-tts":
+        from resona_tts_local.registry import get_engine
+        result = get_engine(info.name).synthesize(
+            text,
+            voice=voice,
+            language=language or "en",
+        )
+        # SpeechResult is shape-compatible (audio + content_type); drop the
+        # local-only sample_rate so the response matches the cloud path.
+        return {"audio": result["audio"], "content_type": result["content_type"]}
+
     from resona_cloud_tts.errors import MissingAPIKeyError
     from resona_cloud_tts.registry import get_provider
     key = _cloud_key(info.provider, MissingAPIKeyError)
