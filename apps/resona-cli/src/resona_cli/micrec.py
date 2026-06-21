@@ -244,12 +244,12 @@ class MicRecApp(App):
             save_button.disabled = True
             discard_button.disabled = True
         elif self.is_paused:
-            self.record_button_label = "\u25b6\ufe0f Resume"
+            self.record_button_label = "\u25b6 Resume"
             self.record_button_variant = "success"
             save_button.disabled = False
             discard_button.disabled = False
         else:
-            self.record_button_label = "\u23f8\ufe0f Pause"
+            self.record_button_label = "\u23f8 Pause"
             self.record_button_variant = "warning"
             save_button.disabled = False
             discard_button.disabled = False

@@ -27,6 +27,7 @@ resona/
     ├── engine-parakeet/    ← resona-engine-parakeet: NVIDIA Parakeet (NeMo FastConformer) engine (Linux CUDA/CPU, multilingual)
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
     ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
+    ├── tts-local/          ← resona-tts-local: local/offline TTS engines (Kokoro, Chatterbox, Qwen3-TTS) — ported from Voicebox
     ├── postprocess/        ← resona-postprocess: profile-based postprocessing pipeline (replacements + LLM + extract)
     ├── api/                ← resona-api: job queue + DB + postprocessing + unified STT/TTS API, :7000
     └── client/             ← resona-client: httpx client library
@@ -73,7 +74,8 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 
 ### resona-asr-core
 - `protocol.py` — `Transcriber` Protocol + `TranscriptionResult` TypedDict; optional `StreamingTranscriber`/`StreamSession` protocols (`stream_session()` → `feed()`/`flush()` returning `StreamUpdate`) for engines that decode incrementally
-- `registry.py` — entry-point discovery, singleton, device detection (`_detect_device`), and environment-aware default engine selection (`recommended_engine`, `installed_engines`, `_is_apple_silicon`)
+- `registry.py` — entry-point discovery, singleton, device detection (`_detect_device`), and environment-aware default engine selection (`recommended_engine`, `installed_engines`, `_is_apple_silicon`). Calls `configure_model_cache()` before loading any engine
+- `model_cache.py` — shared HuggingFace model cache. `configure_model_cache()` honors `RESONA_MODELS_DIR` / Voicebox's `VOICEBOX_MODELS_DIR` (→ `HF_HUB_CACHE`); default is the HF hub cache (`~/.cache/huggingface/hub`), so STT engines, local TTS engines, and Voicebox **share weights** on macOS. Also `model_cache_dir()`, `is_model_cached(repo_id)`
 - `audio.py` — `load_audio()`, `SAMPLE_RATE`
 - `live_transcriber.py` — VAD-based live transcription engine (numpy only). Delegates to a native `StreamSession` when the engine implements `StreamingTranscriber`, otherwise uses the windowed local-agreement fallback
 
@@ -133,9 +135,26 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `providers/elevenlabs.py` — POSTs to `https://api.elevenlabs.io/v1/text-to-speech/{voice_id}`; `xi-api-key` header; key env var `ELEVENLABS_API_KEY`
 - `providers/deepgram.py` — POSTs to `https://api.deepgram.com/v1/speak`; Token auth; voice overrides model; key env var `DEEPGRAM_API_KEY`
 
+### resona-tts-local
+- Local/offline TTS engines, ported from [Voicebox](https://github.com/jamiepine/voicebox)'s backends into Resona's plugin style. In-process (no engine-server). Counterpart to `resona-cloud-tts`.
+- `types.py` — `SpeechResult` TypedDict `{audio: bytes, content_type: str, sample_rate: int}` (shape-compatible with cloud-tts + `sample_rate`)
+- `protocol.py` — `LocalTTSEngine` Protocol: `synthesize(text, *, language, voice, ref_audio, ref_text, instruct, speed, seed) -> SpeechResult` (+ optional `synthesize_array() -> (np.ndarray, sr)`)
+- `registry.py` — `ENGINES`, `ENGINE_INFO` (languages/cloning/presets/instruct per engine), `installed_engines()`, `recommended_engine()` (→ `kokoro`), `get_engine(name)` (memoized, lazily instantiated singleton), `reset()`. Plain dict + importlib (like cloud-tts), not entry points
+- `audio.py` — `to_wav_bytes`, `to_numpy`, `wav_result` (engines produce float32 + sr, encoded to WAV/PCM_16)
+- `engines/` — one module per engine; each lazy-imports its native lib (clear `EngineUnavailableError` with install command if absent) and calls `configure_model_cache()` in `__init__`:
+  - `kokoro.py` (`KokoroEngine`) — Kokoro-82M via `kokoro` (KModel/KPipeline), preset voices, 8 langs, cross-platform. Lockable extra: `resona-tts-local[kokoro]`
+  - `chatterbox.py` / `chatterbox_turbo.py` — `chatterbox-tts` (ML: 23 langs + zero-shot cloning; Turbo: EN + paralinguistic tags). CPU-forced on mac
+  - `qwen.py` (`QwenTTSEngine`) — Qwen3-TTS Base, zero-shot cloning + `instruct`; MLX (`mlx-audio`) on Apple Silicon, `qwen-tts` (PyTorch) elsewhere. Size via `DEFAULT_QWEN_TTS_MODEL` (`1.7b`/`0.6b`)
+  - `qwen_custom_voice.py` — Qwen CustomVoice, 9 preset speakers + `instruct`, `qwen-tts` (PyTorch) all platforms
+- **Dependency note** (the native libs declare conservative pins, not real ABI limits — verified June 2026 against torch 2.12 / transformers 5.8 / numpy 2.2). Install via the `just` recipes: `just tts-kokoro` / `just tts-qwen` / `just tts-chatterbox`.
+  - **Lockable extras**: `[kokoro]` (pure) and `[qwen]` = `mlx-audio` on Apple Silicon (MLX-native, co-resolves cleanly). `pip install 'resona-tts-local[kokoro,qwen]'` (or `just tts-kokoro` / `just tts-qwen`)
+  - **chatterbox / turbo**: `chatterbox-tts` pins `numpy<2.0`/`torch==2.6.0`/exact-`transformers` so it can't co-lock, but **imports & runs on the modern stack** when installed `--no-deps` + its pure deps (`librosa s3tokenizer diffusers resemble-perth conformer omegaconf pykakasi pyloudnorm spacy-pkuseg einops`). Same trick as Voicebox's `--no-deps`. Use `just tts-chatterbox`.
+  - **qwen-tts (PyTorch)**: currently **breaks on `transformers>=5.8`** (`check_model_inputs` signature) and pins `transformers==4.57.3` — not reliable on Resona's stack; prefer the `[qwen]` mlx-audio path on mac, or track upstream `QwenLM/Qwen3-TTS`.
+  - Engine code always ships; a missing lib raises `EngineUnavailableError` with the install command.
+
 ### resona-postprocess
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
-- `llm.py` — `llm_transform(text, prompt, ...)` and `llm_extract(text, prompt, ...)` via litellm; `llm_postprocess` is a deprecated alias for `llm_transform`
+- `llm.py` — `llm_transform(text, prompt, ...)` and `llm_extract(text, prompt, ...)` via litellm; `llm_postprocess` is a deprecated alias for `llm_transform`. `_resolve_api_base(model, api_base)` resolves the endpoint (explicit > `RESONA_LLM_API_BASE` > localhost default by model prefix), so local LLMs work offline: set `RESONA_LLM_MODEL=ollama/llama3` / `lm_studio/<m>` (→ `:1234/v1`) / `mlx/<m>` (→ `:10240/v1`)
 - `pipeline.py` — `PostprocessPipeline`: composable step chain; `PostprocessResult{text, data}` carries both formatted text and structured extraction data; `build_pipeline(profile)` constructs a runnable pipeline from a `Profile`
 - `profile.py` — `Profile` dataclass (name, description, initial_prompt, steps); `resolve_profile(ref, profiles_dir)` accepts a name, inline JSON string, file path, or `Profile`/dict; `list_profiles(dir)`, `bundled_default()`
 - `profiles/default.json` — bundled default profile with German dictation replacements (Komma, Punkt, Absatz, medical headings, name corrections)
@@ -145,9 +164,9 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `app.py` — FastAPI lifespan: creates DB, starts `TranscribeTask`, instantiates `EngineClient`; runs `migration.py` on startup to export any legacy DB tables to `default.json`
 - `endpoints.py` — REST routes: jobs
 - `profiles_routes.py` — CRUD routes for profile files: `GET /profiles/`, `GET /profiles/{name}`, `PUT /profiles/{name}`, `DELETE /profiles/{name}`
-- `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`; accepts optional `profile` field
+- `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`; accepts optional `profile` field. `/v1/audio/speech` dispatches to **local** TTS engines (`resona-tts-local`: kokoro/chatterbox/qwen…) or **cloud** providers — pick via `engine`; `voice`/`language` forwarded
 - `streaming_routes.py` — Deepgram-compatible live streaming: `WS /v1/listen`. Auth via `Authorization: Token <RESONA_API_KEY>` (also Bearer/X-API-Key/`?token=`). Query params `model`/`language`/`encoding`(linear16)/`sample_rate`/`interim_results` + Resona `engine`/`profile`. Resolves the engine, then dispatches: a **local** engine-server → `_run_local_bridge`/`_bridge` (proxy to its `/ws/live`); a **cloud** provider with a realtime API (Deepgram, ElevenLabs) → `_run_cloud_bridge`/`_bridge_cloud` (opens `resona_cloud_stt.streaming.open_stream`, bridges binary PCM ↔ provider session). Both emit Deepgram `Results`/`Metadata`. Cloud providers without streaming (OpenAI) are rejected. `_CLOUD_FINAL_DRAIN_SECONDS` bounds the post-stop drain for providers that don't close on commit (ElevenLabs)
-- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)`, `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
+- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, lists local TTS engines (`_local_tts_engines`, `kind="local-tts"`, private, available when `resona-tts-local` is installed), checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)` (dispatches `local-tts` → `resona_tts_local.get_engine().synthesize`, else cloud provider), `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
 - `tasks_transcribe.py` — background thread: dequeues PENDING jobs, resolves the job's profile via `resolve_profile`, calls engine with `profile.initial_prompt_string()`, **applies profile pipeline** after engine returns
 - `engine_client.py` — `EngineClient.transcribe()`: POSTs to engine (no replacements sent)
 - `migration.py` — on startup, exports legacy `Replacement`/`InitialPrompt` DB rows to a `default.json` profile file in `RESONA_PROFILES_DIR`; idempotent
@@ -296,8 +315,10 @@ Manage server-side profiles with `resona profiles list|show|push|pull|delete`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for `llm`/`extract` steps that do not specify `model` |
-| `RESONA_LLM_API_BASE` | (unset) | Custom API base URL (e.g. local Ollama) |
+| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for `llm`/`extract` steps that do not specify `model`. Use `ollama/<m>`, `lm_studio/<m>`, or `mlx/<m>` for local LLMs |
+| `RESONA_LLM_API_BASE` | (unset) | Custom API base URL. Auto-filled for `lm_studio/`→`:1234/v1` and `mlx/`→`:10240/v1` when unset |
+| `RESONA_MODELS_DIR` / `VOICEBOX_MODELS_DIR` | HF default (`~/.cache/huggingface/hub`) | Shared HuggingFace model cache (→ `HF_HUB_CACHE`). Set to share downloaded weights with Voicebox; honored by all STT + local TTS engines |
+| `DEFAULT_QWEN_TTS_MODEL` | `1.7b` | Qwen3-TTS / CustomVoice size (`1.7b` or `0.6b`) for `resona-tts-local` |
 | `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` (server) / `~/.resona/profiles/` (CLI) | Directory where named profile files are stored |
 
 ## Running in development
@@ -375,6 +396,7 @@ uv run pytest packages/api/tests/                  # api
 uv run pytest packages/client/tests/               # client
 uv run pytest apps/resona-cli/tests/               # cli
 uv run pytest packages/postprocess/tests/          # postprocess
+uv run pytest packages/tts-local/tests/            # local TTS engines
 uv run pytest -k test_transcribe                   # one test
 ```
 

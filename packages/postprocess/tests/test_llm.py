@@ -66,3 +66,32 @@ def test_llm_extract_malformed_json_keeps_raw(monkeypatch):
     )
     out = llm_extract("raw", prompt="extract")
     assert out == {"_raw": "not json"}
+
+
+from resona_postprocess.llm import _resolve_api_base
+
+
+def test_resolve_api_base_explicit_wins(monkeypatch):
+    monkeypatch.setenv("RESONA_LLM_API_BASE", "http://env")
+    assert _resolve_api_base("lm_studio/x", "http://explicit") == "http://explicit"
+
+
+def test_resolve_api_base_env(monkeypatch):
+    monkeypatch.setenv("RESONA_LLM_API_BASE", "http://ollama:11434")
+    assert _resolve_api_base("ollama/llama3", None) == "http://ollama:11434"
+
+
+def test_resolve_api_base_lm_studio_default(monkeypatch):
+    monkeypatch.delenv("RESONA_LLM_API_BASE", raising=False)
+    assert _resolve_api_base("lm_studio/qwen2.5", None) == "http://localhost:1234/v1"
+
+
+def test_resolve_api_base_mlx_default(monkeypatch):
+    monkeypatch.delenv("RESONA_LLM_API_BASE", raising=False)
+    assert _resolve_api_base("mlx/Qwen2.5-7B", None) == "http://localhost:10240/v1"
+
+
+def test_resolve_api_base_cloud_is_none(monkeypatch):
+    monkeypatch.delenv("RESONA_LLM_API_BASE", raising=False)
+    assert _resolve_api_base("gpt-4o-mini", None) is None
+    assert _resolve_api_base("ollama/llama3", None) is None

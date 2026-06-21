@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-tts-local"
+version = "0.1.0"
+description = "Local / offline text-to-speech engines for Resona (Kokoro, Chatterbox, Qwen3-TTS) — ported from Voicebox"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "mortegro", email = "mortegro@gmx.de" },
+]
+requires-python = ">=3.12"
+keywords = ["tts", "text-to-speech", "kokoro", "chatterbox", "qwen", "mlx", "voice-cloning", "offline", "resona"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "resona-asr-core>=0.1.0",
+    "numpy>=1.24",
+    "soundfile>=0.12",
+]
+
+# Native model libraries are loaded lazily; selecting an engine whose library is
+# absent raises a clear ImportError with the install command.
+#
+# Lockable extras: kokoro (pure, numpy-2 ready) and qwen on Apple Silicon via
+# mlx-audio (MLX-native, co-resolves with Resona's modern stack).
+#
+# chatterbox-tts / qwen-tts (PyTorch) declare *conservative* pins (numpy<2.0,
+# torch==2.6.0, transformers==exact) that can't co-lock with Resona's
+# numpy>=2.1 + CUDA-torch ASR stack. Their pins are not real ABI limits, though:
+# chatterbox imports & runs fine on torch 2.12 / transformers 5.8 / numpy 2.2
+# (verified) when installed --no-deps. So install those into the active env:
+#   uv pip install --no-deps chatterbox-tts \
+#     && uv pip install librosa s3tokenizer diffusers resemble-perth conformer \
+#        omegaconf pykakasi pyloudnorm spacy-pkuseg einops   # chatterbox + turbo
+# (qwen-tts PyTorch currently breaks on transformers>=5.8 — prefer mlx-audio.)
+[project.optional-dependencies]
+kokoro = ["kokoro>=0.9.4", "misaki[en]>=0.9.4"]
+qwen = ["mlx-audio>=0.2.3; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+
+[project.urls]
+Homepage = "https://github.com/ecsplico/resona"
+Documentation = "https://ecsplico.github.io/resona/"
+Repository = "https://github.com/ecsplico/resona"
+Issues = "https://github.com/ecsplico/resona/issues"
+
+[tool.uv.sources]
+resona-asr-core = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_tts_local"]

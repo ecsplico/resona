@@ -20,6 +20,32 @@ class LLMUnavailableError(RuntimeError):
     """Raised when an LLM step is requested but litellm is not installed."""
 
 
+# Convenience localhost defaults for OpenAI-compatible local LLM servers, keyed
+# by the litellm model prefix. Lets users run fully offline postprocessing with
+# just ``RESONA_LLM_MODEL=lm_studio/qwen2.5`` — no api_base needed. litellm
+# already knows Ollama's default base (11434), so it is intentionally absent.
+_LOCAL_API_BASE_DEFAULTS = {
+    "lm_studio": "http://localhost:1234/v1",   # LM Studio
+    "mlx": "http://localhost:10240/v1",        # mlx-omni-server / oMLX
+}
+
+
+def _resolve_api_base(model: str, api_base: str | None) -> str | None:
+    """Resolve the api_base: explicit arg > RESONA_LLM_API_BASE > local default.
+
+    For local OpenAI-compatible servers (LM Studio, MLX) a sensible localhost
+    default is filled in from the model prefix so offline use needs no extra
+    config. Returns None for cloud / Ollama models (litellm handles those).
+    """
+    if api_base:
+        return api_base
+    env = config("RESONA_LLM_API_BASE", default="")
+    if env:
+        return env
+    prefix = model.split("/", 1)[0] if "/" in model else ""
+    return _LOCAL_API_BASE_DEFAULTS.get(prefix)
+
+
 def _resolve_litellm():
     """Import litellm on first use, caching the module (or None) at module scope."""
     global litellm
@@ -82,7 +108,7 @@ def llm_transform(
 ) -> str:
     """Send transcript text through an LLM and return the transformed text."""
     model = model or config("RESONA_LLM_MODEL", default="gpt-4o-mini")
-    api_base = api_base or config("RESONA_LLM_API_BASE", default="") or None
+    api_base = _resolve_api_base(model, api_base)
     return _completion(
         model=model,
         api_base=api_base,
@@ -116,7 +142,7 @@ def llm_extract(
     job never hard-fails on a bad extraction.
     """
     model = model or config("RESONA_LLM_MODEL", default="gpt-4o-mini")
-    api_base = api_base or config("RESONA_LLM_API_BASE", default="") or None
+    api_base = _resolve_api_base(model, api_base)
     raw = _completion(
         model=model,
         api_base=api_base,
