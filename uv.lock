@@ -16,7 +16,6 @@ members = [
     "resona-client",
     "resona-cloud-stt",
     "resona-cloud-tts",
-    "resona-directus-transcribe",
     "resona-engine-faster-whisper",
     "resona-engine-lightning-mlx",
     "resona-engine-mlx-whisper",
@@ -4116,21 +4115,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
-
-[[package]]
-name = "resona-directus-transcribe"
-version = "0.1.0"
-source = { editable = "packages/directus-transcribe" }
-dependencies = [
-    { name = "httpx" },
-    { name = "python-decouple" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "python-decouple", specifier = ">=3.8" },
-]
 
 [[package]]
 name = "resona-engine-faster-whisper"
