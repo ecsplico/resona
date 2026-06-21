@@ -1,5 +1,11 @@
 # Resona PWA + Directus Platform — Design
 
+> **Superseded (2026-06-21):** Directus and the `directus-transcribe` worker
+> have been moved out of this monorepo into the separate `resona-pwa` repo.
+> resona is now a transcription-only backend (resona-api + engines) consumed
+> over HTTP. This document is kept as a historical design record; for the
+> current split see `CLAUDE.md` and the `resona-pwa` repo.
+
 **Date:** 2026-06-17
 
 **Goal:** Build a multi-user dictation/transcription product on top of the

@@ -1,5 +1,10 @@
 # Directus Transcribe Backend Implementation Plan
 
+> **Superseded (2026-06-21):** The `directus-transcribe` worker has been moved
+> out of this monorepo into the separate `resona-pwa` repo (alongside Directus).
+> resona is now a transcription-only backend (resona-api + engines). This plan
+> is kept as a historical record; the worker now lives at `resona-pwa/worker/`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up Directus as the platform backend and build a Python worker (`resona-directus-transcribe`) that detects untranscribed recordings in Directus, transcribes them via `resona-api`, and writes the results back.
