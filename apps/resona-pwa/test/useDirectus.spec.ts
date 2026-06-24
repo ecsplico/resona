@@ -7,9 +7,17 @@ const mockClient = vi.hoisted(() => ({
 	getToken: vi.fn(),
 	request: vi.fn(),
 }));
+// Capture how authentication() was configured at client-construction time. The
+// client is a module singleton built on first use, so we stash the args here
+// (clearAllMocks wipes mock.calls but not this object).
+const authConfig = vi.hoisted(() => ({ mode: "", options: undefined as unknown }));
 vi.mock("@directus/sdk", () => ({
 	createDirectus: vi.fn(() => ({ with: () => ({ with: () => mockClient }) })),
-	authentication: vi.fn(() => (c: unknown) => c),
+	authentication: vi.fn((mode: string, options: unknown) => {
+		authConfig.mode = mode;
+		authConfig.options = options;
+		return (c: unknown) => c;
+	}),
 	rest: vi.fn(() => (c: unknown) => c),
 	readItems: vi.fn(),
 	readItem: vi.fn(),
@@ -19,12 +27,44 @@ vi.mock("@directus/sdk", () => ({
 	uploadFiles: vi.fn(),
 }));
 
+interface AuthStorageOpts {
+	autoRefresh?: boolean;
+	storage?: {
+		get(): unknown;
+		set(value: unknown): void;
+	};
+}
+
 describe("useDirectus", () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
 		// reset shared auth state between tests (singleton refs bleed otherwise)
 		mockClient.logout.mockResolvedValue(undefined);
 		await useDirectus().logout();
+	});
+
+	it("configures JSON auth with autoRefresh and a localStorage-backed storage", () => {
+		useDirectus();
+		expect(authConfig.mode).toBe("json");
+		const opts = authConfig.options as AuthStorageOpts;
+		expect(opts.autoRefresh).toBe(true);
+		expect(opts.storage).toBeTruthy();
+	});
+
+	it("the auth storage round-trips the session through localStorage", () => {
+		useDirectus();
+		const storage = (authConfig.options as AuthStorageOpts).storage!;
+		localStorage.clear();
+
+		const session = { access_token: "a", refresh_token: "r", expires: 1, expires_at: 2 };
+		storage.set(session);
+		// Persisted under a key, so a fresh read after a "reload" sees it.
+		expect(storage.get()).toEqual(session);
+		expect(localStorage.length).toBe(1);
+
+		storage.set(null);
+		expect(storage.get()).toBeNull();
+		expect(localStorage.length).toBe(0);
 	});
 
 	it("exposes the singleton client", () => {
