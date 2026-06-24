@@ -29,6 +29,12 @@ dependencies = [
     "resona-engine-server>=0.1.0",
     "openai-whisper>=20240930",
     "torch>=2.10",
+    # openai-whisper pulls numba (unpinned). Ancient numba (<=0.53) declares no
+    # numpy upper bound, so a fresh resolve prefers the newest numpy (>=2.3) and
+    # backtracks numba to a sdist-only version (llvmlite 0.36.0) that fails to
+    # build on Python 3.13. Floor numba to a release with cp313 wheels + a real
+    # numpy cap; numpy then floats to whatever that numba permits.
+    "numba>=0.61",
 ]
 
 [project.urls]
