@@ -9,6 +9,7 @@ const live = useLive();
 const recorder = useRecorder();
 const { uploadBlob } = useUpload();
 const { client } = useDirectus();
+const { copy } = useExport();
 
 const sessionActive = ref(false);
 const showTitlePrompt = ref(false);
@@ -26,6 +27,13 @@ const rollingText = computed(() => {
 	}
 	return f || p;
 });
+
+function copyTranscript(): void {
+	if (!rollingText.value) {
+		return;
+	}
+	void copy(rollingText.value);
+}
 
 // Show the reconnect banner only mid-session (after start, before a deliberate
 // stop) when the socket drops.
@@ -133,6 +141,38 @@ onMounted(() => {
 		</div>
 
 		<div class="live__body">
+			<div
+				v-if="rollingText"
+				class="live__toolbar"
+			>
+				<HIconButton
+					tone="glass"
+					aria-label="Kopieren"
+					data-testid="copy-live"
+					@click="copyTranscript"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<rect
+							x="9"
+							y="9"
+							width="13"
+							height="13"
+							rx="2"
+						/>
+						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+					</svg>
+				</HIconButton>
+			</div>
 			<p
 				class="live__transcript"
 				data-testid="transcript"
@@ -221,6 +261,7 @@ onMounted(() => {
 .live { min-height:100vh; display:flex; flex-direction:column; background:var(--crust-deep, #1a1410); color:var(--white, #fff); }
 .live__reconnect { background:var(--tomato-deep, #7a2718); color:var(--white, #fff); padding:10px 20px; font-family:var(--font-body); font-size:14px; font-weight:600; text-align:center; }
 .live__body { flex:1; padding:24px 20px; overflow-y:auto; }
+.live__toolbar { display:flex; justify-content:flex-end; margin-bottom:12px; }
 .live__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:20px; line-height:1.6; margin:0; }
 .live__final { color:var(--white, #fff); }
 .live__partial { color:var(--fg3, #9a8f86); }

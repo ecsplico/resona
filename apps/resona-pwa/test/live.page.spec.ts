@@ -109,6 +109,28 @@ describe("live transcription page", () => {
 		expect(transcript.text()).toContain("klagt über");
 	});
 
+	it("copies the rolling transcript to the clipboard", async () => {
+		const writeText = vi.fn(async () => {});
+		Object.defineProperty(globalThis.navigator, "clipboard", {
+			value: { writeText },
+			configurable: true,
+		});
+
+		const w = await mountSuspended(LivePage);
+		// No copy affordance until there is text to copy.
+		expect(w.find("[data-testid=\"copy-live\"]").exists()).toBe(false);
+
+		final.value = "Der Patient";
+		partial.value = "klagt über Kopfschmerzen";
+		await w.vm.$nextTick();
+
+		const copyBtn = w.find("[data-testid=\"copy-live\"]");
+		expect(copyBtn.exists()).toBe(true);
+		await copyBtn.trigger("click");
+
+		expect(writeText).toHaveBeenCalledWith("Der Patient klagt über Kopfschmerzen");
+	});
+
 	it("shows a reconnect banner only when CLOSED mid-session", async () => {
 		const w = await mountSuspended(LivePage);
 		expect(w.find("[data-testid=\"reconnect-banner\"]").exists()).toBe(false);
