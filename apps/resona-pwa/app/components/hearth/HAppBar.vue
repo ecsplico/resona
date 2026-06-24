@@ -24,5 +24,5 @@ defineProps<{ tone?: "dark" | "light"; title?: string }>();
 .h-appbar--dark { background:var(--accent); color:var(--white); }
 .h-appbar--light { background:var(--cream); color:var(--fg1); }
 .h-appbar__title { font-family:var(--font-display); font-weight:600; font-size:20px; }
-.h-appbar__trailing { margin-left:auto; }
+.h-appbar__trailing { margin-left:auto; display:flex; align-items:center; gap:8px; }
 </style>
