@@ -30,7 +30,7 @@ class ResonaClient:
         self.base_url = (
             base_url
             or os.getenv("RESONA_API_URL")
-            or os.getenv("WS_API_URL", "http://localhost:7000")
+            or os.getenv("WS_API_URL", "http://127.0.0.1:7000")
         ).rstrip("/")
         self.api_key = (
             api_key

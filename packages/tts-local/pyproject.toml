@@ -47,6 +47,9 @@ dependencies = [
 [project.optional-dependencies]
 kokoro = ["kokoro>=0.9.4", "misaki[en]>=0.9.4"]
 qwen = ["mlx-audio>=0.2.3; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+# Piper — pure ONNX/onnxruntime, torch-free, cross-platform. Lockable; this is
+# the engine shipped by default with resona-cli for offline `resona speech`.
+piper = ["piper-tts>=1.4"]
 
 [project.urls]
 Homepage = "https://github.com/ecsplico/resona"

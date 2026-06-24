@@ -50,6 +50,8 @@ install-cli-voxtral: (install-cli-with "voxtral")
 install-cli-parakeet: (install-cli-with "parakeet")
 # Default + Apple Silicon GPU engines (mlx-whisper, whisper.cpp, lightning-mlx) — macOS arm64
 install-cli-apple: (install-cli-with "apple")
+# Default + Kokoro local TTS (torch) — Piper (torch-free) ships by default
+install-cli-kokoro: (install-cli-with "kokoro")
 # Default + every engine
 install-cli-all: (install-cli-with "all")
 
@@ -196,6 +198,9 @@ engines:
 # kokoro + qwen are lockable extras; chatterbox needs --no-deps because its
 # conservative pins (numpy<2/torch==2.6) can't co-lock (it runs fine on the
 # modern stack anyway — verified).
+
+# Piper (ONNX) ships by default with resona-cli — torch-free offline `speech`.
+# These recipes add the higher-quality torch engines on top.
 
 # Kokoro-82M — tiny, CPU-realtime, cross-platform (start here)
 tts-kokoro:

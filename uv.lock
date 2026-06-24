@@ -3468,6 +3468,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pathvalidate"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/2a/52a8da6fe965dea6192eb716b357558e103aea0a1e9a8352ad575a8406ca/pathvalidate-3.3.1.tar.gz", hash = "sha256:b18c07212bfead624345bb8e1d6141cdcf15a39736994ea0b94035ad2b1ba177", size = 63262, upload-time = "2025-06-15T09:07:20.736Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/70/875f4a23bfc4731703a5835487d0d2fb999031bd415e7d17c0ae615c18b7/pathvalidate-3.3.1-py3-none-any.whl", hash = "sha256:5263baab691f8e1af96092fa5137ee17df5bdfbd6cff1fcac4d6ef4bc2e1735f", size = 24305, upload-time = "2025-06-15T09:07:19.117Z" },
+]
+
+[[package]]
 name = "peft"
 version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3558,6 +3567,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/6e/32/2880fb3a074847ac159d8f902cb43278a61e85f681661e7419e6596803ed/pillow-12.2.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8e9c4f5b3c546fa3458a29ab22646c1c6c787ea8f5ef51300e5a60300736905e", size = 7116720, upload-time = "2026-04-01T14:45:39.258Z" },
     { url = "https://files.pythonhosted.org/packages/46/87/495cc9c30e0129501643f24d320076f4cc54f718341df18cc70ec94c44e1/pillow-12.2.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:fb043ee2f06b41473269765c2feae53fc2e2fbf96e5e22ca94fb5ad677856f06", size = 6540498, upload-time = "2026-04-01T14:45:41.879Z" },
     { url = "https://files.pythonhosted.org/packages/18/53/773f5edca692009d883a72211b60fdaf8871cbef075eaa9d577f0a2f989e/pillow-12.2.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:f278f034eb75b4e8a13a54a876cc4a5ab39173d2cdd93a638e1b467fc545ac43", size = 7239413, upload-time = "2026-04-01T14:45:44.705Z" },
+]
+
+[[package]]
+name = "piper-tts"
+version = "1.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "onnxruntime" },
+    { name = "pathvalidate" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/53/3c636c4250e8cb489c50c6dda9d64400518e8c6600576850104b3232b562/piper_tts-1.4.2.tar.gz", hash = "sha256:dbe7e5391d7657f8a5f2b7ce7cdbafc5bbc559de2af15e5299ce298323eade51", size = 4364835, upload-time = "2026-04-02T21:17:11.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/27/5e309f1218296118e8e9ac22eeeddb0bb9a17095bd9eedcd26603eea7bf5/piper_tts-1.4.2-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:d996f9139c44a0bedb6a9ed45805c429a827c56ef9213933859349801fa7f4e1", size = 13822408, upload-time = "2026-04-02T21:16:57.92Z" },
+    { url = "https://files.pythonhosted.org/packages/47/e1/84fcb36c7ac413bb22eb3bdda5f21861f02d0f436df0a9090949c9fec032/piper_tts-1.4.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:138e6adf26a8e796f53866770ea30b666b65432a5e94857c2d9a8c473a8a1f90", size = 13830417, upload-time = "2026-04-02T21:17:00.665Z" },
+    { url = "https://files.pythonhosted.org/packages/77/1c/260c65320df47fee582d78ad52d49d4195c5439a77b62e73306c2de835ea/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6736329f1ef58c39272215849dffdacae601201480b08a0c892938fa4d7c8c67", size = 13841991, upload-time = "2026-04-02T21:17:03.251Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/58/7b7cbd7e570ac6eb8dbfc22de94d1457863b97876c1cb6a926e959423fb2/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b17184a664bd9431ce95c138f4bfb3025e1280cf26075a703dbfdcab989b8ee3", size = 13841872, upload-time = "2026-04-02T21:17:06.208Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/5a/fda959ca07554a8ec3e380b168e79fff16f3020f4956c356a613616c1994/piper_tts-1.4.2-cp39-abi3-win_amd64.whl", hash = "sha256:9c4a3a11f5889ea9d0df4414dce2bd9bee5ce7d9cf604c8fd5e307441d4c031f", size = 13831944, upload-time = "2026-04-02T21:17:08.755Z" },
 ]
 
 [[package]]
@@ -4445,6 +4471,7 @@ source = { editable = "apps/resona-cli" }
 dependencies = [
     { name = "httpx" },
     { name = "numpy" },
+    { name = "piper-tts" },
     { name = "python-decouple" },
     { name = "python-dotenv" },
     { name = "resona-asr-core" },
@@ -4452,6 +4479,7 @@ dependencies = [
     { name = "resona-cloud-stt" },
     { name = "resona-engine-faster-whisper" },
     { name = "resona-postprocess" },
+    { name = "resona-tts-local" },
     { name = "sounddevice", version = "0.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'linux'" },
     { name = "sounddevice", version = "0.5.5", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
     { name = "soundfile" },
@@ -4474,6 +4502,9 @@ apple = [
     { name = "resona-engine-lightning-mlx" },
     { name = "resona-engine-mlx-whisper" },
     { name = "resona-engine-whispercpp" },
+]
+kokoro = [
+    { name = "resona-tts-local", extra = ["kokoro"] },
 ]
 lightning-mlx = [
     { name = "resona-engine-lightning-mlx" },
@@ -4498,6 +4529,7 @@ whisper-cpp = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2.1.3" },
+    { name = "piper-tts", specifier = ">=1.4" },
     { name = "python-decouple", specifier = ">=3.8" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "resona-asr-core", editable = "packages/asr-core" },
@@ -4520,6 +4552,8 @@ requires-dist = [
     { name = "resona-engine-whispercpp", marker = "extra == 'apple'", editable = "packages/engine-whispercpp" },
     { name = "resona-engine-whispercpp", marker = "extra == 'whisper-cpp'", editable = "packages/engine-whispercpp" },
     { name = "resona-postprocess", editable = "packages/postprocess" },
+    { name = "resona-tts-local", editable = "packages/tts-local" },
+    { name = "resona-tts-local", extras = ["kokoro"], marker = "extra == 'kokoro'", editable = "packages/tts-local" },
     { name = "sounddevice", specifier = ">=0.5.1" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "soxr", specifier = ">=0.5" },
@@ -4527,7 +4561,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15.3" },
     { name = "websockets", specifier = ">=13.0" },
 ]
-provides-extras = ["whisper", "voxtral", "mlx", "whisper-cpp", "lightning-mlx", "apple", "parakeet", "all"]
+provides-extras = ["kokoro", "whisper", "voxtral", "mlx", "whisper-cpp", "lightning-mlx", "apple", "parakeet", "all"]
 
 [[package]]
 name = "resona-client"
@@ -4698,6 +4732,7 @@ name = "resona-engine-whisper"
 version = "0.1.0"
 source = { editable = "packages/engine-whisper" }
 dependencies = [
+    { name = "numba" },
     { name = "openai-whisper" },
     { name = "resona-asr-core" },
     { name = "resona-engine-server" },
@@ -4707,6 +4742,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numba", specifier = ">=0.61" },
     { name = "openai-whisper", specifier = ">=20240930" },
     { name = "resona-asr-core", editable = "packages/asr-core" },
     { name = "resona-engine-server", editable = "packages/engine-server" },
@@ -4761,6 +4797,9 @@ kokoro = [
     { name = "kokoro" },
     { name = "misaki", extra = ["en"] },
 ]
+piper = [
+    { name = "piper-tts" },
+]
 qwen = [
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
@@ -4771,10 +4810,11 @@ requires-dist = [
     { name = "misaki", extras = ["en"], marker = "extra == 'kokoro'", specifier = ">=0.9.4" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'qwen'", specifier = ">=0.2.3" },
     { name = "numpy", specifier = ">=1.24" },
+    { name = "piper-tts", marker = "extra == 'piper'", specifier = ">=1.4" },
     { name = "resona-asr-core", editable = "packages/asr-core" },
     { name = "soundfile", specifier = ">=0.12" },
 ]
-provides-extras = ["kokoro", "qwen"]
+provides-extras = ["kokoro", "qwen", "piper"]
 
 [[package]]
 name = "resona-workspace"

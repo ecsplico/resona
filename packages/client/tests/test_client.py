@@ -73,6 +73,16 @@ def test_resona_env_takes_priority_over_ws_env(monkeypatch):
     c.close()
 
 
+def test_default_base_url_is_ipv4_localhost(monkeypatch):
+    # uvicorn binds IPv4 0.0.0.0; resolving "localhost" to ::1 breaks the
+    # connection, so the default must be the explicit IPv4 loopback.
+    monkeypatch.delenv("RESONA_API_URL", raising=False)
+    monkeypatch.delenv("WS_API_URL", raising=False)
+    c = ResonaClient()
+    assert c.base_url == "http://127.0.0.1:7000"
+    c.close()
+
+
 def test_init_strips_trailing_slash():
     c = ResonaClient(base_url="http://server:7000/")
     assert c.base_url == "http://server:7000"

@@ -23,6 +23,7 @@ _CLASSES: dict[str, tuple[str, str]] = {
         "resona_tts_local.engines.qwen_custom_voice",
         "QwenCustomVoiceEngine",
     ),
+    "piper": ("resona_tts_local.engines.piper", "PiperEngine"),
 }
 
 ENGINES: set[str] = set(_CLASSES)
@@ -82,6 +83,16 @@ ENGINE_INFO: dict[str, dict] = {
         "sample_rate": 24000,
         "extra": "qwen",
     },
+    "piper": {
+        "display_name": "Piper",
+        "languages": ["de", "en", "es", "fr", "it", "nl", "ru"],
+        "cloning": False,
+        "presets": True,
+        "instruct": False,
+        "torch_free": True,
+        "sample_rate": 22050,
+        "extra": "piper",
+    },
 }
 
 _instances: dict[str, LocalTTSEngine] = {}
@@ -96,6 +107,14 @@ def installed_engines() -> list[str]:
 def recommended_engine() -> str:
     """Best cross-platform default — Kokoro (tiny, CPU-realtime, Apache-2.0)."""
     return "kokoro"
+
+
+def recommended_offline_engine() -> str:
+    """Best **torch-free** default — Piper (ONNX, ships with resona-cli).
+
+    Used by the CLI ``speech`` fallback so offline TTS works without torch.
+    """
+    return "piper"
 
 
 def get_engine(name: str) -> LocalTTSEngine:
