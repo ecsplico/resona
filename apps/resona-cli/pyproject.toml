@@ -42,6 +42,11 @@ dependencies = [
     "soxr>=0.5",
     "resona-asr-core>=0.1.0",
     "resona-engine-faster-whisper>=0.1.0",
+    # Torch-free local TTS: ships Piper (ONNX) so `resona speech` works offline
+    # out of the box without pulling torch. Higher-quality torch engines
+    # (kokoro, …) are opt-in via `resona-tts-local[<extra>]`.
+    "resona-tts-local>=0.1.0",
+    "piper-tts>=1.4",
 ]
 
 [project.urls]
@@ -51,6 +56,8 @@ Repository = "https://github.com/ecsplico/resona"
 Issues = "https://github.com/ecsplico/resona/issues"
 
 [project.optional-dependencies]
+# Higher-quality local TTS (pulls torch) — Piper ships torch-free by default.
+kokoro = ["resona-tts-local[kokoro]"]
 whisper = ["resona-engine-whisper"]
 voxtral = ["resona-engine-voxtral"]
 # Apple Silicon GPU-accelerated engines (mac arm64 only; no-ops elsewhere).
@@ -87,6 +94,7 @@ resona-cloud-stt = { workspace = true }
 resona-postprocess = { workspace = true }
 resona-asr-core = { workspace = true }
 resona-engine-faster-whisper = { workspace = true }
+resona-tts-local = { workspace = true }
 resona-engine-whisper = { workspace = true }
 resona-engine-voxtral = { workspace = true }
 resona-engine-mlx-whisper = { workspace = true }

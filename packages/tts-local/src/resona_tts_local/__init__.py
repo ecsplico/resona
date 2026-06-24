@@ -16,6 +16,7 @@ from .registry import (
     get_engine,
     installed_engines,
     recommended_engine,
+    recommended_offline_engine,
 )
 from .types import SpeechResult
 
@@ -29,4 +30,5 @@ __all__ = [
     "get_engine",
     "installed_engines",
     "recommended_engine",
+    "recommended_offline_engine",
 ]

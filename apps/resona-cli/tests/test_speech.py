@@ -83,12 +83,63 @@ def test_speech_http_error_exits_nonzero(tmp_path, monkeypatch):
     assert "bad engine" in result.output
 
 
-def test_speech_no_server_exits_nonzero():
+def _fake_local_engine(audio=b"RIFFlocalwav"):
+    eng = MagicMock()
+    eng.synthesize.return_value = {
+        "audio": audio, "content_type": "audio/wav", "sample_rate": 22050,
+    }
+    return eng
+
+
+def test_speech_no_server_falls_back_to_local(tmp_path, monkeypatch):
     from resona_cli.main import app
-    with patch("resona_client.client.ResonaClient.from_config",
-                side_effect=RuntimeError("no server")):
+    monkeypatch.chdir(tmp_path)
+    eng = _fake_local_engine()
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config",
+              side_effect=RuntimeError("no server")),
+        patch("resona_tts_local.registry.get_engine", return_value=eng),
+        patch("resona_tts_local.registry.recommended_offline_engine",
+              return_value="piper"),
+    ):
+        result = runner.invoke(app, ["speech", "Guten Tag"])
+
+    assert result.exit_code == 0
+    eng.synthesize.assert_called_once()
+    assert eng.synthesize.call_args.kwargs.get("language") == "de"
+    assert (tmp_path / "speech.wav").exists()
+
+
+def test_speech_connect_error_falls_back_to_local(tmp_path, monkeypatch):
+    from resona_cli.main import app
+    monkeypatch.chdir(tmp_path)
+    mock_client = MagicMock()
+    mock_client.create_speech.side_effect = httpx.ConnectError("refused")
+    eng = _fake_local_engine()
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
+        patch("resona_tts_local.registry.get_engine", return_value=eng),
+        patch("resona_tts_local.registry.recommended_offline_engine",
+              return_value="piper"),
+    ):
         result = runner.invoke(app, ["speech", "hi"])
-    assert result.exit_code != 0
+
+    assert result.exit_code == 0
+    eng.synthesize.assert_called_once()
+
+
+def test_speech_default_omits_voice(tmp_path, monkeypatch):
+    from resona_cli.main import app
+    monkeypatch.chdir(tmp_path)
+    mock_client = _make_speech_client()
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        runner.invoke(app, ["speech", "hi"])
+
+    # No --voice given → don't force a voice; let the engine pick its default.
+    assert "voice" not in mock_client.create_speech.call_args.kwargs
 
 
 def test_speech_play_flag_calls_player(tmp_path, monkeypatch):

@@ -8,12 +8,23 @@ from resona_tts_local.errors import EngineUnavailableError, UnknownEngineError
 
 def test_engines_listed():
     names = registry.installed_engines()
-    for expected in ("kokoro", "chatterbox", "chatterbox-turbo", "qwen", "qwen-custom-voice"):
+    for expected in (
+        "kokoro", "chatterbox", "chatterbox-turbo", "qwen", "qwen-custom-voice",
+        "piper",
+    ):
         assert expected in names
 
 
 def test_recommended_is_kokoro():
     assert registry.recommended_engine() == "kokoro"
+
+
+def test_recommended_offline_is_piper():
+    assert registry.recommended_offline_engine() == "piper"
+
+
+def test_piper_is_torch_free_in_info():
+    assert registry.ENGINE_INFO["piper"]["torch_free"] is True
 
 
 def test_every_engine_has_info():

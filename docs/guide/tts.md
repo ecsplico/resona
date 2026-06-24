@@ -1,8 +1,12 @@
 # Speech Synthesis
 
-Resona provides text-to-speech (TTS) synthesis through cloud providers, accessible via the
-`resona speech` command and the resona-api `POST /v1/audio/speech` endpoint. All synthesis
-requests are routed through the gateway and forwarded to the selected cloud provider.
+Resona provides text-to-speech (TTS) synthesis through cloud providers and local
+(offline) engines, accessible via the `resona speech` command and the resona-api
+`POST /v1/audio/speech` endpoint. When the gateway is reachable, requests are
+forwarded to the selected cloud or local-TTS engine. When **no gateway is
+reachable**, `resona speech` falls back to a local in-process engine — by default
+**Piper**, a torch-free ONNX engine that ships with `resona-cli` — so synthesis
+works fully offline out of the box.
 
 ---
 
@@ -18,13 +22,14 @@ resona speech TEXT [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--engine NAME` | (gateway default) | Engine name forwarded to the gateway |
-| `--voice NAME` | `alloy` | Voice name for the selected provider |
-| `--model NAME` | `tts-1` | TTS model name |
-| `--format EXT` | `mp3` | Output audio format: `mp3`, `opus`, `aac`, `flac` |
+| `--engine NAME` | (gateway default) | Engine name; forwarded to the gateway, or a local TTS engine name when falling back |
+| `--voice NAME` | (engine default) | Voice name; omit to let the engine pick its default |
+| `--language`, `-l` | `de` | Language hint; used by local engines to select a voice |
+| `--model NAME` | `tts-1` | TTS model name (gateway only) |
+| `--format EXT` | `mp3` | Output audio format: `mp3`, `opus`, `aac`, `flac`. Offline fallback always writes WAV |
 | `--speed FLOAT` | `1.0` | Speech speed multiplier (0.25–4.0) |
 | `--play` | off | Play audio immediately instead of saving |
-| `--output PATH` | `speech.mp3` | Output file path; use `-` for stdout |
+| `--output PATH` | `speech.mp3` (`speech.wav` offline) | Output file path; use `-` for stdout |
 | `--private` | off | Require a private engine (no cloud) |
 
 ---
@@ -166,7 +171,35 @@ curl http://localhost:7000/v1/audio/speech \
 The response is a binary audio stream. `Content-Type` is set to the MIME type of the requested
 format (e.g. `audio/mpeg` for MP3).
 
-!!! note "TTS engines are always cloud"
-    Local (built-in) engines do not support TTS. All synthesis requests are routed to a cloud
-    provider. If `--private` is set and no private TTS engine is configured, the request will
-    fail with a `400 Bad Request`.
+---
+
+## Local / offline TTS
+
+`resona speech` does not require a running gateway. When no resona-api is
+reachable (or the gateway connection fails), the command synthesises locally with
+an in-process engine from `resona-tts-local`.
+
+- **Default offline engine: Piper** (`piper`) — pure ONNX/onnxruntime, torch-free,
+  CPU-realtime, cross-platform. It ships as a base dependency of `resona-cli`, so
+  offline synthesis works with no extra install.
+- Voices are downloaded on first use into `PIPER_VOICES_DIR` (default
+  `<model cache>/piper`). The default voice is German
+  (`de_DE-thorsten-medium`); `--language` selects a per-language default, and an
+  explicit `--voice <piper-id>` (e.g. `de_DE-kerstin-low`) overrides it.
+- Offline output is always **WAV** (a non-`wav` `--format` is ignored with a
+  warning).
+
+```bash
+# No server needed — synthesise German offline with Piper
+resona speech "Guten Tag, der Befund ist unauffällig." --play
+resona speech "Hello world" --language en --output hello.wav
+```
+
+Higher-quality local engines (Kokoro, Chatterbox, Qwen) are available but pull
+torch; install one with `just install-cli-kokoro` (or
+`pip install 'resona-tts-local[kokoro]'`) and select it with `--engine kokoro`.
+
+!!! note "`--private` and local TTS"
+    Local engines are inherently private (no audio leaves the machine). Cloud
+    providers are never private; if `--private` is set against the gateway and no
+    private TTS engine is configured, the request fails with `400 Bad Request`.
