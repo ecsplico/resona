@@ -103,7 +103,7 @@ const RELATIONS = [
 ];
 
 async function ensureCollections() {
-	const existing = new Set((await api("GET", "/collections")).map((c) => c.collection));
+	const existing = new Set((await api("GET", "/collections")).map(c => c.collection));
 	for (const [name, fields] of Object.entries(COLLECTIONS)) {
 		if (existing.has(name)) {
 			console.log(`= collection ${name} exists`);
@@ -120,7 +120,7 @@ async function ensureCollections() {
 }
 
 async function ensureRelations() {
-	const have = new Set((await api("GET", "/relations")).map((r) => `${r.collection}.${r.field}`));
+	const have = new Set((await api("GET", "/relations")).map(r => `${r.collection}.${r.field}`));
 	for (const [collection, field, related] of RELATIONS) {
 		if (have.has(`${collection}.${field}`)) {
 			console.log(`= relation ${collection}.${field} exists`);
@@ -189,7 +189,7 @@ async function ensureUserRole() {
 
 	// permissions on the policy
 	const existing = await api("GET", `/permissions?filter[policy][_eq]=${policy.id}&limit=-1`);
-	const seen = new Set(existing.map((p) => `${p.collection}.${p.action}`));
+	const seen = new Set(existing.map(p => `${p.collection}.${p.action}`));
 	for (const p of PERMISSIONS) {
 		const key = `${p.collection}.${p.action}`;
 		if (seen.has(key)) {
@@ -213,9 +213,9 @@ async function ensureWorker() {
 	const adminRole = (await api("GET", "/roles?filter[name][_eq]=Administrator&limit=1"))[0];
 	if (!adminRole) die("no Administrator role found");
 
-	let user = (await api("GET", `/users?filter[email][_eq]=${encodeURIComponent(WORKER_EMAIL)}&limit=1`))[0];
+	const user = (await api("GET", `/users?filter[email][_eq]=${encodeURIComponent(WORKER_EMAIL)}&limit=1`))[0];
 	if (!user) {
-		user = await api("POST", "/users", {
+		await api("POST", "/users", {
 			email: WORKER_EMAIL,
 			first_name: "Transcribe",
 			last_name: "Worker",
@@ -223,7 +223,8 @@ async function ensureWorker() {
 			token: WORKER_TOKEN,
 		});
 		console.log(`+ worker user (token pinned)`);
-	} else {
+	}
+	else {
 		await api("PATCH", `/users/${user.id}`, { role: adminRole.id, token: WORKER_TOKEN });
 		console.log(`= worker user exists (token re-pinned)`);
 	}
@@ -241,4 +242,4 @@ async function main() {
 	console.log("✓ bootstrap complete");
 }
 
-main().catch((e) => die(e.message));
+main().catch(e => die(e.message));
