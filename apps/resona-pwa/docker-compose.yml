@@ -32,6 +32,24 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # One-shot: brings a blank Directus up to the schema/roles/worker-token state
+  # in directus/bootstrap.md. Idempotent — re-runs harmlessly on every `up`.
+  directus-bootstrap:
+    image: node:24-alpine
+    volumes:
+      - ./directus/bootstrap.mjs:/bootstrap.mjs:ro
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-change-me}
+      # Pinned as the worker's static token, so DIRECTUS_TOKEN below just works.
+      DIRECTUS_TOKEN: ${DIRECTUS_TOKEN:?set DIRECTUS_TOKEN in .env (e.g. openssl rand -hex 24)}
+    command: ["node", "/bootstrap.mjs"]
+    depends_on:
+      directus:
+        condition: service_healthy
+    restart: "no"
+
   directus-transcribe:
     build:
       context: ./worker
@@ -52,6 +70,8 @@ services:
     depends_on:
       directus:
         condition: service_healthy
+      directus-bootstrap:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

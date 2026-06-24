@@ -1,8 +1,34 @@
 # Directus bootstrap
 
-One-time setup for the Resona platform backend. Assumes the `directus`
-compose service is running (`docker compose up -d directus`), reachable at
-http://localhost:7700.
+One-time setup for the Resona platform backend.
+
+## Automated (default)
+
+`docker compose up -d` runs the **`directus-bootstrap`** one-shot service
+(`directus/bootstrap.mjs`) once Directus is healthy. It is idempotent — it
+checks before every step and re-runs harmlessly — and brings a blank instance
+to exactly the state documented below:
+
+- the `recordings` + `transcripts` collections, fields, and M2O relations (§1);
+- the non-admin **`user`** role + `user-policy` + owner-scoped permissions (§2),
+  plus `directus_files` upload/read/update for the owner (needed for audio);
+- the **`transcribe-worker`** admin user whose static token is **pinned to
+  `DIRECTUS_TOKEN`** from `.env` — so the worker authenticates with no
+  copy-paste (§3). `DIRECTUS_TOKEN` must be set (e.g. `openssl rand -hex 24`);
+  compose refuses to start the bootstrap if it's empty.
+
+The admin user itself is seeded by the Directus image from
+`DIRECTUS_ADMIN_EMAIL` / `DIRECTUS_ADMIN_PASSWORD` on first boot (empty DB only).
+
+Run it standalone against a running Directus with:
+
+    DIRECTUS_URL=http://localhost:7700 \
+    ADMIN_EMAIL=… ADMIN_PASSWORD=… DIRECTUS_TOKEN=… \
+    node directus/bootstrap.mjs
+
+The sections below document **what the script does** (and the manual UI path if
+you ever need it). `bootstrap.mjs` is the source of truth for the live setup;
+this prose and `schema-snapshot.yaml` are reference.
 
 ## 1. Collections
 

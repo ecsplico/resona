@@ -35,8 +35,12 @@ Two `.env` consumers, both named `.env`: the **compose stack** is seeded from
 `.env.stack.example` (`DIRECTUS_*` / `RESONA_API_URL`), the **Nuxt frontend** from
 `.env.example` (`NUXT_PUBLIC_*`). Keys are disjoint, so they don't conflict.
 
-First data-layer run also needs Directus bootstrapped (collections + user role) per
-`directus/bootstrap.md`. CORS on Directus and resona-api must allow the PWA origin.
+The data layer self-bootstraps: `docker compose up` runs the one-shot
+`directus-bootstrap` service (`directus/bootstrap.mjs`) once Directus is healthy,
+which idempotently provisions collections, the `user` role/policy, and the
+`transcribe-worker` user with its static token pinned to `DIRECTUS_TOKEN` (so set
+that in `.env` first, e.g. `openssl rand -hex 24`). See `directus/bootstrap.md`.
+CORS on Directus and resona-api must allow the PWA origin.
 
 ### Worker
 

@@ -54,12 +54,15 @@ This brings up the data layer:
 | Service | Host port | Role |
 |---------|-----------|------|
 | `directus` | `:7700` | auth, data, file storage |
+| `directus-bootstrap` | — | one-shot: provisions collections, roles, and the worker token, then exits |
 | `directus-transcribe` | — | worker that polls Directus and fills batch transcripts via resona-api |
 
 The worker reaches the remote resona-api over the network via `RESONA_API_URL`
-(default `http://host.docker.internal:7710`). First run also needs Directus bootstrapped
-(collections + user role) — see `directus/bootstrap.md`. CORS on Directus must allow the
-PWA origin.
+(default `http://host.docker.internal:7710`). **Set `DIRECTUS_TOKEN` in `.env`
+before `up`** (e.g. `openssl rand -hex 24`) — `directus-bootstrap` pins it as the
+worker's static token and the worker won't start without it. Bootstrapping
+(collections + user role + worker token) is automatic and idempotent; see
+`directus/bootstrap.md`. CORS on Directus must allow the PWA origin.
 
 ### 3. Frontend (this repo)
 
