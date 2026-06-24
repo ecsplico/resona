@@ -126,6 +126,36 @@ describe("index (recordings list) page", () => {
 		expect(writeText).toHaveBeenCalledWith("Telefonat Reha");
 	});
 
+	it("auto-refreshes the list while a recording is still transcribing", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		try {
+			items.value = [{ ...recA, status: "transcribing" }];
+			const w = await mountSuspended(IndexPage);
+			list.mockClear();
+			vi.advanceTimersByTime(4000);
+			expect(list).toHaveBeenCalled();
+			w.unmount();
+		}
+		finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not poll the server once every recording is terminal", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		try {
+			items.value = [recA]; // status=done → nothing in flight
+			const w = await mountSuspended(IndexPage);
+			list.mockClear();
+			vi.advanceTimersByTime(8000);
+			expect(list).not.toHaveBeenCalled();
+			w.unmount();
+		}
+		finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("shows the empty state when there are no recordings", async () => {
 		items.value = [];
 		const w = await mountSuspended(IndexPage);

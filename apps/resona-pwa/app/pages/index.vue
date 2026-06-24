@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { readItems } from "@directus/sdk";
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
 
@@ -29,6 +29,27 @@ const uploadInput = ref<HTMLInputElement | null>(null);
 
 function applyFilters(): void {
 	void list({ search: search.value, since: since.value });
+}
+
+// Batch recordings transcribe in the background (the worker flips them to
+// done/error). Poll while any row is still in flight so the list updates itself
+// the moment a transcription finishes, then go quiet again.
+const POLL_MS = 4000;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function hasActiveRecording(): boolean {
+	return items.value.some(r => r.status === "pending" || r.status === "transcribing");
+}
+
+function startPolling(): void {
+	if (pollTimer) {
+		return;
+	}
+	pollTimer = setInterval(() => {
+		if (hasActiveRecording()) {
+			void list({ search: search.value, since: since.value });
+		}
+	}, POLL_MS);
 }
 
 function openRecording(recording: Recording): void {
@@ -116,9 +137,17 @@ function onDiscard(): void {
 	showSave.value = false;
 }
 
+onBeforeUnmount(() => {
+	if (pollTimer) {
+		clearInterval(pollTimer);
+		pollTimer = null;
+	}
+});
+
 onMounted(() => {
 	void list();
 	void refreshQueued();
+	startPolling();
 	// Drain the offline queue to Directus whenever connectivity returns; refresh
 	// both lists after each successful upload so the row moves to the server list.
 	queue.startAutoSync(async (item: QueuedItem) => {
