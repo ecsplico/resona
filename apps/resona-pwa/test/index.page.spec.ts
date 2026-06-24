@@ -42,6 +42,9 @@ mockNuxtImport("useRecordings", () => () => ({
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
 
+const request = vi.hoisted(() => vi.fn());
+mockNuxtImport("useDirectus", () => () => ({ client: { request } }));
+
 // The page reads the offline queue on mount; the test env has no IndexedDB, so
 // stub the composable to return an empty queue and a no-op autosync.
 mockNuxtImport("useOfflineQueue", () => () => ({
@@ -84,6 +87,43 @@ describe("index (recordings list) page", () => {
 		row.vm.$emit("open");
 		await w.vm.$nextTick();
 		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-a");
+	});
+
+	it("copies a recording's transcript text from the list", async () => {
+		const writeText = vi.fn(async () => {});
+		Object.defineProperty(globalThis.navigator, "clipboard", {
+			value: { writeText },
+			configurable: true,
+		});
+		request.mockResolvedValueOnce([{ id: "t-a", recording: "rec-a", text: "Der Befund ist unauffällig." }]);
+
+		const w = await mountSuspended(IndexPage);
+		const row = w.findAllComponents({ name: "RecordingListItem" })[0]!;
+		row.vm.$emit("copy");
+		await w.vm.$nextTick();
+		await new Promise(r => setTimeout(r, 0));
+
+		// fetched the transcript for the done recording, then copied title + text
+		expect(request).toHaveBeenCalled();
+		expect(writeText).toHaveBeenCalledWith("Visite Station 3\n\nDer Befund ist unauffällig.");
+	});
+
+	it("falls back to copying the title for an untranscribed recording", async () => {
+		const writeText = vi.fn(async () => {});
+		Object.defineProperty(globalThis.navigator, "clipboard", {
+			value: { writeText },
+			configurable: true,
+		});
+
+		const w = await mountSuspended(IndexPage);
+		// recB is status=pending → no transcript fetch, copy the title
+		const row = w.findAllComponents({ name: "RecordingListItem" })[1]!;
+		row.vm.$emit("copy");
+		await w.vm.$nextTick();
+		await new Promise(r => setTimeout(r, 0));
+
+		expect(request).not.toHaveBeenCalled();
+		expect(writeText).toHaveBeenCalledWith("Telefonat Reha");
 	});
 
 	it("shows the empty state when there are no recordings", async () => {

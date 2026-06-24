@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { readItems } from "@directus/sdk";
 import { onMounted, ref } from "vue";
-import type { Recording } from "~/types/directus";
+import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
 
 const { items, pending, error, list, refresh } = useRecordings();
 const recorder = useRecorder();
 const { saveRecording } = useUpload();
-const { copy } = useExport();
+const { copy, toText } = useExport();
+const { client } = useDirectus();
 const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
 
@@ -33,10 +35,24 @@ function openRecording(recording: Recording): void {
 	void navigateTo(`/recording/${recording.id}`);
 }
 
-function copyRecording(recording: Recording): void {
-	// The list does not load transcripts, so copy the title (routed through
-	// useExport for consistency with the detail page).
-	void copy(recording.title);
+async function copyRecording(recording: Recording): Promise<void> {
+	// The list doesn't carry transcripts, so fetch this recording's transcript on
+	// demand and copy title + text (same shape as the detail page). Untranscribed
+	// rows have nothing to fetch — fall back to the title.
+	let transcript: Transcript | null = null;
+	if (recording.status === "done") {
+		try {
+			const rows = await client.request(readItems("transcripts", {
+				filter: { recording: { _eq: recording.id } },
+				limit: 1,
+			})) as Transcript[];
+			transcript = rows[0] ?? null;
+		}
+		catch {
+			// fall through: copy title-only below
+		}
+	}
+	void copy(transcript ? toText(recording, transcript) : recording.title);
 }
 
 async function startRecording(): Promise<void> {
@@ -194,7 +210,7 @@ onMounted(() => {
 				:key="recording.id"
 				:recording="recording"
 				@open="openRecording(recording)"
-				@copy="copyRecording(recording)"
+				@copy="void copyRecording(recording)"
 			/>
 		</div>
 
