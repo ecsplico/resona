@@ -64,6 +64,18 @@ worker's static token and the worker won't start without it. Bootstrapping
 (collections + user role + worker token) is automatic and idempotent; see
 `directus/bootstrap.md`. CORS on Directus must allow the PWA origin.
 
+> **All-in-one for testing.** To run the resona transcription stack
+> (`resona-api` + the faster-whisper engine) *inside this compose* — so batch
+> jobs complete without starting the separate resona stack by hand — merge the
+> testing override (it builds the images from the sibling `../resona` checkout;
+> set `RESONA_REPO` if it lives elsewhere):
+>
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.resona-test.yml up -d
+> ```
+>
+> Testing only — production keeps the two stacks split.
+
 ### 3. Frontend (this repo)
 
 ```bash
