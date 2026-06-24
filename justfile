@@ -16,58 +16,42 @@ add package dep:
     uv add --package {{ package }} {{ dep }}
 
 # ── Install as a system-wide tool (uv tool install) ───────────────────
-# These install `resona` so it's on $PATH without needing `uv run`.
+# Installs `resona` onto $PATH without needing `uv run`. The same recipes
+# work on Linux and macOS: the CLI's pyproject pins the cu130 torch index
+# behind a `sys_platform == 'linux'` marker, so torch resolves from the CUDA
+# wheels on Linux and from default PyPI (CPU/MPS) on macOS. That index config
+# travels with `--from ./apps/resona-cli`, so no --index flag is needed here.
+# If a build ever fails, fall back to `just install` + `uv run resona`.
+#
 # NOTE: never run `uv tool install .` at the workspace root — that's a
 # meta-package with no build backend. Always install from apps/resona-cli.
-# The default install is torch-free and fully capable: record/live TUIs
-# plus the CTranslate2 faster-whisper engine. The *-whisper / *-voxtral
-# recipes pass --index for the stable cu130 torch wheel since `uv tool
-# install` does NOT inherit the workspace's pytorch index. If those still
-# fail, use `just install` + `uv run resona`.
+# Extras must live INSIDE --from (`'./apps/resona-cli[extra]'`); passing the
+# extra as a separate positional conflicts with the path source in newer uv.
 
-# Default install: record/live TUIs + local faster-whisper engine (torch-free)
+# Default install (Linux + macOS): record/live TUIs + faster-whisper (torch-free)
 install-cli:
     uv tool install --force --from ./apps/resona-cli resona-cli
 
-# Default install + OpenAI Whisper (PyTorch) engine
-install-cli-whisper:
-    uv tool install --force \
-        --index https://download.pytorch.org/whl/cu130 \
-        --from ./apps/resona-cli 'resona-cli[whisper]'
+# Available extras:
+#   whisper, voxtral ........ PyTorch engines (Linux + macOS)
+#   parakeet ................ NVIDIA NeMo engine (Linux CUDA/CPU)
+#   mlx, whisper-cpp, lightning-mlx, apple .. Apple Silicon GPU engines (macOS)
+#   all ..................... every engine
 
-# Default install + Voxtral / HuggingFace Transformers engine
-install-cli-voxtral:
-    uv tool install --force \
-        --index https://download.pytorch.org/whl/cu130 \
-        --from ./apps/resona-cli 'resona-cli[voxtral]'
+# Install with an engine extra, e.g. `just install-cli-with whisper`
+install-cli-with extra:
+    uv tool install --force --from './apps/resona-cli[{{ extra }}]' resona-cli
 
-# ── Install from GitHub (no clone needed) ─────────────────────────────
-# Same as the local-path recipes above, but pulls straight from the public
-# repo — useful for end users who don't want to clone. Pass a ref (tag,
-# branch, or commit) as the argument; defaults to `main`.
-#   just install-cli-gh                 → installs from main
-#   just install-cli-gh v0.1.0          → installs from tag v0.1.0
-# Requires the repo to be public (or `gh auth setup-git` for private).
-
-# Default install from GitHub: record/live TUIs + faster-whisper (torch-free)
-install-cli-gh ref="main":
-    uv tool install --force \
-        --from "git+https://github.com/ecsplico/resona.git@{{ ref }}#subdirectory=apps/resona-cli" \
-        resona-cli
-
-# From GitHub + OpenAI Whisper (PyTorch) engine
-install-cli-gh-whisper ref="main":
-    uv tool install --force \
-        --index https://download.pytorch.org/whl/cu130 \
-        --from "git+https://github.com/ecsplico/resona.git@{{ ref }}#subdirectory=apps/resona-cli" \
-        'resona-cli[whisper]'
-
-# From GitHub + Voxtral / HuggingFace Transformers engine
-install-cli-gh-voxtral ref="main":
-    uv tool install --force \
-        --index https://download.pytorch.org/whl/cu130 \
-        --from "git+https://github.com/ecsplico/resona.git@{{ ref }}#subdirectory=apps/resona-cli" \
-        'resona-cli[voxtral]'
+# Default + OpenAI Whisper (PyTorch) engine
+install-cli-whisper: (install-cli-with "whisper")
+# Default + Voxtral / HuggingFace Transformers engine
+install-cli-voxtral: (install-cli-with "voxtral")
+# Default + NVIDIA Parakeet (NeMo) engine — Linux CUDA/CPU
+install-cli-parakeet: (install-cli-with "parakeet")
+# Default + Apple Silicon GPU engines (mlx-whisper, whisper.cpp, lightning-mlx) — macOS arm64
+install-cli-apple: (install-cli-with "apple")
+# Default + every engine
+install-cli-all: (install-cli-with "all")
 
 # Uninstall the resona-cli tool
 uninstall-cli:
