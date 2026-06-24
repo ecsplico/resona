@@ -8,8 +8,17 @@ transcribed by the backend, and they review/edit/export the result. Built on the
 design system (plain Vue + Tailwind v4 CSS tokens — no component library).
 
 **This repo is standalone.** It is NOT part of the Python monorepo. It talks to its
-backends over HTTP/WebSocket only and contains no server logic. Never import from or
-reach into the Python monorepo — communicate over HTTP exclusively.
+backends over HTTP/WebSocket only. Never import from or reach into the Python monorepo —
+communicate over HTTP exclusively.
+
+The frontend is otherwise a pure client-rendered SPA. The **one** sanctioned server-side
+exception is a thin Nitro layer (`server/api/**`) used **only** to hold confidential OAuth
+secrets that cannot live in the browser — specifically the Google Calendar token
+exchange/refresh (the OAuth client secret + the per-user refresh token). Nothing else goes
+on the server: no business logic, no page rendering (`ssr: false` stays). Because these
+routes execute server-side, production **must** be deployed via the Nitro Node/serverless
+server (`nuxt build` → `node .output/server`), **not** `nuxt generate` static output (which
+strips the server). Keep secrets in `runtimeConfig` (the private, non-`public` block).
 
 ## How to start
 
@@ -177,7 +186,11 @@ for PWA-manifest/service-worker changes).
 ## What NOT to do
 
 - Don't import from / reach into the Python monorepo — HTTP only.
-- Don't put server logic in the PWA — it's a pure SPA.
+- Don't put server logic in the PWA beyond the one sanctioned thin Nitro OAuth layer
+  (`server/api/**`, confidential Google token exchange/refresh only) — it's otherwise a
+  pure SPA: no page rendering (`ssr: false`), no business logic server-side.
+- Don't deploy via `nuxt generate` (static) now that Nitro routes exist — use the Nitro
+  Node/serverless server (`nuxt build` → `node .output/server`).
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.
 - Don't set `engine` on a `recordings` row — it belongs on `transcripts`.
 - Don't set live-WS auth via headers — browsers can't; use `?token=`.
