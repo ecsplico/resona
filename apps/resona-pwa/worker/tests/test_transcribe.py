@@ -33,3 +33,37 @@ async def test_transcribe_posts_multipart_verbose_json(tmp_path):
     assert b"verbose_json" in req.content
     assert b'name="language"' in req.content
     assert b'name="profile"' in req.content
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_transcribe_sends_and_stamps_default_engine(tmp_path):
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFFfake")
+    route = respx.post(f"{API}/v1/audio/transcriptions").mock(
+        return_value=httpx.Response(200, json={"text": "ok", "segments": []})
+    )
+    # engine configured on the client (no per-call engine) -> used + stamped
+    client = TranscribeClient(base_url=API, api_key="", engine="faster-whisper")
+    result = await client.transcribe(audio, language="de", profile="default")
+    await client.aclose()
+
+    assert result["engine"] == "faster-whisper"
+    req = route.calls.last.request
+    assert b'name="engine"' in req.content
+    assert b"faster-whisper" in req.content
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_per_call_engine_overrides_client_default(tmp_path):
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFFfake")
+    respx.post(f"{API}/v1/audio/transcriptions").mock(
+        return_value=httpx.Response(200, json={"text": "ok", "segments": []})
+    )
+    client = TranscribeClient(base_url=API, api_key="", engine="faster-whisper")
+    result = await client.transcribe(audio, engine="whisper")
+    await client.aclose()
+
+    assert result["engine"] == "whisper"

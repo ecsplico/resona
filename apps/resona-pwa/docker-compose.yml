@@ -60,6 +60,8 @@ services:
       # resona-api lives in the separate resona stack — point this at its reachable URL.
       RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7710}
       RESONA_API_KEY: ${RESONA_API_KEY:-}
+      # Engine requested for every batch job and stamped on the transcript row.
+      TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-faster-whisper}
       TRANSCRIBE_POLL_INTERVAL: ${TRANSCRIBE_POLL_INTERVAL:-5}
       TRANSCRIBE_CONCURRENCY: ${TRANSCRIBE_CONCURRENCY:-2}
       TRANSCRIBE_STALE_MINUTES: ${TRANSCRIBE_STALE_MINUTES:-15}

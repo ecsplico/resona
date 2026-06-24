@@ -10,6 +10,7 @@ def test_load_settings_reads_env(monkeypatch):
     monkeypatch.setenv("TRANSCRIBE_POLL_INTERVAL", "9")
     monkeypatch.setenv("TRANSCRIBE_CONCURRENCY", "4")
     monkeypatch.setenv("TRANSCRIBE_STALE_MINUTES", "30")
+    monkeypatch.setenv("TRANSCRIBE_ENGINE", "whisper")
     monkeypatch.setenv("RESONA_API_KEY", "k")
     s = run.load_settings()
     assert s.directus_url == "http://d:7700"
@@ -19,6 +20,13 @@ def test_load_settings_reads_env(monkeypatch):
     assert s.poll_interval == 9
     assert s.concurrency == 4
     assert s.stale_minutes == 30
+    assert s.engine == "whisper"
+
+
+def test_load_settings_engine_defaults_to_faster_whisper(monkeypatch):
+    monkeypatch.setenv("DIRECTUS_TOKEN", "tok")
+    monkeypatch.delenv("TRANSCRIBE_ENGINE", raising=False)
+    assert run.load_settings().engine == "faster-whisper"
 
 
 def test_load_settings_requires_token(monkeypatch):

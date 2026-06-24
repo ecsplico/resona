@@ -22,6 +22,7 @@ class Settings:
     directus_token: str
     resona_api_url: str
     resona_api_key: str
+    engine: str
     poll_interval: int
     concurrency: int
     stale_minutes: int
@@ -36,6 +37,7 @@ def load_settings() -> Settings:
         directus_token=token,
         resona_api_url=config("RESONA_API_URL", default="http://localhost:7710"),
         resona_api_key=config("RESONA_API_KEY", default=""),
+        engine=config("TRANSCRIBE_ENGINE", default="faster-whisper"),
         poll_interval=config("TRANSCRIBE_POLL_INTERVAL", default=5, cast=int),
         concurrency=config("TRANSCRIBE_CONCURRENCY", default=2, cast=int),
         stale_minutes=config("TRANSCRIBE_STALE_MINUTES", default=15, cast=int),
@@ -44,7 +46,9 @@ def load_settings() -> Settings:
 
 async def _loop(settings: Settings) -> None:
     directus = DirectusClient(settings.directus_url, settings.directus_token)
-    transcribe = TranscribeClient(settings.resona_api_url, settings.resona_api_key)
+    transcribe = TranscribeClient(
+        settings.resona_api_url, settings.resona_api_key, engine=settings.engine,
+    )
     tmp_dir = Path(tempfile.mkdtemp(prefix="resona-transcribe-"))
     log.info("directus-transcribe worker started (poll=%ss, concurrency=%s)",
              settings.poll_interval, settings.concurrency)
