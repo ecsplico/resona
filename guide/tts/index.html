@@ -982,6 +982,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#local-offline-tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local / offline TTS
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2013,6 +2024,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#local-offline-tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local / offline TTS
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2034,9 +2056,13 @@
 
 
 <h1 id="speech-synthesis">Speech Synthesis<a class="headerlink" href="#speech-synthesis" title="Permanent link">&para;</a></h1>
-<p>Resona provides text-to-speech (TTS) synthesis through cloud providers, accessible via the
-<code>resona speech</code> command and the resona-api <code>POST /v1/audio/speech</code> endpoint. All synthesis
-requests are routed through the gateway and forwarded to the selected cloud provider.</p>
+<p>Resona provides text-to-speech (TTS) synthesis through cloud providers and local
+(offline) engines, accessible via the <code>resona speech</code> command and the resona-api
+<code>POST /v1/audio/speech</code> endpoint. When the gateway is reachable, requests are
+forwarded to the selected cloud or local-TTS engine. When <strong>no gateway is
+reachable</strong>, <code>resona speech</code> falls back to a local in-process engine — by default
+<strong>Piper</strong>, a torch-free ONNX engine that ships with <code>resona-cli</code> — so synthesis
+works fully offline out of the box.</p>
 <hr />
 <h2 id="resona-speech"><code>resona speech</code><a class="headerlink" href="#resona-speech" title="Permanent link">&para;</a></h2>
 <p>Synthesise speech from a text string and either save it to a file or play it back immediately.</p>
@@ -2055,22 +2081,27 @@ requests are routed through the gateway and forwarded to the selected cloud prov
 <tr>
 <td><code>--engine NAME</code></td>
 <td>(gateway default)</td>
-<td>Engine name forwarded to the gateway</td>
+<td>Engine name; forwarded to the gateway, or a local TTS engine name when falling back</td>
 </tr>
 <tr>
 <td><code>--voice NAME</code></td>
-<td><code>alloy</code></td>
-<td>Voice name for the selected provider</td>
+<td>(engine default)</td>
+<td>Voice name; omit to let the engine pick its default</td>
+</tr>
+<tr>
+<td><code>--language</code>, <code>-l</code></td>
+<td><code>de</code></td>
+<td>Language hint; used by local engines to select a voice</td>
 </tr>
 <tr>
 <td><code>--model NAME</code></td>
 <td><code>tts-1</code></td>
-<td>TTS model name</td>
+<td>TTS model name (gateway only)</td>
 </tr>
 <tr>
 <td><code>--format EXT</code></td>
 <td><code>mp3</code></td>
-<td>Output audio format: <code>mp3</code>, <code>opus</code>, <code>aac</code>, <code>flac</code></td>
+<td>Output audio format: <code>mp3</code>, <code>opus</code>, <code>aac</code>, <code>flac</code>. Offline fallback always writes WAV</td>
 </tr>
 <tr>
 <td><code>--speed FLOAT</code></td>
@@ -2084,7 +2115,7 @@ requests are routed through the gateway and forwarded to the selected cloud prov
 </tr>
 <tr>
 <td><code>--output PATH</code></td>
-<td><code>speech.mp3</code></td>
+<td><code>speech.mp3</code> (<code>speech.wav</code> offline)</td>
 <td>Output file path; use <code>-</code> for stdout</td>
 </tr>
 <tr>
@@ -2291,11 +2322,34 @@ format.</p>
 </code></pre></div>
 <p>The response is a binary audio stream. <code>Content-Type</code> is set to the MIME type of the requested
 format (e.g. <code>audio/mpeg</code> for MP3).</p>
+<hr />
+<h2 id="local-offline-tts">Local / offline TTS<a class="headerlink" href="#local-offline-tts" title="Permanent link">&para;</a></h2>
+<p><code>resona speech</code> does not require a running gateway. When no resona-api is
+reachable (or the gateway connection fails), the command synthesises locally with
+an in-process engine from <code>resona-tts-local</code>.</p>
+<ul>
+<li><strong>Default offline engine: Piper</strong> (<code>piper</code>) — pure ONNX/onnxruntime, torch-free,
+  CPU-realtime, cross-platform. It ships as a base dependency of <code>resona-cli</code>, so
+  offline synthesis works with no extra install.</li>
+<li>Voices are downloaded on first use into <code>PIPER_VOICES_DIR</code> (default
+  <code>&lt;model cache&gt;/piper</code>). The default voice is German
+  (<code>de_DE-thorsten-medium</code>); <code>--language</code> selects a per-language default, and an
+  explicit <code>--voice &lt;piper-id&gt;</code> (e.g. <code>de_DE-kerstin-low</code>) overrides it.</li>
+<li>Offline output is always <strong>WAV</strong> (a non-<code>wav</code> <code>--format</code> is ignored with a
+  warning).</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># No server needed — synthesise German offline with Piper</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Guten Tag, der Befund ist unauffällig.&quot;</span><span class="w"> </span>--play
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Hello world&quot;</span><span class="w"> </span>--language<span class="w"> </span>en<span class="w"> </span>--output<span class="w"> </span>hello.wav
+</code></pre></div>
+<p>Higher-quality local engines (Kokoro, Chatterbox, Qwen) are available but pull
+torch; install one with <code>just install-cli-kokoro</code> (or
+<code>pip install 'resona-tts-local[kokoro]'</code>) and select it with <code>--engine kokoro</code>.</p>
 <div class="admonition note">
-<p class="admonition-title">TTS engines are always cloud</p>
-<p>Local (built-in) engines do not support TTS. All synthesis requests are routed to a cloud
-provider. If <code>--private</code> is set and no private TTS engine is configured, the request will
-fail with a <code>400 Bad Request</code>.</p>
+<p class="admonition-title"><code>--private</code> and local TTS</p>
+<p>Local engines are inherently private (no audio leaves the machine). Cloud
+providers are never private; if <code>--private</code> is set against the gateway and no
+private TTS engine is configured, the request fails with <code>400 Bad Request</code>.</p>
 </div>
 
 

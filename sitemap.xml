@@ -2,114 +2,114 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://ecsplico.github.io/resona/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/architecture/engine-contract/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/architecture/job-lifecycle/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/architecture/overview/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/architecture/postprocessing/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/configuration/config-files/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/configuration/environment/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/development/adding-engine/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/development/testing/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/development/workflow/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/getting-started/installation/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/getting-started/local-only/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/getting-started/quick-start/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/guide/cli/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/guide/engines/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/guide/postprocessing/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/guide/privacy/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/guide/replacements/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/guide/tts/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/api/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/asr-core/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/client/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/cloud-stt/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/cloud-tts/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/engine-server/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/reference/postprocess/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/server/docker/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://ecsplico.github.io/resona/server/full-stack/</loc>
-         <lastmod>2026-06-21</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
 </urlset>
