@@ -158,6 +158,14 @@
             font-size: 1.5em;
         }
 
+        .btn-import {
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+            color: white;
+            width: 60px;
+            height: 60px;
+            font-size: 1.5em;
+        }
+
         .metadata-section {
             background: white;
             padding: 20px;
@@ -379,7 +387,14 @@
                 <button class="btn btn-stop" @click="stopRecording" x-show="isRecording" :disabled="!isRecording">
                     ⏹️
                 </button>
+
+                <button class="btn btn-import" @click="$refs.fileInput.click()" x-show="!isRecording"
+                    title="Audiodatei importieren">
+                    📁
+                </button>
             </div>
+            <input type="file" x-ref="fileInput" accept="audio/*" multiple style="display: none"
+                @change="importFiles($event)">
         </div>
 
         <!-- Metadata Section -->
@@ -509,6 +524,14 @@
                         this.deferredPrompt = e;
                         this.showInstallPrompt = true;
                     });
+
+                    // Files shared in via the PWA share target are stored by the
+                    // service worker, which redirects here with ?shared=1.
+                    if (new URLSearchParams(location.search).has('shared')) {
+                        history.replaceState(null, '', location.pathname);
+                        await this.loadRecordings();
+                        alert('Geteilte Datei importiert!');
+                    }
                 },
 
                 async toggleRecording() {
@@ -597,6 +620,46 @@
                     this.recordingTime = 0;
                 },
 
+                async importFiles(event) {
+                    const files = Array.from(event.target.files || []);
+                    event.target.value = '';
+                    if (!files.length) return;
+
+                    let i = 0;
+                    for (const file of files) {
+                        const duration = await this.getAudioDuration(file);
+                        await this.db.saveRecording({
+                            id: Date.now() + (i++),
+                            title: file.name.replace(/\.[^.]+$/, '') || 'Import',
+                            date: this.currentDate,
+                            blob: file,
+                            filename: file.name,
+                            duration: duration,
+                            uploaded: false,
+                            createdAt: Date.now()
+                        });
+                    }
+                    await this.loadRecordings();
+                    alert(files.length === 1 ? 'Datei importiert!' : files.length + ' Dateien importiert!');
+                },
+
+                getAudioDuration(blob) {
+                    return new Promise((resolve) => {
+                        const url = URL.createObjectURL(blob);
+                        const audio = new Audio();
+                        audio.preload = 'metadata';
+                        audio.onloadedmetadata = () => {
+                            URL.revokeObjectURL(url);
+                            resolve(Number.isFinite(audio.duration) ? Math.round(audio.duration) : 0);
+                        };
+                        audio.onerror = () => {
+                            URL.revokeObjectURL(url);
+                            resolve(0);
+                        };
+                        audio.src = url;
+                    });
+                },
+
                 async loadRecordings() {
                     this.recordings = await this.db.getAllRecordings();
                     this.recordings.sort((a, b) => b.createdAt - a.createdAt);
@@ -626,7 +689,8 @@
 
                     try {
                         const formData = new FormData();
-                        formData.append('audio_files', recording.blob, `${recording.title}.webm`);
+                        const filename = recording.filename || `${recording.title}.webm`;
+                        formData.append('audio_files', recording.blob, filename);
                         formData.append('keep', 'true');
 
                         const apiKey = localStorage.getItem('api_key') || prompt('Bitte API-Key eingeben:');
