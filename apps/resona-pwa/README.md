@@ -16,6 +16,10 @@ The platform is split across **two stacks**:
 2. **PWA data layer** — lives in **this repo**: Directus + the `directus-transcribe`
    worker, plus the Nuxt frontend.
 
+For **local development** you can skip the manual split below and bring up
+everything with one command — see [Full local stack](#full-local-stack-one-command).
+The split steps (1–3) remain the canonical **production** model.
+
 ### 1. Transcription backend (resona monorepo)
 
 From the monorepo root (the directory containing `docker-compose.resona.yml`):
@@ -85,6 +89,72 @@ bun run dev                 # → http://localhost:3000
 ```
 
 Open `http://localhost:3000`, log in with a Directus user, and record/upload/dictate.
+
+## Full local stack (one command)
+
+For local development, `docker-compose.full.yml` brings up **everything** — the
+PWA, the Directus data layer, the worker, **and** the transcription backend — in
+a single compose project, driven entirely from this repo. It's a convenience for
+local/dev use: it builds the resona-api (and CPU engine) images from the sibling
+resona monorepo checkout (default `../resona`, override with `RESONA_REPO`).
+Production still keeps the two stacks split (steps 1–3 above).
+
+```bash
+bun run setup          # generate secrets → start the whole stack
+```
+
+`bun run setup` (a thin wrapper around the compose file) does three things:
+
+1. Creates `.env` from `.env.stack.example` if missing, then **generates and
+   persists** `DIRECTUS_TOKEN` + `DIRECTUS_SECRET` into it (idempotent — existing
+   values are kept). The token is interpolated into both `directus-bootstrap`
+   (which pins it as the worker's static token) and the worker, so there's no
+   copy-paste.
+2. **Auto-detects** a native MLX engine on `:7720` and starts the CPU docker
+   engine fallback (compose profile `cpu-engine`) **only** when none is live.
+3. Runs `docker compose -f docker-compose.full.yml up -d --build`.
+
+| Service | Host port | Role |
+|---------|-----------|------|
+| `pwa` | `:7701` | Nuxt SPA served by its Nitro server |
+| `directus` | `:7700` | auth, data, file storage |
+| `directus-bootstrap` | — | one-shot: provisions collections, roles, worker token, then exits |
+| `directus-transcribe` | — | batch worker (Directus → resona-api → transcripts) |
+| `resona-api` | `:7710` | transcription API (built from `../resona`) |
+| `engine-faster-whisper` | — | CPU ASR fallback — **off by default** (profile `cpu-engine`) |
+
+### Engine: native MLX preferred, CPU fallback
+
+The native MLX engine (Apple GPU) is **preferred** over the dockerized CPU
+engine — Docker on macOS is CPU-only, so the fast engine runs on the host.
+resona-api always probes the native host engine (`host.docker.internal:7720`)
+first and the CPU container second, picking the first available. To use it:
+
+```bash
+bun run engine         # terminal 1 — native MLX engine on :7720 (Apple GPU)
+bun run setup          # terminal 2 — detects MLX → CPU docker engine stays off
+```
+
+With no native engine running, `bun run setup` starts the CPU docker engine
+automatically. Leave `TRANSCRIBE_ENGINE` **empty** in `.env` so the worker
+doesn't pin an engine and resona-api auto-selects (native → CPU); set a name
+only to force one.
+
+### `bun run setup` flags
+
+| Command | Effect |
+|---------|--------|
+| `bun run setup` | Write secrets, auto-pick engine, start the stack. |
+| `bun run setup --setup-only` | Only write `.env` (don't start anything). |
+| `bun run setup --cpu` | Force-start the CPU docker engine (ignore native). |
+| `bun run setup --no-cpu` | Never start the CPU docker engine (native only). |
+| `bun run setup --down` | Stop the stack (append `--volumes` to wipe data). |
+| `PWA_PORT=7702 bun run setup` | Publish the PWA on a different host port. |
+
+Extra args pass through to `docker compose`. Prerequisites: Docker, a `../resona`
+checkout, and (for `bun run engine`) host-side `uv`. Because the PWA has server
+routes (the Google Calendar OAuth layer), its image runs the **Nitro server**
+(`nuxt build` → `node .output/server`), not static `nuxt generate`.
 
 ## Architecture
 
