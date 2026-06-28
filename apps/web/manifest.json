@@ -7,6 +7,20 @@
     "background_color": "#F9FAFB",
     "theme_color": "#4F46E5",
     "orientation": "portrait-primary",
+    "share_target": {
+        "action": "/share-target",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "files": [
+                {
+                    "name": "audio",
+                    "accept": ["audio/*", ".webm", ".mp3", ".m4a", ".wav", ".ogg", ".flac", ".aac", ".opus"]
+                }
+            ]
+        }
+    },
     "icons": [
         {
             "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🎤</text></svg>",
