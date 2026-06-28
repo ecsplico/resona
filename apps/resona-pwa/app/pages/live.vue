@@ -5,6 +5,11 @@ import type { Recording, Transcript } from "~/types/directus";
 
 const cfg = useRuntimeConfig().public;
 
+// When launched from a calendar event (/live?title=…), pre-fill the recording
+// name with the event's "<name> – <date>" title.
+const route = useRoute();
+const presetTitle = typeof route.query.title === "string" ? route.query.title : "";
+
 const live = useLive();
 const recorder = useRecorder();
 const { uploadBlob } = useUpload();
@@ -15,7 +20,7 @@ const sessionActive = ref(false);
 const showTitlePrompt = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
-const title = ref("");
+const title = ref(presetTitle);
 const capturedBlob = ref<Blob | null>(null);
 const capturedDuration = ref(0);
 
@@ -72,7 +77,7 @@ async function stopLive(): Promise<void> {
 	capturedDuration.value = recorder.elapsed.value;
 	capturedBlob.value = await recorder.stop();
 	live.stop();
-	title.value = "";
+	title.value = presetTitle;
 	showTitlePrompt.value = true;
 }
 

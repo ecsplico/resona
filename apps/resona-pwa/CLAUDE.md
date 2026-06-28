@@ -107,21 +107,46 @@ app/
 ├── pages/
 │   ├── index.vue                    # history list + search/date filter + record FAB
 │   ├── login.vue                    # Directus email/password login
-│   ├── live.vue                     # live transcription
+│   ├── live.vue                     # live transcription (reads ?title= to preset name)
+│   ├── calendar.vue                 # Google Calendar: connect, filter, start dictation
 │   └── recording/[id].vue           # detail: player, transcript edit, export
 ├── composables/                     # useDirectus, useRecordings, useRecording,
 │   │                                #   useRecorder, useUpload, useProfiles, useLive,
-│   │                                #   useTranscriptEdit, useExport, useOfflineQueue
+│   │                                #   useCalendar, useTranscriptEdit, useExport,
+│   │                                #   useOfflineQueue
 ├── components/
 │   ├── hearth/                      # HButton, HCard, HChip, HField, ... (design system)
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css
+
+shared/calendar.ts                   # calendar wire types + helpers (app + server)
+server/                              # the sanctioned Nitro OAuth layer (server only)
+├── api/calendar/index.{get,delete}.ts  # single provider-agnostic endpoint
+└── utils/calendar/                  # provider interface + registry + Google + session
 ```
 
 Component auto-import is `pathPrefix: false` — components resolve by filename
 (`<HButton>`, `<QueuedListItem>`), regardless of subdirectory.
+
+### Calendar integration (Google + pluggable)
+
+`server/utils/calendar/` mirrors the Python repo's provider pattern: a
+`CalendarProvider` interface (`types.ts`) + a `registry.ts` + one module per
+backend (`google.ts`). Add a provider = one module + a registry entry; the
+routes and client need no change. Tokens (incl. the refresh token) live in an
+h3 **sealed session cookie** — no DB. The browser flow: `/calendar` connects via
+`<a href="/api/calendar?provider=google&action=connect">`, lists events for a
+date/text filter, and "Transkribieren" opens `/live?title=<event – date>` so the
+recording is pre-named from the event.
+
+**One Nitro route path on purpose** (`/api/calendar`, GET+DELETE; provider via
+`?provider=`, OAuth provider carried in `state`): Nitro's typed `$fetch`
+recurses over the route-path union, and extra paths push unrelated bare-string
+`$fetch` calls (e.g. `useProfiles`) into a TS "excessive stack depth" error.
+Keep client calls to the **literal** `/api/calendar` string (exact match is
+cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
 
 ## Directus schema (source of truth: `directus/bootstrap.md`)
 
@@ -148,6 +173,17 @@ URLs. The 6 keys:
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
 | `NUXT_PUBLIC_DEFAULT_ENGINE` | `faster-whisper` | default live engine |
+| `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | show the calendar entry point |
+
+The Google Calendar OAuth layer adds **server-only** (non-`public`) keys, read on
+the server via `useRuntimeConfig(event)` — these never reach the browser:
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `NUXT_GOOGLE_CLIENT_ID` | (empty) | Google OAuth client id |
+| `NUXT_GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth client secret |
+| `NUXT_GOOGLE_REDIRECT_URI` | (derived) | override; default `<origin>/api/calendar` |
+| `NUXT_SESSION_PASSWORD` | (empty) | 32+ char secret sealing the token cookie |
 
 Never commit `.env` (gitignored); only `.env.example` is tracked.
 

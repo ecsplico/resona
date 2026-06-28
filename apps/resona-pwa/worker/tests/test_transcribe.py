@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from resona_directus_transcribe.transcribe import TranscribeClient
+from resona_directus_transcribe.transcribe import TranscribeClient, TranscribeError
 
 API = "http://resona-api.test"
 
@@ -67,3 +67,42 @@ async def test_per_call_engine_overrides_client_default(tmp_path):
     await client.aclose()
 
     assert result["engine"] == "whisper"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_transcribe_unreachable_raises_clear_error(tmp_path):
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFFfake")
+    respx.post(f"{API}/v1/audio/transcriptions").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    client = TranscribeClient(base_url=API, api_key="")
+    with pytest.raises(TranscribeError) as ei:
+        await client.transcribe(audio)
+    await client.aclose()
+
+    msg = str(ei.value)
+    assert "nicht erreichbar" in msg
+    assert API in msg
+    # No leaked httpx class name in the user-facing message.
+    assert "ConnectError" not in msg
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_transcribe_http_error_includes_server_detail(tmp_path):
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFFfake")
+    respx.post(f"{API}/v1/audio/transcriptions").mock(
+        return_value=httpx.Response(400, json={"detail": "no engine available"})
+    )
+    client = TranscribeClient(base_url=API, api_key="")
+    with pytest.raises(TranscribeError) as ei:
+        await client.transcribe(audio)
+    await client.aclose()
+
+    msg = str(ei.value)
+    assert "HTTP 400" in msg
+    assert "no engine available" in msg
+    assert "HTTPStatusError" not in msg

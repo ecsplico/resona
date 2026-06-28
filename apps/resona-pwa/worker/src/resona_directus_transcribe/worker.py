@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from .client import DirectusClient
-from .transcribe import TranscribeClient
+from .transcribe import TranscribeClient, TranscribeError
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +37,11 @@ async def process_one(
         log.info("transcribed recording %s", rec_id)
     except Exception as exc:  # noqa: BLE001 — worker must never crash on one job
         log.exception("failed to transcribe recording %s", rec_id)
+        # TranscribeError already carries a clean, user-facing message; only
+        # other exceptions get the type-name prefix for debuggability.
+        message = str(exc) if isinstance(exc, TranscribeError) else f"{type(exc).__name__}: {exc}"
         try:
-            await directus.mark_error(rec_id, f"{type(exc).__name__}: {exc}")
+            await directus.mark_error(rec_id, message)
         except Exception:
             log.exception("could not mark recording %s as error", rec_id)
     finally:

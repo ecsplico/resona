@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { deleteItem } from "@directus/sdk";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { isServiceUnreachable } from "#shared/errors";
 import type { Transcript } from "~/types/directus";
 
 const route = useRoute();
@@ -8,6 +9,10 @@ const id = String(route.params.id);
 
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
 const { client, assetUrl } = useDirectus();
+
+// Distinguish a transient "service unreachable" failure (offline styling +
+// retry hint) from a genuine transcription error (red banner).
+const offlineError = computed(() => isServiceUnreachable(recording.value?.error_message));
 
 const edit = useTranscriptEdit("");
 const seeded = ref(false);
@@ -299,8 +304,39 @@ onUnmounted(() => {
 				<div
 					v-if="recording.status === 'error'"
 					class="detail__banner"
+					:class="{ 'detail__banner--offline': offlineError }"
+					data-testid="error-banner"
 				>
-					{{ recording.error_message ?? "Bei der Transkription ist ein Fehler aufgetreten." }}
+					<svg
+						v-if="offlineError"
+						class="detail__banner-icon"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3" />
+						<line
+							x1="1"
+							y1="1"
+							x2="23"
+							y2="23"
+						/>
+					</svg>
+					<div class="detail__banner-text">
+						{{ recording.error_message ?? "Bei der Transkription ist ein Fehler aufgetreten." }}
+						<span
+							v-if="offlineError"
+							class="detail__banner-hint"
+						>
+							Der Transkriptionsdienst war nicht erreichbar – bitte später erneut versuchen.
+						</span>
+					</div>
 				</div>
 
 				<p
@@ -360,7 +396,11 @@ onUnmounted(() => {
 .detail__body { flex:1; display:flex; flex-direction:column; gap:14px; padding:20px; }
 .detail__hint { color:var(--fg3); font-size:15px; margin:0; }
 .detail__error { color:var(--danger); font-size:14px; margin:0; }
-.detail__banner { background:var(--tomato-soft); color:var(--tomato-deep); border-radius:var(--r-md); padding:14px 16px; font-family:var(--font-body); font-size:14px; }
+.detail__banner { display:flex; align-items:flex-start; gap:10px; background:var(--tomato-soft); color:var(--tomato-deep); border-radius:var(--r-md); padding:14px 16px; font-family:var(--font-body); font-size:14px; }
+.detail__banner--offline { background:var(--butter-soft); color:#8B6200; }
+.detail__banner-icon { flex-shrink:0; margin-top:1px; }
+.detail__banner-text { display:flex; flex-direction:column; gap:4px; }
+.detail__banner-hint { font-size:13px; opacity:0.85; }
 .detail__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); margin:0; }
 .detail__edit { width:100%; min-height:240px; box-sizing:border-box; resize:vertical; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); background:var(--surface,transparent); border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:12px 14px; }
 .detail__edit:focus { outline:none; border-color:var(--accent); }

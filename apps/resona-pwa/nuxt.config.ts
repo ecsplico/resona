@@ -14,6 +14,19 @@ export default defineNuxtConfig({
 	},
 	css: ["~/assets/css/main.css"],
 	runtimeConfig: {
+		// Server-only secrets for the Google Calendar OAuth flow. These never reach
+		// the browser — the Nitro `server/api/calendar/**` routes are the only
+		// sanctioned server layer (see CLAUDE.md). Set via NUXT_GOOGLE_* env vars.
+		google: {
+			clientId: "",
+			clientSecret: "",
+			// Optional explicit override; when empty the callback URI is derived
+			// from the incoming request origin.
+			redirectUri: "",
+		},
+		// Password (>= 32 chars) sealing the per-browser session cookie that holds
+		// the calendar refresh/access tokens. Set via NUXT_SESSION_PASSWORD.
+		sessionPassword: "",
 		public: {
 			directusUrl: "http://localhost:7700",
 			resonaApiUrl: "http://localhost:7710",
@@ -21,8 +34,10 @@ export default defineNuxtConfig({
 			defaultLanguage: "de",
 			defaultProfile: "default",
 			defaultEngine: "faster-whisper",
+			calendarEnabled: true,
 		},
 	},
+	devServer: { port: 7701 },
 	experimental: { typedPages: true },
 	compatibilityDate: "2026-06-18",
 	vite: { plugins: [tailwindcss()] },

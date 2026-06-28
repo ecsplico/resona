@@ -18,6 +18,7 @@ async function refreshQueued(): Promise<void> {
 
 const search = ref("");
 const since = ref("");
+const showSettings = ref(false);
 
 // Record flow state: FAB -> HRecordingSheet (recording) -> SaveSheet (review).
 const showRecorder = ref(false);
@@ -172,13 +173,49 @@ onMounted(() => {
 			tone="light"
 			title="Resona"
 		>
+			<template #leading>
+				<ServerStatus />
+			</template>
 			<template #trailing>
+				<NuxtLink
+					class="home__live"
+					to="/calendar"
+					data-testid="nav-calendar"
+				>
+					Kalender
+				</NuxtLink>
 				<NuxtLink
 					class="home__live"
 					to="/live"
 				>
 					Live
 				</NuxtLink>
+				<button
+					class="home__cog"
+					type="button"
+					aria-label="Einstellungen"
+					data-testid="nav-settings"
+					@click="showSettings = true"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<circle
+							cx="12"
+							cy="12"
+							r="3"
+						/>
+						<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+					</svg>
+				</button>
 			</template>
 		</HAppBar>
 
@@ -333,12 +370,18 @@ onMounted(() => {
 			@save="onSave"
 			@discard="onDiscard"
 		/>
+
+		<SettingsDrawer
+			v-if="showSettings"
+			@close="showSettings = false"
+		/>
 	</div>
 </template>
 
 <style scoped>
 .home { min-height:100vh; background:var(--bg); padding-bottom:120px; }
 .home__live { color:var(--accent); font-weight:600; font-size:15px; text-decoration:none; }
+.home__cog { border:none; background:none; color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; padding:2px; }
 .home__filters { display:flex; gap:12px; align-items:flex-end; padding:16px 20px 8px; }
 .home__search { flex:1; }
 .home__since { display:flex; flex-direction:column; }
