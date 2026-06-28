@@ -1,0 +1,49 @@
+# Resona PWA — Nuxt 4 SPA served by its Nitro Node server.
+# Because the app has server routes (the sanctioned Google Calendar OAuth layer,
+# server/api/calendar/**), production MUST run the Nitro server (`nuxt build` →
+# run .output/server) — NOT `nuxt generate` static output (which strips it).
+#
+# The app is `ssr: false`, so runtimeConfig.public is baked into the client
+# bundle at BUILD time. Those URLs are consumed by the BROWSER, so they must be
+# host-reachable (localhost:<published port>), not compose service names — pass
+# them as build args. Server-only secrets (Google OAuth, session password) are
+# read at RUNTIME from env, so they stay out of the image.
+
+FROM oven/bun:1.3.14 AS build
+WORKDIR /app
+
+# Install deps first for layer caching.
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY . .
+
+# Public config — baked into the client bundle. Defaults match the published
+# host ports in docker-compose.full.yml.
+ARG NUXT_PUBLIC_DIRECTUS_URL=http://localhost:7700
+ARG NUXT_PUBLIC_RESONA_API_URL=http://localhost:7710
+ARG NUXT_PUBLIC_RESONA_API_KEY=
+ARG NUXT_PUBLIC_DEFAULT_LANGUAGE=de
+ARG NUXT_PUBLIC_DEFAULT_PROFILE=default
+ARG NUXT_PUBLIC_DEFAULT_ENGINE=faster-whisper
+ARG NUXT_PUBLIC_CALENDAR_ENABLED=true
+ENV NUXT_PUBLIC_DIRECTUS_URL=${NUXT_PUBLIC_DIRECTUS_URL} \
+	NUXT_PUBLIC_RESONA_API_URL=${NUXT_PUBLIC_RESONA_API_URL} \
+	NUXT_PUBLIC_RESONA_API_KEY=${NUXT_PUBLIC_RESONA_API_KEY} \
+	NUXT_PUBLIC_DEFAULT_LANGUAGE=${NUXT_PUBLIC_DEFAULT_LANGUAGE} \
+	NUXT_PUBLIC_DEFAULT_PROFILE=${NUXT_PUBLIC_DEFAULT_PROFILE} \
+	NUXT_PUBLIC_DEFAULT_ENGINE=${NUXT_PUBLIC_DEFAULT_ENGINE} \
+	NUXT_PUBLIC_CALENDAR_ENABLED=${NUXT_PUBLIC_CALENDAR_ENABLED}
+
+RUN bun run build
+
+FROM oven/bun:1.3.14-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+	HOST=0.0.0.0 \
+	PORT=3000
+COPY --from=build /app/.output ./.output
+EXPOSE 3000
+# Server-only secrets (NUXT_GOOGLE_*, NUXT_SESSION_PASSWORD) are supplied at run
+# time by compose and read server-side via useRuntimeConfig(event).
+CMD ["bun", "run", ".output/server/index.mjs"]
