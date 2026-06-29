@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { deleteItem } from "@directus/sdk";
+import { deleteItem, updateItem } from "@directus/sdk";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { isServiceUnreachable } from "#shared/errors";
 import type { Transcript } from "~/types/directus";
@@ -50,6 +50,19 @@ async function saveTranscript(): Promise<void> {
 	await edit.saveEdit(transcript.value.id, target);
 	if (!edit.error.value) {
 		savedText.value = target;
+	}
+}
+
+const restarting = ref(false);
+
+async function restartTranscription(): Promise<void> {
+	restarting.value = true;
+	try {
+		await client.request(updateItem("recordings", id, { status: "pending", error_message: null }));
+		startPolling();
+	}
+	finally {
+		restarting.value = false;
 	}
 }
 
@@ -337,6 +350,14 @@ onUnmounted(() => {
 							Der Transkriptionsdienst war nicht erreichbar – bitte später erneut versuchen.
 						</span>
 					</div>
+					<HButton
+						variant="secondary"
+						:disabled="restarting"
+						data-testid="restart-transcription"
+						@click="restartTranscription"
+					>
+						{{ restarting ? "…" : "Neu transkribieren" }}
+					</HButton>
 				</div>
 
 				<p
@@ -399,7 +420,7 @@ onUnmounted(() => {
 .detail__banner { display:flex; align-items:flex-start; gap:10px; background:var(--tomato-soft); color:var(--tomato-deep); border-radius:var(--r-md); padding:14px 16px; font-family:var(--font-body); font-size:14px; }
 .detail__banner--offline { background:var(--butter-soft); color:#8B6200; }
 .detail__banner-icon { flex-shrink:0; margin-top:1px; }
-.detail__banner-text { display:flex; flex-direction:column; gap:4px; }
+.detail__banner-text { flex:1; display:flex; flex-direction:column; gap:4px; }
 .detail__banner-hint { font-size:13px; opacity:0.85; }
 .detail__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); margin:0; }
 .detail__edit { width:100%; min-height:240px; box-sizing:border-box; resize:vertical; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); background:var(--surface,transparent); border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:12px 14px; }
