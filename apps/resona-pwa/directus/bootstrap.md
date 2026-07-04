@@ -50,6 +50,7 @@ snapshot (§4).
 | status | string (dropdown) | pending / transcribing / done / error; default `pending` |
 | error_message | text | nullable |
 | source | string (dropdown) | batch / live; default `batch` |
+| review_status | string (dropdown) | editing / ready; default `editing` — user review workflow, independent of `status` |
 
 ### `transcripts`
 | Field | Type | Notes |

@@ -82,6 +82,7 @@ const COLLECTIONS = {
 		{ field: "status", type: "string", schema: { default_value: "pending" } },
 		{ field: "error_message", type: "text", schema: {} },
 		{ field: "source", type: "string", schema: { default_value: "batch" } },
+		{ field: "review_status", type: "string", schema: { default_value: "editing" } },
 	],
 	transcripts: [
 		uuidPk,

@@ -2,13 +2,15 @@
 import { deleteItem, updateItem } from "@directus/sdk";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { isServiceUnreachable } from "#shared/errors";
-import type { Transcript } from "~/types/directus";
+import type { Recording, Transcript } from "~/types/directus";
 
 const route = useRoute();
 const id = String(route.params.id);
+const cfg = useRuntimeConfig().public;
 
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
 const { client, assetUrl } = useDirectus();
+const live = useLive();
 
 // Distinguish a transient "service unreachable" failure (offline styling +
 // retry hint) from a genuine transcription error (red banner).
@@ -29,13 +31,29 @@ function currentTranscript(): Transcript | null {
 	return { ...transcript.value, text: edit.text.value };
 }
 
-// Seed the editable text once the transcript first appears. Polling stops once
-// the recording is terminal, so a single seed is enough; guard against
-// clobbering the user's edits on a later refresh.
-watch(transcript, (t) => {
-	if (t && !seeded.value) {
+// A recording is editable once transcription reaches a terminal state — whether
+// or not a transcript exists yet (an errored or never-transcribed recording can
+// still be typed/dictated into by hand).
+const canEdit = computed(() =>
+	recording.value?.status === "done" || recording.value?.status === "error",
+);
+
+// Seed the editable text once the transcript first appears, or — for a terminal
+// recording that has no transcript — start from empty so the user can type or
+// dictate. Polling stops once terminal, so a single seed is enough; guard
+// against clobbering the user's edits on a later refresh.
+watch([recording, transcript], ([, t]) => {
+	if (seeded.value) {
+		return;
+	}
+	if (t) {
 		edit.text.value = t.text ?? "";
 		savedText.value = t.text ?? "";
+		seeded.value = true;
+	}
+	else if (canEdit.value) {
+		edit.text.value = "";
+		savedText.value = "";
 		seeded.value = true;
 	}
 }, { immediate: true });
@@ -43,14 +61,85 @@ watch(transcript, (t) => {
 const dirty = computed(() => seeded.value && edit.text.value !== savedText.value);
 
 async function saveTranscript(): Promise<void> {
-	if (!transcript.value) {
+	const target = edit.text.value;
+	if (transcript.value) {
+		await edit.saveEdit(transcript.value.id, target);
+		if (!edit.error.value) {
+			savedText.value = target;
+		}
 		return;
 	}
-	const target = edit.text.value;
-	await edit.saveEdit(transcript.value.id, target);
-	if (!edit.error.value) {
+	// No transcript row yet -> create one for this recording.
+	const created = await edit.createTranscript(id, target, cfg.defaultEngine);
+	if (created) {
+		transcript.value = created;
 		savedText.value = target;
+		seeded.value = true;
 	}
+}
+
+// ── Review status (editing / ready) ────────────────────────────────────────
+const reviewStatus = computed<Recording["review_status"]>(() => recording.value?.review_status ?? "editing");
+const settingStatus = ref(false);
+
+async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
+	if (!recording.value || reviewStatus.value === value) {
+		return;
+	}
+	settingStatus.value = true;
+	try {
+		await client.request(updateItem("recordings", id, { review_status: value }));
+		recording.value.review_status = value;
+	}
+	finally {
+		settingStatus.value = false;
+	}
+}
+
+// ── Push-to-talk dictation (insert at cursor) ───────────────────────────────
+const editorRef = ref<{ insertText: (text: string) => void; focus: () => void } | null>(null);
+const dictating = ref(false);
+
+async function startDictation(): Promise<void> {
+	if (dictating.value) {
+		return;
+	}
+	dictating.value = true;
+	await live.start({ language: recording.value?.language, engine: cfg.defaultEngine });
+}
+
+function stopDictation(): void {
+	if (!dictating.value) {
+		return;
+	}
+	dictating.value = false;
+	// Grab the final + trailing partial before tearing the socket down, then let
+	// the editor splice it in at the caret (cursor ends after the insert).
+	const dictated = live.fullText.value.trim();
+	live.stop();
+	if (dictated) {
+		editorRef.value?.insertText(dictated);
+	}
+}
+
+function onPttDown(e: PointerEvent): void {
+	try {
+		(e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
+	}
+	catch {
+		// pointer capture unsupported — release/up handlers still work
+	}
+	void startDictation();
+}
+
+function onPttUp(e: PointerEvent): void {
+	try {
+		(e.currentTarget as Element | null)?.releasePointerCapture?.(e.pointerId);
+	}
+	catch {
+		// ignore
+	}
+	stopDictation();
 }
 
 const restarting = ref(false);
@@ -58,6 +147,8 @@ const restarting = ref(false);
 async function restartTranscription(): Promise<void> {
 	restarting.value = true;
 	try {
+		// Allow the editor to re-seed from the freshly produced transcript.
+		seeded.value = false;
 		await client.request(updateItem("recordings", id, { status: "pending", error_message: null }));
 		startPolling();
 	}
@@ -312,7 +403,16 @@ onUnmounted(() => {
 			</p>
 
 			<template v-else-if="recording">
-				<StatusChip :status="recording.status" />
+				<div class="detail__chips">
+					<StatusChip :status="recording.status" />
+					<HChip
+						v-if="canEdit"
+						:tone="reviewStatus === 'ready' ? 'success' : 'neutral'"
+						data-testid="review-chip"
+					>
+						{{ reviewStatus === "ready" ? "Freigegeben" : "In Bearbeitung" }}
+					</HChip>
+				</div>
 
 				<div
 					v-if="recording.status === 'error'"
@@ -367,12 +467,61 @@ onUnmounted(() => {
 					Transkribiert…
 				</p>
 
-				<template v-else-if="recording.status === 'done' && transcript">
-					<textarea
+				<template v-if="canEdit">
+					<div class="detail__dictate">
+						<button
+							type="button"
+							class="detail__ptt"
+							:class="{ 'detail__ptt--active': dictating }"
+							data-testid="push-to-talk"
+							:aria-pressed="dictating"
+							aria-label="Zum Diktieren gedrückt halten"
+							@pointerdown.prevent="onPttDown"
+							@pointerup="onPttUp"
+							@pointercancel="onPttUp"
+						>
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<rect
+									x="9"
+									y="2"
+									width="6"
+									height="12"
+									rx="3"
+								/>
+								<path d="M5 10a7 7 0 0 0 14 0" />
+								<line
+									x1="12"
+									y1="17"
+									x2="12"
+									y2="21"
+								/>
+							</svg>
+							<span>{{ dictating ? "Diktiert… loslassen zum Einfügen" : "Diktieren (gedrückt halten)" }}</span>
+						</button>
+						<p
+							v-if="dictating"
+							class="detail__dictate-preview"
+							data-testid="dictate-preview"
+						>
+							{{ live.fullText.value || "Sprich jetzt…" }}
+						</p>
+					</div>
+
+					<TranscriptEditor
+						ref="editorRef"
 						v-model="edit.text.value"
-						class="detail__edit"
 						data-testid="transcript-edit"
-						spellcheck="false"
+						placeholder="Noch kein Transkript – hier tippen oder diktieren."
 					/>
 					<p
 						v-if="edit.error.value"
@@ -382,9 +531,31 @@ onUnmounted(() => {
 						{{ edit.error.value }}
 					</p>
 					<div class="detail__edit-actions">
+						<div
+							class="detail__review"
+							role="group"
+							aria-label="Status"
+						>
+							<HButton
+								variant="secondary"
+								:disabled="settingStatus || reviewStatus === 'editing'"
+								data-testid="review-editing"
+								@click="setReviewStatus('editing')"
+							>
+								In Bearbeitung
+							</HButton>
+							<HButton
+								variant="secondary"
+								:disabled="settingStatus || reviewStatus === 'ready'"
+								data-testid="review-ready"
+								@click="setReviewStatus('ready')"
+							>
+								Fertig
+							</HButton>
+						</div>
 						<HButton
 							variant="primary"
-							:disabled="edit.saving.value || !dirty"
+							:disabled="edit.saving.value || dictating || !dirty"
 							data-testid="save-transcript"
 							@click="saveTranscript"
 						>
@@ -392,13 +563,6 @@ onUnmounted(() => {
 						</HButton>
 					</div>
 				</template>
-
-				<p
-					v-else
-					class="detail__hint"
-				>
-					Kein Transkript verfügbar.
-				</p>
 			</template>
 		</div>
 
@@ -423,7 +587,11 @@ onUnmounted(() => {
 .detail__banner-text { flex:1; display:flex; flex-direction:column; gap:4px; }
 .detail__banner-hint { font-size:13px; opacity:0.85; }
 .detail__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); margin:0; }
-.detail__edit { width:100%; min-height:240px; box-sizing:border-box; resize:vertical; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); background:var(--surface,transparent); border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:12px 14px; }
-.detail__edit:focus { outline:none; border-color:var(--accent); }
-.detail__edit-actions { display:flex; justify-content:flex-end; }
+.detail__edit-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.detail__review { display:flex; gap:8px; margin-right:auto; }
+.detail__chips { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.detail__dictate { display:flex; flex-direction:column; gap:8px; }
+.detail__ptt { display:inline-flex; align-items:center; gap:8px; align-self:flex-start; padding:10px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--surface,transparent); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; }
+.detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
+.detail__dictate-preview { margin:0; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--fg3); font-style:italic; }
 </style>

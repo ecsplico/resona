@@ -152,7 +152,8 @@ cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
 
 - **recordings**: `id, user_created, date_created, date_updated, title, audio_file,
   duration_seconds, language, profile, status (pending|transcribing|done|error),
-  error_message, source (batch|live)` — **NO `engine` field**.
+  error_message, source (batch|live), review_status (editing|ready)` — **NO `engine`
+  field**. `review_status` is the user's review workflow, independent of `status`.
 - **transcripts**: `id, recording, text, structured, segments, engine, date_created,
   date_updated` — the `engine` field lives **HERE**, not on recordings.
 

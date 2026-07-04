@@ -5,12 +5,14 @@ import { useTranscriptEdit } from "~/composables/useTranscriptEdit";
 const state = vi.hoisted(() => ({
 	request: vi.fn(),
 	updateItem: vi.fn((collection: string, id: string, payload: unknown) => ({ kind: "update", collection, id, payload })),
+	createItem: vi.fn((collection: string, payload: unknown) => ({ kind: "create", collection, payload })),
 }));
 
 mockNuxtImport("useDirectus", () => () => ({ client: { request: state.request } }));
 
 vi.mock("@directus/sdk", () => ({
 	updateItem: (collection: string, id: string, payload: unknown) => state.updateItem(collection, id, payload),
+	createItem: (collection: string, payload: unknown) => state.createItem(collection, payload),
 }));
 
 describe("useTranscriptEdit", () => {
@@ -55,6 +57,34 @@ describe("useTranscriptEdit", () => {
 
 		await edit.saveEdit("t-1", "c"); // fails -> revert to "b", not "a"
 		expect(edit.text.value).toBe("b");
+		expect(edit.error.value).toBeTruthy();
+	});
+
+	it("createTranscript creates a row and returns it, applying the text", async () => {
+		const created = { id: "t-new", recording: "rec-1", text: "frisch" };
+		state.request.mockResolvedValueOnce(created);
+
+		const edit = useTranscriptEdit("");
+		const row = await edit.createTranscript("rec-1", "frisch", "faster-whisper");
+
+		expect(state.createItem).toHaveBeenCalledWith("transcripts", {
+			recording: "rec-1",
+			text: "frisch",
+			engine: "faster-whisper",
+		});
+		expect(row).toEqual(created);
+		expect(edit.text.value).toBe("frisch");
+		expect(edit.error.value).toBeNull();
+	});
+
+	it("createTranscript rolls back the text and reports an error on failure", async () => {
+		state.request.mockRejectedValueOnce(new Error("nope"));
+
+		const edit = useTranscriptEdit("alt");
+		const row = await edit.createTranscript("rec-1", "neu");
+
+		expect(row).toBeNull();
+		expect(edit.text.value).toBe("alt");
 		expect(edit.error.value).toBeTruthy();
 	});
 });

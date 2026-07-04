@@ -10,6 +10,9 @@ export interface Recording {
 	status: "pending" | "transcribing" | "done" | "error";
 	error_message?: string | null;
 	source: "batch" | "live";
+	// Review workflow status, distinct from the transcription `status` above:
+	// whether the user is still editing the text or has marked it ready.
+	review_status?: "editing" | "ready";
 }
 export interface Transcript {
 	id: string;
