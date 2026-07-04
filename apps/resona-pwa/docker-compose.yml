@@ -50,6 +50,33 @@ services:
         condition: service_healthy
     restart: "no"
 
+  pwa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time — must be browser-reachable
+        # host URLs (not compose service names). Override in .env for external access.
+        NUXT_PUBLIC_DIRECTUS_URL: ${NUXT_PUBLIC_DIRECTUS_URL:-http://localhost:7700}
+        NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL:-http://localhost:7710}
+        NUXT_PUBLIC_RESONA_API_KEY: ${NUXT_PUBLIC_RESONA_API_KEY:-}
+        NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
+        NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}
+        NUXT_PUBLIC_DEFAULT_ENGINE: ${NUXT_PUBLIC_DEFAULT_ENGINE:-faster-whisper}
+        NUXT_PUBLIC_CALENDAR_ENABLED: ${NUXT_PUBLIC_CALENDAR_ENABLED:-true}
+    ports:
+      - "${PWA_PORT:-7720}:3000"
+    environment:
+      # Server-only secrets — never baked into the bundle, read at runtime by Nitro.
+      NUXT_GOOGLE_CLIENT_ID: ${NUXT_GOOGLE_CLIENT_ID:-}
+      NUXT_GOOGLE_CLIENT_SECRET: ${NUXT_GOOGLE_CLIENT_SECRET:-}
+      NUXT_GOOGLE_REDIRECT_URI: ${NUXT_GOOGLE_REDIRECT_URI:-}
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-}
+    depends_on:
+      directus-bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   directus-transcribe:
     build:
       context: ./worker
