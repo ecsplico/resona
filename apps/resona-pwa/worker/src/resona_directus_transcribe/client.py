@@ -60,16 +60,28 @@ class DirectusClient:
     ) -> None:
         # `language` lives on the recording, not the transcript collection —
         # accepted for a uniform call site but intentionally not POSTed.
-        resp = await self._client.post(
+        payload = {
+            "text": text,
+            "segments": segments,
+            "structured": structured,
+            "engine": engine,
+        }
+        existing = await self._client.get(
             f"{self.base_url}/items/transcripts",
-            json={
-                "recording": recording_id,
-                "text": text,
-                "segments": segments,
-                "structured": structured,
-                "engine": engine,
-            },
+            params={"filter[recording][_eq]": recording_id, "limit": 1, "fields": "id"},
         )
+        existing.raise_for_status()
+        rows = existing.json()["data"]
+        if rows:
+            resp = await self._client.patch(
+                f"{self.base_url}/items/transcripts/{rows[0]['id']}",
+                json=payload,
+            )
+        else:
+            resp = await self._client.post(
+                f"{self.base_url}/items/transcripts",
+                json={"recording": recording_id, **payload},
+            )
         resp.raise_for_status()
 
     async def mark_done(self, recording_id: str) -> None:

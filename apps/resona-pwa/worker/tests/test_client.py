@@ -56,8 +56,11 @@ async def test_download_audio_writes_temp_file(base_url, tmp_path):
 
 @respx.mock
 @pytest.mark.anyio
-async def test_write_transcript_posts_payload(base_url):
-    route = respx.post(f"{base_url}/items/transcripts").mock(
+async def test_write_transcript_posts_when_none_exists(base_url):
+    respx.get(f"{base_url}/items/transcripts").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    post = respx.post(f"{base_url}/items/transcripts").mock(
         return_value=httpx.Response(200, json={"data": {"id": "t-1"}})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
@@ -66,10 +69,30 @@ async def test_write_transcript_posts_payload(base_url):
         segments=[{"start": 0, "end": 1}], structured=None, engine="faster-whisper",
     )
     await client.aclose()
-    body = json.loads(route.calls.last.request.content)
+    body = json.loads(post.calls.last.request.content)
     assert body["recording"] == "rec-1"
     assert body["text"] == "hallo"
     assert body["engine"] == "faster-whisper"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_write_transcript_patches_when_exists(base_url):
+    respx.get(f"{base_url}/items/transcripts").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "t-existing"}]})
+    )
+    patch = respx.patch(f"{base_url}/items/transcripts/t-existing").mock(
+        return_value=httpx.Response(200, json={"data": {"id": "t-existing"}})
+    )
+    client = DirectusClient(base_url=base_url, token=TOKEN)
+    await client.write_transcript(
+        recording_id="rec-1", text="neu", language="de",
+        segments=None, structured=None, engine="faster-whisper",
+    )
+    await client.aclose()
+    body = json.loads(patch.calls.last.request.content)
+    assert body["text"] == "neu"
+    assert "recording" not in body
 
 
 @respx.mock
