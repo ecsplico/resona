@@ -5,9 +5,13 @@ default:
 backend:
     docker compose -f docker-compose.backend.yml up -d
 
-# Start the frontend dev server
+# Start the frontend dev server locally
 pwa:
     bun run dev
+
+# Start the PWA docker container (assumes backend is already up)
+pwa-docker:
+    docker compose up -d pwa
 
 # Start the full stack (data layer + resona + PWA container); generates secrets on first run
 full:
