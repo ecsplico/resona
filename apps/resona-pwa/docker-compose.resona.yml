@@ -1,0 +1,87 @@
+# Overlay: add the resona transcription backend (resona-api + engine-faster-whisper)
+# to any base compose file and wire the directus-transcribe worker to the in-stack API.
+#
+# Merge with docker-compose.yml (includes PWA) or docker-compose.backend.yml (no PWA):
+#
+#   # Full stack with PWA (replaces the old docker-compose.full.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.resona.yml up -d --build
+#   bun run setup   # convenience wrapper: generates secrets, auto-picks engine, runs above
+#
+#   # Data layer + resona, no PWA (replaces docker-compose.resona-test.yml):
+#   docker compose -f docker-compose.backend.yml -f docker-compose.resona.yml up -d --build
+#
+# Engine: the native MLX engine (Apple GPU, `bun run engine` on :7720) is PREFERRED.
+# resona-api probes host.docker.internal:7720 first and engine-faster-whisper:7001 second,
+# picking the first available. The CPU docker engine is behind the `cpu-engine` profile
+# (off by default) — `bun run setup` starts it only when no native engine is live.
+# Both images are built from the sibling resona monorepo checkout (default ../resona,
+# override with RESONA_REPO).
+services:
+  engine-faster-whisper:
+    profiles: ["cpu-engine"]
+    build:
+      context: ${RESONA_REPO:-../resona}
+      dockerfile: packages/engine-faster-whisper/Dockerfile
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      RESONA_ENGINE: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: ${FASTWHISPER_MODEL:-large-v3}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    restart: unless-stopped
+
+  resona-api:
+    build:
+      context: ${RESONA_REPO:-../resona}
+      dockerfile: packages/api/Dockerfile
+    ports:
+      - "7710:7000"
+    volumes:
+      - resona-audio:/app/data/files
+      - resona-md:/app/data/md
+      - resona-db:/app/data/db
+      - resona-profiles:/app/data/profiles
+    environment:
+      # Native MLX engine on the host (Apple GPU) is probed first; the CPU docker
+      # engine (profile cpu-engine) is the fallback. resona-api picks the first live one.
+      RESONA_ENGINE_URLS: ${RESONA_ENGINE_URLS:-http://host.docker.internal:7720,http://engine-faster-whisper:7001}
+      DATA_PATH: /app/data
+      RESONA_API_KEY: ${RESONA_API_KEY:-}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      engine-faster-whisper:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Override fragment: point the worker at the in-stack API and wait for it.
+  directus-transcribe:
+    environment:
+      RESONA_API_URL: http://resona-api:7000
+      RESONA_API_KEY: ${RESONA_API_KEY:-}
+      # Empty → resona-api auto-selects the first available engine (native MLX → CPU).
+      # Set a name here only to force a specific engine.
+      TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-}
+    depends_on:
+      resona-api:
+        condition: service_healthy
+
+volumes:
+  resona-audio:
+  resona-md:
+  resona-db:
+  resona-profiles:

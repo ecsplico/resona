@@ -30,9 +30,12 @@ short:
 docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
 #   resona-api :7710 · engine :7720
 
-# Data layer — from this repo (Directus + the directus-transcribe worker):
+# Data layer — from this repo (Directus + worker, no PWA container):
 cp .env.stack.example .env  # Directus + worker secrets (NOT the frontend .env)
-docker compose up -d        #   directus :7700 · directus-transcribe worker
+docker compose -f docker-compose.backend.yml up -d   #   directus :7700 · worker
+
+# Or bring up the full stack (PWA + data layer + resona) in one command:
+# bun run setup   # generates secrets, auto-picks engine, runs docker-compose.yml + docker-compose.resona.yml
 
 # Frontend — from this repo:
 bun install

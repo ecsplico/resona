@@ -71,11 +71,11 @@ worker's static token and the worker won't start without it. Bootstrapping
 > **All-in-one for testing.** To run the resona transcription stack
 > (`resona-api` + the faster-whisper engine) *inside this compose* — so batch
 > jobs complete without starting the separate resona stack by hand — merge the
-> testing override (it builds the images from the sibling `../resona` checkout;
+> resona overlay (it builds the images from the sibling `../resona` checkout;
 > set `RESONA_REPO` if it lives elsewhere):
 >
 > ```bash
-> docker compose -f docker-compose.yml -f docker-compose.resona-test.yml up -d
+> docker compose -f docker-compose.backend.yml -f docker-compose.resona.yml up -d --build
 > ```
 >
 > Testing only — production keeps the two stacks split.
@@ -92,18 +92,19 @@ Open `http://localhost:3000`, log in with a Directus user, and record/upload/dic
 
 ## Full local stack (one command)
 
-For local development, `docker-compose.full.yml` brings up **everything** — the
-PWA, the Directus data layer, the worker, **and** the transcription backend — in
-a single compose project, driven entirely from this repo. It's a convenience for
-local/dev use: it builds the resona-api (and CPU engine) images from the sibling
-resona monorepo checkout (default `../resona`, override with `RESONA_REPO`).
-Production still keeps the two stacks split (steps 1–3 above).
+For local development, merging `docker-compose.yml` with the resona overlay
+`docker-compose.resona.yml` brings up **everything** — the PWA, the Directus
+data layer, the worker, **and** the transcription backend — in a single compose
+project, driven entirely from this repo. It's a convenience for local/dev use:
+it builds the resona-api (and CPU engine) images from the sibling resona monorepo
+checkout (default `../resona`, override with `RESONA_REPO`). Production still
+keeps the two stacks split (steps 1–3 above).
 
 ```bash
 bun run setup          # generate secrets → start the whole stack
 ```
 
-`bun run setup` (a thin wrapper around the compose file) does three things:
+`bun run setup` (a thin wrapper around the two compose files) does three things:
 
 1. Creates `.env` from `.env.stack.example` if missing, then **generates and
    persists** `DIRECTUS_TOKEN` + `DIRECTUS_SECRET` into it (idempotent — existing
@@ -112,7 +113,7 @@ bun run setup          # generate secrets → start the whole stack
    copy-paste.
 2. **Auto-detects** a native MLX engine on `:7720` and starts the CPU docker
    engine fallback (compose profile `cpu-engine`) **only** when none is live.
-3. Runs `docker compose -f docker-compose.full.yml up -d --build`.
+3. Runs `docker compose -f docker-compose.yml -f docker-compose.resona.yml up -d --build`.
 
 | Service | Host port | Role |
 |---------|-----------|------|

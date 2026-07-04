@@ -31,7 +31,8 @@ import { dirname, join } from "node:path";
 const ROOT = dirname(import.meta.dir); // scripts/ → repo root
 const ENV_FILE = join(ROOT, ".env");
 const EXAMPLE = join(ROOT, ".env.stack.example");
-const COMPOSE_FILE = join(ROOT, "docker-compose.full.yml");
+const COMPOSE_BASE = join(ROOT, "docker-compose.yml");
+const COMPOSE_RESONA = join(ROOT, "docker-compose.resona.yml");
 
 const PLACEHOLDERS = new Set(["", "change-me", "change-me-in-env"]);
 
@@ -86,7 +87,7 @@ async function nativeEngineUp(): Promise<boolean> {
 	}
 }
 
-const compose = ["docker", "compose", "-f", COMPOSE_FILE];
+const compose = ["docker", "compose", "-f", COMPOSE_BASE, "-f", COMPOSE_RESONA];
 
 if (args.includes("--down")) {
 	// Include the profile so a CPU engine started earlier is torn down too.
