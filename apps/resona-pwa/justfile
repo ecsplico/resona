@@ -13,6 +13,17 @@ pwa:
 pwa-docker:
     docker compose up -d pwa
 
+# Start the backend data layer + resona-api; uses local MLX engine (:7720) if running, CPU docker engine as fallback
+backend-resona:
+    #!/usr/bin/env sh
+    if curl -sf http://localhost:7720/health > /dev/null 2>&1; then
+        echo "→ MLX engine on :7720 detected — using it"
+        docker compose -f docker-compose.backend.yml -f docker-compose.resona.yml up -d --build
+    else
+        echo "→ no MLX engine on :7720 — starting CPU docker engine (profile cpu-engine)"
+        docker compose -f docker-compose.backend.yml -f docker-compose.resona.yml --profile cpu-engine up -d --build
+    fi
+
 # Start the full stack (data layer + resona + PWA container); generates secrets on first run
 full:
     bun run setup
