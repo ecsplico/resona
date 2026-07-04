@@ -12,3 +12,17 @@ export function isServiceUnreachable(message: string | null | undefined): boolea
 	}
 	return /nicht erreichbar|zeitüberschreitung/i.test(message);
 }
+
+// Raw browser fetch-failure strings — never useful to end-users.
+const NETWORK_ERROR_RE = /NetworkError when attempting to fetch|Failed to fetch|Load failed|network error/i;
+
+/**
+ * Convert a caught error into a human-readable string.
+ * Maps raw browser fetch errors to a single "Server nicht erreichbar." message.
+ * Falls back to `fallback` for non-Error values.
+ */
+export function humanizeError(err: unknown, fallback: string): string {
+	if (!(err instanceof Error)) return fallback;
+	if (NETWORK_ERROR_RE.test(err.message)) return "Server nicht erreichbar.";
+	return err.message || fallback;
+}

@@ -2,6 +2,7 @@ import { uploadFiles, createItem } from "@directus/sdk";
 import { ref } from "vue";
 import type { Ref } from "vue";
 import type { Recording } from "~/types/directus";
+import { humanizeError } from "#shared/errors";
 
 interface SaveArgs {
 	blob: Blob;
@@ -27,7 +28,7 @@ export function useUpload() {
 			return uploaded.id;
 		}
 		catch (err) {
-			error.value = err instanceof Error ? err.message : "Upload failed";
+			error.value = humanizeError(err, "Upload fehlgeschlagen.");
 			throw err;
 		}
 		finally {
@@ -58,7 +59,7 @@ export function useUpload() {
 			return created;
 		}
 		catch (err) {
-			error.value = err instanceof Error ? err.message : "Upload failed";
+			error.value = humanizeError(err, "Upload fehlgeschlagen.");
 			throw err;
 		}
 		finally {

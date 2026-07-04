@@ -2,6 +2,7 @@ import { readItem, readItems } from "@directus/sdk";
 import { ref, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
+import { humanizeError } from "#shared/errors";
 
 function isTerminal(status: Recording["status"] | undefined): boolean {
 	return status === "done" || status === "error";
@@ -31,7 +32,7 @@ export function useRecording(id: string) {
 			transcript.value = rows[0] ?? null;
 		}
 		catch (err) {
-			error.value = err instanceof Error ? err.message : "Failed to load recording";
+			error.value = humanizeError(err, "Aufnahme konnte nicht geladen werden.");
 		}
 		finally {
 			loading.value = false;

@@ -2,6 +2,7 @@ import { createItem, updateItem } from "@directus/sdk";
 import { ref } from "vue";
 import type { Ref } from "vue";
 import type { Transcript } from "~/types/directus";
+import { humanizeError } from "#shared/errors";
 
 export function useTranscriptEdit(initialText = "") {
 	const text: Ref<string> = ref(initialText);
@@ -28,7 +29,7 @@ export function useTranscriptEdit(initialText = "") {
 		catch (err) {
 			text.value = previous;
 			committed = previous;
-			error.value = err instanceof Error ? err.message : "Speichern fehlgeschlagen";
+			error.value = humanizeError(err, "Speichern fehlgeschlagen.");
 			return null;
 		}
 		finally {

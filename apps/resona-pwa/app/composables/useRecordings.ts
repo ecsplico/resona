@@ -3,6 +3,7 @@ import type { Query } from "@directus/sdk";
 import { ref } from "vue";
 import type { Ref } from "vue";
 import type { Recording, Schema } from "~/types/directus";
+import { humanizeError } from "#shared/errors";
 
 interface ListOpts {
 	search?: string;
@@ -40,7 +41,7 @@ export function useRecordings() {
 			return rows;
 		}
 		catch (err) {
-			error.value = err instanceof Error ? err.message : "Failed to load recordings";
+			error.value = humanizeError(err, "Aufnahmen konnten nicht geladen werden.");
 			return items.value;
 		}
 		finally {
