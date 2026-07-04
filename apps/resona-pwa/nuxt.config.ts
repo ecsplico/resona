@@ -37,7 +37,7 @@ export default defineNuxtConfig({
 			calendarEnabled: true,
 		},
 	},
-	devServer: { port: 7701 },
+	devServer: { port: 7720 },
 	experimental: { typedPages: true },
 	compatibilityDate: "2026-06-18",
 	vite: { plugins: [tailwindcss()] },

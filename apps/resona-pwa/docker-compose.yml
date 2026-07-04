@@ -65,7 +65,7 @@ services:
         NUXT_PUBLIC_DEFAULT_ENGINE: ${NUXT_PUBLIC_DEFAULT_ENGINE:-faster-whisper}
         NUXT_PUBLIC_CALENDAR_ENABLED: ${NUXT_PUBLIC_CALENDAR_ENABLED:-true}
     ports:
-      - "${PWA_PORT:-7701}:3000"
+      - "${PWA_PORT:-7720}:3000"
     environment:
       # Server-only secrets — never baked into the bundle, read at runtime by Nitro.
       NUXT_GOOGLE_CLIENT_ID: ${NUXT_GOOGLE_CLIENT_ID:-}
