@@ -99,13 +99,21 @@ async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
 // ── Push-to-talk dictation (insert at cursor) ───────────────────────────────
 const editorRef = ref<{ insertText: (text: string) => void; focus: () => void } | null>(null);
 const dictating = ref(false);
+const dictateError = ref<string | null>(null);
 
 async function startDictation(): Promise<void> {
 	if (dictating.value) {
 		return;
 	}
+	dictateError.value = null;
 	dictating.value = true;
-	await live.start({ language: recording.value?.language, engine: cfg.defaultEngine });
+	try {
+		await live.start({ language: recording.value?.language, engine: cfg.defaultEngine });
+	}
+	catch {
+		dictating.value = false;
+		dictateError.value = "Mikrofon oder Verbindung nicht verfügbar.";
+	}
 }
 
 function stopDictation(): void {
@@ -508,6 +516,13 @@ onUnmounted(() => {
 							</svg>
 							<span>{{ dictating ? "Diktiert… loslassen zum Einfügen" : "Diktieren (gedrückt halten)" }}</span>
 						</button>
+						<p
+							v-if="dictateError"
+							class="detail__error"
+							data-testid="dictate-error"
+						>
+							{{ dictateError }}
+						</p>
 						<p
 							v-if="dictating"
 							class="detail__dictate-preview"

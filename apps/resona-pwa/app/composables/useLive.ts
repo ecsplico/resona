@@ -50,6 +50,7 @@ export function useLive() {
 	let processor: ScriptProcessorNode | null = null;
 	let stream: MediaStream | null = null;
 	let ownsStream = false;
+	let stopped = false;
 
 	function handleMessage(raw: unknown): void {
 		if (typeof raw !== "string" || raw.length === 0) {
@@ -92,7 +93,26 @@ export function useLive() {
 			ownsStream = true;
 		}
 
+		// stop() may have been called while getUserMedia was pending (quick
+		// press-release). Bail out to avoid an orphaned AudioContext/stream.
+		if (stopped) {
+			if (ownsStream) {
+				for (const track of stream.getTracks()) {
+					track.stop();
+				}
+			}
+			stream = null;
+			ownsStream = false;
+			return;
+		}
+
 		audioCtx = new Ctor();
+		// Chrome's autoplay policy may start the context suspended when created
+		// outside a synchronous user-gesture handler (e.g. after an await).
+		// resume() is a no-op on already-running contexts.
+		if (audioCtx.state === "suspended") {
+			await audioCtx.resume();
+		}
 		source = audioCtx.createMediaStreamSource(stream);
 		processor = audioCtx.createScriptProcessor(4096, 1, 1);
 		processor.onaudioprocess = (e: AudioProcessingEvent) => {
@@ -147,6 +167,7 @@ export function useLive() {
 		url.searchParams.set("engine", engine);
 		url.searchParams.set("token", cfg.resonaApiKey);
 
+		stopped = false;
 		final.value = "";
 		partial.value = "";
 
@@ -169,6 +190,7 @@ export function useLive() {
 	}
 
 	function stop(): void {
+		stopped = true;
 		teardownAudio();
 		if (send) {
 			send(JSON.stringify({ type: "CloseStream" }));
