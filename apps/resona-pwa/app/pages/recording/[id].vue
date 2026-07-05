@@ -109,6 +109,11 @@ const pttError = ref<string | null>(null);
 const pttRecorder = useRecorder();
 let pttRange: { from: number; to: number } | null = null;
 
+// macOS: fn key (code "Fn"); Windows/Linux: left Ctrl (code "ControlLeft")
+const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+const pttKeyCode = isMac ? "Fn" : "ControlLeft";
+const pttKeyLabel = isMac ? "fn" : "Strg";
+
 async function startDictation(): Promise<void> {
 	if (pttState.value !== "idle") return;
 	pttError.value = null;
@@ -191,14 +196,15 @@ function onPttUp(e: PointerEvent): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-	if (e.code === "F9" && !e.repeat && pttState.value === "idle") {
+	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle") {
 		e.preventDefault();
 		void startDictation();
 	}
 }
 
 function onKeyUp(e: KeyboardEvent): void {
-	if (e.code === "F9" && pttState.value === "recording") {
+	if (e.code === pttKeyCode && pttState.value === "recording") {
+		e.preventDefault();
 		void stopDictation();
 	}
 }
@@ -544,7 +550,7 @@ onUnmounted(() => {
 							:disabled="pttState === 'transcribing'"
 							data-testid="push-to-talk"
 							:aria-pressed="pttState === 'recording'"
-							aria-label="Zum Diktieren gedrückt halten (F9)"
+							:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
 							@pointerdown.prevent="onPttDown"
 							@pointerup="onPttUp"
 							@pointercancel="onPttUp"
@@ -578,7 +584,7 @@ onUnmounted(() => {
 							<span>{{
 								pttState === "recording" ? "Aufnahme… loslassen zum Transkribieren"
 								: pttState === "transcribing" ? "Transkribiert…"
-									: "Diktieren (F9 halten)"
+									: `Diktieren (${pttKeyLabel} halten)`
 							}}</span>
 						</button>
 						<p
