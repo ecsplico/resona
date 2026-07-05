@@ -22,13 +22,19 @@ export function useRecording(id: string) {
 		error.value = null;
 		try {
 			const { client } = useDirectus();
-			const rec = await client.request(readItem("recordings", id)) as Recording;
+			// Fetch both in parallel and assign synchronously (no await between the
+			// two ref writes). Assigning `recording` first, then awaiting the
+			// transcript fetch, lets Vue flush the seeding watcher while `transcript`
+			// is still null — for a terminal recording that seeds the editor empty and
+			// latches `seeded`, so the real text never lands. See recording/[id].vue.
+			const [rec, rows] = await Promise.all([
+				client.request(readItem("recordings", id)) as Promise<Recording>,
+				client.request(readItems("transcripts", {
+					filter: { recording: { _eq: id } },
+					limit: 1,
+				})) as Promise<Transcript[]>,
+			]);
 			recording.value = rec;
-
-			const rows = await client.request(readItems("transcripts", {
-				filter: { recording: { _eq: id } },
-				limit: 1,
-			})) as Transcript[];
 			transcript.value = rows[0] ?? null;
 		}
 		catch (err) {

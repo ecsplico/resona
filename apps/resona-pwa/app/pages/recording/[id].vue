@@ -109,10 +109,12 @@ const pttError = ref<string | null>(null);
 const pttRecorder = useRecorder();
 let pttRange: { from: number; to: number } | null = null;
 
-// macOS: fn key (code "Fn"); Windows/Linux: left Ctrl (code "ControlLeft")
+// Left Ctrl everywhere (code "ControlLeft"). The macOS fn/globe key can't be
+// used — browsers never deliver a keydown/keyup for it. Label reads "ctrl" on
+// Mac, "Strg" on Windows/Linux.
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
-const pttKeyCode = isMac ? "Fn" : "ControlLeft";
-const pttKeyLabel = isMac ? "fn" : "Strg";
+const pttKeyCode = "ControlLeft";
+const pttKeyLabel = isMac ? "ctrl" : "Strg";
 
 async function startDictation(): Promise<void> {
 	if (pttState.value !== "idle") return;
@@ -159,7 +161,8 @@ async function stopDictation(): Promise<void> {
 		const result = await resp.json() as { text?: string };
 		const text = (result.text ?? "").trim();
 		if (pttRange) {
-			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text);
+			// Trailing space so the next dictation/typing doesn't butt against it.
+			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text ? `${text} ` : "");
 			pttRange = null;
 		}
 	}
