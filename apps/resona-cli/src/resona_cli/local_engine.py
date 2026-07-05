@@ -18,8 +18,25 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+DEFAULT_LOCAL_ENGINE_PORT = int(os.getenv("RESONA_LOCAL_ENGINE_PORT", "7720"))
+
+
+def probe_local_engine(port: int = DEFAULT_LOCAL_ENGINE_PORT, timeout: float = 0.5) -> bool:
+    """True if a resona-engine-server is already reachable on `port`.
+
+    Used to avoid loading an in-process model or spawning a subprocess when
+    one's already running — e.g. started manually for development.
+    """
+    try:
+        return httpx.get(f"http://localhost:{port}/health", timeout=timeout).status_code == 200
+    except httpx.RequestError:
+        return False
+
+
 class LocalEngine:
-    """Context manager that spawns a local resona-engine subprocess and transcribes via HTTP.
+    """Context manager that transcribes via HTTP against a resona-engine-server —
+    either one already running (attached, nothing to spawn or tear down), or one
+    spawned as a subprocess for the lifetime of the context.
 
     Usage::
 
@@ -27,8 +44,11 @@ class LocalEngine:
             result = engine.transcribe(Path("audio.wav"), language="de")
             print(result["text"])
 
-    The subprocess is terminated on __exit__ (or via atexit on unclean exit).
-    No replacements or initial_prompt are sent — local fallback mode only.
+    On `__enter__`, first probes `RESONA_LOCAL_ENGINE_PORT` (default 7720) —
+    if a server is already listening there, attaches to it directly rather
+    than loading another copy of the model. Otherwise spawns a subprocess,
+    terminated on `__exit__` (or via atexit on unclean exit). No replacements
+    or initial_prompt are sent — local fallback mode only.
     """
 
     def __init__(
@@ -43,6 +63,7 @@ class LocalEngine:
         self._package = f"resona-engine-{engine}"
         self._process: subprocess.Popen | None = None
         self._port: int | None = None
+        self._attached = False
         self._stderr_file = None
         self._http: httpx.Client | None = None
         # Store as attribute before registering — atexit.unregister needs the same object.
@@ -53,6 +74,13 @@ class LocalEngine:
     # ------------------------------------------------------------------
 
     def __enter__(self) -> "LocalEngine":
+        self._http = httpx.Client(timeout=30.0)
+
+        if probe_local_engine():
+            self._port = DEFAULT_LOCAL_ENGINE_PORT
+            self._attached = True
+            return self
+
         self._port = _find_free_port()
 
         env = os.environ.copy()
@@ -68,7 +96,6 @@ class LocalEngine:
             stdout=subprocess.DEVNULL,
             stderr=self._stderr_file,
         )
-        self._http = httpx.Client(timeout=30.0)
         atexit.register(self._atexit_fn)
 
         try:

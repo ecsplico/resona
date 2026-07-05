@@ -1,5 +1,6 @@
 import sys
 import os
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -87,16 +88,27 @@ def _resolve_live_engine(engine: Optional[str]) -> str:
 
 @app.command()
 def live(
+    file: Optional[str] = typer.Argument(
+        None, help="Markdown document to open (prompted for a filename if omitted). "
+                    "Created on first save/recording if it doesn't exist."),
     language: str = typer.Option("de", "--language", "-l", help="Transcription language (e.g. de, en)."),
     engine: Optional[str] = typer.Option(None, "--engine", "-e",
         help="Local engine to run in-process (default: platform best — MLX on Apple Silicon, else faster-whisper)."),
     remote: Optional[str] = typer.Option(None, "--remote", "-r",
-        help="Stream to a remote server instead of running locally. Without --engine: "
-             "an engine-server /ws/live (e.g. ws://host:7001). With --engine: a resona-api "
+        help="Stream to a remote server instead of running locally (forces every document into "
+             "continuous Live mode — push-to-talk is local-only). Without --engine: an "
+             "engine-server /ws/live (e.g. ws://host:7001). With --engine: a resona-api "
              "/v1/listen gateway (e.g. http://host:7000), where --engine picks the backend "
              "(deepgram, elevenlabs, or a local engine name)."),
+    debug: bool = typer.Option(False, "--debug", help="Show a Logs tab capturing internal log output."),
 ):
-    """Launch the live transcription TUI."""
+    """Launch the Resona Live TUI.
+
+    Each open document defaults to push-to-talk (tap F8 to record a segment,
+    tap again to stop) with a per-document Live switch (ctrl+l) to flip it
+    into continuous streaming transcription instead. Create more documents
+    with ctrl+n, switch between them with ctrl+pagedown/ctrl+pageup.
+    """
     _require_modules("textual", "sounddevice", "soundfile", "soxr", "resona_asr_core")
     import logging
     import threading
@@ -129,28 +141,22 @@ def live(
     logging.root.handlers.clear()
     logging.root.addHandler(logging.NullHandler())
 
-    output_dir = os.getenv("FILE_PATH", os.path.join(os.getcwd(), "data", "files"))
     sample_rate = int(os.getenv("SAMPLE_RATE", 44100))
     channels = int(os.getenv("CHANNELS", 1))
-
-    if not os.path.exists(output_dir):
-        try:
-            os.makedirs(output_dir)
-        except Exception as e:
-            sys.stderr.write(f"Error: Could not create output directory {output_dir}: {e}\n")
-            raise typer.Exit(1)
-
     try:
         sd.check_input_settings(device=None, samplerate=sample_rate, channels=channels)
     except Exception as e:
         sys.stderr.write(f"Error initializing audio input: {e}\n")
         raise typer.Exit(1)
 
-    from .live_ui import WSLiveApp
-    WSLiveApp(
+    from .live_ui import LiveApp
+    LiveApp(
+        file=Path(file) if file else None,
+        engine=selected_engine if not remote else engine,
         language=language,
         remote=remote,
         remote_engine=engine if remote else None,
+        debug=debug,
     ).run()
 
 

@@ -12,6 +12,16 @@ import pytest
 from resona_cli.local_engine import LocalEngine
 
 
+@pytest.fixture(autouse=True)
+def _no_local_engine_by_default(request, monkeypatch):
+    """These tests exercise the spawn path; assume no engine is already
+    running unless a test explicitly overrides this (or is testing
+    probe_local_engine() itself)."""
+    if request.node.name.startswith("test_probe_local_engine"):
+        return
+    monkeypatch.setattr("resona_cli.local_engine.probe_local_engine", lambda *a, **k: False)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -293,3 +303,73 @@ def test_atexit_handler_unregistered_after_clean_exit():
             registered_fn = mock_reg.call_args.args[0]
 
     mock_unreg.assert_called_once_with(registered_fn)
+
+
+# ---------------------------------------------------------------------------
+# probe_local_engine() / attach mode
+# ---------------------------------------------------------------------------
+
+def test_probe_local_engine_true_when_healthy(monkeypatch):
+    from resona_cli.local_engine import probe_local_engine
+
+    resp = MagicMock()
+    resp.status_code = 200
+    monkeypatch.setattr("httpx.get", lambda url, timeout: resp)
+    assert probe_local_engine() is True
+
+
+def test_probe_local_engine_false_when_unreachable(monkeypatch):
+    from resona_cli.local_engine import probe_local_engine
+
+    def _raise(url, timeout):
+        raise httpx.RequestError("refused")
+
+    monkeypatch.setattr("httpx.get", _raise)
+    assert probe_local_engine() is False
+
+
+def test_probe_local_engine_false_on_non_200(monkeypatch):
+    from resona_cli.local_engine import probe_local_engine
+
+    resp = MagicMock()
+    resp.status_code = 503
+    monkeypatch.setattr("httpx.get", lambda url, timeout: resp)
+    assert probe_local_engine() is False
+
+
+def test_enter_attaches_without_spawning_when_engine_already_running(monkeypatch):
+    from resona_cli.local_engine import DEFAULT_LOCAL_ENGINE_PORT
+
+    monkeypatch.setattr("resona_cli.local_engine.probe_local_engine", lambda *a, **k: True)
+    mock_http = _make_healthy_http_client()
+
+    with (
+        patch("subprocess.Popen") as mock_popen,
+        patch("httpx.Client", return_value=mock_http),
+        patch("atexit.register") as mock_reg,
+    ):
+        engine = LocalEngine().__enter__()
+
+    mock_popen.assert_not_called()
+    mock_reg.assert_not_called()
+    assert engine._attached is True
+    assert engine._port == DEFAULT_LOCAL_ENGINE_PORT
+    engine.__exit__(None, None, None)
+    mock_popen.assert_not_called()  # __exit__ doesn't try to kill anything either
+
+
+def test_attached_engine_transcribes_against_detected_port(tmp_path, monkeypatch):
+    from resona_cli.local_engine import DEFAULT_LOCAL_ENGINE_PORT
+
+    monkeypatch.setattr("resona_cli.local_engine.probe_local_engine", lambda *a, **k: True)
+    audio = tmp_path / "test.wav"
+    audio.write_bytes(b"RIFF" + b"\x00" * 36)
+    mock_http = _make_healthy_http_client()
+
+    with patch("httpx.Client", return_value=mock_http):
+        with LocalEngine() as engine:
+            result = engine.transcribe(audio, language="de")
+
+    post_url = mock_http.post.call_args.args[0]
+    assert str(DEFAULT_LOCAL_ENGINE_PORT) in post_url
+    assert result["text"] == "hello"

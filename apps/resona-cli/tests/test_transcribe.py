@@ -16,6 +16,14 @@ from resona_postprocess.pipeline import PostprocessResult
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _no_local_engine_by_default(monkeypatch):
+    """These tests exercise the InProcessEngine/LocalEngine fallback paths;
+    assume no engine-server is already running on the detection port,
+    regardless of the host machine's actual local state."""
+    monkeypatch.setattr("resona_cli.transcribe.probe_local_engine", lambda *a, **k: False)
+
+
 def read_md_body(path: Path) -> str:
     """Return the markdown body (after the YAML frontmatter), stripped."""
     text = path.read_text()

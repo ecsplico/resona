@@ -37,7 +37,7 @@ def _spinner(label: str):
         stop.set()
         t.join()
 
-from .local_engine import LocalEngine
+from .local_engine import LocalEngine, probe_local_engine, DEFAULT_LOCAL_ENGINE_PORT
 from .engine import InProcessEngine
 from resona_client.client import ResonaClient
 from resona_client.config import EngineConfig
@@ -245,6 +245,14 @@ def _transcribe_local_fallback(
 
 
 def _resolve_local_engine(model, engine_timeout, engine):
+    if probe_local_engine():
+        typer.echo(
+            f"Found a local engine already running on port {DEFAULT_LOCAL_ENGINE_PORT} — using it.",
+            err=True,
+        )
+        ctx = LocalEngine(model=model, timeout=engine_timeout, engine=engine)
+        engine_obj = ctx.__enter__()
+        return engine_obj, (lambda: ctx.__exit__(None, None, None))
     try:
         engine_obj = InProcessEngine(engine=engine)
         typer.echo(
