@@ -209,6 +209,14 @@ onMounted(loadCalendars);
 			</section>
 
 			<footer class="drawer__foot">
+				<NuxtLink
+					class="drawer__link drawer__diag-link"
+					to="/debug"
+					data-testid="settings-open-debug"
+					@click="emit('close')"
+				>
+					Diagnose (Diktieren) →
+				</NuxtLink>
 				<HButton
 					variant="primary"
 					data-testid="settings-done"
@@ -242,6 +250,7 @@ onMounted(loadCalendars);
 .drawer__row { display:flex; gap:12px; }
 .drawer__sub { font-size:13px; color:var(--fg3); margin:0; }
 .drawer__link { color:var(--accent); font-weight:600; font-size:15px; text-decoration:none; margin-top:4px; }
-.drawer__foot { padding:14px 22px 22px; border-top:1.5px solid var(--border-strong); }
+.drawer__foot { padding:14px 22px 22px; border-top:1.5px solid var(--border-strong); display:flex; flex-direction:column; gap:10px; }
 .drawer__foot > * { width:100%; }
+.drawer__diag-link { text-align:center; font-size:13px; }
 </style>

@@ -107,7 +107,12 @@ const editorRef = ref<PttEditorRef>(null);
 const pttState = ref<"idle" | "recording" | "transcribing">("idle");
 const pttError = ref<string | null>(null);
 const pttRecorder = useRecorder();
+const pttDiag = usePttDiagnostics();
 let pttRange: { from: number; to: number } | null = null;
+
+function describeError(err: unknown): string {
+	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
 
 // Left Ctrl everywhere (code "ControlLeft"). The macOS fn/globe key can't be
 // used — browsers never deliver a keydown/keyup for it. Label reads "ctrl" on
@@ -123,12 +128,14 @@ async function startDictation(): Promise<void> {
 	try {
 		await pttRecorder.start();
 		pttState.value = "recording";
+		pttDiag.record("mic", true, "Mikrofonzugriff erteilt.");
 	}
-	catch {
+	catch (err) {
 		if (pttRange) {
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
 			pttRange = null;
 		}
+		pttDiag.record("mic", false, describeError(err));
 		pttError.value = "Mikrofon nicht verfügbar.";
 	}
 }
@@ -142,9 +149,11 @@ async function stopDictation(): Promise<void> {
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
 			pttRange = null;
 		}
+		pttDiag.record("record", false, "Leere Aufnahme (0 Bytes) — MediaRecorder hat keine Daten geliefert.");
 		pttState.value = "idle";
 		return;
 	}
+	let recordedFailure = false;
 	try {
 		const form = new FormData();
 		form.append("file", blob, "dictation.webm");
@@ -157,8 +166,14 @@ async function stopDictation(): Promise<void> {
 			headers: fetchHeaders,
 			body: form,
 		});
-		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+		if (!resp.ok) {
+			const bodyText = await resp.text().catch(() => "");
+			recordedFailure = true;
+			pttDiag.record("upload", false, `HTTP ${resp.status} ${resp.statusText}${bodyText ? ` — ${bodyText.slice(0, 300)}` : ""}`);
+			throw new Error(`HTTP ${resp.status}`);
+		}
 		const result = await resp.json() as { text?: string };
+		pttDiag.record("upload", true, `HTTP ${resp.status}, ${blob.size}B Audio → ${(result.text ?? "").length} Zeichen`);
 		const text = (result.text ?? "").trim();
 		if (pttRange) {
 			// Trailing space so the next dictation/typing doesn't butt against it.
@@ -166,7 +181,10 @@ async function stopDictation(): Promise<void> {
 			pttRange = null;
 		}
 	}
-	catch {
+	catch (err) {
+		if (!recordedFailure) {
+			pttDiag.record("upload", false, describeError(err));
+		}
 		pttError.value = "Transkription fehlgeschlagen.";
 		if (pttRange) {
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
