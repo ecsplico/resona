@@ -2434,16 +2434,60 @@ Does not transcribe — use <code>resona ui</code> if you want to record and tra
 </div>
 <hr />
 <h2 id="live">live<a class="headerlink" href="#live" title="Permanent link">&para;</a></h2>
-<p>Launch the live transcription TUI. Audio is captured from the microphone, segmented by
-VAD (voice activity detection), and sent to the engine over WebSocket for near-real-time
-transcription.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>resona live
+<p>Launch the Resona Live TUI — the primary way to dictate. Each open document defaults to
+<strong>push-to-talk</strong>: tap <code>F8</code> to record a segment, tap again to stop, and the transcript lands
+back in the buffer once ready (at the cursor position from when you started recording, or at
+the current cursor if you've since moved/typed elsewhere). Flip a document's <strong>Live switch</strong>
+(<code>ctrl+l</code>, or click it) to switch that document to continuous streaming transcription instead —
+confirmed text is spliced into the same buffer as you speak. Documents autosave as markdown
+after every insertion, on <code>ctrl+s</code>, and on quit.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>resona live                # prompts for a filename, then opens it
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>resona live notes.md       # opens (or creates) notes.md directly
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>resona live --engine mlx-whisper --language en
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>resona live --remote http://api-host:7000 --engine deepgram   # cloud streaming (Live-only)
 </code></pre></div>
-<p>No options. Configured via environment variables (<code>RESONA_API_URL</code>, <code>SAMPLE_RATE</code>, <code>CHANNELS</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FILE</code> (optional)</td>
+<td>Markdown document to open. Prompted for if omitted.</td>
+</tr>
+<tr>
+<td><code>--language, -l</code></td>
+<td>Transcription language (default <code>de</code>).</td>
+</tr>
+<tr>
+<td><code>--engine, -e</code></td>
+<td>Local engine to run in-process (default: platform best).</td>
+</tr>
+<tr>
+<td><code>--remote, -r</code></td>
+<td>Stream to a remote server instead of running locally. Forces every document into Live mode — push-to-talk is local-only, same as recording audio needs a local mic either way.</td>
+</tr>
+<tr>
+<td><code>--debug</code></td>
+<td>Show a Logs tab capturing internal log output (useful for diagnosing engine/transcription issues).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Keybindings:</strong> <code>F8</code> record/stop · <code>ctrl+l</code> toggle Live mode for the active document ·
+<code>ctrl+n</code> new document (prompts for a filename) · <code>ctrl+w</code> close the active tab ·
+<code>ctrl+pagedown</code>/<code>ctrl+pageup</code> switch tabs · <code>ctrl+s</code> save · <code>ctrl+q</code> quit.</p>
+<p>Each document's audio segments and a <code>manifest.json</code> (transcript, status, insertion point per
+segment) are saved alongside it in a <code>&lt;name&gt;.dictation/</code> directory.</p>
 <div class="admonition note">
-<p class="admonition-title">Engine requirement</p>
-<p>The <code>live</code> command connects to a running resona-engine-server WebSocket endpoint
-(<code>WS /ws/live</code>). A local engine or a server must be reachable.</p>
+<p class="admonition-title">Reuses an already-running local engine</p>
+<p>Before loading its own in-process model, <code>live</code> checks <code>http://localhost:7720/health</code>
+(override the port with <code>RESONA_LOCAL_ENGINE_PORT</code>). If a <code>resona-engine-*</code> server is
+already running there, push-to-talk and Live mode both use it over HTTP/WebSocket instead
+of loading a redundant copy of the model. <code>resona transcribe</code>/<code>resona watch</code>'s local
+fallback does the same.</p>
 </div>
 <hr />
 <h2 id="ui">ui<a class="headerlink" href="#ui" title="Permanent link">&para;</a></h2>
