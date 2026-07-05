@@ -10,7 +10,6 @@ const cfg = useRuntimeConfig().public;
 
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
 const { client, assetUrl } = useDirectus();
-const live = useLive();
 
 // Distinguish a transient "service unreachable" failure (offline styling +
 // retry hint) from a genuine transcription error (red banner).
@@ -96,37 +95,78 @@ async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
 	}
 }
 
-// ── Push-to-talk dictation (insert at cursor) ───────────────────────────────
-const editorRef = ref<{ insertText: (text: string) => void; focus: () => void } | null>(null);
-const dictating = ref(false);
-const dictateError = ref<string | null>(null);
+// ── Push-to-talk dictation (batch REST, insert-at-marker) ──────────────────
+type PttEditorRef = {
+	insertText: (text: string) => void;
+	insertPlaceholder: () => { from: number; to: number } | null;
+	replaceBetween: (from: number, to: number, text: string) => void;
+	focus: () => void;
+} | null;
+
+const editorRef = ref<PttEditorRef>(null);
+const pttState = ref<"idle" | "recording" | "transcribing">("idle");
+const pttError = ref<string | null>(null);
+const pttRecorder = useRecorder();
+let pttRange: { from: number; to: number } | null = null;
 
 async function startDictation(): Promise<void> {
-	if (dictating.value) {
-		return;
-	}
-	dictateError.value = null;
-	dictating.value = true;
+	if (pttState.value !== "idle") return;
+	pttError.value = null;
+	pttRange = editorRef.value?.insertPlaceholder() ?? null;
 	try {
-		await live.start({ language: recording.value?.language, engine: cfg.defaultEngine });
+		await pttRecorder.start();
+		pttState.value = "recording";
 	}
 	catch {
-		dictating.value = false;
-		dictateError.value = "Mikrofon oder Verbindung nicht verfügbar.";
+		if (pttRange) {
+			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
+			pttRange = null;
+		}
+		pttError.value = "Mikrofon nicht verfügbar.";
 	}
 }
 
-function stopDictation(): void {
-	if (!dictating.value) {
+async function stopDictation(): Promise<void> {
+	if (pttState.value !== "recording") return;
+	pttState.value = "transcribing";
+	const blob = await pttRecorder.stop();
+	if (!blob || blob.size === 0) {
+		if (pttRange) {
+			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
+			pttRange = null;
+		}
+		pttState.value = "idle";
 		return;
 	}
-	dictating.value = false;
-	// Grab the final + trailing partial before tearing the socket down, then let
-	// the editor splice it in at the caret (cursor ends after the insert).
-	const dictated = live.fullText.value.trim();
-	live.stop();
-	if (dictated) {
-		editorRef.value?.insertText(dictated);
+	try {
+		const form = new FormData();
+		form.append("file", blob, "dictation.webm");
+		form.append("language", recording.value?.language ?? cfg.defaultLanguage);
+		form.append("response_format", "verbose_json");
+		const fetchHeaders: Record<string, string> = {};
+		if (cfg.resonaApiKey) fetchHeaders["X-API-Key"] = cfg.resonaApiKey;
+		const resp = await fetch(`${cfg.resonaApiUrl}/v1/audio/transcriptions`, {
+			method: "POST",
+			headers: fetchHeaders,
+			body: form,
+		});
+		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+		const result = await resp.json() as { text?: string };
+		const text = (result.text ?? "").trim();
+		if (pttRange) {
+			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text);
+			pttRange = null;
+		}
+	}
+	catch {
+		pttError.value = "Transkription fehlgeschlagen.";
+		if (pttRange) {
+			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
+			pttRange = null;
+		}
+	}
+	finally {
+		pttState.value = "idle";
 	}
 }
 
@@ -135,7 +175,7 @@ function onPttDown(e: PointerEvent): void {
 		(e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
 	}
 	catch {
-		// pointer capture unsupported — release/up handlers still work
+		// pointer capture unsupported in test env
 	}
 	void startDictation();
 }
@@ -145,9 +185,22 @@ function onPttUp(e: PointerEvent): void {
 		(e.currentTarget as Element | null)?.releasePointerCapture?.(e.pointerId);
 	}
 	catch {
-		// ignore
+		// pointer capture unsupported in test env
 	}
-	stopDictation();
+	void stopDictation();
+}
+
+function onKeyDown(e: KeyboardEvent): void {
+	if (e.code === "F9" && !e.repeat && pttState.value === "idle") {
+		e.preventDefault();
+		void startDictation();
+	}
+}
+
+function onKeyUp(e: KeyboardEvent): void {
+	if (e.code === "F9" && pttState.value === "recording") {
+		void stopDictation();
+	}
 }
 
 const restarting = ref(false);
@@ -215,10 +268,14 @@ async function confirmDelete(): Promise<void> {
 
 onMounted(() => {
 	startPolling();
+	window.addEventListener("keydown", onKeyDown);
+	window.addEventListener("keyup", onKeyUp);
 });
 
 onUnmounted(() => {
 	stopPolling();
+	window.removeEventListener("keydown", onKeyDown);
+	window.removeEventListener("keyup", onKeyUp);
 });
 </script>
 
@@ -480,10 +537,14 @@ onUnmounted(() => {
 						<button
 							type="button"
 							class="detail__ptt"
-							:class="{ 'detail__ptt--active': dictating }"
+							:class="{
+								'detail__ptt--active': pttState === 'recording',
+								'detail__ptt--busy': pttState === 'transcribing',
+							}"
+							:disabled="pttState === 'transcribing'"
 							data-testid="push-to-talk"
-							:aria-pressed="dictating"
-							aria-label="Zum Diktieren gedrückt halten"
+							:aria-pressed="pttState === 'recording'"
+							aria-label="Zum Diktieren gedrückt halten (F9)"
 							@pointerdown.prevent="onPttDown"
 							@pointerup="onPttUp"
 							@pointercancel="onPttUp"
@@ -514,21 +575,18 @@ onUnmounted(() => {
 									y2="21"
 								/>
 							</svg>
-							<span>{{ dictating ? "Diktiert… loslassen zum Einfügen" : "Diktieren (gedrückt halten)" }}</span>
+							<span>{{
+								pttState === "recording" ? "Aufnahme… loslassen zum Transkribieren"
+								: pttState === "transcribing" ? "Transkribiert…"
+									: "Diktieren (F9 halten)"
+							}}</span>
 						</button>
 						<p
-							v-if="dictateError"
+							v-if="pttError"
 							class="detail__error"
 							data-testid="dictate-error"
 						>
-							{{ dictateError }}
-						</p>
-						<p
-							v-if="dictating"
-							class="detail__dictate-preview"
-							data-testid="dictate-preview"
-						>
-							{{ live.fullText.value || "Sprich jetzt…" }}
+							{{ pttError }}
 						</p>
 					</div>
 
@@ -570,7 +628,7 @@ onUnmounted(() => {
 						</div>
 						<HButton
 							variant="primary"
-							:disabled="edit.saving.value || dictating || !dirty"
+							:disabled="edit.saving.value || pttState !== 'idle' || !dirty"
 							data-testid="save-transcript"
 							@click="saveTranscript"
 						>
@@ -584,6 +642,7 @@ onUnmounted(() => {
 		<HPlayerDock
 			v-if="recording?.audio_file"
 			:src="assetUrl(recording.audio_file)"
+			:fallback-duration="recording.duration_seconds ?? undefined"
 		/>
 	</div>
 </template>
@@ -608,5 +667,5 @@ onUnmounted(() => {
 .detail__dictate { display:flex; flex-direction:column; gap:8px; }
 .detail__ptt { display:inline-flex; align-items:center; gap:8px; align-self:flex-start; padding:10px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--surface,transparent); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; }
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
-.detail__dictate-preview { margin:0; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--fg3); font-style:italic; }
+.detail__ptt--busy { opacity:0.65; cursor:default; }
 </style>

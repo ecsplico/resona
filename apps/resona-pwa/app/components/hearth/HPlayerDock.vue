@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 
-defineProps<{ src: string }>();
+const props = defineProps<{ src: string; fallbackDuration?: number }>();
 
 const audioEl = ref<HTMLAudioElement | null>(null);
 const playing = ref(false);
@@ -55,8 +55,14 @@ function onTimeUpdate(): void {
 }
 
 function onLoadedMetadata(): void {
-	if (audioEl.value && Number.isFinite(audioEl.value.duration)) {
-		duration.value = audioEl.value.duration;
+	const d = audioEl.value?.duration;
+	// MediaRecorder webm files often have no duration in the container header,
+	// so the audio element reports Infinity. Fall back to the stored value.
+	if (Number.isFinite(d) && d! > 0) {
+		duration.value = d!;
+	}
+	else if (props.fallbackDuration && props.fallbackDuration > 0) {
+		duration.value = props.fallbackDuration;
 	}
 }
 

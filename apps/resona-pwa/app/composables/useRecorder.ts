@@ -1,7 +1,22 @@
 import { ref, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 
-const MIME = "audio/webm";
+function getSupportedMime(): string {
+	const candidates = [
+		"audio/webm;codecs=opus",
+		"audio/webm",
+		"audio/ogg;codecs=opus",
+		"audio/mp4",
+	];
+	if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
+		for (const type of candidates) {
+			if (MediaRecorder.isTypeSupported(type)) {
+				return type;
+			}
+		}
+	}
+	return "";
+}
 
 function getAudioContextCtor(): typeof AudioContext | undefined {
 	const g = globalThis as Record<string, unknown>;
@@ -15,6 +30,7 @@ export function useRecorder() {
 	const levels: Ref<number[]> = ref([]);
 
 	let recorder: MediaRecorder | null = null;
+	let recordingMime = "";
 	let stream: MediaStream | null = null;
 	let ownsStream = false;
 	let chunks: Blob[] = [];
@@ -131,7 +147,8 @@ export function useRecorder() {
 		}
 
 		chunks = [];
-		recorder = new MediaRecorder(stream, { mimeType: MIME });
+		recordingMime = getSupportedMime();
+		recorder = new MediaRecorder(stream, recordingMime ? { mimeType: recordingMime } : undefined);
 		recorder.ondataavailable = (e: BlobEvent) => {
 			if (e.data && e.data.size > 0) {
 				chunks.push(e.data);
@@ -167,12 +184,13 @@ export function useRecorder() {
 	function stop(): Promise<Blob> {
 		return new Promise<Blob>((resolve) => {
 			if (!recorder) {
-				resolve(new Blob([], { type: MIME }));
+				resolve(new Blob([], { type: recordingMime }));
 				return;
 			}
 			const rec = recorder;
+			const mime = recordingMime;
 			rec.onstop = () => {
-				const blob = new Blob(chunks, { type: MIME });
+				const blob = new Blob(chunks, { type: mime });
 				recording.value = false;
 				paused.value = false;
 				cleanup();

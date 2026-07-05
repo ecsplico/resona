@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import LivePage from "~/pages/live.vue";
 
@@ -15,10 +15,15 @@ mockNuxtImport("useLive", () => () => {
 	live.partial ??= ref("");
 	live.final ??= ref("");
 	live.status ??= ref("CLOSED");
+	const fullText = computed(() => {
+		const f = live.final!.value;
+		const p = live.partial!.value;
+		return p ? `${f} ${p}`.trim() : f;
+	});
 	return {
 		partial: live.partial,
 		final: live.final,
-		fullText: ref(""),
+		fullText,
 		status: live.status,
 		start: liveStart,
 		stop: liveStop,

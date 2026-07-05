@@ -23,6 +23,7 @@ const saveError = ref<string | null>(null);
 const title = ref(presetTitle);
 const capturedBlob = ref<Blob | null>(null);
 const capturedDuration = ref(0);
+const capturedText = ref("");
 
 const rollingText = computed(() => {
 	const f = live.final.value;
@@ -57,18 +58,27 @@ async function startLive(): Promise<void> {
 	// transcriber and the parallel recorder so we don't open the mic twice.
 	const media = (globalThis as { navigator?: Navigator }).navigator?.mediaDevices;
 	if (media?.getUserMedia) {
+		let stream: MediaStream | undefined;
 		try {
-			const stream = await media.getUserMedia({ audio: true });
-			await live.start({ stream, language, engine });
-			await recorder.start(stream);
-			return;
+			stream = await media.getUserMedia({ audio: true });
 		}
 		catch {
-			// fall through to transcript-only mode
+			// no mic permission — fall through to transcript-only mode
+		}
+		if (stream) {
+			await live.start({ stream, language, engine });
+			try {
+				await recorder.start(stream);
+			}
+			catch {
+				// recorder unsupported (e.g. Safari without webm) — live transcription
+				// continues; audio will not be saved.
+			}
+			return;
 		}
 	}
 
-	// No mic (tests / SSR): still start the transcript path; useLive guards audio.
+	// No mic (tests / SSR / permission denied): start transcript path without audio.
 	await live.start({ language, engine });
 }
 
@@ -76,6 +86,11 @@ async function stopLive(): Promise<void> {
 	sessionActive.value = false;
 	capturedDuration.value = recorder.elapsed.value;
 	capturedBlob.value = await recorder.stop();
+	// Snapshot AFTER the recorder.stop() await: yielding to the microtask queue
+	// lets Vue flush any pending reactive updates from WebSocket messages (e.g.
+	// the last partial that arrived just before the user pressed stop).
+	// Snapshot BEFORE live.stop(), which removes the data watcher immediately.
+	capturedText.value = live.fullText.value.trim();
 	live.stop();
 	title.value = presetTitle;
 	showTitlePrompt.value = true;
@@ -105,7 +120,7 @@ async function confirmSave(): Promise<void> {
 
 		await client.request(createItem("transcripts", {
 			recording: recording.id,
-			text: live.final.value,
+			text: capturedText.value,
 			engine: cfg.defaultEngine,
 		} as Partial<Transcript>));
 

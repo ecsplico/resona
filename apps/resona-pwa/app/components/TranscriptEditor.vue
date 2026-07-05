@@ -70,7 +70,29 @@ function focus(): void {
 	editor.value?.chain().focus().run();
 }
 
-defineExpose({ insertText, focus });
+// Insert a placeholder at the current cursor position. Returns the range
+// [from, to) so the caller can replace it later with replaceBetween().
+function insertPlaceholder(): { from: number; to: number } | null {
+	const e = editor.value;
+	if (!e) return null;
+	const from = e.state.selection.from;
+	e.chain().focus().insertContent("[…]").run();
+	return { from, to: from + 3 };
+}
+
+// Replace the range [from, to) with text, or delete it when text is empty.
+function replaceBetween(from: number, to: number, text: string): void {
+	const e = editor.value;
+	if (!e) return;
+	if (text) {
+		e.chain().focus().insertContentAt({ from, to }, text).run();
+	}
+	else {
+		e.chain().focus().deleteRange({ from, to }).run();
+	}
+}
+
+defineExpose({ insertText, insertPlaceholder, replaceBetween, focus });
 </script>
 
 <template>

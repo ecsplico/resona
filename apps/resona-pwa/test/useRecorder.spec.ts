@@ -6,6 +6,9 @@ import { useRecorder } from "~/composables/useRecorder";
 // composable relies on. happy-dom implements none of it.
 class FakeMediaRecorder {
 	static instances: FakeMediaRecorder[] = [];
+	static isTypeSupported(type: string): boolean {
+		return type === "audio/webm;codecs=opus" || type === "audio/webm";
+	}
 
 	state: "inactive" | "recording" | "paused" = "inactive";
 	stream: MediaStream;
@@ -101,7 +104,7 @@ describe("useRecorder", () => {
 
 		const blob = await r.stop();
 		expect(blob).toBeInstanceOf(Blob);
-		expect(blob.type).toBe("audio/webm");
+		expect(blob.type).toBe("audio/webm;codecs=opus");
 		expect(r.recording.value).toBe(false);
 	});
 

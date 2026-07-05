@@ -6,7 +6,7 @@ import type { Recording, Transcript } from "~/types/directus";
 
 // ProseMirror/TipTap doesn't render meaningfully under happy-dom, so the page's
 // editor is stubbed with a plain textarea that honours the same v-model +
-// insertText(caret-append) contract the page relies on.
+// insertText/insertPlaceholder/replaceBetween contract the page relies on.
 mockComponent("TranscriptEditor", () => ({
 	props: ["modelValue", "placeholder"],
 	emits: ["update:modelValue"],
@@ -16,6 +16,16 @@ mockComponent("TranscriptEditor", () => ({
 				const cur = props.modelValue ?? "";
 				const lead = cur.length > 0 && !/\s$/.test(cur) ? " " : "";
 				emit("update:modelValue", cur + lead + text);
+			},
+			insertPlaceholder: () => {
+				const cur = props.modelValue ?? "";
+				const from = cur.length;
+				emit("update:modelValue", cur + "[…]");
+				return { from, to: from + 3 };
+			},
+			replaceBetween: (from: number, to: number, text: string) => {
+				const cur = props.modelValue ?? "";
+				emit("update:modelValue", cur.slice(0, from) + text + cur.slice(to));
 			},
 			focus: () => {},
 		});
@@ -63,17 +73,18 @@ const updateItem = vi.hoisted(() => vi.fn((collection: string, id: string, paylo
 const createItem = vi.hoisted(() => vi.fn((collection: string, payload: unknown) => ({ kind: "create", collection, payload })));
 vi.mock("@directus/sdk", () => ({ deleteItem, updateItem, createItem }));
 
-// Keep dictation off the real WebSocket: a controllable stub for useLive.
-const liveFullText = vi.hoisted(() => ({ value: "" }));
-const liveStart = vi.hoisted(() => vi.fn(async () => {}));
-const liveStop = vi.hoisted(() => vi.fn());
-mockNuxtImport("useLive", () => () => ({
-	partial: ref(""),
-	final: ref(""),
-	fullText: ref(liveFullText.value),
-	status: ref("CLOSED"),
-	start: liveStart,
-	stop: liveStop,
+const recorderStart = vi.hoisted(() => vi.fn(async () => {}));
+const recorderStop = vi.hoisted(() => vi.fn(async () => new Blob(["audio"], { type: "audio/webm;codecs=opus" })));
+
+mockNuxtImport("useRecorder", () => () => ({
+	recording: ref(false),
+	paused: ref(false),
+	elapsed: ref(0),
+	levels: ref([] as number[]),
+	start: recorderStart,
+	stop: recorderStop,
+	pause: vi.fn(),
+	resume: vi.fn(),
 }));
 
 function baseRecording(over: Partial<Recording> = {}): Recording {
@@ -96,7 +107,6 @@ describe("recording detail page", () => {
 		transcript.value = { id: "t-1", recording: "rec-1", text: "Hallo Welt" };
 		loading.value = false;
 		error.value = null;
-		liveFullText.value = "";
 	});
 
 	it("renders the transcript text when done", async () => {
@@ -200,20 +210,37 @@ describe("recording detail page", () => {
 		expect(updateItem).toHaveBeenCalledWith("recordings", "rec-1", { review_status: "ready" });
 	});
 
-	it("push-to-talk inserts the dictated text and starts/stops the live socket", async () => {
-		liveFullText.value = "diktierter satz";
+	it("push-to-talk: inserts placeholder on press, records, transcribes via REST, replaces placeholder", async () => {
+		globalThis.fetch = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({ text: "diktierter satz" }),
+		})) as unknown as typeof fetch;
+
 		const w = await mountSuspended(RecordingPage);
 
 		const ptt = w.find("[data-testid=\"push-to-talk\"]");
 		await ptt.trigger("pointerdown", { pointerId: 1 });
-		expect(liveStart).toHaveBeenCalled();
+		await w.vm.$nextTick();
+		// Recorder starts
+		expect(recorderStart).toHaveBeenCalled();
+		// Placeholder inserted into editor
+		const areaAfter = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+		expect(areaAfter.value).toContain("[…]");
 
 		await ptt.trigger("pointerup", { pointerId: 1 });
 		await w.vm.$nextTick();
-		expect(liveStop).toHaveBeenCalled();
+		await new Promise(r => setTimeout(r, 0));
+		await w.vm.$nextTick();
 
-		const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
-		expect(area.value).toContain("diktierter satz");
-		expect(area.value).toContain("Hallo Welt");
+		expect(recorderStop).toHaveBeenCalled();
+		expect(globalThis.fetch).toHaveBeenCalledWith(
+			expect.stringContaining("/v1/audio/transcriptions"),
+			expect.objectContaining({ method: "POST" }),
+		);
+		// Placeholder replaced with transcribed text
+		const areaFinal = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+		expect(areaFinal.value).toContain("diktierter satz");
+		expect(areaFinal.value).toContain("Hallo Welt");
+		expect(areaFinal.value).not.toContain("[…]");
 	});
 });
