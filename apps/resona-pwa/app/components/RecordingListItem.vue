@@ -40,7 +40,7 @@ const meta = computed(() => formatMeta(props.recording));
 
 <template>
 	<HListRow
-		:title="recording.title"
+		:title="recording.title || 'Aufnahme'"
 		:meta="meta"
 		:status="recording.status"
 		@select="$emit('open')"

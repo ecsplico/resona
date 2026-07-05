@@ -40,7 +40,7 @@ export default defineNuxtConfig({
 	devServer: { port: 7730 },
 	experimental: { typedPages: true },
 	compatibilityDate: "2026-06-18",
-	vite: { plugins: [tailwindcss()] },
+	vite: { plugins: [tailwindcss()], server: { allowedHosts: ["hugin"] } },
 	eslint: {
 		config: {
 			stylistic: { semi: true, quotes: "double", indent: "tab", commaDangle: "always-multiline" },

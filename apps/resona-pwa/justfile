@@ -5,13 +5,17 @@ default:
 backend:
     docker compose -f docker-compose.backend.yml up -d
 
-# Start the frontend dev server locally
+# Start the frontend dev server locally, exposed on the network
 pwa:
-    bun run dev
+    bun run dev -- --host
 
 # Start the PWA docker container (assumes backend is already up)
 pwa-docker:
     docker compose up -d pwa
+
+# Start the native MLX engine (Apple GPU) on :7720
+mlx:
+    bun run engine
 
 # Start the backend data layer + resona-api; uses local MLX engine (:7720) if running, CPU docker engine as fallback
 backend-resona:
