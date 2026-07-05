@@ -139,19 +139,42 @@ No options. The TUI shows recording time and allows stopping with a keypress.
 
 ## live
 
-Launch the live transcription TUI. Audio is captured from the microphone, segmented by
-VAD (voice activity detection), and sent to the engine over WebSocket for near-real-time
-transcription.
+Launch the Resona Live TUI — the primary way to dictate. Each open document defaults to
+**push-to-talk**: tap `F8` to record a segment, tap again to stop, and the transcript lands
+back in the buffer once ready (at the cursor position from when you started recording, or at
+the current cursor if you've since moved/typed elsewhere). Flip a document's **Live switch**
+(`ctrl+l`, or click it) to switch that document to continuous streaming transcription instead —
+confirmed text is spliced into the same buffer as you speak. Documents autosave as markdown
+after every insertion, on `ctrl+s`, and on quit.
 
 ```
-resona live
+resona live                # prompts for a filename, then opens it
+resona live notes.md       # opens (or creates) notes.md directly
+resona live --engine mlx-whisper --language en
+resona live --remote http://api-host:7000 --engine deepgram   # cloud streaming (Live-only)
 ```
 
-No options. Configured via environment variables (`RESONA_API_URL`, `SAMPLE_RATE`, `CHANNELS`).
+| Option | Description |
+|--------|-------------|
+| `FILE` (optional) | Markdown document to open. Prompted for if omitted. |
+| `--language, -l` | Transcription language (default `de`). |
+| `--engine, -e` | Local engine to run in-process (default: platform best). |
+| `--remote, -r` | Stream to a remote server instead of running locally. Forces every document into Live mode — push-to-talk is local-only, same as recording audio needs a local mic either way. |
+| `--debug` | Show a Logs tab capturing internal log output (useful for diagnosing engine/transcription issues). |
 
-!!! note "Engine requirement"
-    The `live` command connects to a running resona-engine-server WebSocket endpoint
-    (`WS /ws/live`). A local engine or a server must be reachable.
+**Keybindings:** `F8` record/stop · `ctrl+l` toggle Live mode for the active document ·
+`ctrl+n` new document (prompts for a filename) · `ctrl+w` close the active tab ·
+`ctrl+pagedown`/`ctrl+pageup` switch tabs · `ctrl+s` save · `ctrl+q` quit.
+
+Each document's audio segments and a `manifest.json` (transcript, status, insertion point per
+segment) are saved alongside it in a `<name>.dictation/` directory.
+
+!!! note "Reuses an already-running local engine"
+    Before loading its own in-process model, `live` checks `http://localhost:7720/health`
+    (override the port with `RESONA_LOCAL_ENGINE_PORT`). If a `resona-engine-*` server is
+    already running there, push-to-talk and Live mode both use it over HTTP/WebSocket instead
+    of loading a redundant copy of the model. `resona transcribe`/`resona watch`'s local
+    fallback does the same.
 
 ---
 
