@@ -9,6 +9,7 @@ Endpoints:
 """
 import asyncio
 import logging
+import math
 import threading
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -26,6 +27,21 @@ from .ws_live import live_transcribe_websocket
 log = logging.getLogger(__name__)
 
 _model_lock = threading.Lock()
+
+
+def _sanitize_nan(obj):
+    """Recursively replace non-finite floats (nan/inf) with None.
+
+    Whisper backends can emit nan for stats like avg_logprob on
+    silent/degenerate audio; the stock JSON encoder rejects nan/inf outright.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _sanitize_nan(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_nan(v) for v in obj]
+    return obj
 
 
 def _run_asr(file, task: str = "transcribe", language: str = "de", **asr_options) -> dict:
@@ -136,11 +152,11 @@ async def transcribe(
             except AttributeError:
                 serializable_segments.append({"text": str(seg)})
 
-    return {
+    return _sanitize_nan({
         "text": result.get("text", ""),
         "language": result.get("language", language),
         "segments": serializable_segments,
-    }
+    })
 
 
 @app.websocket("/ws/transcribe")
