@@ -55,6 +55,25 @@ install-cli-kokoro: (install-cli-with "kokoro")
 # Default + every engine
 install-cli-all: (install-cli-with "all")
 
+# Install as a fully-editable tool: edits to resona-cli AND every workspace
+# package it depends on (resolved from its pyproject.toml, plus engine-server
+# since every engine package needs it) are picked up immediately — no
+# `--reinstall` required. `install-cli` only makes resona-cli itself editable;
+# its workspace deps stay copied. Extras work like `install-cli-with`, e.g.
+# `just install-cli-editable whisper`.
+install-cli-editable extra="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    names=$(python3 -c 'import sys, tomllib; extra = sys.argv[1]; data = tomllib.load(open("apps/resona-cli/pyproject.toml", "rb"))["project"]; deps = data["dependencies"] + (data["optional-dependencies"][extra] if extra else []); names = {d.split("[")[0].split(">=")[0].split("==")[0].strip() for d in deps if d.startswith("resona-")} | {"resona-engine-server"}; print("\n".join(sorted(n[len("resona-"):] for n in names)))' "{{ extra }}")
+    with_editable=()
+    while IFS= read -r name; do
+        [ -n "$name" ] && with_editable+=(--with-editable "./packages/${name}")
+    done <<< "$names"
+    from="./apps/resona-cli"
+    [ -n "{{ extra }}" ] && from="./apps/resona-cli[{{ extra }}]"
+    uv tool install --force --editable --from "$from" resona-cli "${with_editable[@]}"
+
 # Uninstall the resona-cli tool
 uninstall-cli:
     uv tool uninstall resona-cli
