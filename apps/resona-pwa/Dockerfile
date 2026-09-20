@@ -39,6 +39,12 @@ RUN bun run build
 
 FROM oven/bun:1.3.14-slim AS runtime
 WORKDIR /app
+# curl is required by orchestrators that probe the container with their own
+# healthcheck command rather than honouring the image's HEALTHCHECK (Coolify
+# shells out to curl/wget and rolls the deploy back when both are missing).
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
 	HOST=0.0.0.0 \
 	PORT=3000
