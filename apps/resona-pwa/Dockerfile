@@ -44,6 +44,12 @@ ENV NODE_ENV=production \
 	PORT=3000
 COPY --from=build /app/.output ./.output
 EXPOSE 3000
+# Healthcheck via bun's own fetch: this image ships neither curl nor wget, and
+# Coolify's default Dockerfile healthcheck shells out to one of them (container
+# then reports unhealthy and the deploy rolls back). Declaring HEALTHCHECK here
+# makes Coolify reuse it instead of probing with curl/wget.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # Server-only secrets (NUXT_GOOGLE_*, NUXT_SESSION_PASSWORD) are supplied at run
 # time by compose and read server-side via useRuntimeConfig(event).
 CMD ["bun", "run", ".output/server/index.mjs"]
