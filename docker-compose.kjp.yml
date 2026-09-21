@@ -1,0 +1,80 @@
+# Self-contained CPU-only stack for the `kjp` host (Dokploy).
+#
+# Why a separate file rather than `-f docker-compose.resona.yml -f
+# docker-compose.cpu.yml`: Dokploy deploys a compose service from ONE compose
+# path, so the CPU override cannot be layered at deploy time. This file is the
+# merged, GPU-free result — api + faster-whisper engine only.
+#
+# Differences from docker-compose.resona.yml:
+#   - no `profiles`, so the engine always starts
+#   - no GPU device reservation (CTranslate2 falls back to CPU, compute int8)
+#   - a smaller default model, since a CPU host cannot serve large-v3 usefully
+#   - the HuggingFace cache is a named volume, not a ${HOME} bind mount
+#   - no `env_file`, so a missing .env cannot fail the deploy; every knob below
+#     is overridable from the deployment platform's environment instead
+services:
+  engine-faster-whisper:
+    build:
+      context: .
+      dockerfile: packages/engine-faster-whisper/Dockerfile
+    ports:
+      - "${ENGINE_PORT:-7720}:7001"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    environment:
+      RESONA_ENGINE: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: ${DEFAULT_FASTWHISPER_MODEL:-small}
+      # int8 on CPU; greedy decoding and VAD-chunked batching keep an 8-core
+      # box near real time. Raise the model or beam size only with headroom.
+      FASTWHISPER_COMPUTE_TYPE: ${FASTWHISPER_COMPUTE_TYPE:-int8}
+      FASTWHISPER_BEAM_SIZE: ${FASTWHISPER_BEAM_SIZE:-1}
+      FASTWHISPER_CPU_THREADS: ${FASTWHISPER_CPU_THREADS:-0}
+      FASTWHISPER_BATCHED: ${FASTWHISPER_BATCHED:-true}
+      FASTWHISPER_BATCH_SIZE: ${FASTWHISPER_BATCH_SIZE:-8}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # first start downloads the model weights
+      start_period: 600s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    ports:
+      - "${API_PORT:-7710}:7000"
+    volumes:
+      - resona-audio:/app/data/files
+      - resona-md:/app/data/md
+      - resona-db:/app/data/db
+      - resona-profiles:/app/data/profiles
+    environment:
+      RESONA_ENGINE_URLS: http://engine-faster-whisper:7001
+      DATA_PATH: /app/data
+      # Browser origin of the PWA — it calls this API directly (live WebSocket
+      # /v1/listen and REST), so CORS must name it.
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      RESONA_API_KEY: ${RESONA_API_KEY:-}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    depends_on:
+      engine-faster-whisper:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  resona-audio:
+  resona-md:
+  resona-db:
+  resona-profiles:
+  hf-cache:
