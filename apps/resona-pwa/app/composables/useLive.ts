@@ -158,8 +158,11 @@ export function useLive() {
 		const language = opts.language ?? cfg.defaultLanguage;
 		const engine = opts.engine ?? cfg.defaultEngine;
 
-		const base = toWsUrl(cfg.resonaApiUrl);
-		const url = new URL("/v1/listen", base);
+		// Concatenate rather than `new URL("/v1/listen", base)`: a root-absolute
+		// path would discard a base-path prefix, breaking deployments that serve
+		// resona-api under a subpath (e.g. https://host:8443/resona-api).
+		const base = toWsUrl(cfg.resonaApiUrl).replace(/\/+$/, "");
+		const url = new URL(`${base}/v1/listen`);
 		url.searchParams.set("encoding", "linear16");
 		url.searchParams.set("sample_rate", "16000");
 		url.searchParams.set("interim_results", "true");
