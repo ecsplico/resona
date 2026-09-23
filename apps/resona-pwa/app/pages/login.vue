@@ -103,6 +103,7 @@ async function submit(): Promise<void> {
 
 <style scoped>
 .login { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:var(--bg); }
+@media (min-width:768px) { .login { min-height:100%; } }
 .login__card { display:flex; flex-direction:column; align-items:center; gap:14px; width:100%; max-width:380px; }
 .login__icon { width:78px; height:78px; border-radius:20px; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-lift); }
 .login__title { font-family:var(--font-display); font-size:34px; font-weight:600; color:var(--fg1); margin:6px 0 0; }
