@@ -258,7 +258,7 @@ onMounted(() => {
 			</p>
 
 			<p
-				v-if="pending"
+				v-if="pending && items.length === 0"
 				class="home__hint"
 			>
 				Lädt…

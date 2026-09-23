@@ -14,8 +14,12 @@ export function useRecordings() {
 	const items: Ref<Recording[]> = ref([]);
 	const pending: Ref<boolean> = ref(false);
 	const error: Ref<string | null> = ref(null);
+	let lastOpts: ListOpts = {};
+	let latestRequest = 0;
 
 	async function list(opts: ListOpts = {}): Promise<Recording[]> {
+		lastOpts = opts;
+		const requestId = ++latestRequest;
 		const filter: Record<string, unknown> = {};
 		if (typeof opts.search === "string" && opts.search.length > 0) {
 			filter.title = { _icontains: opts.search };
@@ -37,20 +41,23 @@ export function useRecordings() {
 		try {
 			const { client } = useDirectus();
 			const rows = await client.request(readItems("recordings", query)) as Recording[];
+			if (requestId !== latestRequest) return items.value;
 			items.value = rows;
 			return rows;
 		}
 		catch (err) {
-			error.value = humanizeError(err, "Aufnahmen konnten nicht geladen werden.");
+			if (requestId === latestRequest) {
+				error.value = humanizeError(err, "Aufnahmen konnten nicht geladen werden.");
+			}
 			return items.value;
 		}
 		finally {
-			pending.value = false;
+			if (requestId === latestRequest) pending.value = false;
 		}
 	}
 
 	function refresh(): Promise<Recording[]> {
-		return list();
+		return list(lastOpts);
 	}
 
 	return {

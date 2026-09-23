@@ -25,6 +25,16 @@ function row(id: string): Recording {
 	};
 }
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
 describe("useRecordings", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -98,7 +108,18 @@ describe("useRecordings", () => {
 		expect(r.pending.value).toBe(false);
 	});
 
-	it("refresh() calls list with no opts", async () => {
+	it("refresh() re-issues the most recent list() filters", async () => {
+		state.request.mockResolvedValue([]);
+		const r = useRecordings();
+		await r.list({ search: "x", since: "2026-06-01" });
+		await r.refresh();
+		expect(state.readItems).toHaveBeenCalledTimes(2);
+		const [, query] = state.readItems.mock.calls[1];
+		expect(query.filter.title._icontains).toBe("x");
+		expect(query.filter.date_created._gte).toBe("2026-06-01");
+	});
+
+	it("refresh() before any list() loads without a filter", async () => {
 		const rows = [row("1")];
 		state.request.mockResolvedValue(rows);
 		const r = useRecordings();
@@ -106,5 +127,66 @@ describe("useRecordings", () => {
 		const [, query] = state.readItems.mock.calls[0];
 		expect(query.filter ?? {}).toEqual({});
 		expect(r.items.value).toEqual(rows);
+	});
+
+	it("a late response from an older list() does not overwrite the newer one", async () => {
+		const a = deferred<Recording[]>();
+		const b = deferred<Recording[]>();
+		state.request
+			.mockImplementationOnce(() => a.promise)
+			.mockImplementationOnce(() => b.promise);
+		const r = useRecordings();
+		const outA = r.list();
+		const outB = r.list();
+
+		b.resolve([row("b")]);
+		await outB;
+		a.resolve([row("a")]);
+		await outA;
+
+		expect(r.items.value).toEqual([row("b")]);
+		expect(await outA).toEqual([row("b")]);
+		expect(r.pending.value).toBe(false);
+	});
+
+	it("a late error from an older list() does not set error", async () => {
+		const a = deferred<Recording[]>();
+		const b = deferred<Recording[]>();
+		state.request
+			.mockImplementationOnce(() => a.promise)
+			.mockImplementationOnce(() => b.promise);
+		const r = useRecordings();
+		const outA = r.list();
+		const outB = r.list();
+
+		b.resolve([row("b")]);
+		await outB;
+		a.reject(new Error("boom"));
+		await outA;
+
+		expect(r.error.value).toBeNull();
+		expect(r.items.value).toEqual([row("b")]);
+		expect(r.pending.value).toBe(false);
+	});
+
+	it("stays pending while the newest list() is in flight after an older one settles", async () => {
+		const a = deferred<Recording[]>();
+		const b = deferred<Recording[]>();
+		state.request
+			.mockImplementationOnce(() => a.promise)
+			.mockImplementationOnce(() => b.promise);
+		const r = useRecordings();
+		const outA = r.list();
+		const outB = r.list();
+
+		a.resolve([row("a")]);
+		await outA;
+		expect(r.pending.value).toBe(true);
+		expect(r.items.value).toEqual([]);
+
+		b.resolve([row("b")]);
+		await outB;
+		expect(r.pending.value).toBe(false);
+		expect(r.items.value).toEqual([row("b")]);
 	});
 });

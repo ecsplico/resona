@@ -161,4 +161,19 @@ describe("index (recordings list) page", () => {
 		const w = await mountSuspended(IndexPage);
 		expect(w.text()).toContain("Noch keine Aufnahmen");
 	});
+
+	it("keeps the rows steady without a loading hint while refreshing existing recordings", async () => {
+		pending.value = true;
+		const w = await mountSuspended(IndexPage);
+		expect(w.text()).not.toContain("Lädt…");
+		expect(w.findAllComponents({ name: "RecordingListItem" }).length).toBe(2);
+	});
+
+	it("shows the loading hint while loading with no recordings yet", async () => {
+		items.value = [];
+		pending.value = true;
+		const w = await mountSuspended(IndexPage);
+		expect(w.text()).toContain("Lädt…");
+		expect(w.text()).not.toContain("Noch keine Aufnahmen");
+	});
 });
