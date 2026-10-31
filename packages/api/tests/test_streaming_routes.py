@@ -84,7 +84,7 @@ class _FakeConnect:
 
 
 @pytest.fixture
-def streaming_client(monkeypatch):
+def streaming_client(monkeypatch, client_headers, org_a):
     """A TestClient over an app exposing only the streaming router, with a fake engine."""
     fake_ws = _FakeEngineWS(script=[
         {"type": "partial", "text": "guten tag", "confirmed": "", "delta": ""},
@@ -100,7 +100,19 @@ def streaming_client(monkeypatch):
     app = FastAPI()
     app.include_router(sr.router)
     with TestClient(app) as c:
+        c.headers.update(client_headers(org_a))
         yield c, fake_ws
+
+
+def test_listen_rejects_unauthenticated_handshake(streaming_client):
+    from starlette.websockets import WebSocketDisconnect
+
+    client, _ = streaming_client
+    client.headers.pop("Authorization")
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect("/v1/listen?encoding=linear16&sample_rate=16000"):
+            pass
+    assert excinfo.value.code == 1008
 
 
 def test_listen_bridges_audio_and_emits_results(streaming_client):
@@ -151,7 +163,7 @@ def test_listen_rejects_unsupported_encoding(streaming_client):
         assert "encoding" in msg["description"]
 
 
-def test_listen_rejects_non_streaming_cloud(monkeypatch):
+def test_listen_rejects_non_streaming_cloud(monkeypatch, cloud_org, client_headers):
     """A cloud provider without a realtime API (OpenAI) is still rejected."""
     monkeypatch.setattr(reg, "resolve", lambda *a, **k: reg.EngineInfo(
         name="openai", kind="cloud", capabilities=["stt", "tts"],
@@ -160,7 +172,8 @@ def test_listen_rejects_non_streaming_cloud(monkeypatch):
     app = FastAPI()
     app.include_router(sr.router)
     with TestClient(app) as c:
-        with c.websocket_connect("/v1/listen?engine=openai&encoding=linear16") as ws:
+        c.headers.update(client_headers(cloud_org))
+        with c.websocket_connect("/v1/listen?engine=openai&encoding=linear16&private=false") as ws:
             msg = ws.receive_json()
             assert msg["type"] == "Error"
             assert "streaming" in msg["description"]
@@ -226,13 +239,36 @@ def _cloud_app(monkeypatch, provider, script):
     return app, session, captured
 
 
-def test_listen_bridges_cloud_deepgram(monkeypatch):
+@pytest.fixture
+def cloud_org(fresh_org, store_settings):
+    """A fresh org with cloud enabled and a registered cloud-ASR endpoint per provider under test."""
+    store_settings(fresh_org, cloud_enabled=True, endpoints=[
+        {"id": f"cloud-asr:{provider}", "kind": "cloud_asr", "model": "m"}
+        for provider in ("deepgram", "elevenlabs", "openai")
+    ])
+    return fresh_org
+
+
+def test_listen_private_cloud_is_policy_denied(monkeypatch, cloud_org, client_headers):
+    app, session, captured = _cloud_app(monkeypatch, "deepgram", [])
+    with TestClient(app) as c:
+        c.headers.update(client_headers(cloud_org))
+        with c.websocket_connect("/v1/listen?engine=deepgram&encoding=linear16") as ws:
+            msg = ws.receive_json()
+    assert msg["type"] == "Error"
+    assert msg["description"].startswith("policy_denied: ")
+    assert "provider" not in captured  # no provider stream was opened
+    assert not session.sent
+
+
+def test_listen_bridges_cloud_deepgram(monkeypatch, cloud_org, client_headers):
     from resona_cloud_stt.streaming import StreamTranscript
     app, session, captured = _cloud_app(
         monkeypatch, "deepgram", [StreamTranscript("guten tag welt", True)],
     )
     with TestClient(app) as c:
-        with c.websocket_connect("/v1/listen?engine=deepgram&encoding=linear16") as ws:
+        c.headers.update(client_headers(cloud_org))
+        with c.websocket_connect("/v1/listen?engine=deepgram&encoding=linear16&private=false") as ws:
             ws.send_bytes(b"\x00\x01" * 160)
             ws.send_text(json.dumps({"type": "CloseStream"}))
             msgs = []
@@ -252,15 +288,16 @@ def test_listen_bridges_cloud_deepgram(monkeypatch):
     assert msgs[-1]["type"] == "Metadata"
 
 
-def test_listen_cloud_interim_results(monkeypatch):
+def test_listen_cloud_interim_results(monkeypatch, cloud_org, client_headers):
     from resona_cloud_stt.streaming import StreamTranscript
     app, _session, _ = _cloud_app(
         monkeypatch, "elevenlabs",
         [StreamTranscript("guten", False), StreamTranscript("guten tag", True)],
     )
     with TestClient(app) as c:
+        c.headers.update(client_headers(cloud_org))
         with c.websocket_connect(
-            "/v1/listen?engine=elevenlabs&encoding=linear16&interim_results=true"
+            "/v1/listen?engine=elevenlabs&encoding=linear16&interim_results=true&private=false"
         ) as ws:
             ws.send_text(json.dumps({"type": "CloseStream"}))
             msgs = []

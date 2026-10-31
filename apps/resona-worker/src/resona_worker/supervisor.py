@@ -1,0 +1,577 @@
+"""Worker supervisor: registers, claims, runs one job at a time, reports.
+
+Lifecycle per job: download input (SHA-256 checked) -> run the execution
+subprocess under the lease -> apply postprocess stages, each gated by a fresh
+hub policy check -> upload the validated result or report a bounded failure.
+A background ``LeaseKeeper`` renews the lease for the whole job, including
+postprocess. The main thread checks it between steps and while the subprocess
+runs; on loss or cancellation the subprocess group is killed and nothing is
+uploaded.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+import os
+import shutil
+import signal
+import stat
+import subprocess
+import threading
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
+from resona_job_core import Candidate, Endpoint, ExecutionPolicy, JobResult, PolicyDenied, StageProvenance
+from resona_postprocess.llm import legacy_endpoint_id
+from resona_postprocess.pipeline import PostprocessResult, build_pipeline
+from resona_postprocess.profile import Profile, ProfileError
+
+from resona_worker.config import WorkerConfig, runtime_version
+from resona_worker.execute import ExitCode, subprocess_env
+from resona_worker.hub import (
+    MAX_RESULT_BYTES,
+    ClaimedJob,
+    HubClient,
+    HubError,
+    HubRejected,
+    HubUnavailable,
+    InputTooLarge,
+    InvalidCredentials,
+    ProtocolIncompatible,
+    StaleLease,
+    lease_deadline_mono,
+    sha256_file,
+)
+
+log = logging.getLogger("resona_worker.supervisor")
+
+_NOT_APPROVED_RETRY_SECONDS = 30.0
+_BACKOFF_MIN = 1.0
+_BACKOFF_MAX = 30.0
+_FAIL_MESSAGE_MAX = 500
+_LEASE_RETRY_SECONDS = 5.0
+_KILL_WAIT_SECONDS = 5.0
+_STAGE_LLM_TYPES = frozenset({"llm", "extract"})
+_OUT_OF_MEMORY_RC = frozenset({int(ExitCode.OUT_OF_MEMORY), -9})
+
+
+class LeaseLost(Exception):
+    """The lease can no longer be used: stale, expired locally, or cancelled."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class JobFailure(Exception):
+    """A bounded, reportable failure of one job."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        retryable: bool,
+        withdraw: Candidate | None = None,
+        message: str | None = None,
+    ) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+        self.withdraw = withdraw
+        self.message = (message or code.replace("_", " "))[:_FAIL_MESSAGE_MAX]
+
+
+class LeaseKeeper:
+    """Renews one job's lease from a background thread.
+
+    ``check()`` is called by the main thread; it raises ``LeaseLost`` when the
+    hub fenced the lease, the job was cancelled, or the locally computed
+    deadline has passed. Credential and protocol failures are re-raised as-is.
+    """
+
+    def __init__(
+        self,
+        hub: HubClient,
+        job_id: int,
+        lease_token: str,
+        *,
+        deadline: float,
+        interval: float,
+        monotonic: Callable[[], float],
+        wall: Callable[[], float],
+    ) -> None:
+        self._hub = hub
+        self._job_id = job_id
+        self._token = lease_token
+        self._interval = interval
+        self._retry_interval = min(interval, _LEASE_RETRY_SECONDS)
+        self._monotonic = monotonic
+        self._wall = wall
+        self._lock = threading.Lock()
+        self._deadline = deadline
+        self._reason: str | None = None
+        self._error: Exception | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name=f"lease-{job_id}", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=1.0)
+
+    def check(self) -> None:
+        with self._lock:
+            error, reason, deadline = self._error, self._reason, self._deadline
+        if error is not None:
+            raise error
+        if reason is None and self._monotonic() >= deadline:
+            reason = "lease_expired"
+        if reason is not None:
+            raise LeaseLost(reason)
+
+    def _set_reason(self, reason: str) -> None:
+        with self._lock:
+            self._reason = reason
+
+    def _loop(self) -> None:
+        delay = self._interval
+        while not self._stop.wait(delay):
+            started_mono, started_wall = self._monotonic(), self._wall()
+            try:
+                reply = self._hub.job_heartbeat(self._job_id, self._token, max_attempts=1)
+            except HubUnavailable:
+                delay = self._retry_interval
+                continue
+            except StaleLease:
+                self._set_reason("stale_lease")
+                return
+            except HubError as exc:
+                with self._lock:
+                    self._error = exc
+                return
+            deadline = lease_deadline_mono(started_mono, started_wall, reply.lease_until)
+            with self._lock:
+                self._deadline = deadline
+            if reply.cancel_requested:
+                self._set_reason("cancel_requested")
+                return
+            delay = self._interval
+
+
+class Supervisor:
+    def __init__(
+        self,
+        config: WorkerConfig,
+        *,
+        hub: HubClient | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+        wall: Callable[[], float] = time.time,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._config = config
+        self._hub = hub or HubClient(config.hub_url, config.token, sleep=sleep)
+        self._monotonic = monotonic
+        self._wall = wall
+        self._sleep = sleep
+        self._withdrawn: set[Candidate] = set()
+        self._approved_private = False
+        self._worker_id: str | None = None
+        self._jobs_dir = config.work_dir / "jobs"
+
+    # -- lifecycle ----------------------------------------------------------
+
+    def start(self) -> None:
+        """Create a clean work directory, discarding leftovers from a previous run."""
+        self._config.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        shutil.rmtree(self._jobs_dir, ignore_errors=True)
+        self._jobs_dir.mkdir(mode=0o700)
+
+    def run(self, *, once: bool = False) -> int:
+        """Serve claims until interrupted. ``once`` returns after one claim cycle."""
+        try:
+            return self._loop(once=once)
+        except KeyboardInterrupt:
+            return 130
+        except InvalidCredentials:
+            log.error("hub rejected the worker credential; stopping")
+            return 1
+        except ProtocolIncompatible:
+            log.error("hub speaks an incompatible worker protocol; stopping")
+            return 2
+
+    def _loop(self, *, once: bool) -> int:
+        self.start()
+        backoff = _BACKOFF_MIN
+        while True:
+            claimable = [c for c in self._config.capabilities if c not in self._withdrawn]
+            try:
+                reply = self._hub.heartbeat(claimable, ready=bool(claimable), runtime=runtime_version())
+            except HubUnavailable:
+                if once:
+                    return 1
+                self._sleep(backoff)
+                backoff = min(_BACKOFF_MAX, backoff * 2)
+                continue
+            backoff = _BACKOFF_MIN
+            self._worker_id = str(reply.worker_id)
+            self._approved_private = reply.approved_private
+            eligible = [c for c in claimable if c in reply.approved_capabilities]
+            if not reply.approved or not eligible:
+                if once:
+                    return 0
+                self._sleep(_NOT_APPROVED_RETRY_SECONDS)
+                continue
+
+            try:
+                claimed = self._claim(eligible)
+            except HubUnavailable:
+                if once:
+                    return 1
+                self._sleep(backoff)
+                backoff = min(_BACKOFF_MAX, backoff * 2)
+                continue
+            if claimed is None:
+                if once:
+                    return 0
+                continue
+            job, deadline = claimed
+            self._execute(job, deadline)
+            if once:
+                return 0
+
+    def _claim(self, capabilities: list[Candidate]) -> tuple[ClaimedJob, float] | None:
+        started_mono, started_wall = self._monotonic(), self._wall()
+        job = self._hub.claim(capabilities, wait=self._config.claim_wait_seconds)
+        if job is None:
+            return None
+        return job, lease_deadline_mono(started_mono, started_wall, job.lease_until)
+
+    # -- one job ------------------------------------------------------------
+
+    def _execute(self, job: ClaimedJob, deadline: float) -> None:
+        job_dir = self._jobs_dir / f"{job.job_id}-{job.attempt}"
+        job_dir.mkdir(mode=0o700)
+        keeper = LeaseKeeper(
+            self._hub,
+            job.job_id,
+            job.lease_token,
+            deadline=deadline,
+            interval=self._config.lease_heartbeat_seconds,
+            monotonic=self._monotonic,
+            wall=self._wall,
+        )
+        keeper.start()
+        try:
+            self._run_job(job, keeper, job_dir)
+        except LeaseLost as lost:
+            log.info("job %s attempt %s stopped: %s", job.job_id, job.attempt, lost.reason)
+        except JobFailure as failure:
+            self._report_failure(job, keeper, failure)
+        except HubUnavailable:
+            log.warning("job %s attempt %s: hub unreachable; lease will expire", job.job_id, job.attempt)
+        except StaleLease:
+            log.info("job %s attempt %s: lease fenced by hub", job.job_id, job.attempt)
+        except HubRejected as exc:
+            log.warning("job %s attempt %s: hub rejected request (%s)", job.job_id, job.attempt, exc.code)
+        finally:
+            keeper.stop()
+            shutil.rmtree(job_dir, ignore_errors=True)
+
+    def _run_job(self, job: ClaimedJob, keeper: LeaseKeeper, job_dir: Path) -> None:
+        snapshot = job.execution_snapshot
+        if snapshot.get("kind") != job.kind or job.kind not in ("audio", "document"):
+            raise JobFailure("invalid_snapshot", retryable=False)
+        candidate = _candidate_of(snapshot)
+        policy_block = snapshot.get("policy") or {}
+        private = bool(policy_block.get("private", True))
+        if private and not self._approved_private:
+            # The hub only claims private jobs to approved-private workers; a
+            # mismatch means approval changed mid-flight. Let another worker take it.
+            raise JobFailure("policy_denied", retryable=True, message="worker not approved for private jobs")
+
+        input_path = job_dir / "input.bin"
+        keeper.check()
+        try:
+            input_sha = self._hub.download_input(job.job_id, job.lease_token, input_path)
+        except InputTooLarge:
+            raise JobFailure("input_too_large", retryable=False) from None
+        if input_sha != job.input_sha256:
+            raise JobFailure("input_hash_mismatch", retryable=False)
+        profile_dict = self._fetch_postprocess(job, snapshot, keeper)
+
+        keeper.check()
+        snapshot_path = job_dir / "snapshot.json"
+        out_path = job_dir / "out.json"
+        snapshot_path.write_text(
+            json.dumps(
+                {
+                    "kind": job.kind,
+                    "candidate": candidate.model_dump(mode="json"),
+                    "language": snapshot.get("language"),
+                    "options": snapshot.get("options") or {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        rc = self._run_executor(job_dir, snapshot_path, input_path, out_path, keeper, private=private)
+        _raise_for_exit(rc, candidate)
+
+        result = _read_result(out_path, job.kind)
+        result = self._postprocess(job, result, snapshot, profile_dict, keeper)
+        provenance = result.provenance.model_copy(
+            update={
+                "worker_id": self._worker_id,
+                "runtime_version": runtime_version(),
+                "settings_revision": snapshot.get("settings_revision"),
+                "input_sha256": job.input_sha256,
+            }
+        )
+        self._upload(job, keeper, result.model_copy(update={"provenance": provenance}), job_dir)
+
+    # -- subprocess ---------------------------------------------------------
+
+    def _run_executor(
+        self,
+        job_dir: Path,
+        snapshot_path: Path,
+        input_path: Path,
+        out_path: Path,
+        keeper: LeaseKeeper,
+        *,
+        private: bool,
+    ) -> int:
+        cmd = [
+            *self._config.executor,
+            "--snapshot",
+            str(snapshot_path),
+            "--input",
+            str(input_path),
+            "--out",
+            str(out_path),
+        ]
+        env = subprocess_env(private=private, base=os.environ)
+        with (job_dir / "engine.stderr").open("wb") as stderr:
+            proc = subprocess.Popen(
+                cmd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+                start_new_session=True,
+            )
+        try:
+            while (rc := proc.poll()) is None:
+                keeper.check()
+                time.sleep(self._config.poll_interval_seconds)
+        except BaseException:
+            _kill_group(proc)
+            raise
+        _kill_group(proc)
+        return rc
+
+    # -- postprocess --------------------------------------------------------
+
+    def _fetch_postprocess(
+        self, job: ClaimedJob, snapshot: dict[str, Any], keeper: LeaseKeeper
+    ) -> dict[str, Any] | None:
+        """Download the profile named by the snapshot and verify it against its pinned SHA-256."""
+        pp = snapshot.get("postprocess")
+        if not pp:
+            return None
+        expected = pp.get("sha256") if isinstance(pp, dict) else None
+        if not isinstance(expected, str) or not expected:
+            raise JobFailure("invalid_snapshot", retryable=False)
+        keeper.check()
+        try:
+            document = self._hub.download_postprocess(job.job_id, job.lease_token)
+        except InputTooLarge:
+            raise JobFailure("invalid_snapshot", retryable=False) from None
+        if not hmac.compare_digest(hashlib.sha256(document).hexdigest(), expected):
+            raise JobFailure("invalid_snapshot", retryable=False, message="postprocess profile hash mismatch")
+        try:
+            profile_dict = json.loads(document)
+        except ValueError:
+            raise JobFailure("invalid_snapshot", retryable=False) from None
+        if not isinstance(profile_dict, dict):
+            raise JobFailure("invalid_snapshot", retryable=False)
+        return profile_dict
+
+    def _postprocess(
+        self,
+        job: ClaimedJob,
+        result: JobResult,
+        snapshot: dict[str, Any],
+        profile_dict: dict[str, Any] | None,
+        keeper: LeaseKeeper,
+    ) -> JobResult:
+        if profile_dict is None:
+            return result
+        try:
+            steps = profile_dict["steps"]
+            policy = _policy_of(snapshot.get("policy") or {})
+        except (KeyError, TypeError, ValueError, ValidationError):
+            raise JobFailure("invalid_snapshot", retryable=False) from None
+
+        text = result.markdown
+        warnings = list(result.warnings)
+        structured = dict(result.structured)
+        stages = list(result.provenance.stages)
+        for step in steps:
+            if not isinstance(step, dict):
+                raise JobFailure("invalid_snapshot", retryable=False)
+            stage_name = str(step.get("name") or step.get("type") or "step")
+            try:
+                single = Profile.from_dict({**profile_dict, "steps": [step]})
+                pipeline = build_pipeline(single, policy=policy)
+            except PolicyDenied:
+                raise JobFailure("policy_denied", retryable=False) from None
+            except (ProfileError, ValueError, KeyError, TypeError):
+                raise JobFailure("invalid_snapshot", retryable=False) from None
+
+            endpoint_id: str | None = None
+            if step.get("type") in _STAGE_LLM_TYPES:
+                endpoint_id = step.get("endpoint") or legacy_endpoint_id(step)
+                self._guard_stage(job, keeper, stage_name, endpoint_id)
+
+            started = time.perf_counter()
+            run: PostprocessResult = pipeline.run(text)
+            seconds = time.perf_counter() - started
+            text = run.text
+            skipped = run.data.get("_skipped", [])
+            warnings.extend(f"postprocess_step_skipped:{name}" for name in skipped)
+            structured.update({key: value for key, value in run.data.items() if key != "_skipped"})
+            if endpoint_id is not None and not skipped:
+                endpoint = policy.endpoint(endpoint_id)
+                if endpoint is None:
+                    raise JobFailure("policy_denied", retryable=False)
+                stages.append(
+                    StageProvenance(
+                        stage="llm",
+                        engine="litellm",
+                        model=endpoint.model,
+                        accelerator="external",
+                        endpoint_id=endpoint.id,
+                        seconds=seconds,
+                    )
+                )
+
+        return result.model_copy(
+            update={
+                "markdown": text,
+                "warnings": warnings,
+                "structured": structured,
+                "provenance": result.provenance.model_copy(update={"stages": stages}),
+            }
+        )
+
+    def _guard_stage(self, job: ClaimedJob, keeper: LeaseKeeper, stage: str, endpoint_id: str) -> None:
+        keeper.check()
+        try:
+            self._hub.policy_check(job.job_id, job.lease_token, stage=stage, endpoint_id=endpoint_id)
+        except PolicyDenied:
+            raise JobFailure("policy_denied", retryable=False) from None
+        except HubUnavailable:
+            raise JobFailure("hub_unreachable", retryable=True) from None
+        keeper.check()
+
+    # -- reporting ----------------------------------------------------------
+
+    def _upload(self, job: ClaimedJob, keeper: LeaseKeeper, result: JobResult, job_dir: Path) -> None:
+        keeper.check()
+        body_path = job_dir / "result.json"
+        body_path.write_text(result.model_dump_json(), encoding="utf-8")
+        sha, size = sha256_file(body_path)
+        if size > MAX_RESULT_BYTES:
+            raise JobFailure("result_too_large", retryable=False)
+        try:
+            self._hub.upload_result(job.job_id, job.lease_token, sha256=sha, size=size, body_path=body_path)
+        except StaleLease:
+            log.info("job %s attempt %s: result rejected as stale; discarded", job.job_id, job.attempt)
+
+    def _report_failure(self, job: ClaimedJob, keeper: LeaseKeeper, failure: JobFailure) -> None:
+        try:
+            keeper.check()
+        except LeaseLost:
+            return
+        if failure.withdraw is not None:
+            self._withdrawn.add(failure.withdraw)
+        try:
+            self._hub.fail(
+                job.job_id,
+                job.lease_token,
+                code=failure.code,
+                message=failure.message,
+                retryable=failure.retryable,
+                withdraw_capability=failure.withdraw,
+            )
+        except StaleLease:
+            log.info("job %s attempt %s: failure report rejected as stale", job.job_id, job.attempt)
+
+
+def _candidate_of(snapshot: dict[str, Any]) -> Candidate:
+    try:
+        return Candidate.model_validate(snapshot["candidate"])
+    except (KeyError, TypeError, ValidationError):
+        raise JobFailure("invalid_snapshot", retryable=False) from None
+
+
+def _policy_of(block: dict[str, Any]) -> ExecutionPolicy:
+    return ExecutionPolicy(
+        private=bool(block.get("private", True)),
+        cloud_enabled=bool(block.get("cloud_enabled", False)),
+        approved_endpoint_ids=tuple(block.get("approved_endpoint_ids", ())),
+        endpoints=tuple(Endpoint.model_validate(e) for e in block.get("endpoints", ())),
+    )
+
+
+def _read_result(out_path: Path, kind: str) -> JobResult:
+    try:
+        st = os.lstat(out_path)
+    except OSError:
+        raise JobFailure("invalid_result", retryable=True) from None
+    if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_RESULT_BYTES:
+        raise JobFailure("invalid_result", retryable=True)
+    try:
+        result = JobResult.model_validate_json(out_path.read_bytes())
+    except (OSError, ValidationError, ValueError):
+        raise JobFailure("invalid_result", retryable=True) from None
+    if result.kind != kind:
+        raise JobFailure("invalid_result", retryable=True)
+    return result
+
+
+def _raise_for_exit(rc: int, candidate: Candidate) -> None:
+    if rc == ExitCode.OK:
+        return
+    if rc == ExitCode.UNSUPPORTED_INPUT:
+        raise JobFailure("unsupported_input", retryable=False, message="input could not be processed")
+    if rc == ExitCode.UNSUPPORTED_CAPABILITY:
+        raise JobFailure("unsupported_capability", retryable=True, withdraw=candidate, message="worker lacks this capability")
+    if rc in _OUT_OF_MEMORY_RC:
+        raise JobFailure("out_of_memory", retryable=True, withdraw=candidate, message="out of memory")
+    if rc == ExitCode.INVALID_SNAPSHOT:
+        raise JobFailure("invalid_snapshot", retryable=False)
+    raise JobFailure("engine_error", retryable=True, message="engine failed")
+
+
+def _kill_group(proc: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=_KILL_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        log.error("execution subprocess did not exit after SIGKILL")
+
+
+__all__ = ["JobFailure", "LeaseKeeper", "LeaseLost", "Supervisor"]

@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Protocol, TypedDict, runtime_checkable
 
-from resona_client.client import ResonaClient
+from resona_client.client import AudioOptions, ResonaClient
 from resona_client.config import EngineEntry
 
 
@@ -38,13 +38,34 @@ class RemoteEngine:
         else:
             self._client = ResonaClient.from_config()
 
-    def transcribe(self, audio: Path, **kwargs) -> TranscriptionResult:
-        job = self._client.submit_job(audio)
-        result = self._client.wait_for_job(job["id"])
+    def transcribe(
+        self,
+        audio: Path,
+        *,
+        language: str | None = None,
+        profile: str | None = None,
+        translate: bool = False,
+        private: bool = True,
+        timeout: float | None = None,
+        **_ignored,
+    ) -> TranscriptionResult:
+        ref = self._client.submit_job(
+            audio,
+            kind="audio",
+            language=language,
+            profile=profile,
+            options=AudioOptions(translate=translate),
+            private=private,
+        )
+        job = self._client.wait_for_job(ref.job_id, timeout=timeout)
+        if job.status != "completed":
+            reason = (job.error or {}).get("message") or job.status
+            raise RuntimeError(f"Job {job.job_id} {job.status}: {reason}")
+        result = self._client.get_result(ref.job_id)
         return TranscriptionResult(
-            text=result.get("md") or result.get("transcript", ""),
-            language=result.get("language", ""),
-            segments=result.get("segments", []),
+            text=result.markdown or result.raw_text,
+            language=result.language or "",
+            segments=[s.model_dump() for s in result.segments],
         )
 
 

@@ -1,17 +1,31 @@
 # resona-api
 
-resona-api is the central gateway service. It accepts audio uploads, manages an async job queue, applies postprocessing profiles, and exposes OpenAI-compatible `/v1/audio/*` routes that dispatch to local engine-servers or cloud providers.
+resona-api is the central hub. It accepts uploads, keeps a durable, organization-scoped job queue and hands jobs to outbound-only pull workers (`resona-worker`). The hub runs no inference for queued jobs. It also exposes OpenAI-compatible `/v1/audio/*` routes.
 
 - Default port: **7000**
-- Database: SQLite at `$DATA_PATH/resona.db`
-- Engine communication: HTTP to `RESONA_ENGINE_URLS` (default `http://localhost:7001`)
+- Database: SQLite at `$DATA_PATH/resona.db` (single hub replica)
+- Upload limit: 200 MiB per upload (`RESONA_MAX_UPLOAD_BYTES`), enforced while streaming
 
 ## Authentication
 
-When `RESONA_API_KEY` is set, all endpoints require `X-API-Key: <key>` in the request header. If the env var is unset, all requests are accepted without a key.
+Every request needs an org-bound credential: `Authorization: Bearer <token>`. REST routes also accept `X-API-Key: <token>`; sending both with different values is rejected. Missing, revoked or unknown token → `401`; wrong role → `403`. There is no auth-disabled mode.
 
-!!! warning "Auth header"
-    Pass the key as `X-API-Key`, not as a Bearer token. The CLI and `ResonaClient` send it automatically.
+The organization always comes from the credential, never from a request field or header. IDs that belong to another organization return `404`.
+
+Issue tokens on the hub host with `resona-admin`. Each token is printed once; the hub stores only its SHA-256 hash.
+
+```bash
+resona-admin organization create acme
+resona-admin credential issue --organization acme --role client     # or org_admin
+resona-admin credential revoke <credential-id>
+resona-admin worker enroll mac-studio --organization acme           # worker token, unapproved
+resona-admin worker approve <worker-id> --private --capabilities-file caps.json
+resona-admin worker revoke <worker-id>
+```
+
+Roles: `client` (submit and read jobs, read settings), `org_admin` (also change settings and profiles), `worker` (worker routes only).
+
+Error bodies have the form `{"error": "<code>", "message": "<safe text>"}`.
 
 ## Endpoints
 
@@ -29,102 +43,94 @@ Returns liveness status.
 
 ---
 
-### Jobs
+### Uploads and jobs (roles `client`, `org_admin`)
 
-#### Submit audio for transcription
+Jobs are asynchronous: upload the file, create a job, then poll until it finishes. `ResonaClient.submit_job()` does the upload and the job creation in one call.
 
-```
-POST /jobs
-Content-Type: multipart/form-data
-```
-
-Upload one or more audio files and register them for async transcription. Files are stored under `$DATA_PATH/files/`. Each file becomes one job.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `audio_files` | file(s) | yes | Audio to transcribe (mp3, wav, m4a, ogg, flac, aac, webm) |
-| `keep` | bool | no | Keep the audio file after transcription (default: `true`) |
-| `translate` | bool | no | Translate to English instead of transcribing (default: `false`) |
-| `engine` | string | no | Route this job to a specific engine by name |
-| `profile` | string | no | Profile name (resolved from `RESONA_PROFILES_DIR`) or inline JSON profile string. Omit to use the bundled `default` profile. |
-
-Response — array of job objects:
-
-```json
-[
-  {
-    "id": 42,
-    "status": "pending",
-    "transcript": null,
-    "md": null,
-    "language": null,
-    "engine": "faster-whisper",
-    "filename": "a3f8c1d2e5b7.mp3",
-    "created_at": "2026-05-17T10:00:00",
-    "updated_at": "2026-05-17T10:00:00"
-  }
-]
-```
-
-#### Register an existing file
+#### Upload a file
 
 ```
-POST /jobs/registerfile
+POST /v1/uploads
+Content-Type: multipart/form-data   (field: file)
+```
+
+Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
+
+#### Create a job
+
+```
+POST /v1/jobs
+Idempotency-Key: <unique key>
 Content-Type: application/json
 ```
 
-Register a file that is already in the server's `files/` directory (e.g. after a manual copy or for reprocessing).
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `kind` | string | yes | `audio` or `document` |
+| `upload_id` | string | yes | ID returned by `POST /v1/uploads` |
+| `execution_profile` | string | no | Execution profile from the organization settings |
+| `language` | string | no | Language code; defaults to the organization setting |
+| `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
+| `profile` | string | no | Name of a postprocess profile stored on the hub |
+| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`. Document: `languages`, `ocr`, `ocr_engine`, `page_start`, `page_end`, `pipeline` |
+| `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
+| `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `filename` | string | Filename as stored in `$DATA_PATH/files/` |
+Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header is required: the same key with the same request returns the same job; the same key with a different request returns `409 idempotency_conflict`.
 
-Returns a job object. Returns `404` if the file does not exist.
-
-#### Get job
-
-```
-GET /job/{id}
-```
-
-Returns the job object for `id`. Returns `404` if not found.
-
-#### List all jobs
+#### List, get, cancel, delete
 
 ```
-GET /jobs/
+GET    /v1/jobs?cursor=<opaque>&limit=<1..100>   → {items: [JobView], next_cursor}
+GET    /v1/jobs/{id}                             → JobView
+GET    /v1/jobs/{id}/result                      → JobResult (409 not_ready, 410 expired)
+POST   /v1/jobs/{id}/cancel                      → JobView
+DELETE /v1/jobs/{id}                             → 204
 ```
 
-Returns an array of all job objects.
+JobView fields: `job_id`, `kind`, `status`, `queue_reason` (`no_capable_worker`, `waiting_capacity` or null), `private`, `execution_profile`, `candidate`, `attempt`, `error` (`{code, message}` or null), `result_available`, `created_at`, `updated_at`, `deadline_at`.
 
-#### Job object
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | int | Auto-assigned job ID |
-| `status` | string | `pending`, `processing`, `completed`, or `failed` |
-| `transcript` | string\|null | Raw transcript text (set when completed) |
-| `md` | string\|null | Formatted transcript after postprocessing pipeline |
-| `structured` | string\|null | JSON output from any `extract` steps in the profile |
-| `profile` | string\|null | Profile name or inline JSON used for this job |
-| `language` | string\|null | Detected language code (e.g. `"de"`) |
-| `engine` | string\|null | Engine that handled the job |
-| `filename` | string | Server-side filename |
-| `created_at` | string | ISO 8601 timestamp |
-| `updated_at` | string | ISO 8601 timestamp |
+JobResult fields: `schema_version`, `kind`, `raw_text`, `markdown`, `language`, `segments`, `pages`, `warnings`, `provenance`.
 
 #### Job state machine
 
 ```
-PENDING
-  └─► PROCESSING
-        ├─► COMPLETED
-        └─► FAILED
+pending → processing → completed | failed | cancelled
 ```
 
-The background `TranscribeTask` dequeues `PENDING` jobs, calls the engine, applies the postprocessing pipeline (replacements from DB, optional LLM), and writes the result. Poll `GET /job/{id}` until `status` is `completed` or `failed`, or use `ResonaClient.wait_for_job()`.
+A worker claims a job under a 120-second lease. If the lease expires, the job returns to `pending`. A job fails after three assignments (`attempts_exhausted`) or 24 hours (`deadline_exceeded`). Poll `GET /v1/jobs/{id}` or use `ResonaClient.wait_for_job()`.
+
+Retention: the input is deleted when the job reaches a terminal state, results after 24 hours, job metadata after 7 days.
 
 ---
+
+### Worker routes (role `worker`)
+
+Used only by `resona-worker`. Every call checks the organization, that the worker is approved and not revoked, and the current policy. Private jobs go only to workers approved with `--private`.
+
+```
+POST /v1/workers/heartbeat
+POST /v1/workers/claim?wait=<0..25>
+GET  /v1/workers/jobs/{id}/input        (X-Resona-Lease)
+POST /v1/workers/jobs/{id}/heartbeat    (X-Resona-Lease)
+POST /v1/workers/jobs/{id}/policy       (X-Resona-Lease)
+POST /v1/workers/jobs/{id}/result       (X-Resona-Lease, X-Resona-Result-Sha256)
+POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
+```
+
+A call with an expired or replaced lease returns `409 stale_lease`. An incompatible worker protocol returns `426`.
+
+---
+
+### Settings
+
+```
+GET /v1/settings      → {organization_id, revision, settings} + ETag
+PUT /v1/settings      (org_admin, If-Match: <revision>)
+```
+
+---
+
 
 ### Engine catalogue
 
@@ -197,8 +203,8 @@ OpenAI-compatible speech-to-text. A postprocessing profile is applied to the tra
 | `temperature` | float | no | Sampling temperature (engine-dependent) |
 | `response_format` | string | no | `"json"` (default), `"text"`, or `"verbose_json"` |
 | `engine` | string | no | Engine name, or `"local"` to require a local engine |
-| `private` | bool | no | Refuse cloud engines (default: `false`) |
-| `profile` | string | no | Profile name or inline JSON; omit to use the `default` profile |
+| `private` | bool | no | Refuse cloud engines and cloud postprocess steps (default: `true`); `false` needs organization cloud approval |
+| `profile` | string | no | Organization profile name; omit to use the organization default |
 
 `response_format` responses:
 

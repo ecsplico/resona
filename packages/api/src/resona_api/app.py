@@ -1,6 +1,10 @@
+import asyncio
+import contextlib
 import logging
-from threading import Event
+import os
+import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from decouple import config
 from fastapi import FastAPI
@@ -8,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
-from .tasks_transcribe import TranscribeTask
 from .db.engine import create_db_and_tables
+from .errors import install_error_handlers
+from .maintenance import maintenance_loop
 
 log = logging.getLogger(__name__)
 
@@ -20,12 +25,10 @@ tags_metadata = [
     {"name": "Engines", "description": "Engine discovery."},
 ]
 
-transcribe_task = None
-
 
 def _validate_env() -> None:
     """Fail fast on misconfiguration; log resolved config summary."""
-    from .paths import DATA_PATH, DB_PATH, FILE_PATH, PROFILES_PATH
+    from .paths import DATA_PATH, DB_PATH, FILE_PATH
     from .engine_registry import _engine_urls
 
     urls = _engine_urls()
@@ -33,7 +36,7 @@ def _validate_env() -> None:
         raise RuntimeError("RESONA_ENGINE_URLS is empty — set at least one engine-server URL")
 
     for label, path in (("DATA_PATH", DATA_PATH), ("DB_PATH", DB_PATH),
-                        ("FILE_PATH", FILE_PATH), ("PROFILES_PATH", PROFILES_PATH)):
+                        ("FILE_PATH", FILE_PATH)):
         if not path.is_dir():
             raise RuntimeError(f"{label}={path} is not a directory")
         probe = path / ".write_probe"
@@ -42,46 +45,67 @@ def _validate_env() -> None:
         except OSError as exc:
             raise RuntimeError(f"{label}={path} is not writable: {exc}") from exc
 
-    api_key_set = bool(config("RESONA_API_KEY", default=""))
-    if not api_key_set:
-        log.warning("RESONA_API_KEY is unset — clients can hit the API without auth")
+    log.info("Hosted authentication: per-organization stored credentials (no shared key)")
 
     log.info("Resolved config:")
     log.info("  DATA_PATH          = %s", DATA_PATH)
-    log.info("  RESONA_PROFILES_DIR= %s", PROFILES_PATH)
     log.info("  RESONA_ENGINE_URLS = %s", ",".join(urls))
-    log.info("  RESONA_API_KEY     = %s", "set" if api_key_set else "unset")
+
+
+# Name pattern of the Markdown/JSON exports the removed in-hub transcriber wrote
+# ("<date> <id or patient> (<job id>).md" plus a ".json" sidecar).
+_LEGACY_EXPORT = re.compile(r"^\d{4}-\d{2}-\d{2} .+ \(\d+\)\.(md|json)$")
+
+
+def _remove_legacy_markdown_exports() -> int:
+    """Delete legacy result exports under ``MD_PATH`` (default ``<DATA_PATH>/md``).
+
+    Their names can contain original upload or patient names and they fall outside
+    the retention policy. Only files matching the export pattern are removed; the
+    directory is removed when that leaves it empty. Idempotent.
+    """
+    from .paths import DATA_PATH
+
+    configured = os.getenv("MD_PATH")
+    directory = Path(configured) if configured else DATA_PATH / "md"
+    if not directory.is_absolute():
+        directory = Path.cwd() / directory
+    if not directory.is_dir():
+        return 0
+    removed = 0
+    for entry in directory.iterdir():
+        if entry.is_file() and _LEGACY_EXPORT.fullmatch(entry.name):
+            entry.unlink(missing_ok=True)
+            removed += 1
+    with contextlib.suppress(OSError):
+        directory.rmdir()
+    return removed
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global transcribe_task
-
     _validate_env()
 
     log.info("Initializing database...")
     create_db_and_tables()
-    from .db.engine import engine as _db_engine
-    from .migration import migrate_config_tables_to_profile
-    from .paths import PROFILES_PATH
-    migrate_config_tables_to_profile(_db_engine, PROFILES_PATH)
+    removed = _remove_legacy_markdown_exports()
+    if removed:
+        log.info("Removed %d legacy result export files", removed)
 
-    shutdown_event = Event()
-
-    log.info("Starting TranscribeTask...")
-    transcribe_task = TranscribeTask(shutdown_event)
-    transcribe_task.start()
+    log.info("Starting maintenance loop...")
+    maintenance = asyncio.create_task(maintenance_loop())
 
     yield
 
     log.info("Shutting down...")
-    shutdown_event.set()
-    if transcribe_task:
-        transcribe_task.join(timeout=10)
+    maintenance.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await maintenance
     log.info("Background tasks stopped")
 
 
 app = FastAPI(openapi_tags=tags_metadata, lifespan=lifespan, title="resona-api")
+install_error_handlers(app)
 
 CORS_ORIGINS = config("CORS_ORIGINS", default="*")
 app.add_middleware(
@@ -99,13 +123,17 @@ async def health():
     return {"status": "ok"}
 
 
-from .endpoints import router
+from .jobs_routes import router as jobs_router
+from .worker_routes import router as worker_router
 from .audio_routes import router as audio_router
 from .profiles_routes import router as profiles_router
+from .settings_routes import router as settings_router
 from .streaming_routes import router as streaming_router
-app.include_router(router)
+app.include_router(jobs_router)
+app.include_router(worker_router)
 app.include_router(audio_router)
 app.include_router(profiles_router)
+app.include_router(settings_router)
 app.include_router(streaming_router)
 
 try:

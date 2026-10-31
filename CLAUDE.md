@@ -14,6 +14,7 @@ resona/
 ├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member)
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
+│   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
     ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
@@ -25,6 +26,8 @@ resona/
     ├── engine-whispercpp/  ← resona-engine-whispercpp: whisper.cpp engine (Metal, via pywhispercpp)
     ├── engine-lightning-mlx/ ← resona-engine-lightning-mlx: batched MLX engine (GPU, macOS arm64)
     ├── engine-parakeet/    ← resona-engine-parakeet: NVIDIA Parakeet (NeMo FastConformer) engine (Linux CUDA/CPU, multilingual)
+    ├── job-core/           ← resona-job-core: shared job/result contracts, execution policy, PolicyDenied. No ML deps.
+    ├── engine-docling/     ← resona-engine-docling: in-process Docling PDF/image → Markdown (OCR: ocrmac/rapidocr/tesseract). Not an audio engine; not in `resona.engines`.
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
     ├── cloud-tts/          ← resona-cloud-tts: cloud TTS providers (OpenAI, ElevenLabs, Deepgram)
     ├── tts-local/          ← resona-tts-local: local/offline TTS engines (Kokoro, Chatterbox, Qwen3-TTS) — ported from Voicebox
@@ -118,6 +121,19 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - Native cache-aware streaming is **opt-in** via `RESONA_PARAKEET_STREAMING` (default off) and only activates when the loaded model is cache-aware-capable; `stream_session` is bound only then, so otherwise the engine stays a plain `Transcriber` and `resona live` uses the windowed local-agreement fallback. `ParakeetStreamSession` drives NeMo `conformer_stream_step` over a `CacheAwareStreamingAudioBuffer`; experimental, needs GPU validation. `_text_delta`/`_hypothesis_text` are pure helpers.
 - Configured via `DEFAULT_PARAKEET_MODEL` env var (default: `nvidia/parakeet-tdt-0.6b-v3`)
 
+### resona-engine-docling
+- `convert.py` — `convert_document(path, *, options: DocumentOptions, accelerator) -> JobResult`: runs Docling `DocumentConverter` in-process (not the CLI, not docling-serve). Translates `DocumentOptions` (de/en, `ocr=auto|force|off`, `ocr_engine=ocrmac|rapidocr|tesseract`, inclusive page range) into the pinned Docling 2.129 option classes; unsupported combinations raise `UnsupportedDocumentOptions`, non-PDF/image input raises `UnsupportedMediaType`.
+- `options.py` — `DocumentOptions` (pydantic, extra forbid) and the per-backend language identifiers (ocrmac `de-DE`/`en-US`, tesseract `deu`/`eng`, rapidocr prepared multilingual weights).
+- Result contract lives in `resona-job-core` (`resona_job_core.results.JobResult`). Docling is pinned exactly (`docling==2.129.0`); exact pin changes require re-running `packages/engine-docling/tests`.
+
+### resona-worker
+- `hub.py` — `HubClient`: worker-side REST client for `/v1/workers/*`, bearer auth, error mapping (`stale_lease`, `policy_denied`, `protocol_incompatible`) and bounded retries. Wire models `HeartbeatReply`, `ClaimedJob`, `JobLease` live here.
+- `supervisor.py` — `Supervisor`: claim → download input (SHA-256 checked) → run execution subprocess → postprocess stages, each gated by a hub policy check → upload result or bounded failure. `LeaseKeeper` renews the lease for the whole job; lease loss or cancellation kills the subprocess group and uploads nothing. Withdrawn candidates are excluded from heartbeat and claims.
+- `execute.py` — subprocess entry point (`python -m resona_worker.execute`): ASR via `resona.engines` entry points (per-job process, no registry singleton) or Docling documents. Exit codes map to failure codes. `subprocess_env()` strips cloud API keys and enables offline HF mode for private jobs.
+- `config.py` — token file (0600 regular file, no symlinks), hub URL (HTTPS, or loopback HTTP), capability file.
+- `cli.py` — `resona-worker run --hub <url> --token-file <path> --capabilities <file> [--once]`.
+- The worker holds no ML dependencies in the base install; extras `audio-cpu`, `apple`, `documents` add the engine packages.
+
 ### resona-cloud-stt
 - `types.py` — `TranscriptionResult` TypedDict: `{text, language, segments}`
 - `errors.py` — `CloudSTTError` (base), `MissingAPIKeyError` (env var not set), `ProviderHTTPError` (non-2xx response)
@@ -155,31 +171,35 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 
 ### resona-postprocess
 - `replacements.py` — `apply_replacements(text, list[dict])` — regex-based, case-insensitive
-- `llm.py` — `llm_transform(text, prompt, ...)` and `llm_extract(text, prompt, ...)` via litellm; `llm_postprocess` is a deprecated alias for `llm_transform`. `_resolve_api_base(model, api_base)` resolves the endpoint (explicit > `RESONA_LLM_API_BASE` > localhost default by model prefix), so local LLMs work offline: set `RESONA_LLM_MODEL=ollama/llama3` / `lm_studio/<m>` (→ `:1234/v1`) / `mlx/<m>` (→ `:10240/v1`)
-- `pipeline.py` — `PostprocessPipeline`: composable step chain; `PostprocessResult{text, data}` carries both formatted text and structured extraction data; `build_pipeline(profile)` constructs a runnable pipeline from a `Profile`
+- `llm.py` — `llm_transform(text, *, prompt, endpoint, policy, ...)` and `llm_extract(text, *, prompt, endpoint, policy, ...)` via litellm. Both require an `Endpoint` and an `ExecutionPolicy`; `check_policy` runs before every provider call. No implicit model, base URL or env fallback inside these functions. `legacy_step_endpoint(step)` derives an endpoint for explicit local CLI mode only (`RESONA_LLM_MODEL` / `RESONA_LLM_API_BASE`, loopback = `local_llm`, otherwise `cloud_llm`)
+- `pipeline.py` — `PostprocessPipeline`: composable step chain; `PostprocessResult{text, data}`; `build_pipeline(profile, *, policy)` validates every LLM stage against the policy before returning (`PolicyDenied` on denial); `local_policy(profile, *, private)` builds the policy for local CLI runs only; `run()` re-raises `PolicyDenied`
 - `profile.py` — `Profile` dataclass (name, description, initial_prompt, steps); `resolve_profile(ref, profiles_dir)` accepts a name, inline JSON string, file path, or `Profile`/dict; `list_profiles(dir)`, `bundled_default()`
 - `profiles/default.json` — bundled default profile with German dictation replacements (Komma, Punkt, Absatz, medical headings, name corrections)
 - `default_replacements.json` — bundled replacement rules used by the default profile
 
 ### resona-api
-- `app.py` — FastAPI lifespan: creates DB, starts `TranscribeTask`, instantiates `EngineClient`; runs `migration.py` on startup to export any legacy DB tables to `default.json`
-- `endpoints.py` — REST routes: jobs
-- `profiles_routes.py` — CRUD routes for profile files: `GET /profiles/`, `GET /profiles/{name}`, `PUT /profiles/{name}`, `DELETE /profiles/{name}`
+- `app.py` — FastAPI lifespan: validates env, runs `migrate` (`db/engine.create_db_and_tables`), removes legacy `MD_PATH` result exports once, starts `maintenance.maintenance_loop()` as an asyncio task (cancelled on shutdown). Mounts jobs, worker, audio, profiles, settings and streaming routers; `errors.install_error_handlers` renders `{error, message}` bodies at the top level. The hub runs no inference for queued jobs
+- `jobs_routes.py` — client job API (roles client|org_admin; worker tokens 403): `POST /v1/uploads` (multipart `file`, streamed to staging with SHA-256, cap `RESONA_MAX_UPLOAD_BYTES` default 500 MiB → 413 `too_large`, magic-byte sniffing → `audio|document` else 415, empty 422; expires after 1 h unattached), `POST /v1/jobs` (`Idempotency-Key` required; same key+request → same job, changed request → 409 `idempotency_conflict`; consumes the upload atomically, 404 `upload_not_found`; resolves the org's current settings revision + execution profile into an immutable `execution_snapshot` (candidates, language, typed options, postprocess profile revision, policy); `check_policy` on every candidate stage and `build_pipeline` on the postprocess profile before the job exists → 403 `policy_denied`), `GET /v1/jobs` (newest first, opaque cursor, limit 1–100), `GET /v1/jobs/{id}` (JobView with `queue_reason`), `GET /v1/jobs/{id}/result` (409 `not_ready`, 410 `result_expired`), `POST /v1/jobs/{id}/cancel` (pending → cancelled + input removed; processing → `cancel_requested` fences the lease), `DELETE /v1/jobs/{id}` (terminal only, else 409). Cross-org IDs are 404
+- `worker_routes.py` / `broker.py` — pull-worker protocol (`/v1/workers/heartbeat|claim`, lease-fenced `/v1/workers/jobs/{id}/input|heartbeat|policy|result|fail`); broker holds the DB/filesystem logic in short `BEGIN IMMEDIATE` transactions
+- `maintenance.py` — `run_once()` / `maintenance_loop()`: lease expiry, upload/result/metadata retention, staging and orphan sweeps
+- `storage.py` — generated-name layout under `<DATA_PATH>/organizations/<storage_id>/` with staged atomic writes
+- `deps.py` — `get_db_session`, `validate_audio_file`
+- `profiles_routes.py` — org-scoped profile revisions: `GET /profiles`, `GET /profiles/{name}` (client+admin), `PUT /profiles/{name}` and `DELETE /profiles/{name}` (org_admin). Stored bodies go through `Profile.from_dict`; the bundled `default` stays readable. Hosted jobs accept profile names only
+- `settings_routes.py` — `GET /v1/settings` returns `{organization_id, revision, settings}` with `ETag`; `PUT /v1/settings` (org_admin) requires `If-Match` (428 missing, 409 stale) and creates a new revision
 - `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`; accepts optional `profile` field. `/v1/audio/speech` dispatches to **local** TTS engines (`resona-tts-local`: kokoro/chatterbox/qwen…) or **cloud** providers — pick via `engine`; `voice`/`language` forwarded
-- `streaming_routes.py` — Deepgram-compatible live streaming: `WS /v1/listen`. Auth via `Authorization: Token <RESONA_API_KEY>` (also Bearer/X-API-Key/`?token=`). Query params `model`/`language`/`encoding`(linear16)/`sample_rate`/`interim_results` + Resona `engine`/`profile`. Resolves the engine, then dispatches: a **local** engine-server → `_run_local_bridge`/`_bridge` (proxy to its `/ws/live`); a **cloud** provider with a realtime API (Deepgram, ElevenLabs) → `_run_cloud_bridge`/`_bridge_cloud` (opens `resona_cloud_stt.streaming.open_stream`, bridges binary PCM ↔ provider session). Both emit Deepgram `Results`/`Metadata`. Cloud providers without streaming (OpenAI) are rejected. `_CLOUD_FINAL_DRAIN_SECONDS` bounds the post-stop drain for providers that don't close on commit (ElevenLabs)
+- `streaming_routes.py` — Deepgram-compatible live streaming: `WS /v1/listen`. Auth via org credential: `Authorization: Token <token>` (also Bearer/X-API-Key/`?token=`/`?api_key=`), resolved to a `Principal`; tenant headers are never read. Query params `model`/`language`/`encoding`(linear16)/`sample_rate`/`interim_results` + Resona `engine`/`profile`. Cloud bridges are denied for private sessions and for orgs without `cloud_enabled`. Resolves the engine, then dispatches: a **local** engine-server → `_run_local_bridge`/`_bridge` (proxy to its `/ws/live`); a **cloud** provider with a realtime API (Deepgram, ElevenLabs) → `_run_cloud_bridge`/`_bridge_cloud` (opens `resona_cloud_stt.streaming.open_stream`, bridges binary PCM ↔ provider session). Both emit Deepgram `Results`/`Metadata`. Cloud providers without streaming (OpenAI) are rejected. `_CLOUD_FINAL_DRAIN_SECONDS` bounds the post-stop drain for providers that don't close on commit (ElevenLabs)
 - `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, lists local TTS engines (`_local_tts_engines`, `kind="local-tts"`, private, available when `resona-tts-local` is installed), checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)` (dispatches `local-tts` → `resona_tts_local.get_engine().synthesize`, else cloud provider), `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
-- `tasks_transcribe.py` — background thread: dequeues PENDING jobs, resolves the job's profile via `resolve_profile`, calls engine with `profile.initial_prompt_string()`, **applies profile pipeline** after engine returns
+- `privacy.py` — `admit(...)` resolves and policy-checks the synchronous audio chain; `load_org_profile`, `is_profile_name`
 - `engine_client.py` — `EngineClient.transcribe()`: POSTs to engine (no replacements sent)
-- `migration.py` — on startup, exports legacy `Replacement`/`InitialPrompt` DB rows to a `default.json` profile file in `RESONA_PROFILES_DIR`; idempotent
-- `db/models.py` — `Job` SQLModel table; `Job` has `engine`, `profile`, `profile_config`, `structured` fields
-- `db/engine.py` — SQLite engine + `create_db_and_tables()`
-- `db/utils.py` — `register_job()`
-- `formatting.py` — writes markdown output files
-- `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH`, `PROFILES_PATH` resolved from env
-- `auth.py` — optional `RESONA_API_KEY` auth
+- `settings_store.py` — `current_settings(session, org) -> (revision, OrganizationSettings)`
+- `db/models.py` — `Job` SQLModel table (non-null `organization_id`, `kind`, `private`, `settings_revision`) plus `Organization`, `Credential` (SHA-256 hash only), `Worker`, `SettingsRevision`, `ProfileRevision`
+- `db/engine.py` — SQLite engine (WAL, `foreign_keys=ON`, `busy_timeout=5000`); `db/schema.py` runs ordered numbered migrations under `BEGIN EXCLUSIVE` with a pre-upgrade backup (`<db>.pre-v<N>.bak`); `migrate(engine)` is called at startup. Legacy job rows require `RESONA_BOOTSTRAP_ORGANIZATION_ID`
+- `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH` resolved from env
+- `auth.py` — `Principal(credential_id, organization_id, role, worker_id)` resolved from stored, unrevoked credentials (`Authorization: Bearer` or `X-API-Key`; conflicting values → 401). `require_roles(...)` enforces roles (403 on mismatch); `websocket_principal` resolves WS tokens the same way. No auth-disabled mode
+- `admin.py` — hub-local `resona-admin`: `organization create`, `credential issue|revoke`, `worker enroll|approve|revoke`. Tokens are shown once; only their hash is stored
 
 ### resona-client
-- `client.py` — `ResonaClient`: all resona-api HTTP operations. Reads `RESONA_API_URL` / `RESONA_API_KEY`. Includes profile CRUD methods (`list_profiles`, `get_profile`, `push_profile`, `pull_profile`, `delete_profile`) and a `profile` argument on `submit_job` and `create_transcription`.
+- `client.py` — `ResonaClient`: the hub's canonical v1 job API. Reads `RESONA_API_URL` / `RESONA_API_KEY` and sends `Authorization: Bearer <key>` (the hub derives the organization from it). `upload(path) -> Upload`; `submit_job(path, *, kind='audio'|'document', execution_profile, language, engine, model, profile, options: AudioOptions|DocumentOptions, private=True, idempotency_key, provenance) -> JobRef` uploads then `POST /v1/jobs` with an `Idempotency-Key` (uuid4 unless given), reusing the same key on bounded retries after transport errors / 502–504. `get_job`/`cancel_job -> JobView`, `list_jobs(cursor, limit) -> JobPage`, `wait_for_job(id, timeout, poll)` (raises `JobTimeout`; never falls back locally), `get_result -> resona_job_core.JobResult` (409 → `JobNotReady`, 410 → `ResultExpired`), `delete_job`, `get_settings`/`put_settings(settings, if_match=etag) -> SettingsDoc` (409 → `RevisionConflict`). Error bodies `{error, message}` → `ResonaAPIError(status, code, message)`; 403 `policy_denied` → `PolicyDeniedError`. Also `create_transcription` (`/v1/audio/transcriptions`, form field `private` default true), `create_speech`, `list_engines` and profile methods on `/profiles/{name}` (`list_profiles`, `get_profile`, `put_profile`, `delete_profile`). Depends on `resona-job-core` (pydantic only), no ML stack.
 - `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_profile`, `default_private`; `EngineEntry`: per-entry `type` (`resona-api` or `cloud`), `provider`, `model`, `options`, `private`; `resolve_engine(private_only=False)` — walks priority-ordered entries, optionally skipping non-private ones
 
 ### resona-cli (lives in `apps/resona-cli/`)
@@ -221,7 +241,7 @@ Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (fo
 
 ## How to add a new endpoint to resona-api
 
-1. Add the route to `packages/api/src/resona_api/endpoints.py`
+1. Add the route to the matching router module (`jobs_routes.py` for client job routes); raise errors with `errors.api_error(status, code, message)`
 2. Add any new DB models to `db/models.py`
 3. Add a corresponding method to `ResonaClient` in `packages/client/src/resona_client/client.py`
 4. Add a CLI subcommand if appropriate
@@ -231,19 +251,15 @@ Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (fo
 ### Server path
 
 ```
-Client → POST /jobs (profile=<name|inline JSON>) → resona-api saves file, registers PENDING job
-resona-api TranscribeTask polls PENDING jobs →
-  resolves profile via resolve_profile(job.profile or "default", PROFILES_PATH) →
-  calls EngineClient.transcribe(filepath, language, profile.initial_prompt_string()) →
-    POSTs multipart to engine POST /transcribe (no replacements) →
-  engine returns {text, language, segments} →
-  result = build_pipeline(profile).run(text) →
-  stores result.text as job.md, result.data as job.structured →
-  writes transcript + md to Job row, sets status COMPLETED
-Client → GET /job/{id} → sees COMPLETED job with transcript + md
+Client → POST /v1/uploads → hub streams the file into org storage, returns upload_id
+Client → POST /v1/jobs (Idempotency-Key) → hub snapshots settings/profile/candidates, checks policy, creates PENDING job
+Worker → POST /v1/workers/claim → fenced lease + execution_snapshot →
+  GET input → runs engine + postprocess (fresh /policy check before any external stage) →
+  POST result (JobResult JSON) → hub promotes result.json, job COMPLETED, input removed
+Client → GET /v1/jobs/{id} → status; GET /v1/jobs/{id}/result → JobResult (24 h retention)
 ```
 
-Profile may be: a profile name (resolved from RESONA_PROFILES_DIR), an inline JSON string, or omitted (uses the bundled `default` profile).
+Hosted jobs accept a stored profile name only (or none: the org's `postprocess_profile` when `polish` is on).
 
 ### Local fallback path
 
@@ -320,8 +336,8 @@ Manage server-side profiles with `resona profiles list|show|push|pull|delete`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for `llm`/`extract` steps that do not specify `model`. Use `ollama/<m>`, `lm_studio/<m>`, or `mlx/<m>` for local LLMs |
-| `RESONA_LLM_API_BASE` | (unset) | Custom API base URL. Auto-filled for `lm_studio/`→`:1234/v1` and `mlx/`→`:10240/v1` when unset |
+| `RESONA_LLM_MODEL` | _(unset)_ | Explicit local CLI mode only (`local_policy`): model for legacy `llm`/`extract` steps without `model`. No default model; the hub never reads it |
+| `RESONA_LLM_API_BASE` | (unset) | Explicit local CLI mode only: API base for legacy steps. Auto-filled for `lm_studio/`→`:1234/v1` and `mlx/`→`:10240/v1` when unset |
 | `RESONA_MODELS_DIR` / `VOICEBOX_MODELS_DIR` | HF default (`~/.cache/huggingface/hub`) | Shared HuggingFace model cache (→ `HF_HUB_CACHE`). Set to share downloaded weights with Voicebox; honored by all STT + local TTS engines |
 | `DEFAULT_QWEN_TTS_MODEL` | `1.7b` | Qwen3-TTS / CustomVoice size (`1.7b` or `0.6b`) for `resona-tts-local` |
 | `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` (server) / `~/.resona/profiles/` (CLI) | Directory where named profile files are stored |

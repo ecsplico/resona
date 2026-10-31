@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "litellm>=1.30.0",
     "python-decouple>=3.8",
+    "resona-job-core>=0.1.0",
 ]
 
 [project.urls]
@@ -33,6 +34,9 @@ Homepage = "https://github.com/ecsplico/resona"
 Documentation = "https://ecsplico.github.io/resona/"
 Repository = "https://github.com/ecsplico/resona"
 Issues = "https://github.com/ecsplico/resona/issues"
+
+[tool.uv.sources]
+resona-job-core = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resona_postprocess"]

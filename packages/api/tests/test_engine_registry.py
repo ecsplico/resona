@@ -9,8 +9,8 @@ from resona_api import engine_registry as reg
 def test_build_catalogue_probes_local_and_lists_cloud(monkeypatch):
     monkeypatch.setenv("RESONA_ENGINE_URLS", "http://eng-a:7001")
     monkeypatch.setenv("OPENAI_API_KEY", "set")
-    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
-    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "")  # empty overrides any .env value
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "")
     respx.get("http://eng-a:7001/health").mock(
         return_value=httpx.Response(
             200, json={"status": "ok", "engine": "faster-whisper",

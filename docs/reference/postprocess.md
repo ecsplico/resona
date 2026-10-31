@@ -76,23 +76,24 @@ text = apply_replacements("Hallo Komma", rules)
 ```python
 from resona_postprocess.llm import llm_transform, llm_extract
 
-# Transform text via LLM
+# Transform text via LLM: the endpoint must be approved by the policy
 formatted = llm_transform(
     "Befund Absatz Patient kommt zur Kontrolle",
     prompt="Format this medical dictation text.",
-    model="ollama/llama3",
-    api_base="http://localhost:11434",
+    endpoint=endpoint,  # an Endpoint, e.g. kind local_llm with a loopback url
+    policy=policy,      # ExecutionPolicy whose approved_endpoint_ids include endpoint.id
 )
 
 # Extract structured data via LLM
 data = llm_extract(
     "ICD-10 F32.1 und F41.0",
     prompt="Return JSON {\"codes\": [...]} with ICD codes mentioned.",
-    model="gpt-4o-mini",
+    endpoint=endpoint,
+    policy=policy,
 )
 ```
 
-Set `RESONA_LLM_MODEL` and `RESONA_LLM_API_BASE` to configure defaults without changing code.
+Each call runs `check_policy` immediately before the provider request. There is no implicit model, base URL or environment fallback inside these functions.
 
 ---
 

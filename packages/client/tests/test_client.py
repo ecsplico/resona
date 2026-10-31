@@ -1,5 +1,6 @@
 """Tests for resona_client.client.ResonaClient using respx."""
 import io
+import json
 import struct
 import time
 import wave
@@ -10,7 +11,20 @@ import httpx
 import pytest
 import respx
 
-from resona_client.client import ResonaClient
+from resona_client.client import (
+    AudioOptions,
+    DocumentOptions,
+    JobNotReady,
+    JobRef,
+    JobTimeout,
+    PolicyDeniedError,
+    ResonaAPIError,
+    ResonaClient,
+    RevisionConflict,
+    ResultExpired,
+    SettingsDoc,
+)
+from resona_job_core import JobResult
 
 BASE = "http://localhost:7000"
 
@@ -115,90 +129,241 @@ def test_from_config_resona_env_takes_priority_over_ws_env(monkeypatch):
 
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
-def test_submit_job(client, audio_file):
-    with respx.mock:
-        respx.post(f"{BASE}/jobs").mock(
-            return_value=httpx.Response(200, json=[{"id": 42, "result": "/job/42"}])
+UPLOAD_JSON = {"upload_id": "up-1", "sha256": "ab" * 32, "size": 1}
+
+
+def _job_json(job_id, status="pending", **extra):
+    base = {
+        "job_id": job_id,
+        "kind": "audio",
+        "status": status,
+        "queue_reason": None,
+        "private": True,
+        "execution_profile": "private-auto",
+        "candidate": None,
+        "attempt": 0,
+        "error": None,
+        "result_available": False,
+        "created_at": "2026-10-31T10:00:00Z",
+        "updated_at": "2026-10-31T10:00:00Z",
+        "deadline_at": "2026-11-01T10:00:00Z",
+    }
+    return base | extra
+
+
+def test_submit_job_uploads_then_posts_job_with_bearer_and_idempotency_key(audio_file):
+    c = ResonaClient(base_url=BASE, api_key="secret-key")
+    with respx.mock as mock:
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        respx.post(f"{BASE}/v1/jobs").mock(
+            return_value=httpx.Response(202, json={"job_id": 42, "status": "pending"})
         )
-        result = client.submit_job(audio_file)
-    assert result["id"] == 42
+        ref = c.submit_job(audio_file, kind="audio", language="de", private=True)
+        assert ref == JobRef(job_id=42, status="pending")
+        assert [call.request.url.path for call in mock.calls] == ["/v1/uploads", "/v1/jobs"]
+        for call in mock.calls:
+            assert call.request.headers["Authorization"] == "Bearer secret-key"
+        job_request = mock.calls[1].request
+        assert job_request.headers["Idempotency-Key"]
+        assert json.loads(job_request.content) == {
+            "kind": "audio",
+            "upload_id": "up-1",
+            "private": True,
+            "language": "de",
+        }
+    c.close()
 
 
-def test_submit_job_returns_first_element(client, audio_file):
-    with respx.mock:
-        respx.post(f"{BASE}/jobs").mock(
-            return_value=httpx.Response(200, json=[{"id": 1}, {"id": 2}])
+def test_submit_job_retries_transport_error_with_same_idempotency_key_and_upload(audio_file):
+    c = ResonaClient(base_url=BASE, api_key="k")
+    with respx.mock as mock:
+        upload = respx.post(f"{BASE}/v1/uploads").mock(
+            return_value=httpx.Response(201, json=UPLOAD_JSON)
         )
-        result = client.submit_job(audio_file)
-    assert result["id"] == 1
+        job = respx.post(f"{BASE}/v1/jobs").mock(side_effect=[
+            httpx.ConnectError("connection reset"),
+            httpx.Response(202, json={"job_id": 7, "status": "pending"}),
+        ])
+        with patch("resona_client.client.time.sleep"):
+            ref = c.submit_job(audio_file, kind="audio")
+    c.close()
+    assert ref.job_id == 7
+    assert upload.call_count == 1
+    keys = [call.request.headers["Idempotency-Key"] for call in job.calls]
+    assert len(keys) == 2
+    assert keys[0] == keys[1]
 
 
-def test_submit_job_with_engine(client, audio_file):
+def test_submit_job_maps_idempotency_conflict(audio_file, client):
     with respx.mock:
-        route = respx.post(f"{BASE}/jobs").mock(
-            return_value=httpx.Response(200, json=[{"id": 10}])
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        respx.post(f"{BASE}/v1/jobs").mock(return_value=httpx.Response(
+            409, json={"error": "idempotency_conflict", "message": "key reused for another request"}))
+        with pytest.raises(ResonaAPIError) as exc:
+            client.submit_job(audio_file, kind="audio")
+    assert exc.value.status == 409
+    assert exc.value.code == "idempotency_conflict"
+    assert not isinstance(exc.value, PolicyDeniedError)
+
+
+def test_submit_job_maps_policy_denied(audio_file, client):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        respx.post(f"{BASE}/v1/jobs").mock(return_value=httpx.Response(
+            403, json={"error": "policy_denied", "message": "cloud is not enabled"}))
+        with pytest.raises(PolicyDeniedError) as exc:
+            client.submit_job(audio_file, kind="audio", private=False)
+    assert exc.value.status == 403
+    assert exc.value.code == "policy_denied"
+
+
+def test_submit_job_rejects_options_for_wrong_kind_before_uploading(audio_file, client):
+    with respx.mock as mock:
+        with pytest.raises(ValueError):
+            client.submit_job(audio_file, kind="audio", options={"ocr": "force"})
+        with pytest.raises(ValueError):
+            client.submit_job(audio_file, kind="audio", options=DocumentOptions(ocr="force"))
+        assert mock.calls.call_count == 0
+
+
+def test_submit_job_sends_typed_options(audio_file, client):
+    with respx.mock as mock:
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        respx.post(f"{BASE}/v1/jobs").mock(
+            return_value=httpx.Response(202, json={"job_id": 1, "status": "pending"}))
+        client.submit_job(audio_file, kind="audio", options=AudioOptions(translate=True))
+        client.submit_job(
+            audio_file, kind="document", execution_profile="mac-private",
+            options=DocumentOptions(ocr="force", page_start=2, page_end=3),
         )
-        client.submit_job(audio_file, engine="deepgram")
-    assert route.called
-    # Verify engine was included in the request
-    request = route.calls[0].request
-    assert b"deepgram" in request.content
+        audio_body = json.loads(mock.calls[1].request.content)
+        doc_body = json.loads(mock.calls[3].request.content)
+    assert audio_body["options"] == {"translate": True, "word_timestamps": False, "vad_filter": True}
+    assert doc_body["kind"] == "document"
+    assert doc_body["execution_profile"] == "mac-private"
+    assert doc_body["options"] == {"ocr": "force", "page_start": 2, "page_end": 3}
 
 
-def test_get_job(client):
+def test_submit_job_uses_given_idempotency_key(audio_file, client):
     with respx.mock:
-        respx.get(f"{BASE}/job/5").mock(
-            return_value=httpx.Response(200, json={"id": 5, "status": "completed"})
-        )
-        result = client.get_job(5)
-    assert result["status"] == "completed"
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        job = respx.post(f"{BASE}/v1/jobs").mock(
+            return_value=httpx.Response(202, json={"job_id": 1, "status": "pending"}))
+        client.submit_job(audio_file, kind="audio", idempotency_key="fixed-key")
+    assert job.calls[0].request.headers["Idempotency-Key"] == "fixed-key"
 
 
-def test_get_job_raises_on_404(client):
+def test_get_job_returns_typed_view(client):
     with respx.mock:
-        respx.get(f"{BASE}/job/99").mock(return_value=httpx.Response(404))
-        with pytest.raises(httpx.HTTPStatusError):
-            client.get_job(99)
+        respx.get(f"{BASE}/v1/jobs/5").mock(
+            return_value=httpx.Response(200, json=_job_json(5, "processing", attempt=1)))
+        job = client.get_job(5)
+    assert job.job_id == 5
+    assert job.status == "processing"
+    assert job.attempt == 1
+    assert not job.terminal
 
 
-def test_list_jobs(client):
+def test_list_jobs_passes_cursor_and_limit(client):
     with respx.mock:
-        respx.get(f"{BASE}/jobs/").mock(
-            return_value=httpx.Response(200, json=[{"id": 1}, {"id": 2}])
-        )
-        result = client.list_jobs()
-    assert len(result) == 2
+        route = respx.get(f"{BASE}/v1/jobs").mock(return_value=httpx.Response(
+            200, json={"items": [_job_json(1)], "next_cursor": "c2"}))
+        page = client.list_jobs(cursor="c1", limit=10)
+    params = route.calls[0].request.url.params
+    assert params["cursor"] == "c1"
+    assert params["limit"] == "10"
+    assert page.next_cursor == "c2"
+    assert [j.job_id for j in page.items] == [1]
 
 
-def test_wait_for_job_completes(client):
+def test_wait_for_job_returns_terminal_view(client):
     responses = [
-        httpx.Response(200, json={"id": 1, "status": "pending"}),
-        httpx.Response(200, json={"id": 1, "status": "completed", "transcript": "hi"}),
+        httpx.Response(200, json=_job_json(1, "pending")),
+        httpx.Response(200, json=_job_json(1, "completed", result_available=True)),
     ]
     with respx.mock:
-        respx.get(f"{BASE}/job/1").mock(side_effect=responses)
-        with patch("time.sleep"):
-            result = client.wait_for_job(1, poll=0.0)
-    assert result["status"] == "completed"
+        respx.get(f"{BASE}/v1/jobs/1").mock(side_effect=responses)
+        with patch("resona_client.client.time.sleep"):
+            job = client.wait_for_job(1, poll=0.0)
+    assert job.status == "completed"
+    assert job.terminal
 
 
-def test_wait_for_job_failed(client):
+def test_wait_for_job_timeout_raises_job_timeout(client):
     with respx.mock:
-        respx.get(f"{BASE}/job/2").mock(
-            return_value=httpx.Response(200, json={"id": 2, "status": "failed"})
-        )
-        result = client.wait_for_job(2, poll=0.0)
-    assert result["status"] == "failed"
+        respx.get(f"{BASE}/v1/jobs/3").mock(
+            return_value=httpx.Response(200, json=_job_json(3, "pending")))
+        with pytest.raises(JobTimeout) as exc:
+            client.wait_for_job(3, timeout=0.0, poll=0.0)
+    assert exc.value.job_id == 3
+    assert isinstance(exc.value, TimeoutError)
 
 
-def test_wait_for_job_timeout(client):
+def test_get_result_returns_job_result(client):
+    body = {
+        "schema_version": 1, "kind": "document", "raw_text": "raw", "markdown": "# Titel",
+        "language": "de", "segments": [], "pages": [{"number": 1, "text": "raw"}], "warnings": [],
+        "structured": {}, "provenance": {"stages": []},
+    }
     with respx.mock:
-        respx.get(f"{BASE}/job/3").mock(
-            return_value=httpx.Response(200, json={"id": 3, "status": "pending"})
-        )
-        with patch("time.sleep"):
-            with pytest.raises(TimeoutError):
-                client.wait_for_job(3, poll=0.0, timeout=0.001)
+        respx.get(f"{BASE}/v1/jobs/9/result").mock(return_value=httpx.Response(200, json=body))
+        result = client.get_result(9)
+    assert isinstance(result, JobResult)
+    assert result.markdown == "# Titel"
+    assert result.raw_text == "raw"
+    assert [page.number for page in result.pages] == [1]
+
+
+def test_get_result_maps_not_ready_and_expired(client):
+    with respx.mock:
+        respx.get(f"{BASE}/v1/jobs/9/result").mock(return_value=httpx.Response(
+            409, json={"error": "not_ready", "message": "job is still processing"}))
+        with pytest.raises(JobNotReady):
+            client.get_result(9)
+        respx.get(f"{BASE}/v1/jobs/9/result").mock(return_value=httpx.Response(
+            410, json={"error": "expired", "message": "result was removed"}))
+        with pytest.raises(ResultExpired):
+            client.get_result(9)
+
+
+def test_cancel_and_delete_job(client):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/jobs/5/cancel").mock(
+            return_value=httpx.Response(200, json=_job_json(5, "cancelled")))
+        respx.delete(f"{BASE}/v1/jobs/5").mock(return_value=httpx.Response(204))
+        assert client.cancel_job(5).status == "cancelled"
+        assert client.delete_job(5) is None
+
+
+def test_get_settings_returns_settings_doc(client):
+    with respx.mock:
+        respx.get(f"{BASE}/v1/settings").mock(return_value=httpx.Response(
+            200, headers={"ETag": '"4"'},
+            json={"organization_id": "smoke-a", "revision": 4, "settings": {"language": "de"}}))
+        doc = client.get_settings()
+    assert doc == SettingsDoc(
+        organization_id="smoke-a", revision=4, etag='"4"', settings={"language": "de"})
+
+
+def test_put_settings_sends_if_match_and_maps_revision_conflict(client):
+    with respx.mock:
+        route = respx.put(f"{BASE}/v1/settings").mock(return_value=httpx.Response(
+            409, json={"error": "revision_conflict", "message": "current revision is 5"}))
+        with pytest.raises(RevisionConflict) as exc:
+            client.put_settings({"language": "en"}, if_match='"3"')
+    assert route.calls[0].request.headers["If-Match"] == '"3"'
+    assert json.loads(route.calls[0].request.content) == {"language": "en"}
+    assert exc.value.status == 409
+    assert exc.value.code == "revision_conflict"
+
+
+def test_put_settings_returns_new_revision(client):
+    with respx.mock:
+        respx.put(f"{BASE}/v1/settings").mock(return_value=httpx.Response(
+            200, headers={"ETag": '"5"'},
+            json={"organization_id": "smoke-a", "revision": 5, "settings": {"language": "en"}}))
+        doc = client.put_settings({"language": "en"}, if_match='"4"')
+    assert (doc.revision, doc.etag, doc.settings) == (5, '"5"', {"language": "en"})
 
 
 # ── Profiles ──────────────────────────────────────────────────────────────────
@@ -218,12 +383,6 @@ def test_put_profile():
     assert route.called
 
 
-@respx.mock
-def test_submit_job_sends_profile(tmp_path):
-    f = tmp_path / "a.wav"; f.write_bytes(b"x")
-    route = respx.post("http://t/jobs").mock(return_value=httpx.Response(200, json=[{"id": 1}]))
-    ResonaClient(base_url="http://t").submit_job(f, profile="arzt")
-    assert b"arzt" in route.calls[0].request.content
 
 
 # ── Context manager ───────────────────────────────────────────────────────────
@@ -271,3 +430,13 @@ def test_create_speech(client):
         result = client.create_speech("hello", voice="nova")
     assert isinstance(result, bytes)
     assert len(result) > 0
+
+
+def test_create_transcription_sends_private_true_by_default(client, audio_file):
+    with respx.mock:
+        route = respx.post(f"{BASE}/v1/audio/transcriptions").mock(
+            return_value=httpx.Response(200, json={"text": "hallo"}))
+        client.create_transcription(audio_file)
+        client.create_transcription(audio_file, private=False)
+    assert b'name="private"\r\n\r\ntrue' in route.calls[0].request.content
+    assert b'name="private"\r\n\r\nfalse' in route.calls[1].request.content

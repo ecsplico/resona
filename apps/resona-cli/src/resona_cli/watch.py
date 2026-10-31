@@ -8,7 +8,6 @@ import httpx
 
 from .local_engine import LocalEngine
 from .markdown_output import write_markdown as _write_markdown
-from .profiles import resolve_profile_arg as _resolve_profile_arg
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
 
@@ -19,58 +18,94 @@ def watch_directory(
     directory: Path = typer.Argument(..., help="Directory to watch for new audio files."),
     recursive: bool = typer.Option(False, "--recursive", "-r", help="Watch subdirectories too."),
     poll_interval: float = typer.Option(1.0, "--poll-interval", help="Seconds between directory scans."),
-    output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Directory to write transcripts."),
-    model: Optional[str] = typer.Option(None, "--model", help="Whisper model name (local fallback only)."),
-    language: str = typer.Option("de", "--language", help="Language hint for transcription (local fallback only)."),
-    engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local fallback only)."),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Directory to write transcripts (default: next to each audio file)."),
+    model: Optional[str] = typer.Option(None, "--model", help="Model name (approved hub override, or local engine model)."),
+    language: str = typer.Option("de", "--language", help="Language hint for transcription."),
+    engine_timeout: float = typer.Option(120.0, "--engine-timeout", help="Seconds to wait for local engine startup (local mode only)."),
     engine: Optional[str] = typer.Option(None, "--engine", help="Engine for local transcription (e.g. faster-whisper, whisper, voxtral). Falls back to default_engine in ~/.resona/config.json."),
-    profile: Optional[str] = typer.Option(None, "--profile", help="Profile name or path to a profile JSON file."),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Profile name (hub or local); a profile JSON file only in local mode."),
 ):
-    """Watch a directory for new audio files and submit them for transcription."""
-    from resona_client.client import ResonaClient
+    """Watch a directory for new audio files and transcribe them.
+
+    With a hub configured, each file becomes a private audio job; the result is
+    written to `<stem>.md`. Hub errors are reported, never replaced by a local run.
+    """
     from resona_client.config import EngineConfig
 
-    from .transcribe import _resolve_local_engine_name
+    from .transcribe import (
+        _connect_hub,
+        _hub_configured,
+        _hub_profile_name,
+        _resolve_local_engine_name,
+    )
 
     cfg = EngineConfig.load()
-    resolved_engine = _resolve_local_engine_name(engine, cfg.default_engine)
 
-    try:
-        client = ResonaClient.from_config()
-    except RuntimeError:
+    if not _hub_configured(cfg):
         _watch_local_fallback(
             directory, recursive, poll_interval, output_dir, model, language,
-            engine_timeout, resolved_engine, profile=profile,
-            default_profile=cfg.default_profile,
+            engine_timeout, _resolve_local_engine_name(engine, cfg.default_engine),
+            profile=profile, default_profile=cfg.default_profile,
         )
         return
 
-    if model is not None:
-        typer.echo(
-            "--model is only used in local fallback mode and will be ignored.",
-            err=True,
-        )
-
-    resolved_profile = _resolve_profile_arg(profile)
+    profile_name = _hub_profile_name(profile)
+    client = _connect_hub()
+    if output_dir:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     seen: set[Path] = set()
     print(f"Watching {directory} for audio files (recursive={recursive})...")
 
-    while True:
-        glob_fn = directory.rglob if recursive else directory.glob
-        for ext in EXTENSIONS:
-            for f in glob_fn(f"*.{ext}"):
-                if f not in seen:
-                    seen.add(f)
-                    try:
-                        submit_kwargs = {}
-                        if resolved_profile is not None:
-                            submit_kwargs["profile"] = resolved_profile
-                        result = client.submit_job(f, **submit_kwargs)
-                        print(f"Submitted {f.name} -> job {result['id']}")
-                    except Exception as e:
-                        print(f"Failed to submit {f.name}: {e}")
-        time.sleep(poll_interval)
+    try:
+        while True:
+            glob_fn = directory.rglob if recursive else directory.glob
+            for ext in EXTENSIONS:
+                for f in glob_fn(f"*.{ext}"):
+                    if f not in seen:
+                        seen.add(f)
+                        _transcribe_one_via_hub(client, f, output_dir, language, model, profile_name)
+            time.sleep(poll_interval)
+    except KeyboardInterrupt:
+        pass
+
+
+def _transcribe_one_via_hub(
+    client,
+    f: Path,
+    output_dir: Optional[Path],
+    language: str,
+    model: Optional[str],
+    profile: Optional[str],
+) -> None:
+    """Submit one file, wait for it and write `<stem>.md`. Policy denial exits 2."""
+    from resona_client.client import JobTimeout, PolicyDeniedError, ResonaAPIError
+
+    from .transcribe import _exit_hub_policy_denied, _write_hub_result
+
+    try:
+        ref = client.submit_job(
+            f, kind="audio", language=language, model=model, profile=profile, private=True,
+        )
+        print(f"Submitted {f.name} -> job {ref.job_id}")
+        job = client.wait_for_job(ref.job_id)
+        if job.status != "completed":
+            error = job.error or {}
+            message = error.get("message") or job.status
+            if error.get("code") == "policy_denied":
+                _exit_hub_policy_denied(message)
+            typer.echo(f"Failed to transcribe {f.name}: job {ref.job_id} {job.status}: {message}", err=True)
+            return
+        result = client.get_result(ref.job_id)
+    except PolicyDeniedError as e:
+        _exit_hub_policy_denied(e.message)
+    except (httpx.HTTPError, ResonaAPIError, JobTimeout) as e:
+        typer.echo(f"Failed to transcribe {f.name}: {e}", err=True)
+        return
+    out_path = (output_dir or f.parent) / f"{f.stem}.md"
+    _write_hub_result(out_path, f.name, ref.job_id, result,
+                      language=language, profile=profile, private=True)
+    print(f"Transcribed {f.name} -> {out_path}")
 
 
 def _watch_local_fallback(
@@ -87,12 +122,13 @@ def _watch_local_fallback(
     default_profile: Optional[str] = None,
 ) -> None:
     typer.echo(
-        f"No server reachable — starting local engine (engine={engine}).",
+        f"No hub configured — starting local engine (engine={engine}).",
         err=True,
     )
 
     from resona_postprocess.profile import resolve_profile, ProfileError
-    from resona_postprocess.pipeline import build_pipeline
+    from resona_postprocess.pipeline import PolicyDenied, build_pipeline, local_policy
+    from .transcribe import _exit_policy_denied
 
     ref = profile or default_profile or "default"
     try:
@@ -104,7 +140,11 @@ def _watch_local_fallback(
         )
         prof = resolve_profile("default", _PROFILES_DIR)
 
-    pipeline = build_pipeline(prof)
+    # Watch has no --no-private flag, so its local fallback is always private.
+    try:
+        pipeline = build_pipeline(prof, policy=local_policy(prof, private=True))
+    except PolicyDenied as e:
+        _exit_policy_denied(e.stage, e.reason)
 
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -143,5 +183,7 @@ def _watch_local_fallback(
                             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                                 typer.echo(f"Failed to transcribe {f.name}: {e}", err=True)
                 time.sleep(poll_interval)
+    except PolicyDenied as e:
+        _exit_policy_denied(e.stage, e.reason)
     except KeyboardInterrupt:
         pass

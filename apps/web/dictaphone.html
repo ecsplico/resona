@@ -410,6 +410,15 @@
             </div>
         </div>
 
+        <!-- Token Section -->
+        <div class="metadata-section">
+            <div class="form-group" style="flex: 1 1 100%;">
+                <label for="token">Organisations-Token <span x-text="tokenSet ? '(gespeichert)' : '(fehlt)'"></span></label>
+                <input type="password" id="token" x-model="tokenInput" placeholder="Token einfügen" autocomplete="off">
+                <button class="btn-action btn-upload" @click="saveToken()" :disabled="!tokenInput.trim()">Speichern</button>
+            </div>
+        </div>
+
         <!-- Recordings List -->
         <div class="recordings-section">
             <div class="recordings-header">
@@ -455,6 +464,37 @@
             </template>
         </div>
 
+        <!-- Server Jobs Section -->
+        <div class="recordings-section">
+            <div class="recordings-header">
+                <h2>☁️ Server-Jobs (<span x-text="jobs.length"></span>)</h2>
+                <button class="btn-action btn-play" @click="loadJobs()">↻ Aktualisieren</button>
+            </div>
+            <div x-show="jobsError" style="color: #B91C1C; margin-bottom: 10px;" x-text="jobsError"></div>
+
+            <template x-for="job in jobs" :key="job.job_id">
+                <div class="recording-card">
+                    <div class="recording-header">
+                        <div class="recording-title" x-text="'Job #' + job.job_id"></div>
+                        <span x-text="job.status"></span>
+                    </div>
+                    <div class="recording-meta">
+                        <span x-show="job.queue_reason" x-text="'Wartet: ' + job.queue_reason"></span>
+                    </div>
+                    <div class="recording-actions">
+                        <button class="btn-action btn-play" x-show="job.result_available" @click="showResult(job)">
+                            📄 Ergebnis
+                        </button>
+                    </div>
+                </div>
+            </template>
+
+            <div x-show="resultTitle" style="margin-top: 15px;">
+                <h2 x-text="resultTitle"></h2>
+                <pre style="white-space: pre-wrap;" x-text="resultText"></pre>
+            </div>
+        </div>
+
         <!-- Install Prompt -->
         <div class="install-prompt" x-show="showInstallPrompt">
             <div>
@@ -498,11 +538,24 @@
                 showInstallPrompt: false,
                 deferredPrompt: null,
 
+                tokenInput: '',
+                tokenSet: false,
+
+                // Server jobs
+                jobs: [],
+                jobsError: '',
+                resultTitle: '',
+                resultText: '',
+
                 async init() {
                     // Initialize database
                     this.db = new DictaphoneDB();
                     await this.db.init();
                     await this.loadRecordings();
+                    this.tokenSet = !!localStorage.getItem('resona_token');
+                    if (this.tokenSet) {
+                        await this.loadJobs();
+                    }
 
                     // Check server status
                     this.checkServerStatus();
@@ -686,34 +739,10 @@
                     }
 
                     this.uploading = true;
-
                     try {
-                        const formData = new FormData();
-                        const filename = recording.filename || `${recording.title}.webm`;
-                        formData.append('audio_files', recording.blob, filename);
-                        formData.append('keep', 'true');
-
-                        const apiKey = localStorage.getItem('api_key') || prompt('Bitte API-Key eingeben:');
-                        if (apiKey) {
-                            localStorage.setItem('api_key', apiKey);
-                        }
-
-                        const response = await fetch('/jobs', {
-                            method: 'POST',
-                            headers: {
-                                'X-API-Key': apiKey
-                            },
-                            body: formData
-                        });
-
-                        if (response.ok) {
-                            recording.uploaded = true;
-                            await this.db.updateRecording(recording);
-                            await this.loadRecordings();
-                            alert('Upload erfolgreich!');
-                        } else {
-                            alert('Upload fehlgeschlagen: ' + response.statusText);
-                        }
+                        await this.submitRecording(recording);
+                        await this.loadJobs();
+                        alert('Upload erfolgreich!');
                     } catch (error) {
                         alert('Upload-Fehler: ' + error.message);
                     } finally {
@@ -721,15 +750,151 @@
                     }
                 },
 
+                /**
+                 * Upload the audio once (upload_id is persisted on the recording), then create
+                 * the job under a per-recording Idempotency-Key. Both IDs are saved before the
+                 * request that uses them, so a retry after a network failure reuses them.
+                 */
+                async submitRecording(recording) {
+                    if (!recording.uploadId) {
+                        const formData = new FormData();
+                        const filename = recording.filename || `${recording.title}.webm`;
+                        formData.append('file', recording.blob, filename);
+                        const uploadResponse = await this.api('/v1/uploads', { method: 'POST', body: formData });
+                        if (!uploadResponse.ok) throw await this.apiError(uploadResponse);
+                        const upload = await uploadResponse.json();
+                        recording.uploadId = upload.upload_id;
+                        await this.db.updateRecording(recording);
+                    }
+                    if (!recording.idempotencyKey) {
+                        recording.idempotencyKey = crypto.randomUUID();
+                        await this.db.updateRecording(recording);
+                    }
+                    const response = await this.api('/v1/jobs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': recording.idempotencyKey },
+                        body: JSON.stringify({ kind: 'audio', upload_id: recording.uploadId, private: true })
+                    });
+                    if (!response.ok) {
+                        const error = await this.apiError(response);
+                        // Upload expired or unknown, or key reused for a different request: start over with fresh IDs.
+                        if (error.code === 'upload_not_found' || error.code === 'idempotency_conflict') {
+                            recording.uploadId = null;
+                            recording.idempotencyKey = null;
+                            await this.db.updateRecording(recording);
+                        }
+                        throw error;
+                    }
+                    const job = await response.json();
+                    recording.jobId = job.job_id;
+                    recording.uploaded = true;
+                    await this.db.updateRecording(recording);
+                },
+
+                /** Authorization header for every hub call; the token is never placed in a URL or logged. */
+                authHeaders(extra = {}) {
+                    return { ...extra, Authorization: 'Bearer ' + (localStorage.getItem('resona_token') || '') };
+                },
+
+                /** fetch against the hub; on 401 asks once for a token and retries. */
+                async api(path, init = {}, retryOn401 = true) {
+                    const response = await fetch(path, { ...init, headers: this.authHeaders(init.headers) });
+                    if (response.status === 401 && retryOn401) {
+                        const token = prompt('Bitte Organisations-Token eingeben:');
+                        if (token && token.trim()) {
+                            localStorage.setItem('resona_token', token.trim());
+                            this.tokenSet = true;
+                            return this.api(path, init, false);
+                        }
+                    }
+                    return response;
+                },
+
+                /** Error from a hub body {error, message}; carries code/status, never echoes tokens or content. */
+                async apiError(response) {
+                    let code = '';
+                    let message = '';
+                    try {
+                        const body = await response.json();
+                        code = body.error || '';
+                        message = body.message || '';
+                    } catch {
+                        // non-JSON body
+                    }
+                    let text;
+                    if (response.status === 401) {
+                        text = 'Token ungültig oder fehlt';
+                    } else if (response.status === 403 && code === 'policy_denied') {
+                        text = 'Richtlinie verweigert (policy_denied): ' + (message || 'Verarbeitung nicht erlaubt');
+                    } else {
+                        text = (code || 'HTTP ' + response.status) + (message ? ': ' + message : '');
+                    }
+                    const error = new Error(text);
+                    error.code = code;
+                    error.status = response.status;
+                    return error;
+                },
+
+                async saveToken() {
+                    const token = this.tokenInput.trim();
+                    if (!token) return;
+                    localStorage.setItem('resona_token', token);
+                    this.tokenInput = '';
+                    this.tokenSet = true;
+                    await this.checkServerStatus();
+                    await this.loadJobs();
+                },
+
+                async loadJobs() {
+                    try {
+                        const response = await this.api('/v1/jobs?limit=50');
+                        if (!response.ok) throw await this.apiError(response);
+                        const body = await response.json();
+                        this.jobs = body.items || [];
+                        this.jobsError = '';
+                    } catch (error) {
+                        this.jobsError = error.message;
+                    }
+                },
+
+                async showResult(job) {
+                    this.resultTitle = 'Job #' + job.job_id;
+                    this.resultText = 'Ergebnis wird geladen…';
+                    try {
+                        this.resultText = await this.fetchResultMarkdown(job.job_id);
+                    } catch (error) {
+                        this.resultText = error.message;
+                    }
+                },
+
+                /** Polls the result while the job is not ready (409 not_ready); stops on failed/cancelled. */
+                async fetchResultMarkdown(jobId, attempts = 120, intervalMs = 5000) {
+                    for (let i = 0; i < attempts; i++) {
+                        const response = await this.api(`/v1/jobs/${jobId}/result`);
+                        if (response.ok) {
+                            const result = await response.json();
+                            return result.markdown || '';
+                        }
+                        const error = await this.apiError(response);
+                        if (error.code !== 'not_ready') throw error;
+                        const viewResponse = await this.api(`/v1/jobs/${jobId}`);
+                        if (viewResponse.ok) {
+                            const view = await viewResponse.json();
+                            if (view.status === 'failed' || view.status === 'cancelled') {
+                                const detail = view.error ? ': ' + view.error.code + (view.error.message ? ' ' + view.error.message : '') : '';
+                                throw new Error('Job ' + view.status + detail);
+                            }
+                        }
+                        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+                    }
+                    throw new Error('Ergebnis noch nicht verfügbar (Zeitlimit erreicht)');
+                },
+
                 async checkServerStatus() {
                     try {
-                        const response = await fetch('/jobs/', {
-                            method: 'GET',
-                            headers: {
-                                'X-API-Key': localStorage.getItem('api_key') || 'test'
-                            }
-                        });
-                        this.serverOnline = response.status === 200 || response.status === 401;
+                        // Reachability only: never prompts for a token (runs every 30 s).
+                        const response = await fetch('/v1/jobs?limit=1', { headers: this.authHeaders() });
+                        this.serverOnline = [200, 401, 403].includes(response.status);
                     } catch {
                         this.serverOnline = false;
                     }

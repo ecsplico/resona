@@ -11,6 +11,9 @@ import pytest
 from typer.testing import CliRunner
 
 from resona_cli.main import app
+from resona_client.client import JobRef, JobTimeout, JobView, PolicyDeniedError
+from resona_client.config import EngineConfig, EngineEntry
+from resona_job_core import JobResult
 from resona_postprocess.pipeline import PostprocessResult
 
 runner = CliRunner()
@@ -22,6 +25,19 @@ def _no_local_engine_by_default(monkeypatch):
     assume no engine-server is already running on the detection port,
     regardless of the host machine's actual local state."""
     monkeypatch.setattr("resona_cli.transcribe.probe_local_engine", lambda *a, **k: False)
+
+
+@pytest.fixture(autouse=True)
+def _no_hub_by_default(monkeypatch):
+    """Isolate tests from the host's RESONA_API_URL and ~/.resona/config.json."""
+    monkeypatch.delenv("RESONA_API_URL", raising=False)
+    monkeypatch.setattr(EngineConfig, "load", classmethod(lambda cls: cls()))
+
+
+@pytest.fixture
+def hub(monkeypatch):
+    """An explicitly configured hub (RESONA_API_URL)."""
+    monkeypatch.setenv("RESONA_API_URL", "http://hub.test")
 
 
 def read_md_body(path: Path) -> str:
@@ -43,11 +59,23 @@ def make_wav(path: Path) -> Path:
     return path
 
 
+def _job_view(job_id, status="completed", error=None):
+    return JobView.from_dict({"job_id": job_id, "kind": "audio", "status": status,
+                              "private": True, "error": error})
+
+
 def _make_gateway_client(text="Hello world"):
+    """A mocked ResonaClient whose audio jobs complete with *text* as Markdown."""
     client = MagicMock()
-    client.create_transcription.return_value = {
-        "text": text, "language": "de", "segments": []
-    }
+    ids = iter(range(1, 100))
+    client.submit_job.side_effect = lambda *a, **k: JobRef(job_id=next(ids), status="pending")
+    client.wait_for_job.side_effect = lambda job_id, **k: _job_view(job_id)
+    client.get_result.return_value = JobResult(
+        kind="audio", raw_text=text.lower(), markdown=text, language="de",
+        provenance={"stages": [{"stage": "asr", "engine": "mlx-whisper",
+                                "model": "whisper-large-v3", "accelerator": "metal",
+                                "seconds": 1.0}]},
+    )
     return client
 
 
@@ -75,18 +103,22 @@ def test_transcribe_no_files(tmp_path):
     assert "No audio files found" in result.output
 
 
-def test_transcribe_gateway_called_for_single_file(tmp_path):
+def test_transcribe_hub_submits_audio_job_for_single_file(tmp_path, hub):
     f = make_wav(tmp_path / "a.wav")
     mock_client = _make_gateway_client()
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         result = runner.invoke(app, ["transcribe", str(f)])
 
-    mock_client.create_transcription.assert_called_once()
     assert result.exit_code == 0
+    mock_client.submit_job.assert_called_once()
+    kwargs = mock_client.submit_job.call_args.kwargs
+    assert kwargs["kind"] == "audio"
+    assert kwargs["private"] is True
+    mock_client.wait_for_job.assert_called_once_with(1)
 
 
-def test_transcribe_gateway_called_for_directory(tmp_path):
+def test_transcribe_hub_called_for_directory(tmp_path, hub):
     make_wav(tmp_path / "a.wav")
     make_wav(tmp_path / "b.wav")
     mock_client = _make_gateway_client()
@@ -94,66 +126,71 @@ def test_transcribe_gateway_called_for_directory(tmp_path):
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         runner.invoke(app, ["transcribe", str(tmp_path)])
 
-    assert mock_client.create_transcription.call_count == 2
+    assert mock_client.submit_job.call_count == 2
 
 
-def test_transcribe_gateway_writes_output_files(tmp_path):
+def test_transcribe_hub_writes_result_markdown(tmp_path, hub):
     make_wav(tmp_path / "audio.wav")
     out_dir = tmp_path / "out"
-    mock_client = _make_gateway_client(text="transcribed text")
+    mock_client = _make_gateway_client(text="Transcribed text.")
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--output-dir", str(out_dir)])
 
-    md_files = list(out_dir.glob("*.md"))
-    assert len(md_files) == 1
-    assert read_md_body(md_files[0]) == "transcribed text"
+    assert result.exit_code == 0
+    assert [p.name for p in out_dir.glob("*.md")] == ["audio.md"]
+    assert read_md_body(out_dir / "audio.md") == "Transcribed text."
+    frontmatter = (out_dir / "audio.md").read_text()
+    assert 'engine: "mlx-whisper"' in frontmatter
+    assert 'job_id: "1"' in frontmatter
 
 
-def test_transcribe_gateway_forwards_engine_flag(tmp_path):
+def test_transcribe_hub_forwards_engine_model_language_private_profile(tmp_path, hub):
     make_wav(tmp_path / "a.wav")
     mock_client = _make_gateway_client()
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "deepgram"])
+        runner.invoke(app, ["transcribe", str(tmp_path), "--engine", "whisper",
+                            "--model", "large-v3", "--language", "en",
+                            "--no-private", "--profile", "medical"])
 
-    call_kwargs = mock_client.create_transcription.call_args.kwargs
-    assert call_kwargs.get("engine") == "deepgram"
+    kwargs = mock_client.submit_job.call_args.kwargs
+    assert kwargs["engine"] == "whisper"
+    assert kwargs["model"] == "large-v3"
+    assert kwargs["language"] == "en"
+    assert kwargs["private"] is False
+    assert kwargs["profile"] == "medical"
 
 
-def test_transcribe_gateway_forwards_private_flag(tmp_path):
+def test_transcribe_hub_from_config_entry(tmp_path, monkeypatch):
+    """A resona-api entry in ~/.resona/config.json counts as an explicitly configured hub."""
     make_wav(tmp_path / "a.wav")
     mock_client = _make_gateway_client()
+    cfg = EngineConfig(engines=[EngineEntry(name="hub", api_url="https://hub.test")])
+    monkeypatch.setattr(EngineConfig, "load", classmethod(lambda cls: cfg))
 
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--private"])
+    with (
+        patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
+        patch("resona_cli.transcribe.LocalEngine") as mock_le,
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
-    call_kwargs = mock_client.create_transcription.call_args.kwargs
-    assert call_kwargs.get("private") is True
-
-
-def test_transcribe_gateway_forwards_model_flag(tmp_path):
-    make_wav(tmp_path / "a.wav")
-    mock_client = _make_gateway_client()
-
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--model", "large-v3"])
-
-    call_kwargs = mock_client.create_transcription.call_args.kwargs
-    assert call_kwargs.get("model") == "large-v3"
+    assert result.exit_code == 0
+    mock_client.submit_job.assert_called_once()
+    mock_le.assert_not_called()
 
 
-def test_transcribe_deduplicates_overlapping_inputs(tmp_path):
+def test_transcribe_deduplicates_overlapping_inputs(tmp_path, hub):
     f = make_wav(tmp_path / "a.wav")
     mock_client = _make_gateway_client()
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         runner.invoke(app, ["transcribe", str(f), str(tmp_path)])
 
-    assert mock_client.create_transcription.call_count == 1
+    assert mock_client.submit_job.call_count == 1
 
 
-def test_transcribe_glob_filters_non_audio(tmp_path, monkeypatch):
+def test_transcribe_glob_filters_non_audio(tmp_path, monkeypatch, hub):
     make_wav(tmp_path / "a.wav")
     (tmp_path / "b.txt").write_text("nope")
     monkeypatch.chdir(tmp_path)
@@ -162,61 +199,83 @@ def test_transcribe_glob_filters_non_audio(tmp_path, monkeypatch):
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         runner.invoke(app, ["transcribe", "*"])
 
-    assert mock_client.create_transcription.call_count == 1
+    assert mock_client.submit_job.call_count == 1
 
 
-def test_transcribe_missing_path_warns(tmp_path):
+def test_transcribe_missing_path_warns(tmp_path, hub):
     mock_client = _make_gateway_client()
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         result = runner.invoke(app, ["transcribe", str(tmp_path / "nope.wav")])
     assert "Not found" in result.output
-    mock_client.create_transcription.assert_not_called()
+    mock_client.submit_job.assert_not_called()
 
 
-def test_transcribe_gateway_http_error_per_file_continues(tmp_path):
+def test_transcribe_hub_failed_job_reported_others_written(tmp_path, hub):
     make_wav(tmp_path / "a.wav")
     make_wav(tmp_path / "b.wav")
-    mock_client = MagicMock()
-    mock_client.create_transcription.side_effect = [
-        httpx.HTTPStatusError("bad", request=MagicMock(), response=MagicMock()),
-        {"text": "ok", "language": "de", "segments": []},
-    ]
+    mock_client = _make_gateway_client(text="ok")
+    mock_client.wait_for_job.side_effect = lambda job_id, **k: (
+        _job_view(job_id, "failed", {"code": "unsupported_media", "message": "cannot decode"})
+        if job_id == 1 else _job_view(job_id)
+    )
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
-    assert mock_client.create_transcription.call_count == 2
-    assert result.exit_code == 0
+    assert result.exit_code == 1
+    assert "cannot decode" in result.output
+    assert not (tmp_path / "a.md").exists()
+    assert read_md_body(tmp_path / "b.md") == "ok"
 
 
-def test_transcribe_gateway_forwards_profile_name(tmp_path):
-    """--profile NAME is forwarded to create_transcription as profile='NAME'."""
+def test_transcribe_hub_rejects_profile_file(tmp_path, hub):
+    """Profile files/inline JSON are local-mode only; with a hub they are a clear error."""
     make_wav(tmp_path / "a.wav")
-    mock_client = _make_gateway_client()
-
-    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--profile", "medical"])
-
-    call_kwargs = mock_client.create_transcription.call_args.kwargs
-    assert call_kwargs.get("profile") == "medical"
-
-
-def test_transcribe_gateway_forwards_profile_path_as_json(tmp_path):
-    """--profile <path-to-json> reads the file and forwards its contents."""
-    make_wav(tmp_path / "a.wav")
-    profile_data = {"name": "test", "steps": []}
     profile_file = tmp_path / "myprofile.json"
-    profile_file.write_text(json.dumps(profile_data), encoding="utf-8")
+    profile_file.write_text(json.dumps({"name": "test", "steps": []}), encoding="utf-8")
     mock_client = _make_gateway_client()
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
-        runner.invoke(app, ["transcribe", str(tmp_path), "--profile", str(profile_file)])
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--profile", str(profile_file)])
+        inline = runner.invoke(app, ["transcribe", str(tmp_path), "--profile", '{"name": "x"}'])
 
-    call_kwargs = mock_client.create_transcription.call_args.kwargs
-    forwarded = call_kwargs.get("profile")
-    assert forwarded is not None
-    parsed = json.loads(forwarded)
-    assert parsed["name"] == "test"
+    assert result.exit_code == 1
+    assert "local mode" in result.output
+    assert inline.exit_code == 1
+    mock_client.submit_job.assert_not_called()
+
+
+def test_transcribe_hub_policy_denied_exits_2(tmp_path, hub):
+    make_wav(tmp_path / "a.wav")
+    mock_client = _make_gateway_client()
+    mock_client.submit_job.side_effect = PolicyDeniedError(
+        403, "policy_denied", "cloud processing is disabled for this organization")
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
+        patch("resona_cli.transcribe.LocalEngine") as mock_le,
+        patch("resona_cli.transcribe.InProcessEngine") as mock_ipe,
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path), "--no-private"])
+
+    assert result.exit_code == 2
+    assert "policy_denied: cloud processing is disabled" in result.output
+    mock_le.assert_not_called()
+    mock_ipe.assert_not_called()
+
+
+def test_transcribe_hub_job_denied_by_policy_exits_2(tmp_path, hub):
+    make_wav(tmp_path / "a.wav")
+    mock_client = _make_gateway_client()
+    mock_client.wait_for_job.side_effect = lambda job_id, **k: _job_view(
+        job_id, "failed", {"code": "policy_denied", "message": "endpoint revoked"})
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        result = runner.invoke(app, ["transcribe", str(tmp_path)])
+
+    assert result.exit_code == 2
+    assert "policy_denied: endpoint revoked" in result.output
+    mock_client.get_result.assert_not_called()
 
 
 # ── Fallback path (no gateway) ────────────────────────────────────────────────
@@ -244,29 +303,48 @@ def test_transcribe_fallback_used_when_no_server(tmp_path):
     assert result.exit_code == 0
 
 
-def test_transcribe_fallback_on_connect_error(tmp_path):
+@pytest.mark.parametrize("error", [
+    httpx.ConnectError("refused"),
+    httpx.ReadTimeout("slow"),
+    JobTimeout(1),
+])
+def test_transcribe_hub_error_never_falls_back_to_local(tmp_path, hub, error):
     make_wav(tmp_path / "audio.wav")
-    mock_engine = MagicMock()
-    mock_engine.transcribe.return_value = {"text": "local", "language": "de", "segments": []}
-    mock_engine.__enter__ = lambda s: mock_engine
-    mock_engine.__exit__ = MagicMock(return_value=False)
-
-    mock_client = MagicMock()
-    mock_client.create_transcription.side_effect = httpx.ConnectError("refused")
-
-    mock_resolve, mock_build = _mock_resolve_and_pipeline()
+    mock_client = _make_gateway_client()
+    if isinstance(error, JobTimeout):
+        mock_client.wait_for_job.side_effect = error
+    else:
+        mock_client.submit_job.side_effect = error
 
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("resona_cli.transcribe.InProcessEngine", side_effect=ImportError("no asr-core")),
-        patch("resona_cli.transcribe.LocalEngine", return_value=mock_engine),
-        patch("resona_postprocess.profile.resolve_profile", mock_resolve),
-        patch("resona_postprocess.pipeline.build_pipeline", mock_build),
+        patch("resona_cli.transcribe.InProcessEngine") as mock_ipe,
+        patch("resona_cli.transcribe.LocalEngine") as mock_le,
     ):
         result = runner.invoke(app, ["transcribe", str(tmp_path)])
 
-    mock_engine.transcribe.assert_called_once()
-    assert result.exit_code == 0
+    assert result.exit_code == 1
+    assert "Error" in result.output
+    mock_ipe.assert_not_called()
+    mock_le.assert_not_called()
+    assert not (tmp_path / "audio.md").exists()
+
+
+def test_transcribe_unreachable_configured_hub_never_falls_back(tmp_path, hub):
+    make_wav(tmp_path / "audio.wav")
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config",
+              side_effect=RuntimeError("No reachable resona engine found.")),
+        patch("resona_cli.transcribe.InProcessEngine") as mock_ipe,
+        patch("resona_cli.transcribe.LocalEngine") as mock_le,
+    ):
+        result = runner.invoke(app, ["transcribe", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "unreachable" in result.output
+    mock_ipe.assert_not_called()
+    mock_le.assert_not_called()
 
 
 def test_transcribe_fallback_writes_text_next_to_audio(tmp_path):
@@ -530,8 +608,10 @@ def test_transcribe_fallback_resolves_profile_name(tmp_path):
     mock_resolve.assert_called_once()
     call_args = mock_resolve.call_args
     assert call_args.args[0] == "medical"
-    # build_pipeline called with the resolved profile
-    mock_build.assert_called_once_with(mock_profile)
+    # build_pipeline called with the resolved profile and the explicit local policy
+    mock_build.assert_called_once()
+    assert mock_build.call_args.args[0] is mock_profile
+    assert mock_build.call_args.kwargs["policy"] is not None
     assert read_md_body(out_dir / "audio.md") == "profiled"
 
 

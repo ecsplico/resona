@@ -40,6 +40,7 @@ dependencies = [
     "resona-cloud-tts>=0.1.0",
     "resona-tts-local>=0.1.0",
     "resona-postprocess>=0.1.0",
+    "resona-job-core>=0.1.0",
 ]
 
 [project.urls]
@@ -53,9 +54,11 @@ resona-cloud-stt = { workspace = true }
 resona-cloud-tts = { workspace = true }
 resona-tts-local = { workspace = true }
 resona-postprocess = { workspace = true }
+resona-job-core = { workspace = true }
 
 [project.scripts]
 resona-api = "resona_api.run:main"
+resona-admin = "resona_api.admin:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resona_api"]

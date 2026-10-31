@@ -2,9 +2,10 @@ import logging
 import os
 import sys
 from pathlib import Path
-from sqlmodel import SQLModel, create_engine
+from sqlalchemy import event
+from sqlmodel import create_engine
 
-from .models import Job
+from .schema import migrate
 from ..paths import DATABASE_URL, DB_PATH
 
 log = logging.getLogger(__name__)
@@ -47,18 +48,20 @@ def validate_database_directory():
 
 validate_database_directory()
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, connect_args={"timeout": 5})
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_connection, _record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 def create_db_and_tables():
-    """Create all tables defined by SQLModel metadata."""
-    log.info("Creating database tables...")
-    SQLModel.metadata.create_all(engine)
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(job)"))]
-        for col in ("engine", "profile", "profile_config", "structured"):
-            if col not in cols:
-                conn.execute(text(f"ALTER TABLE job ADD COLUMN {col} VARCHAR"))
-        conn.commit()
-    log.info("Database tables created successfully.")
+    """Bring the database schema to the latest version (see ``db/schema.py``)."""
+    log.info("Migrating database schema...")
+    migrate(engine)
+    log.info("Database schema is current.")

@@ -24,9 +24,9 @@ Works standalone (no server needed), against a self-hosted stack, or with cloud 
           │  resona-api   │   │ resona-engine-server          │
           │  :7000        │──▶│  + engine plugin              │
           │               │   │                               │
-          │ POST /jobs    │   │ POST /transcribe              │
-          │ GET  /jobs/   │   │ WS   /ws/transcribe           │
-          │ GET  /job/id  │   │ WS   /ws/live                 │
+          │ /v1/uploads   │   │ POST /transcribe              │
+          │ /v1/jobs      │   │ WS   /ws/transcribe           │
+          │ /v1/workers/* │   │ WS   /ws/live                 │
           │ CRUD replace  │   │                               │
           │ CRUD prompts  │   │ Stateless, no DB              │
           │               │   └───────────────────────────────┘

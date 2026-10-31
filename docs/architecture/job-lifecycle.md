@@ -1,79 +1,64 @@
 # Job Lifecycle
 
-This page traces what happens to an audio file from the moment it is submitted until the transcript is available. There are two paths: the server path (via `resona-api`) and the local fallback path (CLI only, no server).
+This page traces what happens to a file from submission until the result is available. There are two paths: the hub path (`resona-api` plus pull workers) and the local path (CLI only, used only when no hub is configured).
 
-## Server path
+## Hub path
 
 ```
-Client → POST /jobs (multipart: audio file; optional profile=<name|inline JSON>)
+Client → POST /v1/uploads (multipart file)            → {upload_id, sha256, size}
+Client → POST /v1/jobs (Idempotency-Key; {kind, upload_id, ...})
   resona-api:
-    saves file to FILE_PATH/
-    creates Job(status=PENDING, profile=...) in SQLite
-    returns job dict immediately (non-blocking)
+    derives the organization from the bearer token
+    resolves settings, execution profile and postprocess profile revision
+    checks policy before admission (private=true by default)
+    stores an immutable execution_snapshot; returns 202 {job_id, status: "pending"}
 
-TranscribeTask (background thread, polls every 1 s):
-  finds oldest PENDING job
-  sets status = PROCESSING
-  resolves profile via resolve_profile(job.profile or "default", RESONA_PROFILES_DIR)
-  calls EngineClient.transcribe(filepath, language, profile.initial_prompt_string())
-    → POSTs multipart to engine POST /transcribe
-    → engine loads audio via ffmpeg (pipe mode), runs inference
-    → returns {text, language, segments}   ← raw, no replacements
-  result = build_pipeline(profile).run(text)
-  writes result.text as job.md
-  writes result.data (structured JSON) as job.structured
-  writes .md file to MD_PATH/
-  sets status = COMPLETED (or FAILED on error)
+resona-worker (outbound only, long-polls POST /v1/workers/claim):
+  hub claims the oldest eligible pending job, mints a 120 s lease
+  worker downloads input (GET /v1/workers/jobs/{id}/input, X-Resona-Lease)
+  runs the engine in an isolated subprocess, heartbeats every 30 s
+  asks /policy right before any external stage
+  uploads JobResult (POST /v1/workers/jobs/{id}/result)
 
-Client → GET /job/{id} → {status: "completed", transcript: "...", md: "..."}
+Client → GET /v1/jobs/{id}          → JobView {status: "completed", result_available: true}
+Client → GET /v1/jobs/{id}/result   → {raw_text, markdown, segments, pages, provenance, ...}
 ```
 
 ### Job states
 
 ```
-PENDING → PROCESSING → COMPLETED
-                     ↘ FAILED
+pending → processing → completed | failed | cancelled
 ```
 
 | State | Meaning |
 |-------|---------|
-| `PENDING` | Job registered; waiting for `TranscribeTask` to pick it up |
-| `PROCESSING` | Engine call in progress; postprocessing not yet applied |
-| `COMPLETED` | Transcript and Markdown available; pipeline has run |
-| `FAILED` | Unrecoverable error during engine call or postprocessing |
+| `pending` | Waiting for a capable worker; `queue_reason` says why (`no_capable_worker`, `waiting_capacity`) |
+| `processing` | Claimed by a worker under a lease |
+| `completed` | Result accepted and stored |
+| `failed` | Terminal error, `attempts_exhausted` (3 assignments) or `deadline_exceeded` (24 h) |
+| `cancelled` | Cancelled by the client; the lease is fenced and later worker output is rejected |
 
-### TranscribeTask behaviour
+If a lease expires (worker offline or asleep), the job returns to `pending` and another worker can claim it. A late result from the old lease gets `409 stale_lease`. Execution is at-least-once; the hub accepts one result.
 
-`TranscribeTask` is a daemon thread started during the FastAPI lifespan event. It polls the SQLite database every second for the oldest `PENDING` job and processes one job at a time. The job's `profile` field (a name or inline JSON string) is resolved to a `Profile` object; if resolution fails the bundled `default` profile is used. If the engine call or postprocessing raises an exception, the job is marked `FAILED` and the loop continues with the next job.
+Private jobs go only to workers that an admin approved with `resona-admin worker approve --private`. A worker cannot make itself private through its heartbeat. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.
 
-### What is stored in each Job row
+### Retention
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | int | Auto-incremented primary key |
-| `audio_path` | str | Absolute path under `FILE_PATH/` |
-| `status` | enum | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
-| `language` | str or null | Detected or requested language code |
-| `engine` | str or null | Name of the engine that handled this job |
-| `profile` | str or null | Profile name or inline JSON used for postprocessing (null = default) |
-| `profile_config` | str or null | JSON snapshot of the resolved profile stored with the job |
-| `transcript` | str or null | Raw text returned by the engine |
-| `md` | str or null | Postprocessed Markdown output |
-| `structured` | str or null | JSON output from any `extract` steps in the profile |
-| `created_at` | datetime | Submission timestamp |
-| `updated_at` | datetime | Last status-change timestamp |
+Content is stored as files under `/data/organizations/<storage_id>/jobs/<job_id>/`, not in the database. A maintenance loop on the hub applies retention:
 
-!!! note "Audio files are never deleted"
-    `resona-api` saves audio files to `FILE_PATH/` and never removes them. Neither the engine nor the postprocessing step deletes files. Retention is the operator's responsibility.
+- input: deleted when the job reaches a terminal state
+- result: deleted 24 hours after completion (`GET .../result` then returns `410`)
+- job metadata: deleted after 7 days
+- unattached uploads: deleted after 1 hour
 
-## Local fallback path
+## Local path
 
-When no `resona-api` server is reachable (or when the user runs `resona transcribe` without configuring a server), the CLI handles the full pipeline in-process:
+Only when no hub is configured (no `RESONA_API_URL` and no `resona-api` entry in `~/.resona/config.json`) does the CLI run the pipeline in-process. With a hub configured, hub errors (unreachable, timeout, policy denial) are reported and never fall back to a local or cloud engine; a policy denial exits with code 2.
 
 ```
 resona transcribe ./audio/ --engine voxtral
 
-  server unreachable (or no server configured)
+  no hub configured
 
   Engine resolution:
     1. --engine flag → "voxtral"  (built-in local engine)

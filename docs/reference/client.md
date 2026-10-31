@@ -15,47 +15,50 @@ uv add resona-client --package my-project
 ```python
 from resona_client.client import ResonaClient
 
-# Connect using RESONA_API_URL / RESONA_API_KEY env vars
+# Connect using RESONA_API_URL / RESONA_API_KEY env vars (RESONA_API_KEY = org-bound token)
 client = ResonaClient()
 
-# Or auto-resolve from ~/.resona/config.json (tries reachable engines in order)
+# Or use the resona-api entry in ~/.resona/config.json
 client = ResonaClient.from_config()
 
-job = client.submit_job("recording.wav")
-result = client.wait_for_job(job["id"])
-print(result["md"])   # formatted transcript after postprocessing pipeline
+# Upload + create job (private by default); returns JobRef(job_id, status)
+ref = client.submit_job("recording.wav", kind="audio")
+job = client.wait_for_job(ref.job_id)
+if job.status == "completed":
+    result = client.get_result(ref.job_id)
+    print(result.raw_text)   # raw transcript
+    print(result.markdown)   # after the postprocess profile
 
-# Submit with a named profile
-job = client.submit_job("recording.wav", profile="medical-de")
-
-# Submit with an inline profile
-import json
-profile_json = json.dumps({"name": "x", "steps": [{"type": "replacements", "rules": []}]})
-job = client.submit_job("recording.wav", profile=profile_json)
+# Submit with a postprocess profile stored on the hub
+ref = client.submit_job("recording.wav", kind="audio", profile="medical-de")
 ```
 
 ## Authentication
 
-The client sends `X-API-Key: <key>` with every request when `api_key` is provided or `RESONA_API_KEY` is set. If the server has auth disabled (no `RESONA_API_KEY` env var on the server), the header is omitted.
+The client sends `Authorization: Bearer <token>` with every request when `api_key` is provided or `RESONA_API_KEY` is set. Tokens are org-bound and issued on the hub with `resona-admin credential issue --organization <id> --role client`. The hub derives the organization from the token; the client never sends a tenant identifier.
 
 ```python
-client = ResonaClient(base_url="http://myserver:7000", api_key="secret")
+client = ResonaClient(base_url="https://resona.example.com", api_key="<token>")
 ```
 
 ## Job lifecycle
 
-Jobs progress through the states `PENDING → PROCESSING → COMPLETED | FAILED`. Use `wait_for_job()` to poll until the job reaches a terminal state.
+Jobs progress through `pending → processing → completed | failed | cancelled`. `wait_for_job()` polls until a terminal state and raises `JobTimeout` when its `timeout` passes; the job keeps running on the hub and the client never falls back to local processing. Each `submit_job()` call sends one `Idempotency-Key` and reuses it on retries, so a lost response cannot create a duplicate job.
 
 ```python
-job = client.submit_job("dictation.mp3", engine="deepgram")
-result = client.wait_for_job(job["id"])
+ref = client.submit_job("dictation.mp3", kind="audio")
+job = client.wait_for_job(ref.job_id, timeout=600)
 
-if result["status"] == "completed":
-    print(result["transcript"])   # raw text
-    print(result["md"])           # formatted text (replacements applied)
+if job.status == "completed":
+    print(client.get_result(ref.job_id).markdown)
 else:
-    print("failed:", result)
+    print("not completed:", job.status, job.error)
+
+client.cancel_job(ref.job_id)   # fence the lease
+client.delete_job(ref.job_id)   # delete input and result now
 ```
+
+`get_result()` raises `JobNotReady` (409) before completion and `ResultExpired` (410) after the 24-hour result retention.
 
 ## v1 Audio routes
 
@@ -127,8 +130,8 @@ if entry:
 
 ```python
 with ResonaClient() as client:
-    job = client.submit_job("audio.wav")
-    result = client.wait_for_job(job["id"])
+    ref = client.submit_job("audio.wav", kind="audio")
+    job = client.wait_for_job(ref.job_id)
 ```
 
 ---

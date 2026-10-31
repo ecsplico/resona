@@ -1,9 +1,23 @@
-"""LLM-based postprocessing via litellm."""
+"""LLM-based postprocessing via litellm.
+
+Every call names an approved :class:`Endpoint` and an :class:`ExecutionPolicy`.
+The policy is re-checked on each call, immediately before litellm is reached.
+Nothing here falls back to an ambient model or base URL; the endpoint fixes both.
+"""
 
 import json as _json
 import logging
 
 from decouple import config
+from resona_job_core.policy import (
+    Endpoint,
+    EndpointKind,
+    ExecutionPolicy,
+    PolicyDenied,
+    Stage,
+    check_policy,
+    is_loopback_url,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,13 +43,16 @@ _LOCAL_API_BASE_DEFAULTS = {
     "mlx": "http://localhost:10240/v1",        # mlx-omni-server / oMLX
 }
 
+# Explicit local-mode default for Ollama models when no base is configured.
+_OLLAMA_DEFAULT_BASE = "http://localhost:11434"
+
 
 def _resolve_api_base(model: str, api_base: str | None) -> str | None:
     """Resolve the api_base: explicit arg > RESONA_LLM_API_BASE > local default.
 
     For local OpenAI-compatible servers (LM Studio, MLX) a sensible localhost
     default is filled in from the model prefix so offline use needs no extra
-    config. Returns None for cloud / Ollama models (litellm handles those).
+    config. Returns None for cloud models (litellm handles those).
     """
     if api_base:
         return api_base
@@ -101,17 +118,20 @@ def llm_transform(
     text: str,
     *,
     prompt: str,
-    model: str | None = None,
-    api_base: str | None = None,
+    endpoint: Endpoint,
+    policy: ExecutionPolicy,
     temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> str:
-    """Send transcript text through an LLM and return the transformed text."""
-    model = model or config("RESONA_LLM_MODEL", default="gpt-4o-mini")
-    api_base = _resolve_api_base(model, api_base)
+    """Send transcript text to an approved LLM endpoint and return the result.
+
+    The policy is checked on every call, before litellm is reached. The endpoint
+    fixes the model and base URL; no environment fallback applies here.
+    """
+    check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
     return _completion(
-        model=model,
-        api_base=api_base,
+        model=endpoint.model,
+        api_base=endpoint.url,
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": text},
@@ -121,19 +141,12 @@ def llm_transform(
     )
 
 
-# Backwards-compatible alias for the original entry point.
-def llm_postprocess(text: str, *, prompt: str, model: str | None = None,
-                    api_base: str | None = None) -> str:
-    """Deprecated alias for :func:`llm_transform`."""
-    return llm_transform(text, prompt=prompt, model=model, api_base=api_base)
-
-
 def llm_extract(
     text: str,
     *,
     prompt: str,
-    model: str | None = None,
-    api_base: str | None = None,
+    endpoint: Endpoint,
+    policy: ExecutionPolicy,
     temperature: float | None = None,
 ) -> dict:
     """Extract structured data from text. Returns a parsed JSON object.
@@ -141,11 +154,10 @@ def llm_extract(
     On a malformed LLM response, returns ``{"_raw": <response string>}`` so a
     job never hard-fails on a bad extraction.
     """
-    model = model or config("RESONA_LLM_MODEL", default="gpt-4o-mini")
-    api_base = _resolve_api_base(model, api_base)
+    check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
     raw = _completion(
-        model=model,
-        api_base=api_base,
+        model=endpoint.model,
+        api_base=endpoint.url,
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": text},
@@ -159,3 +171,35 @@ def llm_extract(
     except (_json.JSONDecodeError, TypeError):
         return {"_raw": raw}
     return parsed if isinstance(parsed, dict) else {"_raw": raw}
+
+
+# --- Legacy local-mode bridge -------------------------------------------------
+# Profiles whose llm/extract steps carry only ``model``/``api_base`` (no registry
+# ``endpoint`` id) can run only in explicit local CLI mode. The endpoint is derived
+# here from the step; the hub never uses these helpers.
+
+
+def _legacy_model_and_url(step: dict) -> tuple[str, str | None]:
+    model = step.get("model") or config("RESONA_LLM_MODEL", default="")
+    if not model:
+        raise PolicyDenied("llm", "no model configured")
+    url = _resolve_api_base(model, step.get("api_base"))
+    if url is None and model.split("/", 1)[0] == "ollama":
+        url = _OLLAMA_DEFAULT_BASE
+    return model, url
+
+
+def legacy_endpoint_id(step: dict) -> str:
+    """Stable ID for the endpoint a legacy ``model``/``api_base`` step resolves to."""
+    model, url = _legacy_model_and_url(step)
+    return f"legacy:{model}|{url or 'provider-default'}"
+
+
+def legacy_step_endpoint(step: dict) -> Endpoint:
+    """Endpoint for a legacy step: loopback URL -> ``local_llm``, else ``cloud_llm``.
+
+    A model with no resolvable base (e.g. ``gpt-4o-mini``) is a hosted provider call.
+    """
+    model, url = _legacy_model_and_url(step)
+    kind = EndpointKind.LOCAL_LLM if is_loopback_url(url) else EndpointKind.CLOUD_LLM
+    return Endpoint(id=legacy_endpoint_id(step), kind=kind, model=model, url=url)

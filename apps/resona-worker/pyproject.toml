@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-worker"
+version = "0.1.0"
+description = "Outbound-only pull worker for the Resona hub: claims jobs, runs approved engines locally, uploads results."
+license = { text = "Apache-2.0" }
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.7",
+    "typer>=0.15.3",
+    "resona-job-core>=0.1.0",
+    "resona-postprocess>=0.1.0",
+    "resona-asr-core>=0.1.0",
+]
+
+[project.optional-dependencies]
+audio-cpu = ["resona-engine-faster-whisper>=0.1.0"]
+apple = ["resona-engine-mlx-whisper>=0.1.0"]
+documents = ["resona-engine-docling>=0.1.0"]
+
+[project.scripts]
+resona-worker = "resona_worker.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_worker"]
+
+[tool.uv.sources]
+resona-job-core = { workspace = true }
+resona-postprocess = { workspace = true }
+resona-asr-core = { workspace = true }
+resona-engine-faster-whisper = { workspace = true }
+resona-engine-mlx-whisper = { workspace = true }
+resona-engine-docling = { workspace = true }

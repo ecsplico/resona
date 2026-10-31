@@ -122,12 +122,12 @@ from resona_client.client import ResonaClient
 
 def test_get_job():
     with respx.mock:
-        respx.get("http://localhost:7000/jobs/123").mock(
-            return_value=httpx.Response(200, json={"id": "123", "status": "COMPLETED"})
+        respx.get("http://localhost:7000/v1/jobs/123").mock(
+            return_value=httpx.Response(200, json={"job_id": 123, "kind": "audio", "status": "completed"})
         )
-        client = ResonaClient(base_url="http://localhost:7000")
-        job = client.get_job("123")
-    assert job["status"] == "COMPLETED"
+        client = ResonaClient(base_url="http://localhost:7000", api_key="test-token")
+        job = client.get_job(123)
+    assert job.status == "completed"
 ```
 
 ### resona-cli
@@ -261,15 +261,22 @@ packages/asr-core/tests/
     test_registry.py      # entry-point discovery, singleton, device detection
 
 packages/api/tests/
-    conftest.py           # DB setup, env vars, test_app fixture
-    test_endpoints.py     # job CRUD, replacements, prompts
-    test_audio_routes.py  # GET /v1/engines, POST /v1/audio/transcriptions, /speech
+    conftest.py              # DB setup, env vars, test_app fixture
+    test_admin.py            # resona-admin organizations, credentials, workers
+    test_migration.py        # numbered schema migrations, bootstrap organization
+    test_jobs_routes.py      # /v1/uploads, /v1/jobs: org isolation, idempotency, policy
+    test_worker_routes.py    # /v1/workers/*: approval, leases, stale_lease
+    test_broker.py           # claim selection and lease fencing
+    test_retention.py        # input/result/metadata expiry
+    test_settings_routes.py  # /v1/settings revisions
+    test_profiles_routes.py  # org-scoped profile revisions
+    test_audio_routes.py     # GET /v1/engines, POST /v1/audio/transcriptions, /speech
+    test_streaming_routes.py # streaming transcription
     test_engine_registry.py  # catalogue probing, resolve(), error hierarchy
     test_engine_client.py    # EngineClient.transcribe()
-    test_job_lifecycle.py    # PENDING → COMPLETED with postprocessing
-    test_tasks.py            # TranscribeTask background thread
-    test_db_utils.py         # register_job(), get_active_replacements()
-    test_cloud_routing.py    # cloud provider routing through audio_routes
+
+apps/resona-worker/tests/
+    test_supervisor.py, test_hub.py, test_execute.py, ...  # claim loop, hub client, execution
 
 packages/client/tests/
     test_client.py        # all ResonaClient methods via respx

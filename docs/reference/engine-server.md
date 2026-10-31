@@ -13,7 +13,7 @@ Each engine package (`resona-engine-faster-whisper`, `resona-engine-whisper`, `r
 Set `RESONA_ENGINE_KEY` on the server to require an API key. When set, every request must include `X-API-Key: <key>`. Comparison uses `secrets.compare_digest` to prevent timing attacks. If the env var is unset, all requests are accepted.
 
 !!! note "Engine vs API key"
-    `RESONA_ENGINE_KEY` guards the engine directly. `RESONA_API_KEY` guards resona-api. In a standard deployment only resona-api talks to the engine, so the engine key is an optional defence-in-depth measure.
+    `RESONA_ENGINE_KEY` guards the engine directly. The hub (resona-api) is guarded by org-bound tokens issued with `resona-admin`. In a standard deployment only the hub talks to the engine, so the engine key is an optional defence-in-depth measure.
 
 ## Endpoints
 

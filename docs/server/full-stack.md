@@ -102,16 +102,31 @@ RESONA_ENGINE_URLS=http://localhost:7001,http://localhost:7002 \
 
 ## Authentication
 
-To enable auth on the API and engine, set key environment variables before starting each service:
+The hub always requires org-bound credentials. Create an organization and a client token on the hub host; the token is printed once:
 
 ```bash
-# Engine
-RESONA_ENGINE_KEY=secret-engine-key uv run resona-engine-faster-whisper
+uv run resona-admin organization create acme
+uv run resona-admin credential issue --organization acme --role client
 
-# API (pass the same key so the API can talk to the engine)
-RESONA_ENGINE_KEY=secret-engine-key \
-  RESONA_API_KEY=secret-api-key \
-  uv run resona-api
+# Client side
+export RESONA_API_URL=http://localhost:7000
+export RESONA_API_KEY=<token>
+```
+
+Queued jobs run on pull workers, not on the hub. Enroll and approve a worker, then start it on the GPU machine:
+
+```bash
+uv run resona-admin worker enroll mac-studio --organization acme   # prints the worker token
+uv run resona-admin worker approve <worker-id> --private --capabilities-file caps.json
+
+uv run resona-worker run --hub http://localhost:7000 --token-file ~/.resona/worker.token \
+  --capabilities-file caps.json --work-dir /tmp/resona-worker
+```
+
+The token file must have mode 0600. The optional engine key still protects a directly exposed engine-server:
+
+```bash
+RESONA_ENGINE_KEY=secret-engine-key uv run resona-engine-faster-whisper
 ```
 
 !!! tip "Using a .env file"

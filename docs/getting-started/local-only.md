@@ -11,14 +11,14 @@ Local-only mode lets you transcribe audio without running any server. The CLI ha
 | `resona rec` | Yes | — |
 | `resona live` | Yes | — |
 | `resona watch` | No | resona-api (:7000) |
-| Job queue (`GET /jobs`) | No | resona-api (:7000) |
+| Job queue (`/v1/jobs`) | No | resona-api (:7000) + `resona-worker` |
 | Profiles CRUD | No | resona-api (:7000) |
 
 ## How it activates
 
-When you run `resona transcribe`, the CLI tries to reach resona-api at `RESONA_API_URL` (default `http://localhost:7000`). If the server is not reachable, it falls back automatically — no flag needed.
+`resona transcribe` runs locally only when no hub is configured: `RESONA_API_URL` is unset and `~/.resona/config.json` has no `resona-api` entry.
 
-You can also force local-only by not starting any server, or by pointing `RESONA_API_URL` at a non-existent host.
+Once a hub is configured, the CLI never falls back to local processing: an unreachable hub, a timeout or a failed job is reported as an error, and a policy denial exits with code 2. Remove the hub configuration to work locally.
 
 ## Engine resolution order
 

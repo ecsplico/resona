@@ -3,12 +3,16 @@ import io
 import struct
 import wave
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
 from resona_cli.main import app
+from resona_client.client import JobRef, JobView, PolicyDeniedError
+from resona_client.config import EngineConfig
+from resona_job_core import JobResult
 from resona_postprocess.pipeline import PostprocessResult
 
 runner = CliRunner()
@@ -50,47 +54,65 @@ def _mock_resolve_and_pipeline(pipeline=None):
     return mock_resolve, mock_build
 
 
-def test_watch_submits_new_file_and_stops(tmp_path):
-    """watch should submit new audio files. We break the loop after first iteration."""
-    audio_file = make_wav(tmp_path / "test.wav")
+@pytest.fixture(autouse=True)
+def _no_hub_by_default(monkeypatch):
+    """Isolate tests from the host's RESONA_API_URL and ~/.resona/config.json."""
+    monkeypatch.delenv("RESONA_API_URL", raising=False)
+    monkeypatch.setattr(EngineConfig, "load", classmethod(lambda cls: cls()))
 
-    mock_client = MagicMock()
-    mock_client.submit_job.return_value = {"id": 1}
 
-    call_count = 0
+@pytest.fixture
+def hub(monkeypatch):
+    monkeypatch.setenv("RESONA_API_URL", "http://hub.test")
+
+
+def _stop_after(n):
+    """time.sleep replacement that breaks the watch loop after *n* scans."""
+    calls = 0
 
     def fake_sleep(_):
-        nonlocal call_count
-        call_count += 1
-        if call_count >= 1:
-            raise KeyboardInterrupt  # break the infinite loop
+        nonlocal calls
+        calls += 1
+        if calls >= n:
+            raise KeyboardInterrupt
+    return fake_sleep
+
+
+def _make_hub_client(text="Watched by hub", status="completed", error=None):
+    client = MagicMock()
+    client.submit_job.return_value = JobRef(job_id=5, status="pending")
+    client.wait_for_job.return_value = JobView.from_dict({
+        "job_id": 5, "kind": "audio", "status": status, "private": True, "error": error,
+    })
+    client.get_result.return_value = JobResult(
+        kind="audio", raw_text=text.lower(), markdown=text, language="de", provenance={},
+    )
+    return client
+
+
+def test_watch_hub_writes_result_markdown(tmp_path, hub):
+    audio_file = make_wav(tmp_path / "test.wav")
+    mock_client = _make_hub_client()
 
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+        patch("resona_cli.watch.time.sleep", side_effect=_stop_after(1)),
     ):
         result = runner.invoke(app, ["watch", str(tmp_path)])
 
-    mock_client.submit_job.assert_called_once_with(audio_file)
+    assert mock_client.submit_job.call_args.args == (audio_file,)
+    mock_client.wait_for_job.assert_called_once_with(5)
+    assert read_md_body(tmp_path / "test.md") == "Watched by hub"
+    assert "job 5" in result.output
 
 
-def test_watch_skips_already_seen_files(tmp_path):
-    audio_file = make_wav(tmp_path / "old.wav")
-
-    mock_client = MagicMock()
-    mock_client.submit_job.return_value = {"id": 1}
-
-    call_count = 0
-
-    def fake_sleep(_):
-        nonlocal call_count
-        call_count += 1
-        if call_count >= 2:
-            raise KeyboardInterrupt
+def test_watch_skips_already_seen_files(tmp_path, hub):
+    make_wav(tmp_path / "old.wav")
+    mock_client = _make_hub_client()
 
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+        patch("resona_cli.watch.time.sleep", side_effect=_stop_after(2)),
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -98,45 +120,60 @@ def test_watch_skips_already_seen_files(tmp_path):
     assert mock_client.submit_job.call_count == 1
 
 
-def test_watch_handles_submit_error(tmp_path, capsys):
-    audio_file = make_wav(tmp_path / "bad.wav")
-    mock_client = MagicMock()
-    mock_client.submit_job.side_effect = RuntimeError("network error")
-
-    call_count = 0
-
-    def fake_sleep(_):
-        nonlocal call_count
-        call_count += 1
-        if call_count >= 1:
-            raise KeyboardInterrupt
+def test_watch_hub_error_reported_without_local_fallback(tmp_path, hub):
+    make_wav(tmp_path / "bad.wav")
+    mock_client = _make_hub_client()
+    mock_client.submit_job.side_effect = httpx.ConnectError("refused")
 
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+        patch("resona_cli.watch.LocalEngine") as mock_le,
+        patch("resona_cli.watch.time.sleep", side_effect=_stop_after(1)),
     ):
         result = runner.invoke(app, ["watch", str(tmp_path)])
 
-    # Should not crash; error printed to output
-    assert "Failed" in result.output or result.exit_code in (0, 1)
+    assert "Failed to transcribe bad.wav" in result.output
+    mock_le.assert_not_called()
+    assert not (tmp_path / "bad.md").exists()
 
 
-def test_watch_ignores_non_audio_files(tmp_path):
-    (tmp_path / "notes.txt").write_text("not audio")
-    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+def test_watch_unreachable_hub_exits_without_local_fallback(tmp_path, hub):
+    make_wav(tmp_path / "a.wav")
 
-    mock_client = MagicMock()
-    call_count = 0
+    with (
+        patch("resona_client.client.ResonaClient.from_config",
+              side_effect=RuntimeError("No reachable resona engine found.")),
+        patch("resona_cli.watch.LocalEngine") as mock_le,
+    ):
+        result = runner.invoke(app, ["watch", str(tmp_path)])
 
-    def fake_sleep(_):
-        nonlocal call_count
-        call_count += 1
-        if call_count >= 1:
-            raise KeyboardInterrupt
+    assert result.exit_code == 1
+    mock_le.assert_not_called()
+
+
+def test_watch_hub_policy_denied_exits_2(tmp_path, hub):
+    make_wav(tmp_path / "a.wav")
+    mock_client = _make_hub_client()
+    mock_client.submit_job.side_effect = PolicyDeniedError(403, "policy_denied", "private required")
 
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+        patch("resona_cli.watch.time.sleep", side_effect=_stop_after(1)),
+    ):
+        result = runner.invoke(app, ["watch", str(tmp_path)])
+
+    assert result.exit_code == 2
+    assert "policy_denied: private required" in result.output
+
+
+def test_watch_ignores_non_audio_files(tmp_path, hub):
+    (tmp_path / "notes.txt").write_text("not audio")
+    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    mock_client = _make_hub_client()
+
+    with (
+        patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
+        patch("resona_cli.watch.time.sleep", side_effect=_stop_after(1)),
     ):
         runner.invoke(app, ["watch", str(tmp_path)])
 
@@ -144,8 +181,6 @@ def test_watch_ignores_non_audio_files(tmp_path):
 
 
 # ── Fallback tests ────────────────────────────────────────────────
-import httpx
-from unittest.mock import MagicMock
 
 
 def _make_local_engine_watch(transcript="Watched text"):
@@ -274,28 +309,23 @@ def test_watch_fallback_continues_on_per_file_error(tmp_path):
     assert result.exit_code == 0
 
 
-def test_watch_gateway_forwards_profile(tmp_path):
-    """Gateway path passes profile= to submit_job when --profile is given."""
+def test_watch_hub_submits_with_profile(tmp_path, hub):
+    """Hub path submits a private audio job with profile= when --profile is given."""
     audio_file = make_wav(tmp_path / "test.wav")
-
-    mock_client = MagicMock()
-    mock_client.submit_job.return_value = {"id": 42}
-
-    call_count = 0
-
-    def fake_sleep(_):
-        nonlocal call_count
-        call_count += 1
-        if call_count >= 1:
-            raise KeyboardInterrupt
+    mock_client = _make_hub_client()
 
     with (
         patch("resona_client.client.ResonaClient.from_config", return_value=mock_client),
-        patch("resona_cli.watch.time.sleep", side_effect=fake_sleep),
+        patch("resona_cli.watch.time.sleep", side_effect=_stop_after(1)),
     ):
-        result = runner.invoke(app, ["watch", str(tmp_path), "--profile", "cardiology"])
+        runner.invoke(app, ["watch", str(tmp_path), "--profile", "cardiology"])
 
-    mock_client.submit_job.assert_called_once_with(audio_file, profile="cardiology")
+    mock_client.submit_job.assert_called_once()
+    args, kwargs = mock_client.submit_job.call_args
+    assert args == (audio_file,)
+    assert kwargs["kind"] == "audio"
+    assert kwargs["profile"] == "cardiology"
+    assert kwargs["private"] is True
 
 
 def test_watch_fallback_writes_json_sidecar_when_data_nonempty(tmp_path):

@@ -5,8 +5,9 @@ official Deepgram SDK works against Resona unchanged for the core path:
 
   * Connect with query params (``model``, ``language``, ``encoding``,
     ``sample_rate``, ``channels``, ``interim_results``, ``punctuate``).
-  * Authenticate with ``Authorization: Token <RESONA_API_KEY>`` (also accepts
-    ``Bearer``, ``X-API-Key``, or ``?token=`` / ``?api_key=``).
+ * Authenticate with ``Authorization: Bearer <token>`` (also accepts
+   ``Token``, ``X-API-Key``, or ``?token=`` / ``?api_key=``); the credential
+   resolves to an organization and nothing else in the request selects it.
   * Stream raw ``linear16`` PCM as binary WebSocket frames.
   * Receive ``Results`` (interim + final) and a closing ``Metadata`` message.
 
@@ -31,14 +32,16 @@ from datetime import datetime, timezone
 
 import websockets
 from fastapi import APIRouter, WebSocket
+from sqlmodel import Session
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from decouple import config
-
 from resona_cloud_stt.streaming import open_stream, supports_streaming
+from resona_job_core import PolicyDenied
 
 from . import engine_registry as reg
-from .paths import PROFILES_PATH
+from .auth import Principal, websocket_principal
+from .db.engine import engine as db_engine
+from .privacy import admit
 
 # How long to keep draining final transcripts after the client stops sending,
 # for providers (e.g. ElevenLabs) that do not close the socket on commit.
@@ -57,31 +60,10 @@ def _truthy(value: str | None, default: bool = False) -> bool:
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
 
-
-def _authorize(websocket: WebSocket) -> bool:
-    """Validate the request against RESONA_API_KEY. Returns True if allowed.
-
-    Auth is disabled (always allowed) when RESONA_API_KEY is unset.
-    """
-    expected = config("RESONA_API_KEY", default="")
-    if not expected:
-        return True
-
-    auth = websocket.headers.get("authorization", "")
-    if auth:
-        scheme, _, token = auth.partition(" ")
-        if scheme.lower() in ("token", "bearer") and token == expected:
-            return True
-
-    if websocket.headers.get("x-api-key") == expected:
-        return True
-
-    qp = websocket.query_params
-    if qp.get("token") == expected or qp.get("api_key") == expected:
-        return True
-
-    return False
-
+def _resolve_principal(websocket: WebSocket) -> Principal | None:
+    """Authenticate the handshake against the credential store; None when rejected."""
+    with Session(db_engine) as session:
+        return websocket_principal(websocket, session)
 
 def _ws_url(http_url: str, language: str) -> str:
     """Convert an engine-server http(s) base URL to its /ws/live WebSocket URL."""
@@ -133,18 +115,20 @@ def deepgram_metadata(request_id: str, *, models: list[str], channels: int = 1) 
 @router.websocket("/v1/listen")
 async def listen(websocket: WebSocket):
     """Deepgram-compatible live transcription WebSocket."""
-    if not _authorize(websocket):
+    principal = _resolve_principal(websocket)
+    if principal is None:
         await websocket.close(code=1008)  # policy violation
         return
 
     qp = websocket.query_params
-    language = qp.get("language") or "de"
+    language = qp.get("language") or None
     encoding = (qp.get("encoding") or "").lower()
     sample_rate = int(qp.get("sample_rate") or 16000)
     channels = int(qp.get("channels") or 1)
     interim_results = _truthy(qp.get("interim_results"), default=False)
-    engine_name = qp.get("engine") or qp.get("model")
-    profile_name = qp.get("profile")
+    engine_name = qp.get("engine") or qp.get("model") or None
+    profile_name = qp.get("profile") or None
+    private = _truthy(qp.get("private"), default=True)
 
     await websocket.accept()
 
@@ -156,15 +140,32 @@ async def listen(websocket: WebSocket):
         await websocket.close(code=1003)
         return
 
-    # Resolve the engine, then bridge to whichever upstream supports streaming.
+    # Admit the whole chain (settings, engine, postprocess profile) before any audio flows.
     try:
-        info = reg.resolve(engine_name, "stt", private=False)
-    except reg.EngineError as exc:
+        with Session(db_engine) as session:
+            admission = admit(
+                session,
+                principal.organization_id,
+                private=private,
+                engine=engine_name,
+                profile=profile_name,
+                language=language,
+            )
+    except PolicyDenied as exc:
+        await websocket.send_json({
+            "type": "Error",
+            "description": f"policy_denied: {exc.stage}: {exc.reason}",
+        })
+        await websocket.close(code=1008)
+        return
+    except (reg.EngineError, LookupError, ValueError) as exc:
         await websocket.send_json({"type": "Error", "description": str(exc)})
         await websocket.close(code=1011)
         return
 
-    pipeline = _build_profile_pipeline(profile_name)
+    info = admission.engine
+    language = admission.language
+    pipeline = admission.pipeline
     request_id = str(uuid.uuid4())
     loop = asyncio.get_event_loop()
     common = dict(
@@ -183,6 +184,7 @@ async def listen(websocket: WebSocket):
                            "(no realtime API)",
         })
         await websocket.close(code=1003)
+
 
 
 async def _run_local_bridge(websocket, info, *, language, sample_rate, channels,
@@ -254,20 +256,6 @@ async def _run_cloud_bridge(websocket, info, *, language, loop, sample_rate, cha
         await session.close()
         if websocket.application_state == WebSocketState.CONNECTED:
             await websocket.close()
-
-
-def _build_profile_pipeline(profile_name: str | None):
-    """Resolve a profile into a runnable pipeline, or None when unspecified."""
-    if not profile_name:
-        return None
-    from resona_postprocess.pipeline import build_pipeline
-    from resona_postprocess.profile import resolve_profile, ProfileError
-    try:
-        prof = resolve_profile(profile_name, PROFILES_PATH)
-    except ProfileError as exc:
-        log.warning("ignoring invalid streaming profile '%s': %s", profile_name, exc)
-        return None
-    return build_pipeline(prof)
 
 
 async def _bridge(

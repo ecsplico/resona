@@ -38,9 +38,9 @@ Resona is a modular transcription platform composed of loosely coupled packages.
           │  resona-api   │   │ resona-engine-server  │
           │  :7000        │──▶│  + engine plugin      │
           │               │   │                       │
-          │ POST /jobs    │   │ POST /transcribe      │
-          │ GET  /jobs/   │   │ WS   /ws/transcribe   │
-          │ GET  /job/id  │   │ WS   /ws/live         │
+          │ /v1/uploads   │   │ POST /transcribe      │
+          │ /v1/jobs      │   │ WS   /ws/transcribe   │
+          │ /v1/workers/* │   │ WS   /ws/live         │
           │ CRUD replace  │   │                       │
           │ CRUD prompts  │   │ Stateless, no DB      │
           │               │   └───────────────────────┘
@@ -57,11 +57,15 @@ The user-facing entry point. Provides subcommands for transcription (`transcribe
 
 ### resona-client
 
-A thin `httpx`-based client that wraps every resona-api REST operation. The CLI imports this for all HTTP work. Configuration is read from `RESONA_API_URL` / `RESONA_API_KEY` environment variables.
+A thin `httpx`-based client for the hub's `/v1/uploads` and `/v1/jobs` routes, with no ML dependencies. The CLI imports this for all HTTP work. Configuration is read from `RESONA_API_URL` / `RESONA_API_KEY` (the org-bound bearer token) or the `resona-api` entry in `~/.resona/config.json`.
 
 ### resona-api (:7000)
 
-The coordination layer. Accepts audio uploads, persists jobs to SQLite, polls for pending work, calls the engine, applies postprocessing, and stores results. Also exposes an OpenAI-compatible audio API (`GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`) that can route requests to local engines or cloud providers.
+The hub. Authenticates org-bound bearer tokens issued by `resona-admin`, accepts uploads (`POST /v1/uploads`, 200 MiB cap), persists organization-scoped jobs to SQLite (`/v1/jobs`), leases them to pull workers (`/v1/workers/*`) and applies retention. It runs no inference for queued jobs. Also exposes an OpenAI-compatible audio API (`GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`).
+
+### resona-worker
+
+An outbound-only pull worker for a Mac or Linux GPU machine. `resona-worker run --hub <url> --token-file <path> --capabilities-file <json> --work-dir <dir>` long-polls the hub for jobs it is approved for, runs each job in an isolated engine subprocess, uploads the result and deletes its scratch data. It opens no listening port. The worker token comes from `resona-admin worker enroll`; an admin must approve the worker (`resona-admin worker approve`) before it can claim jobs.
 
 ### resona-engine-server + engine plugin (:7001)
 
@@ -73,7 +77,7 @@ The shared vocabulary: `Transcriber` Protocol, `TranscriptionResult` TypedDict, 
 
 ### resona-postprocess
 
-A composable `str → str` pipeline: regex replacement steps and LLM steps (via litellm). Runs in `TranscribeTask` on the API side and in the CLI process in local mode. See [Postprocessing Pipeline](postprocessing.md).
+A composable `str → str` pipeline: regex replacement steps and LLM steps (via litellm). Runs inside `resona-worker` for hub jobs and in the CLI process in local mode; every stage is checked against the job's `ExecutionPolicy` first. See [Postprocessing Pipeline](postprocessing.md).
 
 ### resona-cloud-stt / resona-cloud-tts
 
@@ -100,9 +104,8 @@ All server-side data lives under `DATA_PATH` (default `./data`):
 
 ```
 DATA_PATH/
-├── files/      ← uploaded audio files (never deleted by the engine)
-├── db/         ← SQLite database (jobs, replacements, initial prompts)
-└── md/         ← generated Markdown transcript files
+├── db/                                   ← SQLite database (jobs, organizations, credentials, settings)
+└── organizations/<storage_id>/jobs/<id>/ ← job input and result files (expire per retention)
 ```
 
-`DATA_PATH`, `FILE_PATH`, `DB_PATH`, and `MD_PATH` are resolved in `resona_api/paths.py` and read via `python-decouple` so they can be overridden by environment variables or a `.env` file.
+`DATA_PATH`, `FILE_PATH` and `DB_PATH` are resolved in `resona_api/paths.py` and read via `python-decouple` so they can be overridden by environment variables or a `.env` file. Content lives in expiring files, not in the database: inputs are deleted on terminal state, results after 24 hours, metadata after 7 days.

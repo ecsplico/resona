@@ -69,10 +69,12 @@ resona transcribe dictation.mp3 --profile '{"name":"x","steps":[{"type":"replace
 resona transcribe ./inbox/ --recursive --output-dir ./out/
 ```
 
-!!! note "Server vs local fallback"
-    `resona transcribe` first tries to reach the resona-api gateway at `RESONA_API_URL`
-    (default `http://localhost:7000`). If the gateway is not available it falls back to a local
-    engine automatically — no flag needed. See [Local-Only Mode](../getting-started/local-only.md).
+!!! note "Hub vs local mode"
+    When a hub is configured (`RESONA_API_URL`, or a `resona-api` entry in `~/.resona/config.json`),
+    `resona transcribe` uploads to the hub and waits for a pull worker. Jobs are private by default.
+    Hub errors (unreachable, timeout, failed job) are reported and **never** fall back to a local or
+    cloud engine; a policy denial prints `policy_denied: ...` and exits with code 2. Only when no hub
+    is configured does the CLI run a local engine. See [Local-Only Mode](../getting-started/local-only.md).
 
 !!! tip "Glob quoting"
     Always quote glob patterns to prevent shell expansion: `resona transcribe "inbox/*.mp3"`.
@@ -81,8 +83,8 @@ resona transcribe ./inbox/ --recursive --output-dir ./out/
 
 ## watch
 
-Watch a directory for new audio files and submit them to the resona-api job queue automatically.
-Falls back to local transcription when the server is not reachable.
+Watch a directory for new audio files and submit them to the configured hub automatically.
+Without a configured hub it transcribes locally; with a hub configured it never falls back to local.
 
 ```
 resona watch DIRECTORY [OPTIONS]
@@ -95,11 +97,11 @@ resona watch DIRECTORY [OPTIONS]
 | `--recursive` / `-r` | off | Watch subdirectories too |
 | `--poll-interval SECS` | `1.0` | Seconds between directory scans |
 | `--profile NAME` | (from `config.json`) | Profile name or inline JSON applied to each job submitted |
-| `--output-dir DIR` | (input file directory) | Write transcripts here (local fallback mode only) |
-| `--language LANG` | `de` | Language hint (local fallback mode only) |
-| `--model NAME` | (engine default) | Whisper model name (local fallback mode only) |
-| `--engine NAME` | (from `config.json`) | Engine for local fallback transcription |
-| `--engine-timeout SECS` | `120` | Seconds to wait for local engine startup (local fallback) |
+| `--output-dir DIR` | (input file directory) | Write transcripts here (local mode only) |
+| `--language LANG` | `de` | Language hint (local mode only) |
+| `--model NAME` | (engine default) | Whisper model name (local mode only) |
+| `--engine NAME` | (from `config.json`) | Engine for local transcription |
+| `--engine-timeout SECS` | `120` | Seconds to wait for local engine startup (local mode) |
 
 **Examples**
 
@@ -110,14 +112,13 @@ resona watch ./inbox/
 # Watch recursively, poll every 5 seconds
 resona watch ./inbox/ --recursive --poll-interval 5
 
-# Local fallback: transcribe without a running server
+# Local mode (no hub configured)
 resona watch ./inbox/ --output-dir ./done/
 ```
 
-!!! warning "Server mode vs local fallback"
-    In server mode, `--model`, `--language`, and `--engine` are only used if the gateway is
-    unreachable. Pass those flags to `resona transcribe` or configure them in the job queue
-    if you want them applied server-side.
+!!! warning "Hub mode vs local mode"
+    With a hub configured, `--model`, `--language`, and `--engine` are ignored by `watch`.
+    Use `resona transcribe` or the hub's organization settings to set them for hub jobs.
 
 ---
 
@@ -173,8 +174,8 @@ segment) are saved alongside it in a `<name>.dictation/` directory.
     Before loading its own in-process model, `live` checks `http://localhost:7720/health`
     (override the port with `RESONA_LOCAL_ENGINE_PORT`). If a `resona-engine-*` server is
     already running there, push-to-talk and Live mode both use it over HTTP/WebSocket instead
-    of loading a redundant copy of the model. `resona transcribe`/`resona watch`'s local
-    fallback does the same.
+    of loading a redundant copy of the model. `resona transcribe`/`resona watch` in local mode
+    do the same.
 
 ---
 

@@ -111,8 +111,8 @@ Extracted data is stored in `job.structured` (server) or `PostprocessResult.data
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default model for all `llm` / `extract` steps that do not specify `model` |
-| `RESONA_LLM_API_BASE` | (none) | Custom API base URL for all `llm` / `extract` steps (e.g. local Ollama) |
+| `RESONA_LLM_MODEL` | _(unset)_ | Explicit local CLI mode only: model for `llm` / `extract` steps that set no `model`. No default model; the hub never reads it |
+| `RESONA_LLM_API_BASE` | _(unset)_ | Explicit local CLI mode only: API base for legacy LLM steps (e.g. local Ollama) |
 | `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` (server) / `~/.resona/profiles/` (CLI) | Directory where named profile JSON files are stored |
 
 ---
@@ -136,6 +136,8 @@ and common name corrections.
 ---
 
 ## LLM provider examples
+
+Cloud models (any step whose endpoint is not loopback) are denied in private runs. Local CLI runs need `--no-private`; hub runs need a cloud-enabled organization and a non-private job.
 
 ### OpenAI
 
@@ -164,7 +166,7 @@ Requires `ANTHROPIC_API_KEY`.
 }
 ```
 
-Or set `RESONA_LLM_MODEL=ollama/llama3` and `RESONA_LLM_API_BASE=http://localhost:11434` globally.
+In local CLI mode you can also set `RESONA_LLM_MODEL=ollama/llama3` and `RESONA_LLM_API_BASE=http://localhost:11434` globally.
 
 ---
 

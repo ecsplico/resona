@@ -1,25 +1,225 @@
 """
-ResonaClient — HTTP client for the Resona API.
+ResonaClient — HTTP client for the Resona hub.
 
 Configuration (in priority order):
   1. Explicit base_url / api_key arguments
   2. RESONA_API_URL / RESONA_API_KEY environment variables
   3. WS_API_URL / WS_API_KEY environment variables (fallback for migration)
   4. ~/.resona/config.json (via ResonaClient.from_config())
+
+Every request authenticates with ``Authorization: Bearer <key>``. The hub derives
+the organization from the credential; the client never sends a tenant identifier.
 """
+import logging
+import mimetypes
 import os
 import time
-import logging
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Literal, Mapping, NoReturn, Optional, Union
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from resona_job_core import JobResult
 
 log = logging.getLogger(__name__)
 
+JobKind = Literal["audio", "document"]
+TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_POST_JOB_ATTEMPTS = 3
+_RETRYABLE_STATUSES = frozenset({502, 503, 504})
+
+
+class AudioOptions(BaseModel):
+    """Typed audio job options; the hub forwards nothing else to the engine."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    translate: bool = False
+    word_timestamps: bool = False
+    vad_filter: bool = True
+
+
+class DocumentOptions(BaseModel):
+    """Typed document job options. Unset fields are resolved by the execution profile."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    languages: Optional[list[Literal["de", "en"]]] = Field(default=None, min_length=1)
+    ocr: Optional[Literal["auto", "force", "off"]] = None
+    ocr_engine: Optional[Literal["ocrmac", "rapidocr", "tesseract"]] = None
+    page_start: Optional[int] = Field(default=None, ge=1)
+    page_end: Optional[int] = Field(default=None, ge=1)
+    pipeline: Optional[Literal["standard"]] = None
+
+    @model_validator(mode="after")
+    def _check_page_range(self) -> "DocumentOptions":
+        if self.page_start is not None and self.page_end is not None and self.page_start > self.page_end:
+            raise ValueError("page_start must be <= page_end")
+        return self
+
+
+_OPTIONS_MODEL: dict[str, type[BaseModel]] = {
+    "audio": AudioOptions,
+    "document": DocumentOptions,
+}
+
+
+class ResonaAPIError(Exception):
+    """A non-2xx hub response, carrying the hub's machine-readable error code."""
+
+    def __init__(self, status: int, code: Optional[str], message: str):
+        self.status = status
+        self.code = code
+        self.message = message
+        label = code or "error"
+        super().__init__(f"{status} {label}: {message}" if message else f"{status} {label}")
+
+
+class PolicyDeniedError(ResonaAPIError):
+    """403 policy_denied: the hub refused the job or stage under current policy."""
+
+
+class JobNotReady(ResonaAPIError):
+    """409 on result fetch: the job has not completed yet."""
+
+
+class ResultExpired(ResonaAPIError):
+    """410 on result fetch: the result was removed by retention."""
+
+
+class RevisionConflict(ResonaAPIError):
+    """409 on settings write: If-Match names a stale revision."""
+
+
+class JobTimeout(TimeoutError):
+    """Client-side wait deadline passed; the job itself keeps running on the hub."""
+
+    def __init__(self, job_id: int):
+        self.job_id = job_id
+        super().__init__(f"Job {job_id} did not reach a terminal state before the timeout")
+
+
+@dataclass(frozen=True)
+class Upload:
+    upload_id: str
+    sha256: str
+    size: int
+
+
+@dataclass(frozen=True)
+class JobRef:
+    job_id: int
+    status: str
+
+
+@dataclass(frozen=True)
+class JobView:
+    job_id: int
+    kind: str
+    status: str
+    private: bool
+    execution_profile: Optional[str]
+    queue_reason: Optional[str]
+    candidate: Optional[dict]
+    attempt: int
+    error: Optional[dict]
+    result_available: bool
+    raw: Mapping[str, Any]
+
+    @property
+    def terminal(self) -> bool:
+        return self.status in TERMINAL_STATUSES
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "JobView":
+        return cls(
+            job_id=int(data["job_id"]),
+            kind=str(data["kind"]),
+            status=str(data["status"]),
+            private=bool(data["private"]),
+            execution_profile=data.get("execution_profile"),
+            queue_reason=data.get("queue_reason"),
+            candidate=data.get("candidate"),
+            attempt=int(data.get("attempt") or 0),
+            error=data.get("error"),
+            result_available=bool(data.get("result_available", False)),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class JobPage:
+    items: list[JobView]
+    next_cursor: Optional[str]
+
+
+@dataclass(frozen=True)
+class SettingsDoc:
+    """One revision of the organization's settings; ``etag`` feeds ``put_settings``."""
+
+    organization_id: str
+    revision: int
+    etag: str
+    settings: dict
+
+
+def _parse_error_body(resp: httpx.Response) -> tuple[Optional[str], str]:
+    """Extract (code, message) from ``{error, message}`` or FastAPI ``{detail: ...}``."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None, resp.reason_phrase or ""
+    if not isinstance(body, dict):
+        return None, ""
+    detail = body.get("detail", body)
+    if isinstance(detail, str):
+        return None, detail
+    if not isinstance(detail, dict):
+        return None, ""
+    code = detail.get("error")
+    message = detail.get("message")
+    return (
+        code if isinstance(code, str) else None,
+        message if isinstance(message, str) else "",
+    )
+
+
+def _raise_for(
+    resp: httpx.Response,
+    expected: Optional[Mapping[int, type[ResonaAPIError]]] = None,
+) -> NoReturn:
+    code, message = _parse_error_body(resp)
+    if resp.status_code == 403 and code == "policy_denied":
+        raise PolicyDeniedError(resp.status_code, code, message)
+    cls = (expected or {}).get(resp.status_code, ResonaAPIError)
+    raise cls(resp.status_code, code, message)
+
+
+def _checked_options(
+    kind: str,
+    options: Union[AudioOptions, DocumentOptions, Mapping[str, Any], None],
+) -> Optional[dict]:
+    model = _OPTIONS_MODEL.get(kind)
+    if model is None:
+        raise ValueError(f"unknown job kind {kind!r}; expected 'audio' or 'document'")
+    if options is None:
+        return None
+    if isinstance(options, BaseModel):
+        if not isinstance(options, model):
+            raise ValueError(f"{type(options).__name__} cannot be used for a {kind} job")
+        checked = options
+    else:
+        try:
+            checked = model.model_validate(dict(options))
+        except ValidationError as exc:
+            raise ValueError(f"invalid {kind} options: {exc}") from exc
+    return checked.model_dump(mode="json", exclude_none=True)
+
 
 class ResonaClient:
-    """HTTP client for resona-api and resona-engine."""
+    """HTTP client for the Resona hub."""
 
     def __init__(
         self,
@@ -39,7 +239,7 @@ class ResonaClient:
         )
         self._client = httpx.Client(
             timeout=timeout,
-            headers={"X-API-Key": self.api_key} if self.api_key else {},
+            headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
         )
 
     @classmethod
@@ -69,63 +269,194 @@ class ResonaClient:
             "Add one with:  resona engines add <name> <url>"
         )
 
-    # ── Job API operations ────────────────────────────────────────────
+    def _send(
+        self,
+        method: str,
+        path: str,
+        *,
+        expected: Optional[Mapping[int, type[ResonaAPIError]]] = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        resp = self._client.request(method, f"{self.base_url}{path}", **kwargs)
+        if resp.is_error:
+            _raise_for(resp, expected)
+        return resp
+
+    # ── Upload & job API ──────────────────────────────────────────────
+
+    def upload(self, filepath: Path | str) -> Upload:
+        """Upload a file for one later job. POST /v1/uploads"""
+        path = Path(filepath)
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        with path.open("rb") as fh:
+            resp = self._send(
+                "POST", "/v1/uploads",
+                files={"file": (path.name, fh, content_type)},
+            )
+        body = resp.json()
+        return Upload(
+            upload_id=str(body["upload_id"]),
+            sha256=str(body["sha256"]),
+            size=int(body["size"]),
+        )
 
     def submit_job(
         self,
         filepath: Path | str,
-        keep: bool = True,
-        translate: bool = False,
+        *,
+        kind: JobKind,
+        execution_profile: Optional[str] = None,
+        language: Optional[str] = None,
         engine: Optional[str] = None,
+        model: Optional[str] = None,
         profile: Optional[str] = None,
-    ) -> dict:
-        """Upload an audio file and register it for async transcription. POST /jobs"""
-        filepath = Path(filepath)
-        data: dict = {"keep": str(keep).lower(), "translate": str(translate).lower()}
-        if engine:
-            data["engine"] = engine
-        if profile:
-            data["profile"] = profile
-        with open(filepath, "rb") as f:
-            resp = self._client.post(
-                f"{self.base_url}/jobs",
-                files={"audio_files": (filepath.name, f, "audio/wav")},
-                data=data,
-            )
-        resp.raise_for_status()
-        jobs = resp.json()
-        return jobs[0] if isinstance(jobs, list) else jobs
+        options: Union[AudioOptions, DocumentOptions, Mapping[str, Any], None] = None,
+        private: bool = True,
+        idempotency_key: Optional[str] = None,
+        provenance: Optional[Mapping[str, Any]] = None,
+    ) -> JobRef:
+        """Upload a file and create a job for it. POST /v1/uploads, then POST /v1/jobs.
 
-    def get_job(self, job_id: int) -> dict:
-        """Get job status and result. GET /jobs/{id}"""
-        resp = self._client.get(f"{self.base_url}/job/{job_id}")
-        resp.raise_for_status()
-        return resp.json()
+        The Idempotency-Key is generated once per call (or taken from the argument)
+        and reused for every retry of the job POST, so a lost response cannot create
+        a duplicate job. The upload is not repeated; the retry reuses its upload_id.
+        """
+        checked = _checked_options(kind, options)
+        key = idempotency_key or str(uuid.uuid4())
+        upload = self.upload(filepath)
 
-    def list_jobs(self) -> list[dict]:
-        """List all jobs. GET /jobs/"""
-        resp = self._client.get(f"{self.base_url}/jobs/")
-        resp.raise_for_status()
-        return resp.json()
+        body: dict[str, Any] = {
+            "kind": kind,
+            "upload_id": upload.upload_id,
+            "private": private,
+        }
+        optional: dict[str, Any] = {
+            "execution_profile": execution_profile,
+            "language": language,
+            "engine": engine,
+            "model": model,
+            "profile": profile,
+            "options": checked,
+            "provenance": dict(provenance) if provenance is not None else None,
+        }
+        body.update({k: v for k, v in optional.items() if v is not None})
 
-    def wait_for_job(self, job_id: int, poll: float = 1.0, timeout: float = 3600.0) -> dict:
-        """Poll until job completes or fails. Returns the final job dict."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        resp = self._post_job(body, key)
+        data = resp.json()
+        return JobRef(job_id=int(data["job_id"]), status=str(data["status"]))
+
+    def _post_job(self, body: dict[str, Any], key: str) -> httpx.Response:
+        headers = {"Idempotency-Key": key}
+        last_error: Optional[Exception] = None
+        for attempt in range(_POST_JOB_ATTEMPTS):
+            if attempt:
+                time.sleep(min(0.5 * 2 ** attempt, 4.0))
+            try:
+                resp = self._client.post(
+                    f"{self.base_url}/v1/jobs", json=body, headers=headers,
+                )
+            except httpx.TransportError as exc:
+                last_error = exc
+                continue
+            if resp.status_code in _RETRYABLE_STATUSES and attempt < _POST_JOB_ATTEMPTS - 1:
+                last_error = ResonaAPIError(*_status_and_error(resp))
+                continue
+            if resp.is_error:
+                _raise_for(resp)
+            return resp
+        assert last_error is not None
+        raise last_error
+
+    def get_job(self, job_id: int) -> JobView:
+        """Get one job's state. GET /v1/jobs/{id}"""
+        return JobView.from_dict(self._send("GET", f"/v1/jobs/{job_id}").json())
+
+    def list_jobs(self, *, cursor: Optional[str] = None, limit: int = 50) -> JobPage:
+        """List the organization's jobs, newest first. GET /v1/jobs"""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        params: dict[str, Any] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        body = self._send("GET", "/v1/jobs", params=params).json()
+        return JobPage(
+            items=[JobView.from_dict(item) for item in body["items"]],
+            next_cursor=body.get("next_cursor"),
+        )
+
+    def wait_for_job(
+        self,
+        job_id: int,
+        *,
+        timeout: Optional[float] = None,
+        poll: float = 1.0,
+    ) -> JobView:
+        """Poll until the job is completed, failed or cancelled.
+
+        Raises JobTimeout when the client deadline passes. The job keeps running on
+        the hub; the caller decides what to do. Never falls back to local processing.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
             job = self.get_job(job_id)
-            status = job.get("status", "")
-            if status in ("completed", "failed"):
+            if job.terminal:
                 return job
-            time.sleep(poll)
-        raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+            if deadline is None:
+                time.sleep(poll)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise JobTimeout(job_id)
+            time.sleep(min(poll, remaining))
+
+    def get_result(self, job_id: int) -> JobResult:
+        """Fetch a completed job's result. GET /v1/jobs/{id}/result
+
+        Raises JobNotReady (409) before completion and ResultExpired (410) after retention.
+        """
+        resp = self._send(
+            "GET", f"/v1/jobs/{job_id}/result",
+            expected={409: JobNotReady, 410: ResultExpired},
+        )
+        return JobResult.model_validate_json(resp.content)
+
+    def cancel_job(self, job_id: int) -> JobView:
+        """Request cancellation; the lease is fenced. POST /v1/jobs/{id}/cancel"""
+        return JobView.from_dict(self._send("POST", f"/v1/jobs/{job_id}/cancel").json())
+
+    def delete_job(self, job_id: int) -> None:
+        """Delete a job's input and result now. DELETE /v1/jobs/{id}"""
+        self._send("DELETE", f"/v1/jobs/{job_id}")
+
+    # ── Organization settings ─────────────────────────────────────────
+
+    def get_settings(self) -> SettingsDoc:
+        """Return the organization's current settings revision. GET /v1/settings"""
+        return _settings_from(self._send("GET", "/v1/settings"))
+
+    def put_settings(
+        self,
+        settings: Mapping[str, Any],
+        *,
+        if_match: str,
+    ) -> SettingsDoc:
+        """Replace organization settings; ``if_match`` is the etag from get_settings.
+
+        Raises RevisionConflict when the revision is stale. PUT /v1/settings
+        """
+        resp = self._send(
+            "PUT", "/v1/settings",
+            json=dict(settings),
+            headers={"If-Match": if_match},
+            expected={409: RevisionConflict},
+        )
+        return _settings_from(resp)
 
     # ── v1 Audio & Engine routes ──────────────────────────────────────
 
     def list_engines(self) -> dict:
         """List every engine the gateway exposes, with capabilities and status. GET /v1/engines"""
-        resp = self._client.get(f"{self.base_url}/v1/engines")
-        resp.raise_for_status()
-        return resp.json()
+        return self._send("GET", "/v1/engines").json()
 
     def create_transcription(
         self,
@@ -136,7 +467,7 @@ class ResonaClient:
         prompt: Optional[str] = None,
         response_format: str = "json",
         engine: Optional[str] = None,
-        private: bool = False,
+        private: bool = True,
         profile: Optional[str] = None,
     ) -> dict:
         """Transcribe audio synchronously via the gateway. POST /v1/audio/transcriptions
@@ -160,12 +491,11 @@ class ResonaClient:
         if profile:
             data["profile"] = profile
         with open(audio_path, "rb") as f:
-            resp = self._client.post(
-                f"{self.base_url}/v1/audio/transcriptions",
+            resp = self._send(
+                "POST", "/v1/audio/transcriptions",
                 files={"file": (audio_path.name, f, "audio/wav")},
                 data=data,
             )
-        resp.raise_for_status()
         return resp.json()
 
     def create_speech(
@@ -194,37 +524,25 @@ class ResonaClient:
         }
         if engine:
             body["engine"] = engine
-        resp = self._client.post(
-            f"{self.base_url}/v1/audio/speech",
-            json=body,
-        )
-        resp.raise_for_status()
-        return resp.content
+        return self._send("POST", "/v1/audio/speech", json=body).content
 
     # ── Profile CRUD ──────────────────────────────────────────────────
 
     def list_profiles(self) -> list[dict]:
         """List stored profiles. GET /profiles"""
-        resp = self._client.get(f"{self.base_url}/profiles")
-        resp.raise_for_status()
-        return resp.json()["profiles"]
+        return self._send("GET", "/profiles").json()["profiles"]
 
     def get_profile(self, name: str) -> dict:
         """Fetch one profile. GET /profiles/{name}"""
-        resp = self._client.get(f"{self.base_url}/profiles/{name}")
-        resp.raise_for_status()
-        return resp.json()
+        return self._send("GET", f"/profiles/{name}").json()
 
     def put_profile(self, name: str, profile: dict) -> dict:
         """Create or replace a profile. PUT /profiles/{name}"""
-        resp = self._client.put(f"{self.base_url}/profiles/{name}", json=profile)
-        resp.raise_for_status()
-        return resp.json()
+        return self._send("PUT", f"/profiles/{name}", json=profile).json()
 
     def delete_profile(self, name: str) -> None:
         """Delete a profile. DELETE /profiles/{name}"""
-        resp = self._client.delete(f"{self.base_url}/profiles/{name}")
-        resp.raise_for_status()
+        self._send("DELETE", f"/profiles/{name}")
 
     def close(self):
         self._client.close()
@@ -234,3 +552,21 @@ class ResonaClient:
 
     def __exit__(self, *args):
         self.close()
+
+
+def _status_and_error(resp: httpx.Response) -> tuple[int, Optional[str], str]:
+    code, message = _parse_error_body(resp)
+    return resp.status_code, code, message
+
+
+def _settings_from(resp: httpx.Response) -> SettingsDoc:
+    body = resp.json()
+    etag = resp.headers.get("ETag")
+    if etag is None:
+        raise ResonaAPIError(resp.status_code, None, "settings response has no ETag")
+    return SettingsDoc(
+        organization_id=str(body["organization_id"]),
+        revision=int(body["revision"]),
+        etag=etag,
+        settings=dict(body["settings"]),
+    )

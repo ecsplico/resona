@@ -22,9 +22,9 @@ Resona is a modular audio transcription platform with pluggable ASR engines and 
           │  resona-api   │   │ resona-engine-server  │
           │  :7000        │──▶│  + engine plugin     │
           │               │   │                       │
-          │ POST /jobs    │   │ POST /transcribe      │
-          │ GET  /jobs/   │   │ WS   /ws/transcribe   │
-          │ GET  /job/id  │   │ WS   /ws/live         │
+          │ /v1/uploads   │   │ POST /transcribe      │
+          │ /v1/jobs      │   │ WS   /ws/transcribe   │
+          │ /v1/workers/* │   │ WS   /ws/live         │
           │ CRUD replace  │   │                       │
           │ CRUD prompts  │   │ Stateless, no DB      │
           │               │   │ depends on resona-    │
@@ -63,8 +63,14 @@ No server needed — the CLI spawns a local `faster-whisper` engine automaticall
 ### Docker
 
 ```bash
-cp .env.example .env   # set RESONA_API_KEY at minimum
+cp .env.example .env
 docker compose -f docker-compose.resona.yml up -d
+# issue a token on the hub (printed once as "token: ..."), then export it for the CLI
+docker compose -f docker-compose.resona.yml exec api resona-admin organization create acme
+docker compose -f docker-compose.resona.yml exec api \
+  resona-admin credential issue --organization acme --role client
+export RESONA_API_KEY=<token>
+# queued jobs need an approved resona-worker; see docs/server/full-stack.md
 resona transcribe recording.mp3
 ```
 

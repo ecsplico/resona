@@ -63,7 +63,7 @@ def test_transcribe_sends_language(engine_client, audio_file):
 def test_transcribe_does_not_send_replacements(engine_client, audio_file):
     """Verify that the engine client never sends replacements to the engine.
 
-    Replacements are applied locally by the PostprocessPipeline in tasks_transcribe,
+    Replacements are applied by the PostprocessPipeline on the worker,
     NOT forwarded to the engine as form data.
     """
     with respx.mock:

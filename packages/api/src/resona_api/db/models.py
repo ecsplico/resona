@@ -3,9 +3,14 @@ from datetime import datetime
 from typing import Optional
 from enum import Enum
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import DateTime
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, text
+from .. import clock
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return clock.now()
 
 
 class JobStatus(str, Enum):
@@ -14,58 +19,160 @@ class JobStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class Organization(SQLModel, table=True):
+    """A tenant. ``id`` is opaque (SKAILE ``organizationId`` when integrated)."""
+
+    id: str = Field(primary_key=True)
+    storage_id: str = Field(unique=True, index=True)  # uuid4 hex, used for on-disk paths
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class Worker(SQLModel, table=True):
+    """A pull worker enrolled in one organization."""
+
+    id: str = Field(primary_key=True)
+    organization_id: str = Field(foreign_key="organization.id", index=True)
+    name: str
+    approved: bool = Field(default=False)
+    approved_private: bool = Field(default=False)
+    approved_capabilities: str = Field(default="[]")  # JSON list of Candidate dicts
+    reported_capabilities: str = Field(default="[]")  # JSON list of Candidate dicts
+    last_seen: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    runtime_version: Optional[str] = Field(default=None)
+    revoked_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+
+
+class Credential(SQLModel, table=True):
+    """Stores only the SHA-256 hash of an issued bearer token."""
+
+    id: str = Field(primary_key=True)  # "cred_" + token_hex(8)
+    secret_hash: str = Field(unique=True, index=True)
+    organization_id: str = Field(foreign_key="organization.id", index=True)
+    role: str  # client | org_admin | worker
+    worker_id: Optional[str] = Field(default=None, foreign_key="worker.id")
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+
+
+class SettingsRevision(SQLModel, table=True):
+    """Immutable organization settings document, one row per revision."""
+
+    organization_id: str = Field(foreign_key="organization.id", primary_key=True)
+    revision: int = Field(primary_key=True)
+    settings_json: str
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class ProfileRevision(SQLModel, table=True):
+    """Revisioned postprocess profile owned by an organization."""
+
+    organization_id: str = Field(foreign_key="organization.id", primary_key=True)
+    name: str = Field(primary_key=True)
+    revision: int = Field(primary_key=True)
+    profile_json: str
+    deleted: bool = Field(default=False)
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
 
 
 class Job(SQLModel, table=True):
-    """SQLModel table for a transcription job.
+    """A durable job: org-bound input, immutable execution snapshot, fenced lease.
 
-    Created when a file is submitted and updated as it moves through the
-    ``PENDING → PROCESSING → COMPLETED | FAILED`` lifecycle.
-
-    Attributes:
-        id: Auto-assigned primary key.
-        filename: Storage filename (random hex + original extension).
-        upload_name: Original filename from the client upload.
-        status: Current :class:`JobStatus`.
-        transcript: Raw transcript text from the engine (no replacements).
-        md: Transcript with postprocessing applied (Markdown-ready).
-        language: Detected or requested language code.
-        segments: JSON-serialised segment list from the engine.
-        keepfile: Whether the audio file is kept after transcription (always ``True``).
-        translate: Whether English translation was requested.
-        engine: Name of the engine that should process this job (None = gateway default).
-        profile: Name of the postprocessing profile to apply (None = default profile).
-        profile_config: JSON-serialised profile configuration override (None = use stored profile).
-        structured: JSON-serialised structured output produced by the postprocessing pipeline.
-        error_message: Human-readable error description on failure.
-        created_at: UTC timestamp when the job was created.
-        updated_at: UTC timestamp of the last status change.
+    Content never lives in this row. Inputs and results are artifact files under
+    ``storage.job_dir``; the row holds state, hashes and expiry only.
+    ``execution_snapshot`` is JSON of approved identifiers and non-content options.
+    Columns that are NOT NULL carry ``server_default`` so raw inserts (migration 1
+    copies legacy rows with SQL) remain valid.
     """
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    filename: Optional[str] = Field(default='')
-    upload_name: Optional[str] = Field(default='')
-    transcribed: bool = Field(default=False)
-    processed: bool = Field(default=False)
+    organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
+    kind: str = Field(default="audio", sa_column=Column(String, nullable=False, server_default="audio"))
+    private: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default="1"))
+    purpose: str = Field(default="production", sa_column=Column(String, nullable=False, server_default="production"))
     status: JobStatus = Field(default=JobStatus.PENDING)
+    execution_profile: str = Field(
+        default="private-auto", sa_column=Column(String, nullable=False, server_default="private-auto")
+    )
+    execution_snapshot: str = Field(default="{}", sa_column=Column(Text, nullable=False, server_default="{}"))
+    candidate: Optional[str] = Field(default=None)
+    settings_revision: Optional[int] = Field(default=None)
+    upload_id: Optional[str] = Field(default=None, index=True)
+    input_sha256: Optional[str] = Field(default=None)
+    input_deleted: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    worker_id: Optional[str] = Field(default=None, index=True)
+    attempt: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
+    max_attempts: int = Field(default=3, sa_column=Column(Integer, nullable=False, server_default="3"))
+    lease_token_hash: Optional[str] = Field(default=None)
+    lease_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    deadline_at: datetime = Field(
+        sa_column=Column(DateTime, nullable=False, server_default=text("(datetime('now', '+1 day'))"))
+    )
+    cancel_requested: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    error_code: Optional[str] = Field(default=None)
     error_message: Optional[str] = Field(default=None)
-    language: Optional[str] = Field(default=None)
-    segments: Optional[str] = Field(default='')
-    transcript: Optional[str] = Field(default='')
-    model: Optional[str] = Field(default='')
+    result_manifest: Optional[str] = Field(default=None)
+    completed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    result_expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
     engine: Optional[str] = Field(default=None)
     profile: Optional[str] = Field(default=None)
-    profile_config: Optional[str] = Field(default=None)
-    structured: Optional[str] = Field(default=None)
-    translation: Optional[str] = Field(default='')
-    keepfile: bool = Field(default=True)  # Default True — audio files are kept
-    md: Optional[str] = Field(default='')
-    translate: bool = Field(default=False)
+    language: Optional[str] = Field(default=None)
+    translate: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(DateTime, nullable=False)
+        default_factory=lambda: clock.now(),
+        sa_column=Column(DateTime, nullable=False),
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(DateTime, nullable=False, onupdate=datetime.utcnow)
+        default_factory=lambda: clock.now(),
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class Upload(SQLModel, table=True):
+    """An org-bound staged input. Expires one hour after creation unless consumed by one job."""
+
+    id: str = Field(primary_key=True)  # "upl_" + token_hex(12)
+    organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
+    sha256: str
+    size: int
+    media_family: str  # audio | document
+    media_type: str
+    created_at: datetime = Field(
+        default_factory=lambda: clock.now(),
+        sa_column=Column(DateTime, nullable=False),
+    )
+    expires_at: datetime = Field(sa_column=Column(DateTime, nullable=False))
+    consumed_by_job_id: Optional[int] = Field(default=None)
+
+
+class IdempotencyRecord(SQLModel, table=True):
+    """Maps an org-scoped ``Idempotency-Key`` to the job it created. Kept seven days."""
+
+    organization_id: str = Field(foreign_key="organization.id", primary_key=True)
+    key: str = Field(primary_key=True)
+    request_hash: str
+    job_id: int
+    created_at: datetime = Field(
+        default_factory=lambda: clock.now(),
+        sa_column=Column(DateTime, nullable=False),
     )

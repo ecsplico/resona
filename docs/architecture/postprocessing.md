@@ -71,8 +71,9 @@ Fields:
 | `type` | yes | `"llm"` |
 | `name` | no | Label for this step (used in logs) |
 | `prompt` | yes | System prompt sent to the model |
-| `model` | no | litellm model string; overrides `RESONA_LLM_MODEL` |
-| `api_base` | no | Custom API endpoint; overrides `RESONA_LLM_API_BASE` |
+| `endpoint` | no | Id of an entry in the execution policy registry. Preferred form; hub profiles must use it |
+| `model` | no | Explicit local CLI mode only (legacy step). Falls back to `RESONA_LLM_MODEL`; no default model exists |
+| `api_base` | no | Explicit local CLI mode only (legacy step). Overrides `RESONA_LLM_API_BASE` |
 | `temperature` | no | Sampling temperature |
 | `max_tokens` | no | Maximum tokens to generate |
 
@@ -91,7 +92,7 @@ Sends the current text to a language model and returns **structured JSON data**.
 
 ## PostprocessResult
 
-`build_pipeline(profile).run(text)` returns a `PostprocessResult`:
+`build_pipeline(profile, policy=policy).run(text)` returns a `PostprocessResult`:
 
 ```python
 @dataclass
@@ -128,24 +129,23 @@ Plus medical section headings (`Verlauf`, `Medikation`, `Psychopathologischer Be
 
 ## Where the pipeline runs
 
-### Server mode (TranscribeTask)
+### Hub mode (resona-worker)
 
 ```
 engine returns {text, language, segments}
     ↓
-TranscribeTask resolves profile (job.profile or "default") from RESONA_PROFILES_DIR
+worker takes the postprocess profile revision from the job's execution_snapshot
     ↓
-builds PostprocessPipeline from the profile
+build_pipeline(profile, policy=<job ExecutionPolicy>) checks every stage first
     ↓
-result = pipeline.run(text)
+result = pipeline.run(text)   (PolicyDenied is raised, never swallowed)
     ↓
-stores result.text as job.md
-stores result.data as job.structured (JSON)
-writes .md file to MD_PATH/
-sets job status = COMPLETED
+raw transcript and polished Markdown go into the JobResult
+    ↓
+worker uploads the result; the hub marks the job completed
 ```
 
-The engine receives `profile.initial_prompt_string()` as its `initial_prompt`. It never receives replacement rules — postprocessing is entirely the API layer's responsibility.
+The engine receives `profile.initial_prompt_string()` as its `initial_prompt`. It never receives replacement rules — postprocessing is the worker's responsibility, not the engine's.
 
 ### Local mode (CLI process)
 

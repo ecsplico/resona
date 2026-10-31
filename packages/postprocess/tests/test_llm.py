@@ -1,74 +1,129 @@
 import pytest
+
 import resona_postprocess.llm as llm_mod
-from resona_postprocess.llm import llm_transform, LLMUnavailableError
+from resona_job_core.policy import Endpoint, EndpointKind, ExecutionPolicy, PolicyDenied
+from resona_postprocess.llm import (
+    LLMUnavailableError,
+    _resolve_api_base,
+    legacy_endpoint_id,
+    legacy_step_endpoint,
+    llm_extract,
+    llm_transform,
+)
+
+LOCAL = Endpoint(
+    id="ep-local",
+    kind=EndpointKind.LOCAL_LLM,
+    model="ollama/llama3",
+    url="http://localhost:11434",
+)
+CLOUD = Endpoint(id="ep-cloud", kind=EndpointKind.CLOUD_LLM, model="gpt-4o-mini", url=None)
 
 
-class _Msg:
-    def __init__(self, content): self.message = type("M", (), {"content": content})
+def _policy(*endpoints, private=True, cloud_enabled=False, approved=None):
+    ids = tuple(e.id for e in endpoints) if approved is None else approved
+    return ExecutionPolicy(
+        private=private,
+        cloud_enabled=cloud_enabled,
+        approved_endpoint_ids=ids,
+        endpoints=endpoints,
+    )
 
 
-class _Resp:
-    def __init__(self, content): self.choices = [_Msg(content)]
-    usage = None
-
-
-def test_llm_transform_calls_model(monkeypatch):
-    captured = {}
-
-    def fake_completion(**kwargs):
-        captured.update(kwargs)
-        return _Resp("FORMATTED")
-
-    monkeypatch.setattr(llm_mod, "litellm", type("L", (), {"completion": staticmethod(fake_completion)}))
-    out = llm_transform("raw", prompt="format", model="gpt-x", temperature=0.3)
+def test_llm_transform_calls_approved_endpoint(fake_litellm):
+    fake_litellm.script = ["FORMATTED"]
+    out = llm_transform(
+        "raw", prompt="format", endpoint=LOCAL, policy=_policy(LOCAL), temperature=0.3,
+    )
     assert out == "FORMATTED"
-    assert captured["model"] == "gpt-x"
-    assert captured["temperature"] == 0.3
-    assert captured["messages"][0]["content"] == "format"
-    assert captured["messages"][1]["content"] == "raw"
+    call = fake_litellm.calls[0]
+    assert call["model"] == "ollama/llama3"
+    assert call["api_base"] == "http://localhost:11434"
+    assert call["temperature"] == 0.3
+    assert call["messages"][0]["content"] == "format"
+    assert call["messages"][1]["content"] == "raw"
 
 
 def test_llm_transform_raises_when_litellm_missing(monkeypatch):
     monkeypatch.setattr(llm_mod, "litellm", None)
     with pytest.raises(LLMUnavailableError):
-        llm_transform("raw", prompt="format")
+        llm_transform("raw", prompt="format", endpoint=LOCAL, policy=_policy(LOCAL))
 
 
-def test_llm_transform_retries_once(monkeypatch):
-    calls = {"n": 0}
-
-    def flaky(**kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise RuntimeError("transient")
-        return _Resp("OK")
-
-    monkeypatch.setattr(llm_mod, "litellm", type("L", (), {"completion": staticmethod(flaky)}))
-    assert llm_transform("raw", prompt="p") == "OK"
-    assert calls["n"] == 2
+def test_llm_transform_retries_once(fake_litellm):
+    fake_litellm.script = [RuntimeError("transient"), "OK"]
+    assert llm_transform("raw", prompt="p", endpoint=LOCAL, policy=_policy(LOCAL)) == "OK"
+    assert len(fake_litellm.calls) == 2
 
 
-from resona_postprocess.llm import llm_extract
+def test_llm_transform_unapproved_endpoint_never_reaches_litellm(fake_litellm):
+    policy = _policy(LOCAL, approved=())
+    with pytest.raises(PolicyDenied):
+        llm_transform("raw", prompt="p", endpoint=LOCAL, policy=policy)
+    assert fake_litellm.calls == []
 
 
-def test_llm_extract_parses_json(monkeypatch):
-    monkeypatch.setattr(
-        llm_mod, "litellm",
-        type("L", (), {"completion": staticmethod(lambda **k: _Resp('{"diagnose": "x"}'))}),
-    )
-    assert llm_extract("raw", prompt="extract") == {"diagnose": "x"}
+def test_llm_transform_private_cloud_endpoint_never_reaches_litellm(fake_litellm):
+    policy = _policy(CLOUD, private=True, cloud_enabled=True)
+    with pytest.raises(PolicyDenied):
+        llm_transform("raw", prompt="p", endpoint=CLOUD, policy=policy)
+    assert fake_litellm.calls == []
 
 
-def test_llm_extract_malformed_json_keeps_raw(monkeypatch):
-    monkeypatch.setattr(
-        llm_mod, "litellm",
-        type("L", (), {"completion": staticmethod(lambda **k: _Resp("not json"))}),
-    )
-    out = llm_extract("raw", prompt="extract")
+def test_llm_transform_endpoint_differing_from_registry_is_denied(fake_litellm):
+    tampered = LOCAL.model_copy(update={"url": "http://attacker.example"})
+    with pytest.raises(PolicyDenied):
+        llm_transform("raw", prompt="p", endpoint=tampered, policy=_policy(LOCAL))
+    assert fake_litellm.calls == []
+
+
+def test_llm_extract_parses_json(fake_litellm):
+    fake_litellm.script = ['{"diagnose": "x"}']
+    out = llm_extract("raw", prompt="extract", endpoint=LOCAL, policy=_policy(LOCAL))
+    assert out == {"diagnose": "x"}
+
+
+def test_llm_extract_malformed_json_keeps_raw(fake_litellm):
+    fake_litellm.script = ["not json"]
+    out = llm_extract("raw", prompt="extract", endpoint=LOCAL, policy=_policy(LOCAL))
     assert out == {"_raw": "not json"}
 
 
-from resona_postprocess.llm import _resolve_api_base
+def test_llm_extract_unapproved_endpoint_never_reaches_litellm(fake_litellm):
+    with pytest.raises(PolicyDenied):
+        llm_extract("raw", prompt="extract", endpoint=LOCAL, policy=_policy(LOCAL, approved=()))
+    assert fake_litellm.calls == []
+
+
+def test_legacy_ollama_step_is_local_with_default_base(monkeypatch):
+    monkeypatch.delenv("RESONA_LLM_API_BASE", raising=False)
+    step = {"type": "llm", "model": "ollama/llama3", "prompt": "p"}
+    ep = legacy_step_endpoint(step)
+    assert ep.kind is EndpointKind.LOCAL_LLM
+    assert ep.url == "http://localhost:11434"
+    assert ep.model == "ollama/llama3"
+    assert ep.id == legacy_endpoint_id(step)
+
+
+def test_legacy_hosted_model_step_is_cloud(monkeypatch):
+    monkeypatch.delenv("RESONA_LLM_API_BASE", raising=False)
+    ep = legacy_step_endpoint({"type": "llm", "model": "gpt-4o-mini", "prompt": "p"})
+    assert ep.kind is EndpointKind.CLOUD_LLM
+    assert ep.url is None
+
+
+def test_legacy_step_without_model_is_denied(monkeypatch):
+    monkeypatch.delenv("RESONA_LLM_MODEL", raising=False)
+    with pytest.raises(PolicyDenied, match="no model configured"):
+        legacy_step_endpoint({"type": "llm", "prompt": "p"})
+
+
+def test_legacy_step_uses_explicit_env_model(monkeypatch):
+    monkeypatch.setenv("RESONA_LLM_MODEL", "ollama/qwen")
+    monkeypatch.delenv("RESONA_LLM_API_BASE", raising=False)
+    ep = legacy_step_endpoint({"type": "llm", "prompt": "p"})
+    assert ep.model == "ollama/qwen"
+    assert ep.kind is EndpointKind.LOCAL_LLM
 
 
 def test_resolve_api_base_explicit_wins(monkeypatch):

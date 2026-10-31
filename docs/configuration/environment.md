@@ -3,7 +3,7 @@
 All configuration is read with [`python-decouple`](https://github.com/HBNetwork/python-decouple): environment variables take precedence over values in a `.env` file. Copy `.env.example` to `.env` to get started.
 
 !!! note "Exception: resona-client"
-    `resona-client` uses `os.getenv()` for `RESONA_API_URL` and `RESONA_API_KEY` because it has no `python-decouple` dependency. All other packages use `config()` from `python-decouple`.
+    `resona-client` uses `os.getenv()` for `RESONA_API_URL` and `RESONA_API_KEY` (the org-bound bearer token) because it has no `python-decouple` dependency. All other packages use `config()` from `python-decouple`.
 
 ## resona-engine-server (`:7001`)
 
@@ -20,9 +20,10 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | `RESONA_ENGINE_URLS` | `http://localhost:7001` | Comma-separated list of engine-server URLs; the API probes all and load-balances across reachable ones |
 | `RESONA_DEFAULT_ENGINE` | _(first available)_ | Engine name to use for requests that do not specify one |
 | `RESONA_ENGINE_KEY` | _(unset)_ | API key sent to engine-server in the `X-API-Key` header |
-| `RESONA_API_KEY` | _(unset)_ | API key required from clients; auth is disabled when not set |
-| `DATA_PATH` | `./data` | Root directory for all persistent data (audio files, SQLite DB, transcripts) |
-| `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` | Directory where named profile JSON files are stored and served by `GET /profiles/` |
+| `RESONA_BOOTSTRAP_ORGANIZATION_ID` | _(unset)_ | Organization that owns jobs already in an upgraded database. Required only when a pre-identity database with job rows is first migrated; startup refuses without it. Hub access uses org-scoped credentials issued by `resona-admin`, not a shared key |
+| `DATA_PATH` | `./data` | Root directory for all persistent data (SQLite DB and expiring per-organization job files) |
+| `RESONA_MAX_UPLOAD_BYTES` | `209715200` (200 MiB) | Maximum size of one upload or worker result; enforced while streaming, larger requests get `413` |
+| `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` | Directory where the bundled and file-backed profile sources are resolved for CLI and postprocessing; hosted profile revisions are stored in the database per organization and served by `GET /profiles` |
 | `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-client / resona CLI
@@ -30,14 +31,14 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RESONA_API_URL` | `http://localhost:7000` | resona-api base URL |
-| `RESONA_API_KEY` | _(unset)_ | API key sent to resona-api (`X-API-Key` header) |
+| `RESONA_API_KEY` | _(unset)_ | Org-bound token issued by `resona-admin credential issue`; sent as `Authorization: Bearer <token>` |
 
 ## resona-postprocess / resona-cli (local mode)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONA_LLM_MODEL` | `gpt-4o-mini` | Default LLM model for `llm` and `extract` pipeline steps that do not specify `model` |
-| `RESONA_LLM_API_BASE` | _(unset)_ | Custom LLM endpoint, e.g. a local Ollama instance; passed to litellm |
+| `RESONA_LLM_MODEL` | _(unset)_ | Explicit local CLI mode only: model for `llm`/`extract` steps that set no `model`. There is no default model; the hub never reads this variable |
+| `RESONA_LLM_API_BASE` | _(unset)_ | Explicit local CLI mode only: API base for legacy LLM steps (for example a local Ollama instance). A non-loopback base makes the step cloud, which private runs deny |
 | `RESONA_PROFILES_DIR` | `~/.resona/profiles/` | Directory where the CLI looks for named profile files in local (no-server) mode |
 
 ## Cloud provider keys
@@ -72,13 +73,13 @@ cp .env.example .env
 docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
 ```
 
-!!! tip "API key setup"
-    If you set `RESONA_API_KEY` in `.env`, all clients must send `X-API-Key: <key>` with every request. Export the same value as `RESONA_API_KEY` in your shell (or add it to `~/.bashrc`) so the `resona` CLI picks it up automatically.
+!!! tip "Credentials"
+    Hub access uses org-scoped credentials. Issue one on the hub host with `resona-admin credential issue --organization <id> --role client`, then send `Authorization: Bearer <token>` with every request (REST also accepts the same token in `X-API-Key`). Tokens are shown once; the hub stores only their SHA-256 hash. There is no auth-disabled mode.
 
 !!! tip "Custom LLM endpoint"
-    To use a local Ollama instance for postprocessing instead of OpenAI, set:
+    To run postprocessing on a local Ollama instance in local CLI mode, set:
     ```bash
     RESONA_LLM_MODEL=ollama/llama3
     RESONA_LLM_API_BASE=http://localhost:11434
     ```
-    Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works here.
+    The loopback endpoint keeps the step private. Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works, but cloud models are denied unless the run is non-private (`--no-private`).

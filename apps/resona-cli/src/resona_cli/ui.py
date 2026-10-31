@@ -91,10 +91,9 @@ class WSUIApp(MicRecApp):
             basename = os.path.basename(saved_filename)
             self.log_msg(f"Submitting job for {basename}...")
             try:
-                result = self._client.submit_job(saved_filename)
-                job_id = result["id"]
-                self._pending_jobs[job_id] = basename
-                self.log_msg(f"Job {job_id} registered for {basename}")
+                job = self._client.submit_job(saved_filename, kind="audio")
+                self._pending_jobs[job.job_id] = basename
+                self.log_msg(f"Job {job.job_id} submitted for {basename}")
             except Exception as e:
                 self.log_msg(f"Error submitting job: {e}")
         else:
@@ -105,18 +104,19 @@ class WSUIApp(MicRecApp):
         for job_id in list(self._pending_jobs.keys()):
             try:
                 job = self._client.get_job(job_id)
-                job_status = job.get("status", "")
-                if job_status == "completed":
+                if job.status == "completed":
+                    result = self._client.get_result(job_id)
                     basename = self._pending_jobs.pop(job_id)
-                    content = job.get("md") or job.get("transcript") or "*No content found*"
+                    content = result.markdown or result.raw_text or "*No content found*"
                     safe_basename = basename.replace(".", "_").replace(" ", "_")
                     tab_id = f"tab_{safe_basename}"
                     if tab_id not in self.results_map and tab_id not in self.closed_tab_ids:
                         self.log_msg(f"Job {job_id} completed for {basename}")
                         self.add_result_tab(basename, content, tab_id)
-                elif job_status == "failed":
+                elif job.status in ("failed", "cancelled"):
                     basename = self._pending_jobs.pop(job_id)
-                    self.log_msg(f"Job {job_id} failed for {basename}: {job.get('error_message', 'unknown error')}")
+                    reason = (job.error or {}).get("message") or job.status
+                    self.log_msg(f"Job {job_id} {job.status} for {basename}: {reason}")
             except Exception:
                 pass
 
