@@ -66,6 +66,8 @@ WORKER_ONLINE_WINDOW = timedelta(seconds=90)
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
 MAX_IDEMPOTENCY_KEY_CHARS = 200
+MAX_FORM_FIELDS = 32
+MAX_FORM_FIELD_BYTES = 4096
 _TERMINAL = frozenset({JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED})
 _SNIFF_BYTES = 16
 
@@ -233,8 +235,15 @@ class _TooLarge(Exception):
     pass
 
 
+class _BadForm(Exception):
+    pass
+
+
 class _FileField:
-    """Multipart callbacks that stream the single ``file`` part into ``target``, hashing it."""
+    """Multipart callbacks that stream the single ``file`` part into ``target``, hashing it.
+
+    Other parts are small text form fields, collected into ``fields`` (bounded count and size).
+    """
 
     def __init__(self, target, limit: int) -> None:
         self._target = target
@@ -243,6 +252,8 @@ class _FileField:
         self._value = b""
         self._name: bytes | None = None
         self._active = False
+        self._form: bytearray | None = None
+        self.fields: dict[str, str] = {}
         self.seen = 0
         self.size = 0
         self.head = b""
@@ -277,10 +288,20 @@ class _FileField:
 
     def _headers_finished(self) -> None:
         self._active = self._name == b"file"
+        self._form = None
         if self._active:
             self.seen += 1
+        elif self._name is not None:
+            if len(self.fields) >= MAX_FORM_FIELDS:
+                raise _BadForm
+            self._form = bytearray()
 
     def _part_data(self, data: bytes, start: int, end: int) -> None:
+        if self._form is not None:
+            self._form += data[start:end]
+            if len(self._form) > MAX_FORM_FIELD_BYTES:
+                raise _BadForm
+            return
         if not self._active or self.seen > 1:
             return
         chunk = data[start:end]
@@ -293,6 +314,12 @@ class _FileField:
         self._target.write(chunk)
 
     def _part_end(self) -> None:
+        if self._form is not None and self._name is not None:
+            try:
+                self.fields[self._name.decode()] = self._form.decode()
+            except UnicodeDecodeError:
+                raise _BadForm from None
+        self._form = None
         self._active = False
 
 
@@ -300,13 +327,14 @@ def _too_large() -> Exception:
     return api_error(413, "too_large", f"upload exceeds {MAX_UPLOAD_BYTES} bytes")
 
 
-@router.post("/v1/uploads", status_code=201)
-async def create_upload(
-    request: Request,
-    principal: Principal = Depends(client_principal),
-    session: Session = Depends(get_db_session),
-) -> dict[str, Any]:
-    """Stream multipart field ``file`` to staging, hash it, sniff its media family, promote."""
+async def receive_upload(
+    request: Request, session: Session, organization_id: str,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Stream the multipart ``file`` part into org storage as one unattached upload.
+
+    Returns ``({upload_id, sha256, size}, form_fields)``; the other multipart parts
+    are returned as bounded text fields for routes that take form parameters.
+    """
     ctype, params = parse_options_header(request.headers.get("content-type", ""))
     boundary = params.get(b"boundary")
     if ctype != b"multipart/form-data" or not boundary:
@@ -317,7 +345,7 @@ async def create_upload(
         raise _too_large()
 
     upload_id = "upl_" + secrets.token_hex(12)
-    final = storage.upload_path(_storage_id(session, principal.organization_id), upload_id)
+    final = storage.upload_path(_storage_id(session, organization_id), upload_id)
     staged = storage.staging_path(final)
     try:
         with staged.open("wb") as target:
@@ -329,6 +357,8 @@ async def create_upload(
                 parser.finalize()
             except _TooLarge:
                 raise _too_large() from None
+            except _BadForm:
+                raise api_error(422, "invalid_upload", "form fields are too many, too large or not text") from None
             except MultipartParseError:
                 raise api_error(422, "invalid_upload", "malformed multipart body") from None
         if field.seen != 1:
@@ -347,7 +377,7 @@ async def create_upload(
     sha256 = field.digest.hexdigest()
     session.add(Upload(
         id=upload_id,
-        organization_id=principal.organization_id,
+        organization_id=organization_id,
         sha256=sha256,
         size=field.size,
         media_family=media[0],
@@ -361,7 +391,29 @@ async def create_upload(
         storage.remove_file(final)
         raise
     logger.info("Stored %s upload (%d bytes)", media[0], field.size)
-    return {"upload_id": upload_id, "sha256": sha256, "size": field.size}
+    return {"upload_id": upload_id, "sha256": sha256, "size": field.size}, field.fields
+
+
+def discard_upload(organization_id: str, upload_id: str) -> None:
+    """Delete an upload that no job consumed (a rejected synchronous request)."""
+    with Session(engine) as session:
+        with _immediate(session):
+            upload = session.get(Upload, upload_id)
+            if upload is None or upload.organization_id != organization_id or upload.consumed_by_job_id is not None:
+                return
+            session.delete(upload)
+        storage.remove_file(storage.upload_path(_storage_id(session, organization_id), upload_id))
+
+
+@router.post("/v1/uploads", status_code=201)
+async def create_upload(
+    request: Request,
+    principal: Principal = Depends(client_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Stream multipart field ``file`` to staging, hash it, sniff its media family, promote."""
+    stored, _ = await receive_upload(request, session, principal.organization_id)
+    return stored
 
 
 # ── Job admission ─────────────────────────────────────────────────────────

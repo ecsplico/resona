@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -71,18 +72,40 @@ def test_worker_config_never_exposes_the_token_in_repr(tmp_path: Path) -> None:
     assert "wkr-do-not-print" not in repr(config)
 
 
-def test_load_capabilities_dedupes_and_rejects_malformed_entries(tmp_path: Path) -> None:
-    good = tmp_path / "caps.json"
-    good.write_text(
-        '[{"engine":"faster-whisper","model":"tiny","accelerator":"cpu"},'
-        '{"engine":"faster-whisper","model":"tiny","accelerator":"cpu"}]',
-        encoding="utf-8",
-    )
-    assert load_capabilities(good) == (
-        Candidate(engine="faster-whisper", model="tiny", accelerator="cpu"),
+TINY = {"engine": "faster-whisper", "model": "tiny", "accelerator": "cpu"}
+
+
+def _manifest(tested: list[dict]) -> str:
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "profile": "cpu-private",
+            "prepared_at": "2026-10-31T12:00:00Z",
+            "runtime_version": "0.1.0",
+            "platform": "darwin-arm64",
+            "tested": tested,
+        }
     )
 
-    bad = tmp_path / "bad.json"
-    bad.write_text('[{"engine":"faster-whisper","accelerator":"tpu"}]', encoding="utf-8")
-    with pytest.raises(ConfigError):
-        load_capabilities(bad)
+
+def test_load_capabilities_returns_only_tested_tuples_deduplicated(tmp_path: Path) -> None:
+    caps = tmp_path / "caps.json"
+    entry = {"kind": "audio", "candidate": TINY, "seconds": 1.0, "peak_rss_bytes": 1}
+    caps.write_text(_manifest([entry, entry]), encoding="utf-8")
+
+    assert load_capabilities(caps) == (Candidate(engine="faster-whisper", model="tiny", accelerator="cpu"),)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        json.dumps([TINY]),  # a bare list was never tested on this worker
+        _manifest([]),
+        _manifest([{"kind": "audio", "candidate": {**TINY, "accelerator": "tpu"}, "seconds": 1, "peak_rss_bytes": 1}]),
+    ],
+)
+def test_load_capabilities_rejects_untested_or_malformed_files(tmp_path: Path, content: str) -> None:
+    caps = tmp_path / "caps.json"
+    caps.write_text(content, encoding="utf-8")
+    with pytest.raises(ConfigError, match="prepare"):
+        load_capabilities(caps)

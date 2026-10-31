@@ -506,3 +506,29 @@ def test_heartbeat_reports_cancel_and_extends_lease(http, fresh_org, frozen):
     assert response.status_code == 200
     assert response.json()["cancel_requested"] is False
     assert job_row(job_id).lease_until.replace(tzinfo=UTC) == T0 + timedelta(seconds=220)
+
+
+def test_out_of_memory_requeues_and_withdraws_only_that_workers_capability(http, fresh_org):
+    job_id = make_job(fresh_org, max_attempts=3)
+    _, oom_headers = make_worker(fresh_org)
+    _, other_headers = make_worker(fresh_org)
+    lease = claim(http, oom_headers).json()
+
+    response = http.post(
+        f"/v1/workers/jobs/{job_id}/fail",
+        json={
+            "code": "out_of_memory",
+            "message": "out of memory",
+            "retryable": True,
+            "withdraw_capability": CAND.model_dump(mode="json"),
+        },
+        headers=lease_headers(oom_headers, lease["lease_token"]),
+    )
+
+    assert response.json() == {"status": "pending"}
+    assert job_row(job_id).status == JobStatus.PENDING
+    assert heartbeat(http, oom_headers).json()["approved_capabilities"] == []
+    assert claim(http, oom_headers).status_code == 204
+    retry = claim(http, other_headers)
+    assert retry.status_code == 200
+    assert retry.json()["attempt"] == 2

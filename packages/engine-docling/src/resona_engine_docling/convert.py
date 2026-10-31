@@ -256,6 +256,16 @@ def _layout_spec():  # type: ignore[no-untyped-def]
     return PdfPipelineOptions().layout_options.model_spec
 
 
+# Docling 2.129 ``TableStructureModel`` loads these weights (``download_models``) and
+# forces MPS to CPU ("Disable MPS here, until we know why it makes things slower").
+_TABLEFORMER_REPO = "docling-project/docling-models"
+_TABLEFORMER_REVISION = "v2.3.0"
+
+
+def _tableformer_accelerator(accelerator: Accelerator) -> Accelerator:
+    return "cpu" if accelerator == "metal" else accelerator
+
+
 def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accelerator = "cpu") -> JobResult:
     """Convert one PDF or raster image to a :class:`JobResult`.
 
@@ -305,12 +315,20 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
     stages = [
         StageProvenance(
             stage="layout",
-            engine="docling-layout+tableformer",
+            engine="docling-layout",
             model=spec.repo_id,
             model_revision=spec.revision,
             accelerator=accelerator,
-            seconds=_seconds(result, ("layout", "layout_postprocess", "table_structure")),
-        )
+            seconds=_seconds(result, ("layout", "layout_postprocess")),
+        ),
+        StageProvenance(
+            stage="layout",
+            engine="docling-tableformer",
+            model=_TABLEFORMER_REPO,
+            model_revision=_TABLEFORMER_REVISION,
+            accelerator=_tableformer_accelerator(accelerator),
+            seconds=_seconds(result, ("table_structure",)),
+        ),
     ]
     if options.ocr != "off":
         model, revision, ocr_accelerator = _ocr_engine_identity(options.ocr_engine)

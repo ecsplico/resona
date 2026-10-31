@@ -1,24 +1,62 @@
-"""Worker configuration: hub URL, credential file, capabilities, work directory."""
+"""Worker configuration: hub URL, credential file, prepared capabilities, work directory."""
 
 from __future__ import annotations
 
-import json
 import os
 import stat
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from importlib import metadata
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from resona_job_core import Candidate, is_loopback_url
-
-_CANDIDATES = TypeAdapter(list[Candidate])
 
 
 class ConfigError(ValueError):
     """Invalid worker configuration. Messages never contain credential material."""
+
+
+class WeightRecord(BaseModel):
+    """One HuggingFace snapshot verified offline: repo id and resolved commit hash."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo: str
+    revision: str
+
+
+class PreparedCapability(BaseModel):
+    """A candidate tuple that passed synthetic execution on this worker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["audio", "document"]
+    candidate: Candidate
+    weights: list[WeightRecord] = Field(default_factory=list)
+    seconds: float
+    peak_rss_bytes: int
+    peak_accelerator_bytes: int | None = None
+    stage_accelerators: dict[str, str] = Field(default_factory=dict, description="actual accelerator per executed stage")
+
+
+class CapabilitiesManifest(BaseModel):
+    """Written by ``resona-worker prepare``; the only source of tuples a worker reports and claims."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    profile: str
+    prepared_at: datetime
+    runtime_version: str
+    platform: str
+    tested: list[PreparedCapability]
+
+    def candidates(self) -> tuple[Candidate, ...]:
+        return tuple(dict.fromkeys(item.candidate for item in self.tested))
 
 
 def runtime_version() -> str:
@@ -50,14 +88,22 @@ def load_token(path: Path) -> str:
     return token
 
 
-def load_capabilities(path: Path) -> tuple[Candidate, ...]:
-    """Read the approved-to-test capability tuples this worker prepared (JSON list)."""
+def load_manifest(path: Path) -> CapabilitiesManifest:
+    """Read a capabilities manifest written by ``resona-worker prepare``."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        candidates = _CANDIDATES.validate_python(data)
-    except (OSError, ValueError) as exc:
-        raise ConfigError(f"invalid capabilities file: {exc.__class__.__name__}") from None
-    return tuple(dict.fromkeys(candidates))
+        manifest = CapabilitiesManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError, ValidationError) as exc:
+        raise ConfigError(
+            f"invalid capabilities file ({exc.__class__.__name__}); create it with `resona-worker prepare`"
+        ) from None
+    if not manifest.tested:
+        raise ConfigError("capabilities file lists no tested capability; re-run `resona-worker prepare`")
+    return manifest
+
+
+def load_capabilities(path: Path) -> tuple[Candidate, ...]:
+    """The tuples this worker prepared and tested; it reports and claims nothing else."""
+    return load_manifest(path).candidates()
 
 
 @dataclass(frozen=True)
@@ -82,9 +128,13 @@ class WorkerConfig:
 
 
 __all__ = [
+    "CapabilitiesManifest",
     "ConfigError",
+    "PreparedCapability",
+    "WeightRecord",
     "WorkerConfig",
     "load_capabilities",
+    "load_manifest",
     "load_token",
     "runtime_version",
     "validate_hub_url",

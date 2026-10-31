@@ -1,103 +1,75 @@
 # Privacy
 
-For sensitive audio — medical dictation, legal recordings, confidential meetings — it is important
-to ensure that audio never leaves the local machine. Resona provides explicit privacy controls
-through the `--private` flag and `config.json` settings.
+For sensitive audio and documents — medical dictation, legal recordings, confidential meetings —
+it is important to ensure that data never reaches a third-party provider. Resona makes private
+processing the default and enforces it on the hub.
 
 ---
 
 ## What "private" means
 
-A **private** engine processes audio entirely on the local machine or within a trusted network
-boundary that you control. No audio bytes are transmitted to any third-party cloud service.
+A **private** job is processed entirely by engines on machines you control (your own hub workers,
+or this machine with `--local`). No audio or document bytes are transmitted to any third-party
+cloud service.
 
-A **non-private** engine (cloud engine) sends audio to an external provider's API servers
-(Deepgram, ElevenLabs, or OpenAI). Those requests are subject to the provider's data retention
-and privacy policies.
-
----
-
-## Which engines are private
-
-| Engine category | Private? |
-|----------------|----------|
-| Built-in local (`faster-whisper`, `whisper`, `voxtral`) | Always |
-| resona-api server entry marked `"private": true` | Yes |
-| resona-api server entry without `"private": true` | No |
-| Cloud entry (`deepgram`, `elevenlabs`, `openai`) | Never |
-
-Built-in local engines run in-process or in a subprocess on the same machine — no network
-traffic is generated for the audio data.
-
-A resona-api server entry is private when you own and control the server (e.g. a machine on your
-LAN, a home server reachable via SSH tunnel, or a Docker Compose stack on localhost) and you mark
-it explicitly:
-
-```bash
-resona engines add local http://localhost:7000 --private
-resona engines add home http://localhost:7000 --ssh user@homeserver.example.com --private
-```
+A **non-private** job may use cloud stages that send data to an external provider's API
+(Deepgram, ElevenLabs, OpenAI, or a cloud LLM for postprocessing). Those requests are subject to
+the provider's data retention and privacy policies.
 
 ---
 
-## The `--private` flag
+## Private by default
 
-Pass `--private` to `resona transcribe` to restrict engine selection to private engines only.
-If the selected or default engine is not private, the command fails with an error rather than
-silently falling back to a cloud engine.
+`resona transcribe`, `resona doc` and `resona watch` submit every job as private. `--private` is
+the default and only states it explicitly:
 
 ```bash
 resona transcribe patient-notes.mp3 --private
 ```
 
-If the gateway is unreachable, the CLI falls back to a built-in local engine automatically,
-which is always private — so `--private` is honoured in both server and local-only modes.
+The hub checks each job's policy before admission. A job whose execution profile, engine/model
+override or postprocess profile needs a cloud stage is rejected with `policy_denied`; the CLI
+exits with code 2. Nothing is ever retried on another engine, in the cloud or locally: an
+unreachable hub, a timeout or a failed job is reported as an error.
 
-Pass `--no-private` to explicitly allow non-private engines, even if `default_private` is set
-in `config.json`:
+Each job prints one policy summary line on stderr, so the decision is visible:
 
-```bash
-resona transcribe interview.mp3 --no-private --engine deepgram
+```
+job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed
 ```
 
 ---
 
-## Making `--private` the default
+## Allowing cloud processing
 
-Add `"default_private": true` to `~/.resona/config.json` to require a private engine for every
-invocation of `resona transcribe` without having to pass `--private` each time:
+Cloud processing needs **both**:
 
-```json
-{
-  "default_private": true,
-  "engines": [
-    {
-      "name": "local",
-      "type": "resona-api",
-      "api_url": "http://localhost:7000",
-      "private": true
-    }
-  ]
-}
+1. the organization setting `cloud_enabled=true` (set by an `org_admin`, e.g.
+   `resona settings set cloud_enabled=true`), and
+2. `--allow-cloud` on the command (mutually exclusive with `--private`).
+
+```bash
+resona transcribe interview.mp3 --allow-cloud
 ```
 
-With this setting, running `resona transcribe recording.mp3` behaves as if you had passed
-`--private`. Override it for a single invocation with `--no-private`.
+Provider API keys in the environment never enable cloud. Cloud stages run only on hub-approved
+non-private workers, never directly from the CLI.
 
 ---
 
-## resona-api gateway privacy
+## resona-api hub privacy
 
-The gateway enforces privacy at the engine resolution layer. When a request includes
-`"private": true`, the registry skips all cloud engines and any server entries not marked
-private. If no private engine is available, the gateway returns `400 Bad Request` rather than
-routing the audio to a cloud provider.
+The hub enforces the same policy for every entry point — `POST /v1/jobs` and the
+OpenAI-compatible `POST /v1/audio/transcriptions` adapter. `private` defaults to `true`; a private
+job is only leased to private workers, and a job that would need a cloud stage is rejected with
+`403 policy_denied`.
 
 ```bash
-# POST /v1/audio/transcriptions with private=true
+# POST /v1/audio/transcriptions (private=true is the default)
 curl http://localhost:7000/v1/audio/transcriptions \
+  -H "Authorization: Bearer $RESONA_API_KEY" \
   -F file=@patient-notes.mp3 \
-  -F private=true
+  -F model=whisper-1
 ```
 
 ---
@@ -106,15 +78,14 @@ curl http://localhost:7000/v1/audio/transcriptions \
 
 !!! warning "Medical and legal audio"
     Audio containing patient data, personal health information, or privileged communications
-    should only be processed with private engines. Setting `"default_private": true` in
-    `config.json` prevents accidental cloud submission.
+    should only be processed privately. Keep `cloud_enabled=false` for the organization so that
+    even an accidental `--allow-cloud` is denied.
 
-1. Set `"default_private": true` in `~/.resona/config.json`.
-2. Use the built-in `faster-whisper` engine (default) or a self-hosted resona-api with
-   `"private": true`.
-3. Run `resona engines list` to confirm no cloud engine is set as the default.
-4. If you need cloud quality for non-sensitive content, use `--no-private` explicitly so the
-   intent is visible in your command history.
+1. Leave `cloud_enabled` off in the organization settings (`resona settings get`).
+2. Use a private execution profile (`private-auto`, `mac-private`, `linux-cuda`, `cpu-private`).
+3. Check the stderr policy line (`private=true`) or the `private` field in each `<stem>.md`.
+4. If you need cloud quality for non-sensitive content, an `org_admin` enables `cloud_enabled`
+   and you pass `--allow-cloud` explicitly so the intent is visible in your command history.
 
 ---
 
@@ -122,7 +93,6 @@ curl http://localhost:7000/v1/audio/transcriptions \
 
 | Scenario | Recommended setup |
 |----------|------------------|
-| Fully offline, no server | Built-in `faster-whisper` (default, always private) |
-| Self-hosted server on LAN | `resona engines add ... --private` + `"default_private": true` |
-| Mix: local for sensitive, cloud for other | `"default_private": true` in config; use `--no-private` for non-sensitive runs |
-| Cloud only | No special config; `--no-private` or remove `default_private` |
+| Fully offline, no hub | `--local` with built-in private defaults or cached settings |
+| Self-hosted hub | Default (private) jobs; `cloud_enabled=false` |
+| Mix: private for sensitive, cloud for other | `cloud_enabled=true`; pass `--allow-cloud` only for non-sensitive runs |

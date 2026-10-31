@@ -46,13 +46,26 @@ if data == b"OOM":
     os.kill(os.getpid(), signal.SIGKILL)
 if data == b"HANG":
     time.sleep(600)
+if data == b"METALOOM":
+    sys.stderr.write(
+        "libc++abi: terminating due to uncaught exception of type std::runtime_error: "
+        "[metal::malloc] Attempting to allocate 68719476736 bytes which is greater than the maximum allowed buffer size\n"
+    )
+    sys.stderr.flush()
+    sys.exit(1)  # a native abort exits non-zero; only the stderr marker identifies OOM
+if data == b"ENV":
+    text = json.dumps(dict(os.environ))
+elif data.startswith(b"%PDF-"):
+    text = "suffix=" + Path(args.input).suffix
+else:
+    text = "hallo welt"
 snapshot = json.loads(Path(args.snapshot).read_text())
 cand = snapshot["candidate"]
 result = {
     "schema_version": 1,
     "kind": snapshot["kind"],
-    "raw_text": "hallo welt",
-    "markdown": "hallo welt",
+    "raw_text": text,
+    "markdown": text,
     "language": "de",
     "segments": [],
     "pages": [],
@@ -122,6 +135,7 @@ class FakeHub:
         self.kind = kind
         self.approved = True
         self.approved_private = True
+        self.approved_capabilities = [candidate]
         self.job_heartbeat_status = 200
         self.policy_status = 200
         self.policy_body: dict[str, Any] = {"allowed": True}
@@ -160,7 +174,7 @@ class FakeHub:
                     "worker_id": "w1",
                     "approved": self.approved,
                     "approved_private": self.approved_private,
-                    "approved_capabilities": [self.candidate.model_dump(mode="json")],
+                    "approved_capabilities": [c.model_dump(mode="json") for c in self.approved_capabilities],
                     "server_time": _iso(timedelta(0)),
                 },
             )
@@ -235,4 +249,62 @@ def build_supervisor(tmp_path: Path, executor_script: Path):
 @pytest.fixture
 def fakes() -> SimpleNamespace:
     """Test doubles exposed as a fixture (test modules cannot import conftest under importlib mode)."""
-    return SimpleNamespace(FakeHub=FakeHub, snapshot_for=snapshot_for)
+    return SimpleNamespace(FakeHub=FakeHub, snapshot_for=snapshot_for, manifest_json=manifest_json)
+
+
+def manifest_json(candidates: list[Candidate], *, profile: str = "cpu-private", kind: str = "audio") -> str:
+    """A capabilities manifest as `resona-worker prepare` writes it."""
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "profile": profile,
+            "prepared_at": "2026-10-31T12:00:00Z",
+            "runtime_version": "0.1.0",
+            "platform": "darwin-arm64",
+            "tested": [
+                {"kind": kind, "candidate": c.model_dump(mode="json"), "seconds": 1.0, "peak_rss_bytes": 1}
+                for c in candidates
+            ],
+        }
+    )
+
+
+PREPARE_EXECUTOR_SCRIPT = r'''
+import argparse, json, os, sys
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--snapshot", required=True)
+parser.add_argument("--input", required=True)
+parser.add_argument("--out", required=True)
+parser.add_argument("--metrics", required=True)
+args = parser.parse_args()
+snapshot = json.loads(Path(args.snapshot).read_text())
+cand = snapshot["candidate"]
+if "broken" in cand["model"]:
+    sys.exit(3)
+device = "cpu" if "wrongdevice" in cand["model"] else cand["accelerator"]
+if snapshot["kind"] == "audio":
+    text = "Guten Tag, das ist ein Test."
+    stages = [{"stage": "asr", "engine": cand["engine"], "model": cand["model"],
+               "model_revision": cand["model_revision"], "accelerator": device, "seconds": 0.1}]
+else:
+    text = "Dies ist ein synthetisches Testdokument. Die Straße führt über die Brücke."
+    stages = [{"stage": "layout", "engine": "docling-layout", "model": "layout", "accelerator": device, "seconds": 0.1},
+              {"stage": "ocr", "engine": cand["ocr_engine"], "model": "apple-vision", "accelerator": "metal", "seconds": 0.1}]
+if "garbage" in cand["model"]:
+    text = "lorem ipsum"
+structured = {"env": sorted(os.environ), "input_suffix": Path(args.input).suffix}
+result = {"kind": snapshot["kind"], "raw_text": text, "markdown": text, "provenance": {"stages": stages},
+          "structured": structured, "language": snapshot["language"]}
+Path(args.out).write_text(json.dumps(result))
+Path(args.metrics).write_text(json.dumps({"peak_accelerator_bytes": 123456}))
+'''
+
+
+@pytest.fixture
+def prepare_executor(tmp_path: Path) -> Path:
+    """Stub execution subprocess for ``prepare``; behaviour is selected by the candidate model name."""
+    path = tmp_path / "fake_prepare_exec.py"
+    path.write_text(PREPARE_EXECUTOR_SCRIPT, encoding="utf-8")
+    return path

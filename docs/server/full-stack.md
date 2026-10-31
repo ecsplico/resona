@@ -113,17 +113,20 @@ export RESONA_API_URL=http://localhost:7000
 export RESONA_API_KEY=<token>
 ```
 
-Queued jobs run on pull workers, not on the hub. Enroll and approve a worker, then start it on the GPU machine:
+Queued jobs run on pull workers, not on the hub. Prepare the worker on its machine (this verifies cached weights and runs synthetic jobs), then enroll and approve it with the tuples it tested:
 
 ```bash
+uv run resona-worker prepare --profile mac-private --out caps.json      # on the worker machine
+uv run resona-worker capabilities caps.json > caps-approve.json
+
 uv run resona-admin worker enroll mac-studio --organization acme   # prints the worker token
-uv run resona-admin worker approve <worker-id> --private --capabilities-file caps.json
+uv run resona-admin worker approve <worker-id> --private --capabilities-file caps-approve.json
 
 uv run resona-worker run --hub http://localhost:7000 --token-file ~/.resona/worker.token \
   --capabilities-file caps.json --work-dir /tmp/resona-worker
 ```
 
-The token file must have mode 0600. The optional engine key still protects a directly exposed engine-server:
+The token file must have mode 0600. On a Mac, run the worker as a launchd service instead: see [Mac Worker](mac-worker.md). The optional engine key still protects a directly exposed engine-server:
 
 ```bash
 RESONA_ENGINE_KEY=secret-engine-key uv run resona-engine-faster-whisper

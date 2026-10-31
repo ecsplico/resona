@@ -1,99 +1,77 @@
 # Local-Only Mode
 
-Local-only mode lets you transcribe audio without running any server. The CLI handles everything in the same process (or a subprocess), reads postprocessing config from `~/.resona/`, and writes output files directly.
+Local mode lets you transcribe audio or convert documents on this machine without a hub. It is
+**explicit only**: pass `--local` to `resona transcribe`, `resona doc` or `resona watch`. It is
+never chosen automatically.
 
-## What works in local-only mode
+## What works in local mode
 
-| Operation | Local-only | Requires server |
-|-----------|-----------|-----------------|
-| `resona transcribe` | Yes | — |
-| `resona transcribe --engine <cloud>` | Yes (key from env) | — |
+| Operation | Local | Requires hub |
+|-----------|-------|--------------|
+| `resona transcribe --local` | Yes | — |
+| `resona doc --local` | Yes | — |
+| `resona watch --local` | Yes | — |
 | `resona rec` | Yes | — |
 | `resona live` | Yes | — |
-| `resona watch` | No | resona-api (:7000) |
-| Job queue (`/v1/jobs`) | No | resona-api (:7000) + `resona-worker` |
+| `resona transcribe` / `doc` / `watch` without `--local` | No | resona-api (:7000) + `resona-worker` |
+| `resona jobs`, `resona settings` | No | resona-api (:7000) |
 | Profiles CRUD | No | resona-api (:7000) |
 
-## How it activates
+## No automatic fallback
 
-`resona transcribe` runs locally only when no hub is configured: `RESONA_API_URL` is unset and `~/.resona/config.json` has no `resona-api` entry.
+Without `--local` the CLI always uses the hub. An unreachable hub, a timeout or a failed job is
+reported as an error (exit 1), and a policy denial exits with code 2. Nothing is ever retried
+locally or in the cloud.
 
-Once a hub is configured, the CLI never falls back to local processing: an unreachable hub, a timeout or a failed job is reported as an error, and a policy denial exits with code 2. Remove the hub configuration to work locally.
+## Settings and policy
 
-## Engine resolution order
+`--local` runs the same policy path as hub admission:
 
-When running locally, the engine is selected in this order:
-
-1. `--engine NAME` CLI flag — highest priority
-2. `default_engine` in `~/.resona/config.json`
-3. Hardcoded default: `faster-whisper`
-
-`--engine` accepts a built-in engine name (`faster-whisper`, `whisper`, `voxtral`), a named server entry from `config.json`, or a cloud provider name (`deepgram`, `elevenlabs`, `openai`).
+1. Settings come from the cache written by `resona settings pull` for the configured hub and
+   credential (`~/.resona/settings-cache/<hash>.json`). Local mode never contacts the hub, so a
+   used cache is marked `stale: true`. Without a cache, built-in private defaults apply.
+2. The execution profile (`--execution-profile` or the organization default) supplies the approved
+   engine candidates; `--engine`/`--model` must match one of them.
+3. `check_policy` runs on every stage before processing. Cloud engines (`deepgram`, `openai`,
+   `elevenlabs`) count as cloud egress and are denied unless the settings allow cloud and you pass
+   `--allow-cloud`.
 
 ```bash
-resona transcribe recording.mp3                         # faster-whisper (default)
-resona transcribe recording.mp3 --engine whisper        # OpenAI Whisper (PyTorch)
-resona transcribe recording.mp3 --engine deepgram       # cloud, key from env
+resona settings pull                                   # cache the hub's settings
+resona transcribe recording.mp3 --local                # default execution profile
+resona transcribe recording.mp3 --local --execution-profile cpu-private
+resona doc scan.pdf --local --ocr force
 ```
 
-!!! tip "Private engines"
-    Pass `--private` to restrict to engines marked `"private": true` in `config.json`. Cloud engines are never considered private. Set `"default_private": true` in `config.json` to make this the default.
+## Execution
 
-## InProcessEngine vs subprocess
-
-The CLI has two ways to run a local engine:
-
-- **InProcessEngine** — imports and calls the engine directly in the same Python process. Used by default when the engine's package is installed (it always is in the default install, which bundles faster-whisper).
-- **Subprocess fallback** (`LocalEngine`) — spawns `uv run resona-engine-<name>` on a free port, waits for `/health` to respond, then sends HTTP requests to it. Used automatically if the engine package is not importable (e.g., you asked for `whisper` but the `[whisper]` extra is not installed).
-
-You do not need to configure this — the CLI picks the right path automatically.
+The candidate runs in the worker's execution subprocess (`resona-worker` is a dependency of
+`resona-cli`) with the same private environment as on a worker: offline model caches and no
+credentials. Prepare model weights beforehand with `resona-worker prepare`; a missing model is
+reported as `unsupported_capability`.
 
 ## Output files
 
-By default, each transcript is written as a `.txt` file next to the input:
+Local runs write the same outputs as hub jobs, next to the input by default:
 
 ```
 recordings/
 ├── note-2026-05-17.mp3
-└── note-2026-05-17.txt
+├── note-2026-05-17.md
+└── note-2026-05-17.result.json
 ```
 
-Override the output location with `--output-dir`:
+Existing outputs are not overwritten without `--force`. Override the location with `--output-dir`:
 
 ```bash
-resona transcribe ./recordings/ --output-dir ./transcripts/
+resona transcribe ./recordings/ --local --output-dir ./transcripts/
 ```
 
-## Postprocessing in local-only mode
+## Postprocessing in local mode
 
-Postprocessing is applied after the engine returns raw text. The pipeline is read from (in order):
-
-1. `~/.resona/postprocess.json` — full pipeline config (replacements + optional LLM steps)
-2. `~/.resona/replacements.json` — replacements-only override
-3. Bundled defaults — German dictation replacements (Komma → `,`, Punkt → `.`, Absatz → newline, medical headings, etc.)
-
-If none of those files exist, the bundled defaults are used automatically.
-
-Example `~/.resona/replacements.json`:
-
-```json
-[
-  {"pattern": "\\bKomma\\b", "replacement": ","},
-  {"pattern": "\\bPunkt\\b", "replacement": "."}
-]
-```
-
-For a full pipeline with LLM formatting, use `~/.resona/postprocess.json`:
-
-```json
-{
-  "steps": [
-    {"type": "replacements", "source": "replacements.json"},
-    {"type": "llm", "name": "format", "prompt": "Format this medical text.", "model": "ollama/llama3"}
-  ]
-}
-```
-
-Relative `source` paths resolve relative to `~/.resona/`.
+`--profile` takes a profile name (looked up in `~/.resona/profiles/<name>.json`), a path to a
+JSON file, or inline JSON — file and inline profiles are only accepted with `--local`. Without
+`--profile`, the cached organization settings decide whether the organization's postprocess
+profile applies. LLM steps pass the same policy check; cloud models are denied in private runs.
 
 See [Postprocessing](../guide/postprocessing.md) for full pipeline documentation.

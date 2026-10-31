@@ -53,39 +53,26 @@ Content is stored as files under `/data/organizations/<storage_id>/jobs/<job_id>
 
 ## Local path
 
-Only when no hub is configured (no `RESONA_API_URL` and no `resona-api` entry in `~/.resona/config.json`) does the CLI run the pipeline in-process. With a hub configured, hub errors (unreachable, timeout, policy denial) are reported and never fall back to a local or cloud engine; a policy denial exits with code 2.
+Only with an explicit `--local` does the CLI process on this machine; it is never chosen
+automatically. Without `--local`, hub errors (unreachable, timeout, failed job) are reported and
+never fall back to a local or cloud engine; a policy denial exits with code 2.
 
 ```
-resona transcribe ./audio/ --engine voxtral
+resona transcribe ./audio/ --local --execution-profile cpu-private
 
-  no hub configured
-
-  Engine resolution:
-    1. --engine flag → "voxtral"  (built-in local engine)
-    2. (would fall back to config.json default_engine, then "faster-whisper")
+  Settings:
+    cached revision from `resona settings pull` for this hub + credential (marked stale: true)
+    or built-in private defaults
 
   For each audio file:
-    spawn: uv run resona-engine-voxtral on a free local port  (once, shared)
-    wait for GET /health to return 200
-    POST audio file to local engine POST /transcribe
-    engine returns {text, language, segments}
+    resolve the execution profile's approved candidates (as hub admission does)
+    check_policy on every stage  → policy_denied exits 2
+    run the candidate in the worker's execution subprocess (resona_worker.execute)
+      with offline model caches and no credentials
+    postprocess (profile name, file or inline JSON; LLM stages policy-checked again)
 
-  PostprocessPipeline:
-    reads ~/.resona/postprocess.json  (or bundled defaults if absent)
-    applies replacements + any LLM steps
-    md = pipeline.run(text)
-
-  writes transcript to <input>.txt  (or --output-dir if specified)
+  writes <stem>.md + <stem>.result.json  (or --output-dir; --force to overwrite)
 ```
 
 !!! tip "No server, no database"
-    In local mode there is no SQLite database and no job queue. The CLI processes files sequentially and writes output files directly. Postprocessing still runs — it uses `~/.resona/postprocess.json` instead of DB-stored replacements.
-
-### Engine resolution order
-
-When the `--engine` flag is not given, `resona transcribe` resolves the engine in this order:
-
-1. `--engine NAME` CLI flag — built-in local engine name, a `config.json` server entry, or a `config.json` cloud entry
-2. `--private` / `--no-private` — when private is required (via flag or `default_private: true` in config), non-private and cloud engines are skipped
-3. `default_engine` in `~/.resona/config.json`
-4. Hardcoded default: `faster-whisper`
+    In local mode there is no SQLite database and no job queue. The CLI processes files sequentially and writes the same outputs as hub jobs.

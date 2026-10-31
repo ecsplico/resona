@@ -1,8 +1,8 @@
 # CLI Reference
 
 The `resona` command is the main entry point for all end-user operations. It covers transcription,
-directory watching, TUI-based recording, live transcription, speech synthesis, and management of
-engines and postprocessing profiles.
+document conversion, directory watching, hub jobs and settings, TUI-based recording, live
+transcription, speech synthesis, and management of hub entries and postprocessing profiles.
 
 Run `resona --help` or `resona <subcommand> --help` to see up-to-date flag descriptions at any
 time.
@@ -11,7 +11,7 @@ time.
 
 ## transcribe
 
-Transcribe one or more audio files, applying postprocessing automatically.
+Upload one or more audio files to the hub as audio jobs and wait for the results.
 
 ```
 resona transcribe [INPUTS...] [OPTIONS]
@@ -32,59 +32,114 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--engine NAME` | (auto) | Built-in engine name, `config.json` server entry, or cloud entry |
-| `--profile NAME` | (from `config.json`) | Profile name, inline JSON profile, or path to a `.json` profile file |
-| `--language LANG` | `de` | Language hint (ISO 639-1 code) |
-| `--model NAME` | (engine default) | Model name override forwarded to the engine |
-| `--output-dir DIR` | (input file directory) | Write transcripts here instead of next to the source file |
 | `--recursive` / `-r` | off | Recurse into subdirectories; enables `**` in glob patterns |
-| `--private` / `--no-private` | (from `config.json`) | Require a private (on-device) engine; `--no-private` overrides `default_private` |
-| `--engine-timeout SECS` | `120` | Seconds to wait for a local engine subprocess to start |
+| `--output-dir DIR` | (input file directory) | Directory for `<stem>.md` and `<stem>.result.json` |
+| `--force` | off | Overwrite existing outputs (otherwise they are never overwritten) |
+| `--json` | off | Print a parseable JSON report on stdout |
+| `--no-wait` | off | Submit and print job IDs; do not wait |
+| `--timeout SECS` | (none) | Seconds to wait per job; the job keeps running on the hub afterwards |
+| `--private` | on | Require private processing (the default) |
+| `--allow-cloud` | off | Allow cloud stages; mutually exclusive with `--private` and still requires the organization setting `cloud_enabled=true` |
+| `--execution-profile NAME` | (organization default) | Execution profile of approved engine candidates: `private-auto`, `mac-private`, `linux-cuda`, `cpu-private` |
+| `--language LANG` | (organization setting) | Language hint (ISO 639-1 code) |
+| `--engine NAME` | (profile) | Engine override; must match an approved candidate of the execution profile |
+| `--model NAME` | (profile) | Model override; must match an approved candidate of the execution profile |
+| `--profile NAME` | (none) | Stored hub postprocess profile name; a JSON file or inline JSON only with `--local` |
+| `--translate` | off | Translate to English |
+| `--word-timestamps` | off | Request word timestamps |
+| `--local` | off | Process on this machine with cached hub settings instead of the hub |
+
+**Outputs**
+
+Each input produces two files, written atomically:
+
+- `<stem>.md` — Markdown with YAML frontmatter (`source`, `kind`, `job_id`, `language`, `engine`,
+  `model`, `accelerator`, `execution_profile`, `private`, `worker`, `settings_revision`, `created_at`).
+- `<stem>.result.json` — the job result (`schema_version: 1`: `kind`, `raw_text`, `markdown`,
+  `language`, `segments`, `pages`, `warnings`, `structured`, `provenance`).
+
+For every job one policy summary line goes to stderr, e.g.
+`job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed`.
+
+**Exit codes:** `0` success, `1` error or timeout, `2` `policy_denied`.
 
 **Examples**
 
 ```bash
-# Transcribe a single file — engine and profile selected automatically
+# Transcribe a single file as a private hub job
 resona transcribe dictation.mp3
 
 # Transcribe a directory, writing output to a separate folder
 resona transcribe ./recordings/ --output-dir ./transcripts/
 
-# English transcription with a cloud engine
-resona transcribe interview.mp3 --engine openai --language en
+# Pick an execution profile and an approved engine/model candidate
+resona transcribe meeting.mp3 --execution-profile mac-private --engine mlx-whisper
 
-# Use a specific Whisper model
-resona transcribe meeting.mp3 --engine whisper --model medium
+# Submit only; check later with `resona jobs`
+resona transcribe a.mp3 b.mp3 --no-wait
 
-# Require a private (local) engine — refuse to use cloud
-resona transcribe patient-notes.mp3 --private
-
-# Apply a named postprocessing profile
+# Apply a stored postprocessing profile
 resona transcribe dictation.mp3 --profile medical-de
 
-# Apply an inline profile (replacements only, no server needed)
-resona transcribe dictation.mp3 --profile '{"name":"x","steps":[{"type":"replacements","rules":[{"pattern":"Komma","replacement":","}]}]}'
+# Allow cloud stages (organization must have cloud_enabled=true)
+resona transcribe interview.mp3 --allow-cloud --language en
 
-# Recurse into subdirectories
-resona transcribe ./inbox/ --recursive --output-dir ./out/
+# Explicit local run with cached hub settings and an inline profile
+resona transcribe dictation.mp3 --local --profile '{"name":"x","steps":[{"type":"replacements","rules":[{"pattern":"Komma","replacement":","}]}]}'
 ```
 
-!!! note "Hub vs local mode"
-    When a hub is configured (`RESONA_API_URL`, or a `resona-api` entry in `~/.resona/config.json`),
-    `resona transcribe` uploads to the hub and waits for a pull worker. Jobs are private by default.
-    Hub errors (unreachable, timeout, failed job) are reported and **never** fall back to a local or
-    cloud engine; a policy denial prints `policy_denied: ...` and exits with code 2. Only when no hub
-    is configured does the CLI run a local engine. See [Local-Only Mode](../getting-started/local-only.md).
+!!! note "No automatic fallback"
+    The hub is configured with `RESONA_API_URL` or a hub entry in `~/.resona/config.json`. An
+    unreachable hub, a timeout or a failed job is reported as an error and **never** replaced by
+    a local or cloud run; a policy denial prints `policy_denied: ...` and exits with code 2.
+    An `--engine`/`--model` that is not an approved candidate is rejected with `unapproved_override`
+    (exit 1). Cloud processing only runs on hub-approved non-private workers, never directly from
+    the CLI; provider API keys in the environment never enable cloud.
+
+!!! note "`--local`"
+    `--local` is explicit only, never automatic. It uses the settings cached by
+    `resona settings pull` for the configured hub and credential (and marks the cache
+    `stale: true`), or built-in private defaults when nothing is cached. The same policy check as
+    on the hub runs before processing; the candidate runs in the worker's execution subprocess
+    (`resona-worker` ships with `resona-cli`) using offline model caches.
+    See [Local-Only Mode](../getting-started/local-only.md).
 
 !!! tip "Glob quoting"
     Always quote glob patterns to prevent shell expansion: `resona transcribe "inbox/*.mp3"`.
 
 ---
 
+## doc
+
+Convert PDFs and images (`pdf`, `png`, `jpg`, `tif`) to Markdown as hub document jobs.
+Inputs, outputs, exit codes and the shared flags (`--recursive`, `--output-dir`, `--force`,
+`--json`, `--no-wait`, `--timeout`, `--private`, `--allow-cloud`, `--execution-profile`,
+`--engine`, `--model`, `--profile`, `--local`) work as for [`transcribe`](#transcribe).
+
+```
+resona doc [INPUTS...] [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ocr MODE` | `auto` | `auto` (OCR bitmap regions only), `force` (full-page OCR) or `off` |
+| `--ocr-engine NAME` | (profile) | `ocrmac`, `rapidocr` or `tesseract`; must be available in the execution profile |
+| `--languages LIST` | (organization setting) | Comma-separated document languages: `de,en` |
+| `--pages RANGE` | (all) | Inclusive 1-based page range: `a-b`, `a-`, `-b` or a single page |
+
+```bash
+resona doc scan.pdf --pages 1-3 --languages de,en
+resona doc ./faxes/ --ocr force --ocr-engine tesseract
+```
+
+---
+
 ## watch
 
-Watch a directory for new audio files and submit them to the configured hub automatically.
-Without a configured hub it transcribes locally; with a hub configured it never falls back to local.
+Watch a directory and submit each new audio file as a private hub job (or process it with
+`--local`). Writes the same two outputs as `transcribe` and skips files whose outputs already
+exist. Hub errors are reported per file and never replaced by a local run; a policy denial stops
+watching with exit code 2.
 
 ```
 resona watch DIRECTORY [OPTIONS]
@@ -96,29 +151,61 @@ resona watch DIRECTORY [OPTIONS]
 |------|---------|-------------|
 | `--recursive` / `-r` | off | Watch subdirectories too |
 | `--poll-interval SECS` | `1.0` | Seconds between directory scans |
-| `--profile NAME` | (from `config.json`) | Profile name or inline JSON applied to each job submitted |
-| `--output-dir DIR` | (input file directory) | Write transcripts here (local mode only) |
-| `--language LANG` | `de` | Language hint (local mode only) |
-| `--model NAME` | (engine default) | Whisper model name (local mode only) |
-| `--engine NAME` | (from `config.json`) | Engine for local transcription |
-| `--engine-timeout SECS` | `120` | Seconds to wait for local engine startup (local mode) |
+| `--output-dir DIR` | (input file directory) | Directory for `<stem>.md` and `<stem>.result.json` |
+| `--force` | off | Re-transcribe files whose outputs already exist |
+| `--execution-profile NAME` | (organization default) | Execution profile (approved engine candidates) |
+| `--language LANG` | (organization setting) | Language hint |
+| `--engine NAME` / `--model NAME` | (profile) | Override; must match an approved candidate |
+| `--profile NAME` | (none) | Stored postprocess profile name (file/inline JSON only with `--local`) |
+| `--local` | off | Process on this machine with cached hub settings |
 
 **Examples**
 
 ```bash
-# Watch a directory, submitting new files to the server
+# Watch a directory, submitting new files to the hub
 resona watch ./inbox/
 
 # Watch recursively, poll every 5 seconds
-resona watch ./inbox/ --recursive --poll-interval 5
-
-# Local mode (no hub configured)
-resona watch ./inbox/ --output-dir ./done/
+resona watch ./inbox/ --recursive --poll-interval 5 --output-dir ./done/
 ```
 
-!!! warning "Hub mode vs local mode"
-    With a hub configured, `--model`, `--language`, and `--engine` are ignored by `watch`.
-    Use `resona transcribe` or the hub's organization settings to set them for hub jobs.
+---
+
+## jobs
+
+Inspect and manage hub jobs.
+
+```bash
+resona jobs get 12                      # job state as JSON
+resona jobs wait 12 --timeout 300       # exit 0 completed, 2 policy denial, 1 otherwise
+resona jobs result 12                   # print Markdown (--json for the full result)
+resona jobs result 12 --output-dir out/ --stem interview   # write <stem>.md + .result.json
+resona jobs cancel 12                   # fence the worker's lease
+resona jobs delete 12                   # delete a terminal job's input, result and metadata
+resona jobs list --limit 20 --cursor <cursor> --json
+```
+
+---
+
+## settings
+
+Read and change the organization's revisioned settings on the hub (`GET /v1/settings`).
+
+```bash
+resona settings get                     # print current revision as JSON, refresh the cache
+resona settings pull                    # cache the current revision for --local runs
+resona settings set language=en default_execution_profile=cpu-private
+resona settings set --file settings.json
+```
+
+Settings are cached without secrets per hub URL and `organization_id` in
+`~/.resona/settings-cache/<hash>.json` (`hub_url`, `organization_id`, `credential` — a SHA-256
+prefix of the token, never the token —, `revision`, `etag`, `settings`, `fetched_at`, `stale`).
+
+`set` needs the `org_admin` role, validates values against `OrganizationSettings` and sends
+`If-Match` with the cached revision. A `409 revision_conflict` exits 1 with
+"run `resona settings pull` and retry". Changes apply to new jobs only; existing jobs keep their
+settings snapshot.
 
 ---
 
@@ -174,8 +261,7 @@ segment) are saved alongside it in a `<name>.dictation/` directory.
     Before loading its own in-process model, `live` checks `http://localhost:7720/health`
     (override the port with `RESONA_LOCAL_ENGINE_PORT`). If a `resona-engine-*` server is
     already running there, push-to-talk and Live mode both use it over HTTP/WebSocket instead
-    of loading a redundant copy of the model. `resona transcribe`/`resona watch` in local mode
-    do the same.
+    of loading a redundant copy of the model.
 
 ---
 
@@ -241,12 +327,11 @@ See [Speech Synthesis](tts.md) for full provider and format details.
 
 ## engines
 
-Manage the engine catalogue: built-in local engines, resona-api server entries, and cloud
-provider entries.
+Manage built-in local engines and hub (resona-api) entries in `~/.resona/config.json`.
 
 ### engines list
 
-List all engines — built-in local engines plus configured entries from `~/.resona/config.json`.
+List all engines — built-in local engines plus configured hub entries from `~/.resona/config.json`.
 
 ```bash
 resona engines list
@@ -256,23 +341,18 @@ Output columns: `NAME`, `TYPE`, `PRIVATE`, `STATUS`.
 
 ### engines add
 
-Add a resona-api server entry or a cloud provider entry to `~/.resona/config.json`.
+Add a hub (resona-api server) entry to `~/.resona/config.json`.
 
 ```bash
-resona engines add NAME [API_URL] [OPTIONS]
+resona engines add NAME API_URL [OPTIONS]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--type TYPE` | `resona-api` (default) or `cloud` |
-| `--provider NAME` | Cloud provider: `deepgram`, `elevenlabs`, `openai` (required for `--type cloud`) |
-| `--model NAME` | Provider model override |
 | `--key KEY` | API key for server authentication |
-| `--private` | Mark a resona-api entry as private |
 | `--compose-dir DIR` | Docker Compose project directory — enables auto-start |
 | `--ssh HOST` | SSH host to tunnel through |
 | `--ssh-remote-port PORT` | Remote port on the SSH host |
-| `--option KEY=VALUE` | Provider-specific option (repeatable; cloud engines) |
 
 **Examples**
 
@@ -284,15 +364,7 @@ resona engines add gpu-server http://gpu-machine:7001
 resona engines add home http://localhost:7001 --ssh user@homeserver.example.com
 
 # Add a Docker Compose stack with auto-start
-resona engines add local http://localhost:7000 --compose-dir ~/resona --private
-
-# Add cloud STT/TTS providers
-resona engines add deepgram --type cloud --provider deepgram
-resona engines add elevenlabs --type cloud --provider elevenlabs
-resona engines add openai --type cloud --provider openai
-
-# Cloud engine with a specific model
-resona engines add deepgram-nova --type cloud --provider deepgram --model nova-2
+resona engines add local http://localhost:7000 --compose-dir ~/resona
 ```
 
 ### engines remove

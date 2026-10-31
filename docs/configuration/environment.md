@@ -24,6 +24,7 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | `DATA_PATH` | `./data` | Root directory for all persistent data (SQLite DB and expiring per-organization job files) |
 | `RESONA_MAX_UPLOAD_BYTES` | `209715200` (200 MiB) | Maximum size of one upload or worker result; enforced while streaming, larger requests get `413` |
 | `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` | Directory where the bundled and file-backed profile sources are resolved for CLI and postprocessing; hosted profile revisions are stored in the database per organization and served by `GET /profiles` |
+| `RESONA_SYNC_WAIT_SECONDS` | `60` | Seconds `POST /v1/audio/transcriptions` waits for a worker to finish the job; on timeout it answers `504` with the `job_id` while the job keeps running |
 | `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-client / resona CLI
@@ -39,16 +40,17 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 |----------|---------|-------------|
 | `RESONA_LLM_MODEL` | _(unset)_ | Explicit local CLI mode only: model for `llm`/`extract` steps that set no `model`. There is no default model; the hub never reads this variable |
 | `RESONA_LLM_API_BASE` | _(unset)_ | Explicit local CLI mode only: API base for legacy LLM steps (for example a local Ollama instance). A non-loopback base makes the step cloud, which private runs deny |
-| `RESONA_PROFILES_DIR` | `~/.resona/profiles/` | Directory where the CLI looks for named profile files in local (no-server) mode |
+| `RESONA_PROFILES_DIR` | `~/.resona/profiles/` | Directory where the CLI looks for named profile files in `--local` runs |
 
 ## Cloud provider keys
 
-Cloud STT and TTS providers are activated **automatically** when their API key variable is present. No additional configuration is needed — set the key and the provider appears in `GET /v1/engines`.
+Provider API keys are read from environment variables and are never stored in
+`~/.resona/config.json`. A key never enables cloud processing by itself: cloud stages also need the
+organization setting `cloud_enabled=true`, a job submitted with `--allow-cloud`, and a hub-approved
+non-private worker. The CLI never calls a provider directly.
 
-API keys are read from environment variables at call time and are never stored in `~/.resona/config.json`.
-
-| Variable | Provider | Activates |
-|----------|----------|-----------|
+| Variable | Provider | Used for |
+|----------|----------|----------|
 | `DEEPGRAM_API_KEY` | Deepgram | Deepgram STT (`nova-3`) + TTS |
 | `ELEVENLABS_API_KEY` | ElevenLabs | ElevenLabs STT (`scribe_v1`) + TTS |
 | `OPENAI_API_KEY` | OpenAI | OpenAI Whisper API (`whisper-1`) + TTS (`tts-1`) |
@@ -82,4 +84,4 @@ docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
     RESONA_LLM_MODEL=ollama/llama3
     RESONA_LLM_API_BASE=http://localhost:11434
     ```
-    The loopback endpoint keeps the step private. Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works, but cloud models are denied unless the run is non-private (`--no-private`).
+    The loopback endpoint keeps the step private. Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works, but cloud models are denied unless the run allows cloud (`--allow-cloud` with `cloud_enabled=true`).

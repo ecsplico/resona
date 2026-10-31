@@ -23,6 +23,7 @@ from resona_client.client import (
     RevisionConflict,
     ResultExpired,
     SettingsDoc,
+    SyncWaitTimeout,
 )
 from resona_job_core import JobResult
 
@@ -440,3 +441,20 @@ def test_create_transcription_sends_private_true_by_default(client, audio_file):
         client.create_transcription(audio_file, private=False)
     assert b'name="private"\r\n\r\ntrue' in route.calls[0].request.content
     assert b'name="private"\r\n\r\nfalse' in route.calls[1].request.content
+
+
+def test_create_transcription_timeout_carries_job_id(client, audio_file):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/audio/transcriptions").mock(return_value=httpx.Response(
+            504, json={"error": "timeout", "message": "still running", "job_id": 17},
+            headers={"Location": "/v1/jobs/17"}))
+        with pytest.raises(SyncWaitTimeout) as exc:
+            client.create_transcription(audio_file, execution_profile="cpu-private")
+    assert exc.value.job_id == 17
+
+
+def test_create_transcription_text_format_returns_text(client, audio_file):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/audio/transcriptions").mock(
+            return_value=httpx.Response(200, text="nur text"))
+        assert client.create_transcription(audio_file, response_format="text") == {"text": "nur text"}

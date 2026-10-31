@@ -1,8 +1,14 @@
 """
 Engine configuration for resona clients.
 
-Engines are stored in ~/.resona/config.json as a priority-ordered list.
-The first reachable engine is used.
+Engines are Resona hub (resona-api) servers stored in ~/.resona/config.json as a
+priority-ordered list. The first reachable engine is used. The CLI never calls
+cloud STT providers directly; cloud processing happens only on hub-approved
+non-private workers.
+
+Legacy entries of ``type: "cloud"`` are dropped on load (with a warning), and
+obsolete keys (``type``, ``provider``, ``model``, ``private``, ``options``) on
+hub entries are ignored.
 
 Auto-start options (tried in order when no engine is reachable):
   compose_dir — runs `docker compose up -d` in that directory
@@ -24,7 +30,6 @@ the old config is automatically copied to the new location on first load.
 import atexit
 import json
 import logging
-import os
 import shutil
 import socket
 import subprocess
@@ -58,26 +63,13 @@ def _cleanup_tunnels() -> None:
 atexit.register(_cleanup_tunnels)
 
 
-def _validate_cloud_entry(entry: "EngineEntry") -> None:
-    """Raise ValueError if a cloud entry names an unknown provider."""
-    if entry.type != "cloud":
-        return
-    from resona_cloud_stt.registry import PROVIDERS
-    if entry.provider not in PROVIDERS:
-        raise ValueError(
-            f"Engine '{entry.name}': cloud entries need a provider in "
-            f"{sorted(PROVIDERS)}, got {entry.provider!r}"
-        )
+# Keys an EngineEntry accepts; anything else in config.json is ignored.
+_ENTRY_KEYS = {"name", "api_url", "api_key", "compose_dir", "ssh_host", "ssh_remote_port"}
 
 
 @dataclass
 class EngineEntry:
-    """A single configured Resona engine (a resona-api server or a cloud provider).
-
-    ``resona-api`` entries connect to a Resona API server; ``cloud`` entries
-    name a third-party STT provider. Cloud entries have no ``api_url`` and
-    never store an API key — the key is read from an environment variable.
-    """
+    """A single configured Resona hub (resona-api server)."""
 
     name: str
     api_url: str = ""
@@ -85,35 +77,20 @@ class EngineEntry:
     compose_dir: Optional[str] = None  # if set, can be auto-started via docker compose
     ssh_host: Optional[str] = None     # "[user@]host[:port]" — opens SSH tunnel when needed
     ssh_remote_port: Optional[int] = None  # remote port (defaults to port in api_url)
-    type: str = "resona-api"               # "resona-api" | "cloud"
-    provider: Optional[str] = None         # cloud: "deepgram"|"elevenlabs"|"openai"
-    model: Optional[str] = None            # provider model override
-    private: bool = False                  # resona-api: user-asserted privacy
-    options: dict = field(default_factory=dict)
 
     def health_url(self) -> str:
         return self.api_url.rstrip("/") + "/health"
 
-    def is_private(self) -> bool:
-        """True if audio sent here stays user-controlled.
-
-        Cloud entries are never private (the ``private`` flag is ignored).
-        """
-        if self.type == "cloud":
-            return False
-        return self.private
-
-    def is_usable(self) -> bool:
-        """True if this engine can currently be used.
-
-        ``resona-api``: the ``/health`` endpoint responds 200.
-        ``cloud``: the provider's API-key env var is set.
-        """
-        if self.type == "cloud":
-            from resona_cloud_stt.registry import PROVIDER_ENV_KEYS
-            env_var = PROVIDER_ENV_KEYS.get(self.provider or "")
-            return bool(env_var and os.getenv(env_var))
-        return is_reachable(self)
+    @classmethod
+    def from_dict(cls, raw: dict) -> Optional["EngineEntry"]:
+        """Build an entry from a config.json dict; None for legacy cloud entries."""
+        if raw.get("type") == "cloud":
+            log.warning(
+                f"Ignoring legacy cloud engine entry '{raw.get('name')}': the CLI no "
+                f"longer calls cloud providers directly. Remove it from {CONFIG_FILE}."
+            )
+            return None
+        return cls(**{k: v for k, v in raw.items() if k in _ENTRY_KEYS})
 
 
 @dataclass
@@ -136,7 +113,6 @@ class EngineConfig:
     # "auto" => let the CLI pick an environment-appropriate local engine
     # (resona_asr_core.registry.recommended_engine). A concrete name pins it.
     default_engine: str = "auto"
-    default_private: bool = False
     default_profile: Optional[str] = None
 
     @classmethod
@@ -159,18 +135,13 @@ class EngineConfig:
             raw_engines = data.get("engines", data.get("backends", []))
             engines: list[EngineEntry] = []
             for raw in raw_engines:
-                entry = EngineEntry(**raw)
-                try:
-                    _validate_cloud_entry(entry)
-                except ValueError as e:
-                    log.warning(f"Skipping invalid engine entry: {e}")
-                    continue
-                engines.append(entry)
+                entry = EngineEntry.from_dict(raw)
+                if entry is not None:
+                    engines.append(entry)
             default_engine = data.get("default_engine", data.get("default_backend", "auto"))
-            default_private = bool(data.get("default_private", False))
             default_profile = data.get("default_profile")
             return cls(engines=engines, default_engine=default_engine,
-                       default_private=default_private, default_profile=default_profile)
+                       default_profile=default_profile)
         except (json.JSONDecodeError, TypeError) as e:
             log.warning(f"Could not parse {CONFIG_FILE}: {e}")
             return cls()
@@ -180,7 +151,6 @@ class EngineConfig:
         data = {
             "engines": [asdict(e) for e in self.engines],
             "default_engine": self.default_engine,
-            "default_private": self.default_private,
             "default_profile": self.default_profile,
         }
         CONFIG_FILE.write_text(json.dumps(data, indent=2))
@@ -189,7 +159,6 @@ class EngineConfig:
         return next((e for e in self.engines if e.name == name), None)
 
     def add(self, entry: EngineEntry) -> None:
-        _validate_cloud_entry(entry)
         if self.get(entry.name):
             raise ValueError(f"Engine '{entry.name}' already exists")
         self.engines.append(entry)
@@ -285,23 +254,18 @@ def resolve_engine(
     auto_start: bool = True,
     connect_timeout: float = 3.0,
     name: Optional[str] = None,
-    private_only: bool = False,
 ) -> Optional[EngineEntry]:
-    """Return a usable engine entry from ~/.resona/config.json.
+    """Return a reachable hub entry from ~/.resona/config.json.
 
     Args:
-        auto_start: If True, try to start unreachable resona-api entries.
+        auto_start: If True, try to start unreachable entries.
         connect_timeout: Per-entry reachability probe timeout.
         name: If given, resolve only the entry with this exact name.
-        private_only: If True, skip entries where ``is_private()`` is False.
 
-    Resolution:
-      - ``cloud`` entries are usable when their API-key env var is set
-        (no /health probe, no auto-start).
-      - ``resona-api`` entries are usable when /health responds; if not and
-        ``auto_start`` is set, an SSH tunnel or docker compose project is
-        started. A configured ``compose_dir`` that does not exist is logged
-        and skipped instead of raising FileNotFoundError.
+    Entries are usable when /health responds; if not and ``auto_start`` is
+    set, an SSH tunnel or docker compose project is started. A configured
+    ``compose_dir`` that does not exist is logged and skipped instead of
+    raising FileNotFoundError.
 
     Returns None if no usable engine is found.
     """
@@ -309,26 +273,19 @@ def resolve_engine(
     engines = cfg.engines
     if name is not None:
         engines = [e for e in engines if e.name == name]
-    if private_only:
-        engines = [e for e in engines if e.is_private()]
     if not engines:
         return None
 
-    # 1. Immediately usable entries.
+    # 1. Immediately reachable entries.
     for entry in engines:
-        if entry.type == "cloud":
-            if entry.is_usable():
-                return entry
-        elif is_reachable(entry, timeout=connect_timeout):
+        if is_reachable(entry, timeout=connect_timeout):
             return entry
 
     if not auto_start:
         return None
 
-    # 2. Auto-start resona-api entries (cloud entries cannot be started).
+    # 2. Auto-start entries.
     for entry in engines:
-        if entry.type == "cloud":
-            continue
         if entry.ssh_host:
             if entry.name not in _active_tunnels:
                 proc = _start_ssh_tunnel(entry)

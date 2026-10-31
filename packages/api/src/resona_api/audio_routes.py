@@ -1,23 +1,43 @@
-"""OpenAI-compatible /v1/audio/* endpoints and /v1/engines discovery."""
-import logging
-import tempfile
-from pathlib import Path
+"""OpenAI-compatible /v1/audio/* endpoints and /v1/engines discovery.
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+``POST /v1/audio/transcriptions`` is an adapter onto the job path: it stores the
+upload, admits an audio job exactly like ``POST /v1/jobs`` (same settings
+snapshot, candidates and policy checks) and waits up to
+``RESONA_SYNC_WAIT_SECONDS`` for an approved worker to finish it. On timeout it
+answers 504 with the job ID and a ``Location`` header; the job keeps running.
+The hub never transcribes content itself.
+"""
+import asyncio
+import json
+import logging
+import time
+import uuid
+
+from decouple import config
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel
-from resona_job_core import PolicyDenied
-from resona_postprocess.profile import ProfileError
+from pydantic import BaseModel, ValidationError
+from resona_job_core import JobResult, PolicyDenied
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from . import engine_registry as reg
+from . import jobs_routes, storage
 from .auth import Principal, client_principal
 from .db.engine import engine as db_engine
-from .deps import validate_audio_file
-from .privacy import ProfileNotFound, admit, admit_speech, is_profile_name
+from .db.models import Job, JobStatus, Organization
+from .errors import api_error
+from .privacy import admit_speech
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+SYNC_WAIT_SECONDS: float = config("RESONA_SYNC_WAIT_SECONDS", default=60.0, cast=float)
+SYNC_POLL_SECONDS = 0.25
+RESPONSE_FORMATS = frozenset({"json", "text", "verbose_json"})
+# OpenAI SDKs always send a model; ``whisper-1`` means "the default", not an override.
+_DEFAULT_MODEL_ALIASES = frozenset({"", "whisper-1"})
+_TERMINAL = frozenset({JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED})
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -34,7 +54,7 @@ def _http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=503, detail=str(exc))
     if name == "ProviderHTTPError":
         return HTTPException(status_code=502, detail=str(exc))
-    if name in ("CloudTTSError", "CloudSTTError"):
+    if name == "CloudTTSError":
         return HTTPException(status_code=400, detail=str(exc))
     raise exc
 
@@ -43,7 +63,7 @@ def _policy_denied(exc: PolicyDenied) -> JSONResponse:
     """A denied stage never reaches an engine or provider; report it as 403."""
     return JSONResponse(
         status_code=403,
-        content={"error": "policy_denied", "stage": exc.stage, "reason": exc.reason},
+        content={"error": "policy_denied", "message": f"{exc.stage}: {exc.reason}"},
     )
 
 
@@ -67,88 +87,139 @@ def list_engines(principal: Principal = Depends(client_principal)):
     }
 
 
-@router.post("/v1/audio/transcriptions", tags=["Audio"])
-async def create_transcription(
-    file: UploadFile = File(...),
-    model: str | None = Form(default=None),
-    language: str | None = Form(default=None),
-    prompt: str = Form(default=""),
-    temperature: float | None = Form(default=None),
-    response_format: str = Form(default="json"),
-    engine: str | None = Form(default=None),
-    private: bool = Form(default=True),
-    profile: str | None = Form(default=None),
-    principal: Principal = Depends(client_principal),
-):
-    """OpenAI-compatible synchronous speech-to-text.
+def _form_bool(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    lowered = value.strip().lower()
+    if lowered in ("true", "1", "yes"):
+        return True
+    if lowered in ("false", "0", "no"):
+        return False
+    raise api_error(422, "invalid_request", "private must be true or false")
 
-    The whole chain (ASR engine and every postprocess stage) is admitted
-    against the organization's policy before the upload is processed.
+
+def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.JobRequest, str]:
+    """Map OpenAI form fields onto a canonical audio JobRequest; returns it with the response format.
+
+    ``prompt`` and ``temperature`` are accepted for compatibility and ignored: jobs
+    carry only typed options, never free-form engine arguments.
     """
-    validate_audio_file(file)
-    if profile is not None and not is_profile_name(profile):
-        raise HTTPException(
-            status_code=422,
-            detail={"error": "invalid_profile", "message": "profile must be a stored profile name"},
-        )
+    response_format = fields.get("response_format") or "json"
+    if response_format not in RESPONSE_FORMATS:
+        raise api_error(422, "invalid_request",
+                        f"response_format must be one of {', '.join(sorted(RESPONSE_FORMATS))}")
+    model = (fields.get("model") or "").strip()
+    body = {
+        "kind": "audio",
+        "upload_id": upload_id,
+        "execution_profile": fields.get("execution_profile") or None,
+        "language": fields.get("language") or None,
+        "engine": fields.get("engine") or None,
+        "model": None if model in _DEFAULT_MODEL_ALIASES else model,
+        "profile": fields.get("profile") or None,
+        "private": _form_bool(fields.get("private"), default=True),
+    }
     try:
-        with Session(db_engine) as session:
-            admission = admit(
-                session,
-                principal.organization_id,
-                private=private,
-                engine=engine,
-                profile=profile,
-                language=language,
-            )
-    except PolicyDenied as exc:
-        return _policy_denied(exc)
-    except ProfileNotFound as exc:
-        raise HTTPException(status_code=404, detail=f"Unknown profile: {exc}")
-    except ProfileError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid profile: {exc}")
-    except reg.EngineError as exc:
-        raise _http_error(exc)
+        return jobs_routes.JobRequest.model_validate(body), response_format
+    except ValidationError as exc:
+        raise api_error(422, "invalid_request", jobs_routes._validation_message(exc)) from None
 
-    suffix = Path(file.filename or "audio").suffix or ".bin"
-    content = await file.read()
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+
+def _load_job(job_id: int) -> Job:
+    with Session(db_engine) as session:
+        return session.get(Job, job_id)
+
+
+def _read_result(job: Job) -> JobResult:
+    with Session(db_engine) as session:
+        storage_id = session.get(Organization, job.organization_id).storage_id
+    path = storage.result_path(storage_id, job.id)
     try:
-        result = reg.run_stt(
-            admission.engine, tmp_path,
-            language=admission.language, model=model, prompt=prompt,
-        )
-    except Exception as exc:
-        raise _http_error(exc)
-    finally:
-        tmp_path.unlink(missing_ok=True)
+        return JobResult.model_validate_json(path.read_bytes())
+    except FileNotFoundError:
+        raise api_error(410, "result_expired", "result is no longer available") from None
 
-    try:
-        pp = admission.pipeline.run(result.get("text", ""))
-    except PolicyDenied as exc:
-        return _policy_denied(exc)
-    text = pp.text
 
+def _job_error(job: Job) -> JSONResponse:
+    code = job.error_code or "job_failed"
+    message = job.error_message or code
+    if job.status == JobStatus.CANCELLED:
+        return JSONResponse({"error": "job_cancelled", "message": message, "job_id": job.id}, status_code=409)
+    if code == "policy_denied":
+        return JSONResponse({"error": code, "message": message, "job_id": job.id}, status_code=403)
+    return JSONResponse({"error": code, "message": message, "job_id": job.id}, status_code=502)
+
+
+def _openai_response(result: JobResult, response_format: str):
+    text = result.markdown
     if response_format == "text":
         return PlainTextResponse(text)
+    payload: dict = {"text": text}
     if response_format == "verbose_json":
-        segments = result.get("segments", [])
-        duration = segments[-1]["end"] if segments else 0.0
-        payload: dict = {
-            "text": text,
-            "language": result.get("language", admission.language),
-            "duration": duration,
+        segments = [seg.model_dump() for seg in result.segments]
+        payload.update({
+            "language": result.language,
+            "duration": segments[-1]["end"] if segments else 0.0,
             "segments": segments,
-        }
-        if pp.data:
-            payload["structured"] = pp.data
-        return JSONResponse(payload)
-    payload = {"text": text}
-    if pp.data:
-        payload["structured"] = pp.data
+        })
+    if result.structured:
+        payload["structured"] = result.structured
     return JSONResponse(payload)
+
+
+@router.post("/v1/audio/transcriptions", tags=["Audio"])
+async def create_transcription(
+    request: Request,
+    principal: Principal = Depends(client_principal),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """OpenAI-compatible speech-to-text as a bounded wait on a queued audio job.
+
+    Multipart fields: ``file`` plus OpenAI ``model``, ``language``,
+    ``response_format`` (json|text|verbose_json), ``prompt``/``temperature``
+    (ignored) and Resona ``engine``, ``execution_profile``, ``profile``,
+    ``private`` (default true). Admission is identical to ``POST /v1/jobs``.
+    """
+    organization_id = principal.organization_id
+    with Session(db_engine) as session:
+        stored, fields = await jobs_routes.receive_upload(request, session, organization_id)
+    upload_id = stored["upload_id"]
+    key = (idempotency_key or "").strip() or f"sync-{uuid.uuid4().hex}"
+    try:
+        if len(key) > jobs_routes.MAX_IDEMPOTENCY_KEY_CHARS or not key.isprintable():
+            raise api_error(400, "invalid_idempotency_key", "Idempotency-Key is too long or not printable")
+        req, response_format = _job_request(fields, upload_id)
+        options = jobs_routes.AudioOptions().model_dump(mode="json")
+        _, body = await run_in_threadpool(jobs_routes._admit, organization_id, key, req, options)
+    except BaseException:
+        await run_in_threadpool(jobs_routes.discard_upload, organization_id, upload_id)
+        raise
+    job_id = int(body["job_id"])
+
+    deadline = time.monotonic() + SYNC_WAIT_SECONDS
+    while True:
+        job = await run_in_threadpool(_load_job, job_id)
+        if job is None:
+            raise api_error(404, "job_not_found", "job not found")
+        if job.status in _TERMINAL:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return JSONResponse(
+                {
+                    "error": "timeout",
+                    "message": f"job {job_id} did not finish within {SYNC_WAIT_SECONDS:g} s; it keeps running",
+                    "job_id": job_id,
+                },
+                status_code=504,
+                headers={"Location": f"/v1/jobs/{job_id}"},
+            )
+        await asyncio.sleep(min(SYNC_POLL_SECONDS, remaining))
+
+    if job.status != JobStatus.COMPLETED:
+        return _job_error(job)
+    result = await run_in_threadpool(_read_result, job)
+    return _openai_response(result, response_format)
 
 
 class SpeechRequest(BaseModel):

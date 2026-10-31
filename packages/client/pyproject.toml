@@ -27,7 +27,6 @@ classifiers = [
 dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.7",
-    "resona-cloud-stt>=0.1.0",
     "resona-job-core>=0.1.0",
 ]
 
@@ -41,5 +40,4 @@ Issues = "https://github.com/ecsplico/resona/issues"
 packages = ["src/resona_client"]
 
 [tool.uv.sources]
-resona-cloud-stt = { workspace = true }
 resona-job-core = { workspace = true }

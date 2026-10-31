@@ -141,119 +141,20 @@ def test_list_shows_builtin_local_engines_when_no_config(isolated_config):
 
 
 def test_list_shows_config_entries_alongside_builtins(isolated_config):
-    isolated_config.write_text(json.dumps({"engines": [
-        {"name": "my-gpu-box", "api_url": "http://gpu:7000", "private": True},
-        {"name": "deepgram", "type": "cloud", "provider": "deepgram"},
-    ]}))
+    _write_engines(isolated_config, _engine("my-gpu-box", "http://gpu:7000"))
     with patch("resona_cli.engines.is_reachable", return_value=True):
         result = runner.invoke(app, ["engines", "list"])
     assert "my-gpu-box" in result.output
-    assert "server" in result.output
-    assert "deepgram" in result.output
-    assert "cloud" in result.output
+    assert "hub" in result.output
+    assert "reachable" in result.output
 
 
-def test_list_marks_local_engines_private(isolated_config):
-    result = runner.invoke(app, ["engines", "list"])
-    # the three local engines are always private
-    for line in result.output.splitlines():
-        if "faster-whisper" in line:
-            assert "yes" in line
-
-
-# ── engines add — cloud + collision ───────────────────────────────────────────
-
-def test_add_cloud_engine(isolated_config):
-    result = runner.invoke(app, [
-        "engines", "add", "dg", "--type", "cloud", "--provider", "deepgram",
-        "--model", "nova-3", "--option", "smart_format=true",
-    ])
-    assert result.exit_code == 0
-    data = json.loads(isolated_config.read_text())
-    entry = data["engines"][0]
-    assert entry["type"] == "cloud"
-    assert entry["provider"] == "deepgram"
-    assert entry["model"] == "nova-3"
-    assert entry["options"] == {"smart_format": "true"}
-
-
-def test_add_cloud_engine_repeatable_option(isolated_config):
-    result = runner.invoke(app, [
-        "engines", "add", "dg", "--type", "cloud", "--provider", "deepgram",
-        "--option", "smart_format=true", "--option", "diarize=false",
-    ])
-    assert result.exit_code == 0
-    opts = json.loads(isolated_config.read_text())["engines"][0]["options"]
-    assert opts == {"smart_format": "true", "diarize": "false"}
-
-
-def test_add_cloud_engine_unknown_provider_rejected(isolated_config):
-    result = runner.invoke(app, [
-        "engines", "add", "bad", "--type", "cloud", "--provider", "nonsense",
-    ])
-    assert result.exit_code == 1
-    assert "provider" in result.output.lower()
-
-
-def test_add_private_resona_api_engine(isolated_config):
-    with patch("resona_cli.engines.is_reachable", return_value=True):
-        result = runner.invoke(app, [
-            "engines", "add", "gpu", "http://gpu:7000", "--private",
-        ])
-    assert result.exit_code == 0
-    assert json.loads(isolated_config.read_text())["engines"][0]["private"] is True
-
+# ── engines add — collision ───────────────────────────────────────────────────
 
 def test_add_rejects_name_shadowing_builtin_engine(isolated_config):
-    result = runner.invoke(app, [
-        "engines", "add", "whisper", "--type", "cloud", "--provider", "openai",
-    ])
+    result = runner.invoke(app, ["engines", "add", "whisper", "http://gpu:7000"])
     assert result.exit_code == 1
     assert "built-in" in result.output.lower()
-
-
-def test_add_option_bad_format_rejected(isolated_config):
-    result = runner.invoke(app, [
-        "engines", "add", "dg", "--type", "cloud", "--provider", "deepgram",
-        "--option", "noequalsign",
-    ])
-    assert result.exit_code == 1
-    assert "KEY=VALUE" in result.output
-
-
-# ── engines test — cloud entries ──────────────────────────────────────────────
-
-def _cloud_engine(name, provider):
-    return {"name": name, "type": "cloud", "provider": provider, "api_url": ""}
-
-
-def test_test_cloud_engine_key_set_exits_0(isolated_config, monkeypatch):
-    """A cloud entry whose API-key env var is set is reported as OK (exit 0)."""
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "secret")
-    _write_engines(isolated_config, _cloud_engine("dg", "deepgram"))
-    result = runner.invoke(app, ["engines", "test"])
-    assert result.exit_code == 0
-    assert "key set" in result.output
-    assert "dg" in result.output
-
-
-def test_test_cloud_engine_no_key_exits_1(isolated_config, monkeypatch):
-    """A cloud entry with no API-key env var is reported as not-OK (exit 1)."""
-    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
-    _write_engines(isolated_config, _cloud_engine("dg", "deepgram"))
-    result = runner.invoke(app, ["engines", "test"])
-    assert result.exit_code == 1
-    assert "no key" in result.output
-    assert "dg" in result.output
-
-
-def test_test_single_cloud_engine_by_name(isolated_config, monkeypatch):
-    """Specifying a cloud entry by name also evaluates via is_usable."""
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
-    _write_engines(isolated_config, _cloud_engine("dg", "deepgram"))
-    result = runner.invoke(app, ["engines", "test", "dg"])
-    assert result.exit_code == 0
-    assert "key set" in result.output
 
 
 # ── engines status ────────────────────────────────────────────────────────────

@@ -1,66 +1,11 @@
-"""Tests for the Engine abstraction used by `resona transcribe` local mode."""
+"""Tests for the in-process Engine used by the `live` TUI."""
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-from resona_cli.engine import Engine, RemoteEngine
-
-
-def test_remote_engine_satisfies_protocol():
-    """RemoteEngine implements the Engine Protocol."""
-    e = RemoteEngine(base_url="http://x:7000")
-    assert isinstance(e, Engine)
-
-
-def test_remote_engine_delegates_to_resona_client(tmp_path):
-    """RemoteEngine.transcribe submits an audio job, waits, and returns the result Markdown."""
-    from resona_client.client import AudioOptions, JobRef, JobView
-    from resona_job_core import JobResult
-
-    audio = tmp_path / "a.wav"
-    audio.write_bytes(b"fake")
-
-    mock_client = MagicMock()
-    mock_client.submit_job.return_value = JobRef(job_id=7, status="pending")
-    mock_client.wait_for_job.return_value = JobView.from_dict(
-        {"job_id": 7, "kind": "audio", "status": "completed", "private": True})
-    mock_client.get_result.return_value = JobResult(
-        kind="audio", raw_text="hi", markdown="Hi.", language="de",
-        segments=[{"start": 0.0, "end": 1.0, "text": "hi"}], provenance={},
-    )
-
-    with patch("resona_cli.engine.ResonaClient", return_value=mock_client):
-        engine = RemoteEngine(base_url="http://x:7000")
-        result = engine.transcribe(audio, language="de", translate=True)
-
-    assert result["text"] == "Hi."
-    assert result["language"] == "de"
-    assert result["segments"] == [{"start": 0.0, "end": 1.0, "text": "hi"}]
-    kwargs = mock_client.submit_job.call_args.kwargs
-    assert kwargs["kind"] == "audio"
-    assert kwargs["options"] == AudioOptions(translate=True)
-    assert kwargs["private"] is True
-    mock_client.wait_for_job.assert_called_once_with(7, timeout=None)
-    mock_client.get_result.assert_called_once_with(7)
-
-
-def test_remote_engine_raises_on_failed_job(tmp_path):
-    from resona_client.client import JobRef, JobView
-
-    mock_client = MagicMock()
-    mock_client.submit_job.return_value = JobRef(job_id=8, status="pending")
-    mock_client.wait_for_job.return_value = JobView.from_dict({
-        "job_id": 8, "kind": "audio", "status": "failed", "private": True,
-        "error": {"code": "unsupported_media", "message": "bad input"},
-    })
-
-    with patch("resona_cli.engine.ResonaClient", return_value=mock_client):
-        engine = RemoteEngine(base_url="http://x:7000")
-        with pytest.raises(RuntimeError, match="bad input"):
-            engine.transcribe(tmp_path / "a.wav")
-    mock_client.get_result.assert_not_called()
+from resona_cli.engine import InProcessEngine
 
 
 def test_in_process_engine_calls_registry(tmp_path):

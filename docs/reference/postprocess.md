@@ -4,9 +4,10 @@
 through an ordered pipeline of steps driven by a **profile** — a JSON document that combines
 vocabulary hints for the ASR engine with `replacements`, `llm`, and `extract` steps.
 
-Postprocessing runs **after** the engine — never inside it. resona-api applies it when completing
-async jobs and when serving `/v1/audio/transcriptions`. `resona transcribe` applies it locally
-when no server is reachable.
+Postprocessing runs **after** the engine — never inside it. The hub validates a job's profile
+against the job's policy at admission; the worker runs the pipeline for every job (including jobs
+created through `/v1/audio/transcriptions`). `resona transcribe --local` applies it on this
+machine.
 
 ## Bundled default profile
 

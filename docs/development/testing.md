@@ -270,10 +270,9 @@ packages/api/tests/
     test_retention.py        # input/result/metadata expiry
     test_settings_routes.py  # /v1/settings revisions
     test_profiles_routes.py  # org-scoped profile revisions
-    test_audio_routes.py     # GET /v1/engines, POST /v1/audio/transcriptions, /speech
+    test_audio_routes.py     # GET /v1/engines, /v1/audio/transcriptions job adapter, /speech
     test_streaming_routes.py # streaming transcription
     test_engine_registry.py  # catalogue probing, resolve(), error hierarchy
-    test_engine_client.py    # EngineClient.transcribe()
 
 apps/resona-worker/tests/
     test_supervisor.py, test_hub.py, test_execute.py, ...  # claim loop, hub client, execution
@@ -285,15 +284,17 @@ packages/postprocess/tests/
     (replacements, llm, pipeline tests)
 
 apps/resona-cli/tests/
-    test_transcribe.py    # transcribe command via CliRunner
-    test_engine.py        # RemoteEngine, InProcessEngine, CloudEngine
-    test_engines.py       # engines subcommands (add, list, remove, status)
+    test_transcribe.py    # transcribe: hub jobs, outputs, --json, exit codes
+    test_doc.py           # doc command and DocumentOptions flags
+    test_jobs_cli.py      # jobs get/wait/result/cancel/delete/list
+    test_settings_cli.py  # settings get/pull/set, cache, revision conflicts
+    test_local_policy.py  # --local settings cache and check_policy
     test_watch.py         # watch command
-    test_submit.py        # job submission helpers
+    test_engine.py        # InProcessEngine
+    test_engines.py       # engines subcommands (add, list, remove, status)
     test_speech.py        # speech (TTS) command
     test_micrec.py        # RecordingSession, MicRecApp
-    test_local_engine.py  # LocalEngine subprocess fallback
-    test_cloud_engine.py  # CloudEngine via resona_cloud_stt
+    test_local_engine.py  # LocalEngine subprocess
     test_extras.py        # optional dependency handling
     test_live_resample.py # live transcription resampling
 ```

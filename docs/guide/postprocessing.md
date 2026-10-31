@@ -137,7 +137,7 @@ and common name corrections.
 
 ## LLM provider examples
 
-Cloud models (any step whose endpoint is not loopback) are denied in private runs. Local CLI runs need `--no-private`; hub runs need a cloud-enabled organization and a non-private job.
+Cloud models (any step whose endpoint is not loopback) are denied in private runs. They need the organization setting `cloud_enabled=true` and a job submitted with `--allow-cloud` (the same applies to `--local` runs).
 
 ### OpenAI
 

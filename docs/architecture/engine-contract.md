@@ -36,7 +36,7 @@ Before adding any feature to an engine or engine-server, apply this test:
 
 **Swappable engines.** Because all engines expose the same HTTP interface, `resona-api` can switch between `faster-whisper`, `whisper`, `voxtral`, or a cloud provider without any code changes. The `RESONA_ENGINE` environment variable selects which plugin loads; the rest of the system is unaffected.
 
-**Testability.** A stateless HTTP service is trivially mockable. Tests for `resona-api` mock `EngineClient.transcribe`; they never need a real GPU.
+**Testability.** A stateless HTTP service is trivially mockable. Hub and worker tests never need a real GPU.
 
 ## Engine entry-point discovery
 

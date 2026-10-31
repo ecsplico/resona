@@ -64,6 +64,80 @@ def test_out_of_memory_withdraws_capability_for_later_claims(build_supervisor, f
     assert hub.heartbeat_bodies[-1]["ready"] is False
 
 
+def test_metal_allocator_failure_is_out_of_memory_and_only_that_tuple_is_withdrawn(build_supervisor, fakes) -> None:
+    other = Candidate(engine="docling", model="docling-standard", accelerator="metal", ocr_engine="ocrmac")
+    hub = fakes.FakeHub(CAND, job_input=b"METALOOM")
+    hub.approved_capabilities = [CAND, other]
+    supervisor = build_supervisor(hub, capabilities=(CAND, other))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert (failure["code"], failure["retryable"]) == ("out_of_memory", True)
+    assert failure["withdraw_capability"] == CAND.model_dump(mode="json")
+
+    supervisor.run(once=True)
+
+    assert hub.heartbeat_bodies[-1]["reported_capabilities"] == [other.model_dump(mode="json")]
+    claim_body = json.loads(hub.paths("/claim")[-1][3])
+    assert claim_body["capabilities"] == [other.model_dump(mode="json")]
+
+
+def test_plain_engine_failure_is_retryable_without_withdrawal(build_supervisor, fakes) -> None:
+    hub = fakes.FakeHub(CAND, job_input=b"ENGINE")
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert (failure["code"], failure["retryable"], failure["withdraw_capability"]) == ("engine_error", True, None)
+
+
+def test_claims_only_tuples_both_tested_here_and_approved_by_the_hub(build_supervisor, fakes) -> None:
+    untested = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
+    unapproved = Candidate(engine="faster-whisper", model="large-v3", accelerator="cpu")
+    hub = fakes.FakeHub(CAND)
+    hub.approved_capabilities = [CAND, untested]
+    supervisor = build_supervisor(hub, capabilities=(CAND, unapproved))
+
+    supervisor.run(once=True)
+
+    reported = hub.heartbeat_bodies[-1]["reported_capabilities"]
+    assert reported == [CAND.model_dump(mode="json"), unapproved.model_dump(mode="json")]
+    claim_body = json.loads(hub.paths("/claim")[-1][3])
+    assert claim_body["capabilities"] == [CAND.model_dump(mode="json")]
+
+
+def test_private_job_runs_offline_without_cloud_credentials(build_supervisor, fakes, monkeypatch) -> None:
+    secrets = {
+        "OPENAI_API_KEY": "sk-1",
+        "OPENAI_BASE_URL": "https://api.openai.example",
+        "DEEPGRAM_API_KEY": "dg-1",
+        "ELEVENLABS_API_KEY": "el-1",
+        "ANTHROPIC_API_KEY": "an-1",
+        "AWS_SECRET_ACCESS_KEY": "aws-1",
+        "AZURE_OPENAI_ENDPOINT": "https://azure.example",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/tmp/g.json",
+        "RESONA_API_KEY": "rsn-1",
+        "HF_TOKEN": "hf-1",
+    }
+    for name, value in secrets.items():
+        monkeypatch.setenv(name, value)
+    hub = fakes.FakeHub(CAND, job_input=b"ENV")
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/result")
+    seen = json.loads(JobResult.model_validate_json(body).raw_text)
+    assert not set(secrets) & set(seen)
+    assert not any(value in seen.values() for value in secrets.values())
+    for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_HUB_DISABLE_TELEMETRY", "DO_NOT_TRACK"):
+        assert seen[name] == "1"
+
+
 def test_lost_lease_kills_the_subprocess_and_uploads_nothing(build_supervisor, fakes) -> None:
     hub = fakes.FakeHub(CAND, job_input=b"HANG")
     hub.job_heartbeat_status = 409
@@ -165,4 +239,28 @@ def test_postprocess_profile_hash_mismatch_fails_as_invalid_snapshot(build_super
     failure = json.loads(body)
     assert failure["code"] == "invalid_snapshot"
     assert failure["retryable"] is False
+    assert hub.paths("/result") == []
+
+
+def test_document_input_is_named_by_its_magic_bytes_for_the_converter(build_supervisor, fakes) -> None:
+    doc = Candidate(engine="docling", model="docling-standard", accelerator="metal", ocr_engine="ocrmac")
+    hub = fakes.FakeHub(doc, kind="document", job_input=b"%PDF-1.7\nsynthetic")
+    supervisor = build_supervisor(hub, capabilities=(doc,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/result")
+    assert JobResult.model_validate_json(body).raw_text == "suffix=.pdf"
+
+
+def test_document_input_of_unknown_type_fails_terminally(build_supervisor, fakes) -> None:
+    doc = Candidate(engine="docling", model="docling-standard", accelerator="metal", ocr_engine="ocrmac")
+    hub = fakes.FakeHub(doc, kind="document", job_input=b"PK\x03\x04 not a pdf")
+    supervisor = build_supervisor(hub, capabilities=(doc,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert (failure["code"], failure["retryable"]) == ("unsupported_input", False)
     assert hub.paths("/result") == []

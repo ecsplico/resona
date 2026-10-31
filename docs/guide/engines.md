@@ -1,9 +1,9 @@
 # Engine Selection
 
-Resona supports three categories of engines: built-in local engines that run entirely on your
-machine, resona-api server entries that proxy to a remote (or locally-managed) gateway, and cloud
-provider entries that send audio to an external API. All three are addressed through the same
-`--engine NAME` flag.
+Hub jobs run on engines chosen by the job's **execution profile** — a list of approved engine
+candidates stored in the organization settings (seeded: `private-auto` (default), `mac-private`,
+`linux-cuda`, `cpu-private`). `~/.resona/config.json` only lists the hubs the CLI talks to;
+built-in local engines run in-process for `resona live` and on workers.
 
 ---
 
@@ -30,11 +30,12 @@ Each engine has a default model and reads a corresponding environment variable:
 | `whisper` | `DEFAULT_WHISPER_MODEL` | `large-v3` |
 | `voxtral` | `DEFAULT_VOXTRAL_MODEL` | `openai/whisper-large-v3` |
 
-Override per invocation with `--model`:
+Override per invocation with `--execution-profile`, `--engine` and `--model`. The hub accepts an
+override only if it matches an approved candidate of the profile; otherwise it answers
+`422 unapproved_override` and the CLI exits 1:
 
 ```bash
-resona transcribe recording.mp3 --engine faster-whisper --model medium
-resona transcribe recording.mp3 --engine voxtral --model openai/whisper-large-v3-turbo
+resona transcribe recording.mp3 --execution-profile cpu-private --engine faster-whisper --model medium
 ```
 
 !!! note "First-run download"
@@ -45,111 +46,36 @@ resona transcribe recording.mp3 --engine voxtral --model openai/whisper-large-v3
 
 ## Cloud STT providers
 
-Cloud engines are registered in `~/.resona/config.json` and use external APIs. They appear
-automatically in the resona-api catalogue when the corresponding API key environment variable
-is set.
+Deepgram, ElevenLabs and OpenAI are cloud engines. They are **never private** — audio is
+transmitted to the provider's servers. They run only on hub-approved non-private workers, for
+jobs submitted with `--allow-cloud` in an organization with `cloud_enabled=true`; the CLI never
+calls a provider directly, and provider API keys in the environment never enable cloud.
 
-| Provider | `--engine` name | API key env var | Default model |
-|----------|----------------|-----------------|---------------|
+| Provider | Engine name | API key env var (worker) | Default model |
+|----------|-------------|--------------------------|---------------|
 | Deepgram | `deepgram` | `DEEPGRAM_API_KEY` | `nova-3` |
 | ElevenLabs | `elevenlabs` | `ELEVENLABS_API_KEY` | `scribe_v1` |
 | OpenAI Whisper | `openai` | `OPENAI_API_KEY` | `whisper-1` |
 
-Cloud engines are **never private** — audio is transmitted to the provider's servers.
-
-### Registering cloud engines
-
-```bash
-export DEEPGRAM_API_KEY=dg_...
-resona engines add deepgram --type cloud --provider deepgram
-resona engines add elevenlabs --type cloud --provider elevenlabs
-resona engines add openai --type cloud --provider openai
-```
-
-Once registered, use them with `--engine`:
-
-```bash
-resona transcribe recording.mp3 --engine deepgram
-resona transcribe recording.mp3 --engine openai --language en
-```
-
-!!! tip "Cloud engine auto-activation in resona-api"
-    When resona-api starts, it reads the API key environment variables. Any provider whose key is
-    present is automatically included in the `GET /v1/engines` catalogue — no explicit configuration
-    in `config.json` is needed on the server side. Set the key and the engine appears.
-
 ---
 
-## The `--engine` flag and resolution order
+## config.json hub entries
 
-`resona transcribe --engine NAME` accepts any of the following:
-
-1. A built-in local engine name: `faster-whisper`, `whisper`, `voxtral`
-2. A named entry in `~/.resona/config.json` (server or cloud type)
-3. A cloud provider name used directly: `deepgram`, `elevenlabs`, `openai`
-
-When `--engine` is not specified, the resolution order is:
-
-1. `default_engine` field in `~/.resona/config.json`
-2. Hardcoded default: `faster-whisper`
-
-```bash
-resona transcribe recording.mp3                      # faster-whisper (hardcoded default)
-resona transcribe recording.mp3 --engine whisper     # OpenAI Whisper
-resona transcribe recording.mp3 --engine deepgram    # Deepgram cloud
-resona transcribe recording.mp3 --engine my-server   # named config.json entry
-```
-
----
-
-## config.json engine entries
-
-Engine entries are stored in `~/.resona/config.json`. Edit them with `resona engines add` or
-directly in the file.
-
-### resona-api server entry
+Hub entries are stored in `~/.resona/config.json`. Edit them with `resona engines add` or
+directly in the file (see [Config Files](../configuration/config-files.md)).
 
 ```json
 {
   "engines": [
     {
       "name": "gpu-server",
-      "type": "resona-api",
-      "api_url": "http://gpu-machine:7000",
-      "private": true
+      "api_url": "http://gpu-machine:7000"
     }
   ]
 }
 ```
 
-### Cloud provider entry
-
-```json
-{
-  "engines": [
-    {
-      "name": "deepgram",
-      "type": "cloud",
-      "provider": "deepgram",
-      "model": "nova-3"
-    }
-  ]
-}
-```
-
-API keys are **never stored in `config.json`** — they are read from environment variables at call
-time.
-
-### Setting a default engine
-
-```json
-{
-  "default_engine": "gpu-server",
-  "engines": [...]
-}
-```
-
-With this config, `resona transcribe` will use `gpu-server` unless `--engine` overrides it.
+`default_engine` only selects the in-process engine for `resona live`.
 
 ---
 
@@ -161,10 +87,9 @@ With this config, `resona transcribe` will use `gpu-server` unless `--engine` ov
 resona engines list
 ```
 
-Output shows all built-in engines plus configured entries, with type, privacy status, and
-reachability.
+Output shows all built-in engines plus configured hub entries, with type and reachability.
 
-### Add a server entry
+### Add a hub entry
 
 ```bash
 # Direct LAN connection
@@ -174,14 +99,7 @@ resona engines add gpu-server http://192.168.1.20:7000
 resona engines add home http://localhost:7000 --ssh user@myserver.example.com
 
 # With Docker Compose auto-start
-resona engines add local http://localhost:7000 --compose-dir ~/resona --private
-```
-
-### Add a cloud entry
-
-```bash
-resona engines add deepgram --type cloud --provider deepgram
-resona engines add deepgram-nova --type cloud --provider deepgram --model nova-2
+resona engines add local http://localhost:7000 --compose-dir ~/resona
 ```
 
 ### Test reachability

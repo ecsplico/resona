@@ -60,6 +60,13 @@ client.delete_job(ref.job_id)   # delete input and result now
 
 `get_result()` raises `JobNotReady` (409) before completion and `ResultExpired` (410) after the 24-hour result retention.
 
+For content already in memory (the MCP server's `upload_content`), upload and submit in two steps; the upload is consumed by exactly one job:
+
+```python
+up = client.upload_bytes("memo.wav", data)            # POST /v1/uploads → Upload(upload_id, sha256, size)
+ref = client.submit_upload(up.upload_id, kind="audio", execution_profile="cpu-private")
+```
+
 ## v1 Audio routes
 
 The v1 routes call engines synchronously through the gateway and return results immediately — no job queue involved.

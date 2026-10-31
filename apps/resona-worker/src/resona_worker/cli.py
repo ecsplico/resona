@@ -1,14 +1,20 @@
-"""``resona-worker`` command line: run one outbound pull worker against a hub."""
+"""``resona-worker`` command line: prepare, run and (on macOS) install one outbound pull worker."""
 
 from __future__ import annotations
 
+import json
+import logging
 import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
+from resona_job_core import OrganizationSettings, default_settings
 
-from resona_worker.config import ConfigError, WorkerConfig, load_capabilities, load_token
+from resona_worker.config import ConfigError, PreparedCapability, WorkerConfig, load_capabilities, load_manifest, load_token
+from resona_worker.launchd import DEFAULT_LABEL, InstallError, install as install_service, uninstall as uninstall_service
+from resona_worker.prepare import DEFAULT_TIMEOUT_SECONDS, PrepareError, prepare as prepare_profile, write_manifest
 from resona_worker.supervisor import Supervisor
 
 app = typer.Typer(help="Outbound-only pull worker for the Resona hub.", no_args_is_help=True)
@@ -26,7 +32,7 @@ def run(
     hub: Annotated[str, typer.Option("--hub", help="Hub base URL (https, or loopback http).")],
     token_file: Annotated[Path, typer.Option("--token-file", help="Worker credential, mode 0600.")],
     capabilities_file: Annotated[
-        Path, typer.Option("--capabilities-file", help="JSON list of prepared Candidate tuples.")
+        Path, typer.Option("--capabilities-file", help="Manifest written by `resona-worker prepare`.")
     ],
     work_dir: Annotated[Path, typer.Option("--work-dir", help="Disposable per-job scratch directory.")],
     once: Annotated[bool, typer.Option("--once", help="Serve one claim cycle, then exit.")] = False,
@@ -42,8 +48,117 @@ def run(
     except (ConfigError, OSError) as exc:
         typer.echo(f"configuration error: {exc}", err=True)
         raise typer.Exit(_EXIT_CONFIG) from None
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     code = Supervisor(config).run(once=once)
     sys.exit(code)
+
+
+def _load_settings(path: Path | None) -> OrganizationSettings:
+    if path is None:
+        return default_settings()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"cannot read settings file: {exc.__class__.__name__}") from None
+    # Accept the bare settings object or the `GET /v1/settings` envelope.
+    if isinstance(data, dict) and "settings" in data and "revision" in data:
+        data = data["settings"]
+    try:
+        return OrganizationSettings.model_validate(data)
+    except ValidationError:
+        raise ConfigError("settings file is not a valid organization settings document") from None
+
+
+def _describe(item: PreparedCapability) -> str:
+    c = item.candidate
+    stages = ", ".join(f"{stage}={device}" for stage, device in item.stage_accelerators.items())
+    memory = f"peak RSS {item.peak_rss_bytes / 2**20:.0f} MiB"
+    if item.peak_accelerator_bytes is not None:
+        memory += f", peak {c.accelerator} {item.peak_accelerator_bytes / 2**20:.0f} MiB"
+    revisions = ", ".join(f"{w.repo}@{w.revision[:12]}" for w in item.weights) or "no hub weights"
+    return f"ok {item.kind}: {c.engine} {c.model} [{c.accelerator}] {item.seconds:.1f}s, {memory}; {stages}; {revisions}"
+
+
+@app.command()
+def prepare(
+    profile: Annotated[str, typer.Option("--profile", help="Execution profile to prepare, e.g. mac-private.")],
+    out: Annotated[Path, typer.Option("--out", help="Capabilities manifest to write.")],
+    settings_file: Annotated[
+        Path | None,
+        typer.Option("--settings-file", help="Organization settings JSON (hub `GET /v1/settings`); default: seeded settings."),
+    ] = None,
+    timeout: Annotated[float, typer.Option("--timeout", help="Seconds per synthetic run.")] = DEFAULT_TIMEOUT_SECONDS,
+) -> None:
+    """Verify weights offline and run synthetic jobs for every candidate of a profile.
+
+    Writes the manifest only when every candidate passes; a failed prepare keeps the previous file.
+    """
+    try:
+        settings = _load_settings(settings_file)
+        manifest = prepare_profile(
+            settings, profile, timeout=timeout, on_tested=lambda item: typer.echo(_describe(item), err=True)
+        )
+    except (ConfigError, PrepareError) as exc:
+        typer.echo(f"prepare failed: {exc}", err=True)
+        raise typer.Exit(1) from None
+    write_manifest(manifest, out)
+    typer.echo(f"prepared {len(manifest.tested)} capability tuple(s) for {profile} -> {out}", err=True)
+
+
+@app.command()
+def capabilities(
+    capabilities_file: Annotated[Path, typer.Argument(help="Manifest written by `resona-worker prepare`.")],
+) -> None:
+    """Print the tested tuples as the JSON list `resona-admin worker approve --capabilities-file` expects."""
+    try:
+        manifest = load_manifest(capabilities_file)
+    except ConfigError as exc:
+        typer.echo(f"configuration error: {exc}", err=True)
+        raise typer.Exit(_EXIT_CONFIG) from None
+    typer.echo(json.dumps([c.model_dump(mode="json") for c in manifest.candidates()], indent=2))
+
+
+@app.command()
+def install(
+    profile: Annotated[str, typer.Option("--profile", help="Profile the capabilities file was prepared for.")],
+    hub: Annotated[str, typer.Option("--hub", help="Hub base URL (https, or loopback http).")],
+    token_file: Annotated[Path, typer.Option("--token-file", help="Worker credential, mode 0600.")],
+    capabilities_file: Annotated[
+        Path, typer.Option("--capabilities-file", help="Manifest written by `resona-worker prepare`.")
+    ],
+    label: Annotated[str, typer.Option("--label", help="launchd label.")] = DEFAULT_LABEL,
+    work_dir: Annotated[
+        Path | None, typer.Option("--work-dir", help="Scratch directory (default ~/Library/Caches/resona-worker/<label>).")
+    ] = None,
+) -> None:
+    """Install and start the worker as a launchd user agent (macOS)."""
+    try:
+        path = install_service(
+            profile=profile,
+            hub=hub,
+            token_file=token_file,
+            capabilities_file=capabilities_file,
+            label=label,
+            work_dir=work_dir,
+        )
+    except InstallError as exc:
+        typer.echo(f"install failed: {exc}", err=True)
+        raise typer.Exit(_EXIT_CONFIG) from None
+    typer.echo(f"installed {label} ({path})", err=True)
+
+
+@app.command()
+def uninstall(
+    label: Annotated[str, typer.Option("--label", help="launchd label.")] = DEFAULT_LABEL,
+) -> None:
+    """Stop the launchd user agent and remove its plist."""
+    try:
+        removed = uninstall_service(label=label)
+    except InstallError as exc:
+        typer.echo(f"uninstall failed: {exc}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(f"{'removed' if removed else 'not installed:'} {label}", err=True)
 
 
 def main() -> None:

@@ -59,7 +59,7 @@ def test_run_propagates_policy_denied_raised_inside_a_step():
 def test_private_profile_with_cloud_llm_step_is_denied_before_any_call(fake_litellm):
     profile = _profile({"type": "llm", "name": "polish", "prompt": "fix", "model": "gpt-4o-mini"})
     with pytest.raises(PolicyDenied) as exc:
-        build_pipeline(profile, policy=local_policy(profile, private=True))
+        build_pipeline(profile, policy=local_policy(profile, base=ExecutionPolicy(private=True)))
     assert exc.value.code == "policy_denied"
     assert exc.value.stage == "polish"
     assert fake_litellm.calls == []
@@ -67,7 +67,7 @@ def test_private_profile_with_cloud_llm_step_is_denied_before_any_call(fake_lite
 
 def test_non_private_local_policy_allows_cloud_llm_step(fake_litellm):
     profile = _profile({"type": "llm", "name": "polish", "prompt": "fix", "model": "gpt-4o-mini"})
-    pipe = build_pipeline(profile, policy=local_policy(profile, private=False))
+    pipe = build_pipeline(profile, policy=local_policy(profile, base=ExecutionPolicy(private=False, cloud_enabled=True)))
     pipe.run("raw")
     assert fake_litellm.calls[0]["model"] == "gpt-4o-mini"
     assert fake_litellm.calls[0]["api_base"] is None
@@ -75,7 +75,7 @@ def test_non_private_local_policy_allows_cloud_llm_step(fake_litellm):
 
 def test_loopback_legacy_ollama_step_runs_under_local_policy(fake_litellm):
     profile = _profile({"type": "extract", "name": "f", "prompt": "x", "model": "ollama/llama3"})
-    result = build_pipeline(profile, policy=local_policy(profile, private=True)).run("raw")
+    result = build_pipeline(profile, policy=local_policy(profile, base=ExecutionPolicy(private=True))).run("raw")
     assert result.data == {"f": {"k": 1}}
     assert fake_litellm.calls[0]["model"] == "ollama/llama3"
     assert fake_litellm.calls[0]["api_base"] == "http://localhost:11434"
@@ -132,7 +132,7 @@ def test_legacy_step_without_any_model_is_denied(monkeypatch):
     monkeypatch.delenv("RESONA_LLM_MODEL", raising=False)
     profile = _profile({"type": "llm", "name": "polish", "prompt": "fix"})
     with pytest.raises(PolicyDenied, match="no model configured"):
-        local_policy(profile, private=True)
+        local_policy(profile, base=ExecutionPolicy(private=True))
 
 
 def test_build_pipeline_replacements_and_extract(fake_litellm):
@@ -140,13 +140,20 @@ def test_build_pipeline_replacements_and_extract(fake_litellm):
         {"type": "replacements", "rules": [{"pattern": r"\bx\b", "replacement": "y"}]},
         {"type": "extract", "name": "f", "prompt": "extract", "model": "ollama/llama3"},
     )
-    result = build_pipeline(profile, policy=local_policy(profile, private=True)).run("x x")
+    result = build_pipeline(profile, policy=local_policy(profile, base=ExecutionPolicy(private=True))).run("x x")
     assert result.text == "y y"
     assert result.data == {"f": {"k": 1}}
 
 
 def test_build_pipeline_replacements_from_bundled_source():
     profile = _profile({"type": "replacements", "source": "default_replacements.json"})
-    pipe = build_pipeline(profile, policy=local_policy(profile, private=True))
+    pipe = build_pipeline(profile, policy=local_policy(profile, base=ExecutionPolicy(private=True)))
     # 'Komma' is a default rule; pipeline must resolve the bundled source file.
     assert "," in pipe.run("a Komma b").text
+
+
+def test_local_policy_keeps_org_cloud_disabled_even_when_not_private(fake_litellm):
+    profile = _profile({"type": "llm", "name": "polish", "prompt": "fix", "model": "gpt-4o-mini"})
+    with pytest.raises(PolicyDenied, match="cloud processing is disabled"):
+        build_pipeline(profile, policy=local_policy(profile, base=ExecutionPolicy(private=False)))
+    assert fake_litellm.calls == []

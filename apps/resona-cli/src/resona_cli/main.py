@@ -5,20 +5,24 @@ from typing import Optional
 
 import typer
 
+from .doc import doc_files
 from .engines import engines_app
+from .jobs_cli import jobs_app
 from .profiles import profiles_app
+from .settings_cli import settings_app
 from .watch import watch_directory
 from .transcribe import transcribe_files
-from .submit import submit_files
 from .speech import speak
 
 app = typer.Typer(help="resona CLI")
 
 app.add_typer(engines_app, name="engines", help="Manage engine server addresses.")
 app.add_typer(profiles_app, name="profiles", help="Manage postprocessing profiles.")
+app.add_typer(jobs_app, name="jobs", help="Inspect and manage hub jobs.")
+app.add_typer(settings_app, name="settings", help="Organization settings stored on the hub.")
 app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
-app.command("submit")(submit_files)
+app.command("doc")(doc_files)
 app.command("speech")(speak)
 
 

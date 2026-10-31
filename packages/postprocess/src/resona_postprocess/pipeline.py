@@ -100,20 +100,22 @@ def _resolve_endpoint(step: dict, policy: ExecutionPolicy) -> Endpoint:
     return registered
 
 
-def local_policy(profile: Profile, *, private: bool) -> ExecutionPolicy:
-    """Policy for explicit local CLI mode: the legacy-derived endpoints of this profile.
+def local_policy(profile: Profile, *, base: ExecutionPolicy) -> ExecutionPolicy:
+    """Policy for explicit local CLI mode: ``base`` plus this profile's legacy-derived endpoints.
 
-    The hub never uses this; it resolves endpoints from its stored registry.
+    ``base`` comes from the organization's (cached) settings, so privacy and
+    ``cloud_enabled`` stay the organization's; a profile file can only add its own
+    endpoints, which ``check_policy`` still gates. The hub never uses this.
     """
-    endpoints: dict[str, Endpoint] = {}
+    endpoints: dict[str, Endpoint] = {ep.id: ep for ep in base.endpoints}
     for step in profile.steps:
         if step.get("type") in _LLM_STEP_TYPES and "endpoint" not in step:
             ep = legacy_step_endpoint(step)
             endpoints.setdefault(ep.id, ep)
     return ExecutionPolicy(
-        private=private,
-        cloud_enabled=not private,
-        approved_endpoint_ids=tuple(endpoints),
+        private=base.private,
+        cloud_enabled=base.cloud_enabled,
+        approved_endpoint_ids=tuple(dict.fromkeys((*base.approved_endpoint_ids, *endpoints))),
         endpoints=tuple(endpoints.values()),
     )
 

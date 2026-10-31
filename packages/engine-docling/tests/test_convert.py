@@ -50,7 +50,10 @@ def test_digital_pdf_without_ocr_keeps_exact_german_text_per_page() -> None:
     assert "Dieses Dokument" in result.pages[0].text
     assert "Übergewicht" in result.pages[1].text
     assert result.kind == "document"
-    assert [stage.stage for stage in result.provenance.stages] == ["layout"]
+    assert [(stage.stage, stage.engine) for stage in result.provenance.stages] == [
+        ("layout", "docling-layout"),
+        ("layout", "docling-tableformer"),
+    ]
 
 
 @DARWIN_ONLY
@@ -66,6 +69,14 @@ def test_scanned_pdf_recovers_german_words_with_ocrmac(ocr: str) -> None:
     ocr_stage = next(stage for stage in result.provenance.stages if stage.stage == "ocr")
     assert (ocr_stage.engine, ocr_stage.accelerator) == ("ocrmac", "metal")
     assert [page.number for page in result.pages] == [1, 2]
+
+
+@DARWIN_ONLY
+def test_metal_layout_records_tableformer_on_cpu() -> None:
+    result = convert_document(FIXTURES / "table.pdf", options=DocumentOptions(ocr="off"), accelerator="metal")
+
+    devices = {stage.engine: stage.accelerator for stage in result.provenance.stages}
+    assert devices == {"docling-layout": "metal", "docling-tableformer": "cpu"}
 
 
 def test_scanned_pdf_recovers_german_words_with_rapidocr_on_cpu() -> None:

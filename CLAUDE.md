@@ -15,6 +15,7 @@ resona/
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
+│   ├── resona-mcp/         ← resona-mcp: MCP server (stdio + hosted Streamable HTTP /mcp) over the hub job API
 │   └── web/                ← browser UI (PWA dictaphone, live page) — plain HTML/JS
 └── packages/
     ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
@@ -128,11 +129,22 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 
 ### resona-worker
 - `hub.py` — `HubClient`: worker-side REST client for `/v1/workers/*`, bearer auth, error mapping (`stale_lease`, `policy_denied`, `protocol_incompatible`) and bounded retries. Wire models `HeartbeatReply`, `ClaimedJob`, `JobLease` live here.
-- `supervisor.py` — `Supervisor`: claim → download input (SHA-256 checked) → run execution subprocess → postprocess stages, each gated by a hub policy check → upload result or bounded failure. `LeaseKeeper` renews the lease for the whole job; lease loss or cancellation kills the subprocess group and uploads nothing. Withdrawn candidates are excluded from heartbeat and claims.
-- `execute.py` — subprocess entry point (`python -m resona_worker.execute`): ASR via `resona.engines` entry points (per-job process, no registry singleton) or Docling documents. Exit codes map to failure codes. `subprocess_env()` strips cloud API keys and enables offline HF mode for private jobs.
-- `config.py` — token file (0600 regular file, no symlinks), hub URL (HTTPS, or loopback HTTP), capability file.
-- `cli.py` — `resona-worker run --hub <url> --token-file <path> --capabilities <file> [--once]`.
-- The worker holds no ML dependencies in the base install; extras `audio-cpu`, `apple`, `documents` add the engine packages.
+- `supervisor.py` — `Supervisor`: claim → download input (SHA-256 checked; document inputs renamed `input.pdf|.png|.jpg|.tif` by magic bytes) → run execution subprocess → postprocess stages, each gated by a hub policy check → upload result or bounded failure. `LeaseKeeper` renews the lease for the whole job; lease loss or cancellation kills the subprocess group and uploads nothing. Heartbeat reports and claims offer only tested tuples (manifest) ∩ hub-approved tuples (heartbeat reply) minus withdrawn ones. OOM (exit code 5, killed by SIGKILL, or an OOM marker such as `[metal::malloc]`/"out of memory" in the engine's stderr tail) fails the attempt retryably and withdraws that tuple until the worker restarts; the hub also drops it from `approved_capabilities`, so re-approval is needed after re-prepare.
+- `execute.py` — subprocess entry point (`python -m resona_worker.execute --snapshot --input --out [--metrics]`): ASR via `resona.engines` entry points (per-job process, no registry singleton) or Docling documents. HF-repo models load only from the local cache snapshot (offline); provenance `model_revision` = snapshot commit hash. Exit codes map to failure codes. `subprocess_env(private=True)` is an allowlist (system/locale basics, model-cache paths, engine tuning prefixes; credential-shaped names always dropped) plus forced `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`/`HF_HUB_DISABLE_TELEMETRY`/`DO_NOT_TRACK`; non-private jobs inherit the env minus `RESONA_API_KEY`.
+- `weights.py` — `local_snapshot(repo, revision)`: offline HF cache lookup, never downloads.
+- `prepare.py` — `prepare(settings, profile) -> CapabilitiesManifest`: per candidate, verify weights offline, run the real executor on packaged fixtures (`fixtures/de_short.wav`, `fixtures/scan_de.pdf`) in the private env, check expected German words and that the primary stage (`asr`, or `layout` for documents) ran on the candidate's accelerator, record seconds, peak RSS, peak Metal bytes and per-stage devices (Docling tableformer runs on CPU by design under Metal). Any failure aborts and leaves the previous manifest untouched.
+- `config.py` — token file (0600 regular file, no symlinks), hub URL (HTTPS, or loopback HTTP), capabilities manifest (`CapabilitiesManifest`, `schema_version` 1; a bare JSON list is rejected — run `prepare`).
+- `launchd.py` — macOS user agent: `install` writes `~/Library/LaunchAgents/<label>.plist` (token *path* only, allowlisted env, umask 077, logs `~/Library/Logs/resona-worker/`) and `launchctl bootstrap gui/<uid>`; `uninstall` boots out and deletes it.
+- `cli.py` — `resona-worker prepare --profile <name> --out caps.json [--settings-file]`, `capabilities caps.json` (approve list for `resona-admin worker approve`), `run --hub --token-file --capabilities-file --work-dir [--once]`, `install --profile --hub --token-file --capabilities-file [--label]`, `uninstall [--label]`.
+- The worker holds no ML dependencies in the base install; extras `audio-cpu`, `apple`, `documents` add the engine packages. It opens no listening socket. Mac setup: `docs/server/mac-worker.md`.
+
+### resona-mcp (lives in `apps/resona-mcp/`)
+- `server.py` — `build_server(client_for, InputPolicy) -> MCPServer` (SDK `mcp==2.3.0`, `mcp.server.mcpserver`). Tools: `upload_content` (8 MiB decoded cap, checked before any hub call), `transcribe_audio`/`convert_document` (exactly one of `upload_id`/`path`; return `{job_id, status, private}` immediately; `private=True` default), `get_job`, `get_result(job_id, offset, limit≤20000)` (Markdown chunk + `next_offset`/`total_chars`; chunks concatenate to REST `markdown`), `cancel_job`, `list_engines`, `get_settings`. No settings/profile mutation, credential or enrollment tools — `TOOL_NAMES` is the full surface. Hub errors become tool errors carrying the hub code.
+- `paths.py` — `resolve_under_root(raw, root)`: stdio-only `path` input; rejects URLs, `..`/symlink escapes and non-regular files.
+- `stdio.py` — `create_stdio_server()`: `RESONA_API_URL` + `RESONA_API_KEY` required; `RESONA_MCP_ROOT` enables path input (no default).
+- `http.py` — `create_app()`: Streamable HTTP at `/mcp`. `BearerAuth` requires `Authorization: Bearer` on every request, verifies it against the hub (`HubTokenVerifier`, `GET /v1/settings`, 30 s positive cache) and binds each MCP session id to the token hash (other token → 404). Tool calls build a per-request `ResonaClient` with the caller's token; the server holds no hub key. Remote input policy rejects `path`. Host/Origin allowlists via SDK `TransportSecuritySettings` (`RESONA_MCP_ALLOWED_HOSTS`/`RESONA_MCP_ALLOWED_ORIGINS`).
+- `cli.py` — `resona-mcp stdio` | `resona-mcp http --host --port`; logs to stderr only.
+- Uses `ResonaClient.upload_bytes` / `submit_upload` for in-memory uploads. Docs: `docs/guide/mcp.md`.
 
 ### resona-cloud-stt
 - `types.py` — `TranscriptionResult` TypedDict: `{text, language, segments}`
@@ -183,14 +195,13 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `worker_routes.py` / `broker.py` — pull-worker protocol (`/v1/workers/heartbeat|claim`, lease-fenced `/v1/workers/jobs/{id}/input|heartbeat|policy|result|fail`); broker holds the DB/filesystem logic in short `BEGIN IMMEDIATE` transactions
 - `maintenance.py` — `run_once()` / `maintenance_loop()`: lease expiry, upload/result/metadata retention, staging and orphan sweeps
 - `storage.py` — generated-name layout under `<DATA_PATH>/organizations/<storage_id>/` with staged atomic writes
-- `deps.py` — `get_db_session`, `validate_audio_file`
+- `deps.py` — `get_db_session`
 - `profiles_routes.py` — org-scoped profile revisions: `GET /profiles`, `GET /profiles/{name}` (client+admin), `PUT /profiles/{name}` and `DELETE /profiles/{name}` (org_admin). Stored bodies go through `Profile.from_dict`; the bundled `default` stays readable. Hosted jobs accept profile names only
 - `settings_routes.py` — `GET /v1/settings` returns `{organization_id, revision, settings}` with `ETag`; `PUT /v1/settings` (org_admin) requires `If-Match` (428 missing, 409 stale) and creates a new revision
-- `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`; accepts optional `profile` field. `/v1/audio/speech` dispatches to **local** TTS engines (`resona-tts-local`: kokoro/chatterbox/qwen…) or **cloud** providers — pick via `engine`; `voice`/`language` forwarded
+- `audio_routes.py` — OpenAI-compatible audio routes: `GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`. `/v1/audio/transcriptions` is an adapter onto the job path: it streams the multipart `file` into an upload and admits a normal audio job through `jobs_routes._admit` (same policy, execution profile and stored-profile rules; optional `Idempotency-Key`, else a generated `sync-<uuid>` key; `model=whisper-1` means the profile default, any other `model`/`engine` must be an approved candidate → 422 `unapproved_override`), then waits up to `RESONA_SYNC_WAIT_SECONDS` (default 60) for a worker and answers `json`/`text`/`verbose_json` from the `JobResult`. On timeout: 504 `{error:'timeout', message, job_id}` with `Location: /v1/jobs/<id>` while the job continues; a failed job maps its error code (403 `policy_denied`, 502 otherwise). The hub never runs STT itself. `/v1/audio/speech` dispatches to **local** TTS engines (`resona-tts-local`: kokoro/chatterbox/qwen…) or **cloud** providers — pick via `engine`; `voice`/`language` forwarded
 - `streaming_routes.py` — Deepgram-compatible live streaming: `WS /v1/listen`. Auth via org credential: `Authorization: Token <token>` (also Bearer/X-API-Key/`?token=`/`?api_key=`), resolved to a `Principal`; tenant headers are never read. Query params `model`/`language`/`encoding`(linear16)/`sample_rate`/`interim_results` + Resona `engine`/`profile`. Cloud bridges are denied for private sessions and for orgs without `cloud_enabled`. Resolves the engine, then dispatches: a **local** engine-server → `_run_local_bridge`/`_bridge` (proxy to its `/ws/live`); a **cloud** provider with a realtime API (Deepgram, ElevenLabs) → `_run_cloud_bridge`/`_bridge_cloud` (opens `resona_cloud_stt.streaming.open_stream`, bridges binary PCM ↔ provider session). Both emit Deepgram `Results`/`Metadata`. Cloud providers without streaming (OpenAI) are rejected. `_CLOUD_FINAL_DRAIN_SECONDS` bounds the post-stop drain for providers that don't close on commit (ElevenLabs)
-- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, lists local TTS engines (`_local_tts_engines`, `kind="local-tts"`, private, available when `resona-tts-local` is installed), checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_stt(engine, audio, ...)`, `run_tts(engine, text, ...)` (dispatches `local-tts` → `resona_tts_local.get_engine().synthesize`, else cloud provider), `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
+- `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, lists local TTS engines (`_local_tts_engines`, `kind="local-tts"`, private, available when `resona-tts-local` is installed), checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `run_tts(engine, text, ...)` (dispatches `local-tts` → `resona_tts_local.get_engine().synthesize`, else cloud provider), `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
 - `privacy.py` — `admit(...)` resolves and policy-checks the synchronous audio chain; `load_org_profile`, `is_profile_name`
-- `engine_client.py` — `EngineClient.transcribe()`: POSTs to engine (no replacements sent)
 - `settings_store.py` — `current_settings(session, org) -> (revision, OrganizationSettings)`
 - `db/models.py` — `Job` SQLModel table (non-null `organization_id`, `kind`, `private`, `settings_revision`) plus `Organization`, `Credential` (SHA-256 hash only), `Worker`, `SettingsRevision`, `ProfileRevision`
 - `db/engine.py` — SQLite engine (WAL, `foreign_keys=ON`, `busy_timeout=5000`); `db/schema.py` runs ordered numbered migrations under `BEGIN EXCLUSIVE` with a pre-upgrade backup (`<db>.pre-v<N>.bak`); `migrate(engine)` is called at startup. Legacy job rows require `RESONA_BOOTSTRAP_ORGANIZATION_ID`
@@ -199,20 +210,26 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `admin.py` — hub-local `resona-admin`: `organization create`, `credential issue|revoke`, `worker enroll|approve|revoke`. Tokens are shown once; only their hash is stored
 
 ### resona-client
-- `client.py` — `ResonaClient`: the hub's canonical v1 job API. Reads `RESONA_API_URL` / `RESONA_API_KEY` and sends `Authorization: Bearer <key>` (the hub derives the organization from it). `upload(path) -> Upload`; `submit_job(path, *, kind='audio'|'document', execution_profile, language, engine, model, profile, options: AudioOptions|DocumentOptions, private=True, idempotency_key, provenance) -> JobRef` uploads then `POST /v1/jobs` with an `Idempotency-Key` (uuid4 unless given), reusing the same key on bounded retries after transport errors / 502–504. `get_job`/`cancel_job -> JobView`, `list_jobs(cursor, limit) -> JobPage`, `wait_for_job(id, timeout, poll)` (raises `JobTimeout`; never falls back locally), `get_result -> resona_job_core.JobResult` (409 → `JobNotReady`, 410 → `ResultExpired`), `delete_job`, `get_settings`/`put_settings(settings, if_match=etag) -> SettingsDoc` (409 → `RevisionConflict`). Error bodies `{error, message}` → `ResonaAPIError(status, code, message)`; 403 `policy_denied` → `PolicyDeniedError`. Also `create_transcription` (`/v1/audio/transcriptions`, form field `private` default true), `create_speech`, `list_engines` and profile methods on `/profiles/{name}` (`list_profiles`, `get_profile`, `put_profile`, `delete_profile`). Depends on `resona-job-core` (pydantic only), no ML stack.
-- `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_profile`, `default_private`; `EngineEntry`: per-entry `type` (`resona-api` or `cloud`), `provider`, `model`, `options`, `private`; `resolve_engine(private_only=False)` — walks priority-ordered entries, optionally skipping non-private ones
+- `client.py` — `ResonaClient`: the hub's canonical v1 job API. Reads `RESONA_API_URL` / `RESONA_API_KEY` and sends `Authorization: Bearer <key>` (the hub derives the organization from it). `upload(path) -> Upload`; `submit_job(path, *, kind='audio'|'document', execution_profile, language, engine, model, profile, options: AudioOptions|DocumentOptions, private=True, idempotency_key, provenance) -> JobRef` uploads then `POST /v1/jobs` with an `Idempotency-Key` (uuid4 unless given), reusing the same key on bounded retries after transport errors / 502–504. `get_job`/`cancel_job -> JobView`, `list_jobs(cursor, limit) -> JobPage`, `wait_for_job(id, timeout, poll)` (raises `JobTimeout`; never falls back locally), `get_result -> resona_job_core.JobResult` (409 → `JobNotReady`, 410 → `ResultExpired`), `delete_job`, `get_settings`/`put_settings(settings, if_match=etag) -> SettingsDoc` (409 → `RevisionConflict`). Error bodies `{error, message}` → `ResonaAPIError(status, code, message)`; 403 `policy_denied` → `PolicyDeniedError`. Also `create_transcription(audio_path, *, model, language, response_format, engine, execution_profile, private=True, profile)` (`/v1/audio/transcriptions`; 504 → `SyncWaitTimeout` carrying `job_id`, the job keeps running), `create_speech`, `list_engines` and profile methods on `/profiles/{name}` (`list_profiles`, `get_profile`, `put_profile`, `delete_profile`). Depends on `resona-job-core` (pydantic only), no ML stack.
+- `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_profile`; `EngineEntry`: one Resona hub (resona-api) — `name`, `api_url`, `api_key`, `compose_dir`, `ssh_host`, `ssh_remote_port`; legacy `type: "cloud"` entries are dropped on load with a warning and obsolete keys (`private`, `provider`, …) ignored; `resolve_engine()` — probes priority-ordered hub entries, auto-starting unreachable ones
 
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
-- `watch.py` — `watch` subcommand: polls directory, calls `client.submit_job()`; accepts `--profile`
-- `transcribe.py` — `transcribe` subcommand: accepts files, glob patterns, or directories; `--engine NAME` unified selector (built-in local engine, config.json server entry, or cloud entry); `--private`/`--no-private` to require a private engine; `--profile NAME` or inline JSON profile; submits to resona-api, calls cloud provider, or falls back to a local engine
+- `hub.py` — hub selection and errors shared by hub commands: `connect_hub()` (`RESONA_API_URL`/`RESONA_API_KEY` or a `resona-api` entry in `~/.resona/config.json`; no hub → exit 1, never local), `hub_identity()`, `fail()`, exit codes (`EXIT_ERROR=1`, `EXIT_POLICY_DENIED=2`), `check_privacy_flags(private, allow_cloud)` (`--private`/`--allow-cloud` mutually exclusive; default private), `policy_summary(job)` (one stderr line: job, private, execution profile, candidate, status)
+- `media.py` — shared engine of `transcribe`/`doc`: `MediaRequest`, `run_media(req)`. Hub mode uploads each file as an audio/document job (`submit_job`), prints the policy summary to stderr, waits (`--timeout`; a timeout leaves the job running and exits 1) or with `--no-wait` prints job IDs; `--json` prints one parseable JSON report on stdout. Policy denial exits 2, hub 422 `unapproved_override` is reported as such; nothing falls back to local or cloud processing
+- `transcribe.py` / `doc.py` — `resona transcribe <files|globs|dirs>` (audio; `--translate`, `--word-timestamps`) and `resona doc` (PDF/PNG/JPEG/TIFF; `DocumentOptions` flags `--ocr auto|force|off`, `--ocr-engine`, `--languages de,en`, `--pages a-b`). Shared flags: `--execution-profile` (approved candidates) separate from postprocess `--profile` (stored profile name; file/inline JSON only with `--local`), `--engine/--model` overrides (hub accepts approved candidates only), `--language`, `--output-dir`, `--force`, `--json`, `--no-wait`, `--timeout`, `--private`/`--allow-cloud`, `--local`
+- `outputs.py` — `output_paths(source, output_dir)` → `<stem>.md` + `<stem>.result.json`; `write_result(...)` writes both via temp file + link/rename, refusing to replace existing files without `force` (`OutputExists`)
+- `jobs_cli.py` — `resona jobs get|wait|result|cancel|delete <id>` and `jobs list [--cursor --limit --json]`; `wait` exits 0/1/2 by outcome, `result` prints Markdown (`--json` the JobResult) or writes files with `--output-dir [--stem] [--force]`
+- `settings_cli.py` / `settings_cache.py` — `resona settings get|pull|set`: revisioned non-secret settings cached per `(hub URL, organization_id)` in `~/.resona/settings-cache/` (`credential` = SHA-256 prefix of the token, never the token; `stale` flag). `set --file <json>` or `key=value` validates against `OrganizationSettings`, sends `If-Match` from the cached (else freshly fetched) ETag; 409 → exit 1 with a pull hint; changes apply to new jobs only
+- `local_run.py` — explicit `--local`: loads cached settings for the configured hub+credential (marks them `stale`) or built-in private defaults, resolves the execution profile's approved candidates, runs `check_policy` (+ `build_pipeline` with `local_policy(profile, base=org policy)`) before any processing, then runs the candidate in the worker's execution subprocess (`python -m resona_worker.execute`, private env: offline caches, no credentials). Cloud only when allowed by the cached org settings
+- `watch.py` — `watch` subcommand: polls a directory and runs each new audio file as a private hub job (or `--local`), writing `<stem>.md` + `.result.json`; existing outputs are skipped, policy denial stops with exit 2
 - `speech.py` — `speech` subcommand: synthesise TTS. Tries the gateway (`client.create_speech`); on `HTTPStatusError` (reachable gateway) surfaces the error, but on no-server / `ConnectError` / `TimeoutException` falls back to a local in-process engine via `resona_tts_local.get_engine` — engine = `--engine` if it's a registered local-tts engine, else `recommended_offline_engine()` (Piper, torch-free). `--voice` defaults to `None` (engine default); `--language/-l` (default `de`) drives local voice selection. Offline output is always WAV. `_emit` handles play/stdout/file
-- `engine.py` — `Engine` Protocol + `RemoteEngine` (HTTP) + `InProcessEngine` (direct asr-core call) + `CloudEngine` (wraps an `EngineEntry` of type `cloud`; calls `resona_cloud_stt` provider directly); used by transcribe.
-- `local_engine.py` — `probe_local_engine(port=DEFAULT_LOCAL_ENGINE_PORT)` checks `RESONA_LOCAL_ENGINE_PORT` (default `7720`) for an already-running resona-engine-server via `/health`. `LocalEngine`: HTTP transcription client for a resona-engine-server — on `__enter__`, attaches to an already-running one if `probe_local_engine()` finds it (nothing to spawn or tear down), else spawns `uv run resona-engine-<name>` as a subprocess for the context's lifetime. Used as a fallback for `transcribe`/`watch` when no resona-api server is reachable, and by `live_ui.py` to avoid loading an in-process model when a local engine is already running.
-- `engines.py` — `resona engines` CRUD subcommands; `engines add --type cloud --provider <name>` registers cloud entries
+- `engine.py` — `Engine` Protocol + `InProcessEngine` (direct asr-core call) for the `live` TUI
+- `local_engine.py` — `probe_local_engine(port=DEFAULT_LOCAL_ENGINE_PORT)` checks `RESONA_LOCAL_ENGINE_PORT` (default `7720`) for an already-running resona-engine-server via `/health`. `LocalEngine`: HTTP transcription client for a resona-engine-server — on `__enter__`, attaches to an already-running one if `probe_local_engine()` finds it, else spawns `uv run resona-engine-<name>` for the context's lifetime. Used by `live_ui.py` to avoid loading an in-process model when a local engine is already running.
+- `engines.py` — `resona engines` subcommands for Resona hub entries (`list`, `add <name> <api_url>`, `remove`, `test`, `benchmark-select`, `status` = hub's live engine catalogue)
 - `profiles.py` — `resona profiles` subcommand: `list`, `show`, `push`, `pull`, `delete` for server-side profile management
 - `micrec.py` — `RecordingSession` + `MicRecApp` Textual TUI base; `rec` subcommand
-- `markdown_output.py` — `write_markdown(path, body, meta)` / `read_markdown(path) -> (body, meta)` / `strip_frontmatter(text) -> (body, meta)`: hand-rolled YAML-frontmatter round-trip for `live_ui.py`'s autosaved documents
+- `markdown_output.py` — `render_markdown(text, meta)` / `write_markdown(path, body, meta)` / `read_markdown(path) -> (body, meta)` / `strip_frontmatter(text) -> (body, meta)`: hand-rolled YAML-frontmatter round-trip (booleans/numbers plain, strings quoted) for job outputs and `live_ui.py`'s autosaved documents
 - `dictate_anchors.py` — pure, Textual-independent anchor-tracking: `Location`, `adjust_location()`, `AnchorTracker` (`register`/`apply_edit`/`get`/`pop`). Keeps a dictation segment's insertion point valid as the surrounding document is edited (by the user, or by another segment resolving) while its transcription is in flight — `start` is inclusive/right-gravity, `end` is exclusive/left-gravity so a span never absorbs adjacent typed text or another segment's marker
 - `dictate.py` — shared push-to-talk/live-dictation primitives used by `live_ui.py`: `Segment` (`kind: "ptt"|"live"`), `DictationTextArea` (a `TextArea` that reports every edit — keystrokes and programmatic — to an `AnchorTracker`, and via `internal_edit()`/`watch_selection()` distinguishes genuine user activity from our own bookkeeping edits, so starting/resolving one segment never wrongly disturbs another), `resolve_anchor()` (place text at a span or fall back to the live cursor; optionally leaves a fresh marker behind for a live segment's next delta), `TranscriptionWorker` (single background thread serializing all access to the shared `get_transcriber()` model across every open document and both dictation modes), `run_serialized()` (blocking helper for local live-mode's per-tick model calls)
 - `live_ui.py` — `LiveApp`: the primary TUI, `live` subcommand. Multiple open documents as tabs (`DocumentPane`, created via `ctrl+n` or the startup filename prompt when launched with no file argument — `NewFileModal`). Each document defaults to push-to-talk (`F8` records/stops a segment via `dictate.py`'s anchor mechanics); a per-document **Live switch** (`ctrl+l`, backed by a `Switch` widget) flips it to continuous streaming transcription instead, splicing confirmed deltas into the same anchor-tracked buffer (leaving a fresh marker behind after each delta, removed for good on stop). `--language/-l`, `--engine/-e` (in-process engine: flag → `RESONA_ENGINE` → `platform_preferred_engine()`; validated against installed engines, exported as `RESONA_ENGINE`), `--remote/-r URL` (streams instead of running locally — forces every document into Live mode, since push-to-talk over an explicit `--remote` gateway isn't implemented). Without `--remote`, `_load_engine` first calls `local_engine.probe_local_engine()` — if a resona-engine-server is already running (default port `7720`), attaches to it via HTTP for push-to-talk *and* points Live mode's `RemoteLiveTranscriber` at it (`LiveApp._detected_engine_url`), loading no in-process model at all; otherwise falls back to `InProcessEngine`. With `--remote` **and** `--engine`, hits a resona-api `/v1/listen` gateway (`--engine` picks the backend: `deepgram`/`elevenlabs`/local engine name); with `--remote` alone, an engine-server `/ws/live`. `DocumentPane` duck-types the `app_ref` interface `RecordingSession` expects, so each document's recording state is independent; only one document app-wide may record at a time (one physical mic). Autosaves as markdown after every insertion, on `ctrl+s`, and on quit
@@ -224,10 +241,10 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 Within a package, use relative imports:
 ```python
 from .db.models import Job
-from .engine_client import EngineClient
+from .storage import job_dir
 ```
 
-Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (for the `live` command) and `resona_asr_core.registry` (for `InProcessEngine`). Both `resona-asr-core` and `resona-engine-faster-whisper` are base dependencies of resona-cli, so these imports always resolve. All other cross-package communication is over HTTP.
+Cross-package imports: resona-cli imports `resona_asr_core.live_transcriber` (for the `live` command), `resona_asr_core.registry` (for `InProcessEngine`) and `resona_worker.execute` (`subprocess_env` for explicit `--local`; it runs `python -m resona_worker.execute`). `resona-asr-core`, `resona-engine-faster-whisper` and `resona-worker` are base dependencies of resona-cli, so these imports always resolve. All other cross-package communication is over HTTP.
 
 ## How to add a new transcription engine
 
@@ -261,20 +278,18 @@ Client → GET /v1/jobs/{id} → status; GET /v1/jobs/{id}/result → JobResult 
 
 Hosted jobs accept a stored profile name only (or none: the org's `postprocess_profile` when `polish` is on).
 
-### Local fallback path
+### Explicit local path (`--local`)
 
 ```
-resona transcribe ./audio/ --engine voxtral --profile my-profile
-  no server reachable →
-  resolves engine: --engine flag → config.json default_engine → "faster-whisper"
-  resolves profile: --profile flag → config.json default_profile → bundled "default"
-  spawns: uv run resona-engine-voxtral on a free port
-  waits for /health →
-  POSTs each audio file to local engine →
-  engine returns {text, language, segments} →
-  result = build_pipeline(profile).run(text) →
-  writes transcript to output file
+resona transcribe memo.m4a --local --execution-profile cpu-private
+  settings: cached `resona settings pull` revision for this hub+credential (marked stale) → else built-in private defaults
+  resolve execution profile → approved candidates (engine/model overrides must match one) →
+  check_policy on every stage (+ build_pipeline for --profile) before any processing →
+  python -m resona_worker.execute (private env, offline caches) → JobResult →
+  writes <stem>.md + <stem>.result.json
 ```
+
+Never automatic: a configured hub that times out, denies or is unreachable is an error, not a reason to run locally.
 
 ## Postprocessing
 
@@ -417,6 +432,7 @@ uv run pytest packages/asr-core/tests/             # asr core
 uv run pytest packages/api/tests/                  # api
 uv run pytest packages/client/tests/               # client
 uv run pytest apps/resona-cli/tests/               # cli
+uv run pytest apps/resona-mcp/tests/               # mcp server
 uv run pytest packages/postprocess/tests/          # postprocess
 uv run pytest packages/tts-local/tests/            # local TTS engines
 uv run pytest -k test_transcribe                   # one test
@@ -424,7 +440,7 @@ uv run pytest -k test_transcribe                   # one test
 
 Mocking strategy:
 - resona-engine-server: mock the transcriber at `resona_engine_server.app.get_transcriber`
-- resona-api: mock `EngineClient.transcribe` with `respx` (httpx mock)
+- resona-api: `TestClient` against the app with org/credential fixtures (`packages/api/tests/conftest.py`); drive queued jobs through the worker routes (claim → result) instead of mocking inference
 - resona-client: use `respx.mock` to intercept httpx calls
 - resona-cli: use typer's `CliRunner` for command tests
 
@@ -478,12 +494,11 @@ Exception: `resona-client` uses `os.getenv()` for `RESONA_API_URL` / `RESONA_API
 
 See [docs/configuration/environment.md](docs/configuration/environment.md) for the full env var reference.
 
-### Engine resolution order (`resona transcribe`)
+### Execution resolution (`resona transcribe` / `resona doc`)
 
-1. `--engine NAME` CLI flag: resolves a built-in local engine name (`faster-whisper`, `whisper`, `voxtral`), a `config.json` server entry, or a `config.json` cloud entry (highest priority)
-2. `--private` / `--no-private`: when private is required (via flag or `default_private`), non-private engines are skipped or refused; cloud engines are never private
-3. `default_engine` in `~/.resona/config.json` (a concrete name pins it)
-4. `default_engine` is `"auto"` (the default): the CLI calls `recommended_engine()` — `mlx-whisper` on Apple Silicon when installed, else `faster-whisper`. Resolved by `_resolve_local_engine_name()` in `transcribe.py` (shared by `watch`).
+1. Hub: `RESONA_API_URL`/`RESONA_API_KEY`, else the first reachable `resona-api` entry of `~/.resona/config.json`; none → error unless `--local`
+2. `--execution-profile` (else the organization's `default_execution_profile`) selects approved candidates; `--engine/--model` may only narrow to an approved candidate (hub 422 `unapproved_override`)
+3. `--private` (default) / `--allow-cloud`: cloud stages additionally require the organization's `cloud_enabled`; provider keys in the environment never enable cloud
 
 ## What NOT to do
 

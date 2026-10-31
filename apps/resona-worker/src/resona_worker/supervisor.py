@@ -33,7 +33,7 @@ from resona_postprocess.pipeline import PostprocessResult, build_pipeline
 from resona_postprocess.profile import Profile, ProfileError
 
 from resona_worker.config import WorkerConfig, runtime_version
-from resona_worker.execute import ExitCode, subprocess_env
+from resona_worker.execute import ExitCode, mentions_out_of_memory, subprocess_env
 from resona_worker.hub import (
     MAX_RESULT_BYTES,
     ClaimedJob,
@@ -59,6 +59,7 @@ _LEASE_RETRY_SECONDS = 5.0
 _KILL_WAIT_SECONDS = 5.0
 _STAGE_LLM_TYPES = frozenset({"llm", "extract"})
 _OUT_OF_MEMORY_RC = frozenset({int(ExitCode.OUT_OF_MEMORY), -9})
+_STDERR_SCAN_BYTES = 64 * 1024
 
 
 class LeaseLost(Exception):
@@ -306,6 +307,9 @@ class Supervisor:
             raise JobFailure("input_too_large", retryable=False) from None
         if input_sha != job.input_sha256:
             raise JobFailure("input_hash_mismatch", retryable=False)
+        if job.kind == "document":
+            # Docling selects its backend by file suffix; inputs only ever get generated names.
+            input_path = input_path.rename(job_dir / f"input{_document_suffix(input_path)}")
         profile_dict = self._fetch_postprocess(job, snapshot, keeper)
 
         keeper.check()
@@ -323,7 +327,7 @@ class Supervisor:
             encoding="utf-8",
         )
         rc = self._run_executor(job_dir, snapshot_path, input_path, out_path, keeper, private=private)
-        _raise_for_exit(rc, candidate)
+        _raise_for_exit(rc, candidate, job_dir / "engine.stderr")
 
         result = _read_result(out_path, job.kind)
         result = self._postprocess(job, result, snapshot, profile_dict, keeper)
@@ -517,6 +521,24 @@ class Supervisor:
             log.info("job %s attempt %s: failure report rejected as stale", job.job_id, job.attempt)
 
 
+def _document_suffix(path: Path) -> str:
+    """Suffix for a document input from its magic bytes (the hub admitted only these types)."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(8)
+    except OSError:
+        raise JobFailure("unsupported_input", retryable=False, message="input could not be processed") from None
+    if head.startswith(b"%PDF-"):
+        return ".pdf"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return ".tif"
+    raise JobFailure("unsupported_input", retryable=False, message="input could not be processed")
+
+
 def _candidate_of(snapshot: dict[str, Any]) -> Candidate:
     try:
         return Candidate.model_validate(snapshot["candidate"])
@@ -549,18 +571,31 @@ def _read_result(out_path: Path, kind: str) -> JobResult:
     return result
 
 
-def _raise_for_exit(rc: int, candidate: Candidate) -> None:
+def _raise_for_exit(rc: int, candidate: Candidate, stderr_path: Path) -> None:
     if rc == ExitCode.OK:
         return
     if rc == ExitCode.UNSUPPORTED_INPUT:
         raise JobFailure("unsupported_input", retryable=False, message="input could not be processed")
     if rc == ExitCode.UNSUPPORTED_CAPABILITY:
         raise JobFailure("unsupported_capability", retryable=True, withdraw=candidate, message="worker lacks this capability")
-    if rc in _OUT_OF_MEMORY_RC:
+    if rc in _OUT_OF_MEMORY_RC or (rc != ExitCode.INVALID_SNAPSHOT and _stderr_reports_oom(stderr_path)):
+        # SIGKILL (jetsam/OOM killer), MemoryError, or a native abort such as MLX's
+        # ``[metal::malloc]``: requeue for another worker, stop offering the tuple here.
         raise JobFailure("out_of_memory", retryable=True, withdraw=candidate, message="out of memory")
     if rc == ExitCode.INVALID_SNAPSHOT:
         raise JobFailure("invalid_snapshot", retryable=False)
     raise JobFailure("engine_error", retryable=True, message="engine failed")
+
+
+def _stderr_reports_oom(path: Path) -> bool:
+    """Check the tail of the engine's stderr for out-of-memory markers. Never logged or uploaded."""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(max(0, handle.seek(0, os.SEEK_END) - _STDERR_SCAN_BYTES))
+            tail = handle.read()
+    except OSError:
+        return False
+    return mentions_out_of_memory(tail.decode("utf-8", errors="replace"))
 
 
 def _kill_group(proc: subprocess.Popen[bytes]) -> None:

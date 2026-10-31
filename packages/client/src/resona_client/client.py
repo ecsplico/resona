@@ -93,6 +93,14 @@ class RevisionConflict(ResonaAPIError):
     """409 on settings write: If-Match names a stale revision."""
 
 
+class SyncWaitTimeout(ResonaAPIError):
+    """504 from the synchronous adapter: the job was queued and keeps running."""
+
+    def __init__(self, status: int, code: Optional[str], message: str, *, job_id: int):
+        super().__init__(status, code, message)
+        self.job_id = job_id
+
+
 class JobTimeout(TimeoutError):
     """Client-side wait deadline passed; the job itself keeps running on the hub."""
 
@@ -287,12 +295,23 @@ class ResonaClient:
     def upload(self, filepath: Path | str) -> Upload:
         """Upload a file for one later job. POST /v1/uploads"""
         path = Path(filepath)
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         with path.open("rb") as fh:
-            resp = self._send(
-                "POST", "/v1/uploads",
-                files={"file": (path.name, fh, content_type)},
-            )
+            return self._post_upload(path.name, fh)
+
+    def upload_bytes(self, filename: str, data: bytes) -> Upload:
+        """Upload in-memory content for one later job. POST /v1/uploads
+
+        ``filename`` only supplies a content-type hint; the hub stores generated names
+        and identifies the media family from the content itself.
+        """
+        return self._post_upload(filename, data)
+
+    def _post_upload(self, filename: str, content: Any) -> Upload:
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        resp = self._send(
+            "POST", "/v1/uploads",
+            files={"file": (filename, content, content_type)},
+        )
         body = resp.json()
         return Upload(
             upload_id=str(body["upload_id"]),
@@ -321,13 +340,47 @@ class ResonaClient:
         and reused for every retry of the job POST, so a lost response cannot create
         a duplicate job. The upload is not repeated; the retry reuses its upload_id.
         """
+        _checked_options(kind, options)
+        upload = self.upload(filepath)
+        return self.submit_upload(
+            upload.upload_id,
+            kind=kind,
+            execution_profile=execution_profile,
+            language=language,
+            engine=engine,
+            model=model,
+            profile=profile,
+            options=options,
+            private=private,
+            idempotency_key=idempotency_key,
+            provenance=provenance,
+        )
+
+    def submit_upload(
+        self,
+        upload_id: str,
+        *,
+        kind: JobKind,
+        execution_profile: Optional[str] = None,
+        language: Optional[str] = None,
+        engine: Optional[str] = None,
+        model: Optional[str] = None,
+        profile: Optional[str] = None,
+        options: Union[AudioOptions, DocumentOptions, Mapping[str, Any], None] = None,
+        private: bool = True,
+        idempotency_key: Optional[str] = None,
+        provenance: Optional[Mapping[str, Any]] = None,
+    ) -> JobRef:
+        """Create a job for an existing upload. POST /v1/jobs
+
+        The Idempotency-Key (generated unless given) is reused for every retry of
+        the POST, so a lost response cannot create a duplicate job.
+        """
         checked = _checked_options(kind, options)
         key = idempotency_key or str(uuid.uuid4())
-        upload = self.upload(filepath)
-
         body: dict[str, Any] = {
             "kind": kind,
-            "upload_id": upload.upload_id,
+            "upload_id": upload_id,
             "private": private,
         }
         optional: dict[str, Any] = {
@@ -464,17 +517,24 @@ class ResonaClient:
         *,
         model: str = "whisper-1",
         language: Optional[str] = None,
-        prompt: Optional[str] = None,
         response_format: str = "json",
         engine: Optional[str] = None,
+        execution_profile: Optional[str] = None,
         private: bool = True,
         profile: Optional[str] = None,
     ) -> dict:
-        """Transcribe audio synchronously via the gateway. POST /v1/audio/transcriptions
+        """Transcribe audio through the OpenAI-compatible adapter. POST /v1/audio/transcriptions
+
+        The hub queues a normal audio job and waits a bounded time for a worker.
+        ``model="whisper-1"`` means the execution profile's default; any other value
+        is an override that must be an approved candidate.
 
         Returns:
-            Dict with key ``text`` (default "json" format).
-            With ``response_format="verbose_json"``, returns ``text``, ``language``, ``duration``, ``segments``.
+            Dict with key ``text`` (``json`` and ``text`` formats).
+            With ``response_format="verbose_json"``: ``text``, ``language``, ``duration``, ``segments``.
+
+        Raises SyncWaitTimeout (504) when no worker finished in time; the job keeps
+        running and ``job_id`` identifies it for ``wait_for_job``/``get_result``.
         """
         audio_path = Path(audio_path)
         data: dict = {
@@ -482,20 +542,29 @@ class ResonaClient:
             "response_format": response_format,
             "private": str(private).lower(),
         }
-        if language:
-            data["language"] = language
-        if prompt:
-            data["prompt"] = prompt
-        if engine:
-            data["engine"] = engine
-        if profile:
-            data["profile"] = profile
+        optional = {
+            "language": language,
+            "engine": engine,
+            "execution_profile": execution_profile,
+            "profile": profile,
+        }
+        data.update({k: v for k, v in optional.items() if v})
+        content_type = mimetypes.guess_type(audio_path.name)[0] or "application/octet-stream"
         with open(audio_path, "rb") as f:
-            resp = self._send(
-                "POST", "/v1/audio/transcriptions",
-                files={"file": (audio_path.name, f, "audio/wav")},
+            resp = self._client.post(
+                f"{self.base_url}/v1/audio/transcriptions",
+                files={"file": (audio_path.name, f, content_type)},
                 data=data,
             )
+        if resp.status_code == 504:
+            code, message = _parse_error_body(resp)
+            job_id = _json_field(resp, "job_id")
+            if code == "timeout" and isinstance(job_id, int):
+                raise SyncWaitTimeout(resp.status_code, code, message, job_id=job_id)
+        if resp.is_error:
+            _raise_for(resp)
+        if response_format == "text":
+            return {"text": resp.text}
         return resp.json()
 
     def create_speech(
@@ -557,6 +626,14 @@ class ResonaClient:
 def _status_and_error(resp: httpx.Response) -> tuple[int, Optional[str], str]:
     code, message = _parse_error_body(resp)
     return resp.status_code, code, message
+
+
+def _json_field(resp: httpx.Response, name: str) -> Any:
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    return body.get(name) if isinstance(body, dict) else None
 
 
 def _settings_from(resp: httpx.Response) -> SettingsDoc:

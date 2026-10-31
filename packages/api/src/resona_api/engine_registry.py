@@ -3,7 +3,6 @@ import logging
 import time
 from threading import Lock
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import httpx
 from decouple import config
@@ -254,21 +253,6 @@ def effective_default(
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
-_clients: dict[str, object] = {}
-_clients_lock = Lock()
-
-
-def _engine_client(url: str):
-    """Return a pooled EngineClient for ``url`` (created on first use).
-
-    Thread-safe: concurrent callers share one client per URL.
-    """
-    from .engine_client import EngineClient
-    with _clients_lock:
-        if url not in _clients:
-            _clients[url] = EngineClient(base_url=url)
-        return _clients[url]
-
 
 def _cloud_key(provider: str, error_cls) -> str:
     """Resolve a cloud provider's API key from env, or raise ``error_cls``."""
@@ -282,40 +266,13 @@ def _cloud_key(provider: str, error_cls) -> str:
 def cloud_api_key(provider: str) -> str:
     """Resolve a cloud provider's API key, or raise ``EngineUnavailableError``.
 
-    Public wrapper over :func:`_cloud_key` for the streaming bridge, which needs
-    the key outside the sync ``run_stt`` dispatch path.
+    Public wrapper over :func:`_cloud_key` for the streaming bridge.
     """
     return _cloud_key(
         provider,
         lambda env: EngineUnavailableError(
             f"cloud engine '{provider}' API key not set ({env})"
         ),
-    )
-
-
-def run_stt(
-    info: EngineInfo,
-    audio_path: Path,
-    *,
-    language: str = "de",
-    model: str | None = None,
-    prompt: str = "",
-    task: str = "transcribe",
-) -> dict:
-    """Dispatch an STT request; return ``{text, language, segments}``."""
-    if info.kind == "local":
-        return _engine_client(info.url).transcribe(
-            filepath=audio_path,
-            language=language,
-            initial_prompt=prompt,
-            task=task,
-        )
-    from resona_cloud_stt.errors import MissingAPIKeyError
-    from resona_cloud_stt.registry import get_provider
-    key = _cloud_key(info.provider, MissingAPIKeyError)
-    provider = get_provider(info.provider)
-    return provider.transcribe(
-        audio_path, api_key=key, model=model, language=language
     )
 
 

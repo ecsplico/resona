@@ -2,7 +2,7 @@
 
 `resona-cloud-stt` provides a thin, uniform interface for calling third-party speech-to-text APIs. Each provider module exposes a single `transcribe()` function with a consistent signature and return type. The registry resolves provider names to their modules and maps them to the env var that holds their API key.
 
-resona-api uses this package internally for the `POST /v1/audio/transcriptions` route when a cloud engine is selected. You can also call it directly from Python.
+The hub never calls providers itself: `POST /v1/audio/transcriptions` creates a job like `POST /v1/jobs`. Cloud STT runs only on hub-approved non-private workers, for jobs that allow cloud in an organization with `cloud_enabled=true`. You can also call the package directly from Python.
 
 ## Providers
 
@@ -12,7 +12,7 @@ resona-api uses this package internally for the `POST /v1/audio/transcriptions` 
 | `elevenlabs` | `ELEVENLABS_API_KEY` | `scribe_v1` | STT |
 | `openai` | `OPENAI_API_KEY` | `whisper-1` | STT |
 
-Cloud STT engines appear automatically in `GET /v1/engines` when their API key env var is set — no other configuration required.
+A worker offers a cloud STT engine only when its API key env var is set; the key alone never enables cloud processing.
 
 ## Direct usage
 

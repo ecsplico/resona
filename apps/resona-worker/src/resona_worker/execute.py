@@ -8,12 +8,15 @@ credentials, never talks to the hub and never logs content.
 
 Engines are loaded through the ``resona.engines`` entry points directly, not
 via the asr-core registry singleton, which ignores later engine arguments.
+HuggingFace-hosted weights are loaded from the exact local snapshot prepared
+for the candidate; nothing is downloaded while serving a job.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections.abc import Mapping
@@ -24,6 +27,8 @@ from typing import Any
 
 from pydantic import ValidationError
 from resona_job_core import Candidate, JobResult, Provenance, Segment, StageProvenance
+
+from resona_worker.weights import is_hub_repo, local_snapshot
 
 
 class ExitCode(IntEnum):
@@ -41,33 +46,93 @@ class ExecutionFailure(Exception):
         self.code = code
 
 
-_PRIVATE_STRIP = (
-    "OPENAI_API_KEY",
-    "DEEPGRAM_API_KEY",
-    "ELEVENLABS_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "MISTRAL_API_KEY",
+# Private jobs see only these variables (plus the forced offline switches below).
+_PRIVATE_ALLOW = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "LANG",
+        "LANGUAGE",
+        "TZ",
+        "VIRTUAL_ENV",
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "LD_LIBRARY_PATH",
+        "HF_HOME",
+        "HF_HUB_CACHE",
+        "HUGGINGFACE_HUB_CACHE",
+        "XDG_CACHE_HOME",
+        "TORCH_HOME",
+        "RESONA_MODELS_DIR",
+        "VOICEBOX_MODELS_DIR",
+        "LOGLEVEL",
+    }
 )
+_PRIVATE_ALLOW_PREFIXES = (
+    "LC_",
+    "FASTWHISPER_",
+    "WHISPERCPP_",
+    "LIGHTNING_MLX_",
+    "RESONA_PARAKEET_",
+    "MLX_",
+    "PYTORCH_",
+    "OMP_",
+    "MKL_",
+    "CUDA_",
+    "NVIDIA_",
+)
+# Credential-shaped names are dropped even when an allowed prefix matches them.
+_CREDENTIAL_NAME = re.compile(r"(^|_)(API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)($|_)")
 _OFFLINE_VARS = {
     "HF_HUB_OFFLINE": "1",
     "TRANSFORMERS_OFFLINE": "1",
+    "HF_DATASETS_OFFLINE": "1",
     "HF_HUB_DISABLE_TELEMETRY": "1",
+    "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
     "DO_NOT_TRACK": "1",
+    "ANONYMIZED_TELEMETRY": "False",
 }
 _DEVICE = {"metal": "mps", "cuda": "cuda", "cpu": "cpu"}
+
+# Lower-cased fragments that identify an out-of-memory failure: Python, MLX's Metal
+# allocator, PyTorch CUDA/MPS (``OutOfMemoryError``, "... out of memory") and Metal
+# command-buffer OOM (``kIOGPUCommandBufferCallbackErrorOutOfMemory``).
+OOM_MARKERS = ("memoryerror", "[metal::malloc]", "out of memory", "outofmemory")
+
+
+def mentions_out_of_memory(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in OOM_MARKERS)
+
+
+def _is_out_of_memory(exc: BaseException) -> bool:
+    return isinstance(exc, MemoryError) or mentions_out_of_memory(f"{type(exc).__name__}: {exc}")
 
 
 def subprocess_env(*, private: bool, base: Mapping[str, str]) -> dict[str, str]:
     """Environment for the execution subprocess.
 
-    Private jobs never see cloud provider keys and run with HF/telemetry offline.
+    Private jobs get an allowlisted environment: system/locale basics, model-cache
+    locations and engine tuning knobs. Cloud credentials and anything credential-shaped
+    never pass; HuggingFace runs offline and telemetry is disabled. Non-private jobs
+    inherit the worker environment (cloud engines need their provider keys) minus the
+    hub client key, which no engine needs.
     """
-    env = dict(base)
-    if private:
-        for name in list(env):
-            if name in _PRIVATE_STRIP or name.endswith("_API_KEY"):
-                del env[name]
-        env.update(_OFFLINE_VARS)
+    if not private:
+        return {name: value for name, value in base.items() if name != "RESONA_API_KEY"}
+    env = {
+        name: value
+        for name, value in base.items()
+        if (name in _PRIVATE_ALLOW or name.startswith(_PRIVATE_ALLOW_PREFIXES))
+        and not _CREDENTIAL_NAME.search(name)
+    }
+    env.update(_OFFLINE_VARS)
     return env
 
 
@@ -92,6 +157,21 @@ def _load_engine(name: str) -> type:
     raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "engine not available on this worker")
 
 
+def _resolve_weights(candidate: Candidate) -> tuple[str, str | None]:
+    """Return (model argument for the engine, resolved model revision).
+
+    HuggingFace repos resolve to the local snapshot at the pinned revision (or the
+    cached ``main``); the snapshot directory name is the commit hash. Missing weights
+    mean this worker was not prepared for the candidate.
+    """
+    if not is_hub_repo(candidate.model):
+        return candidate.model, candidate.model_revision
+    snapshot = local_snapshot(candidate.model, candidate.model_revision)
+    if snapshot is None:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "model weights not prepared on this worker")
+    return str(snapshot), snapshot.name
+
+
 def _segment(seg: Any) -> Segment:
     """Normalize one engine segment: dicts pass through, objects expose attributes."""
     if isinstance(seg, Mapping):
@@ -111,6 +191,7 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
 
     engine_cls = _load_engine(candidate.engine)
     configure_model_cache()
+    model_arg, revision = _resolve_weights(candidate)
     try:
         audio = load_audio_path(input_path)
     except (RuntimeError, ValueError, OSError):
@@ -119,9 +200,13 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
         raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "empty audio")
 
     try:
-        transcriber = engine_cls(device=_DEVICE[candidate.accelerator], modelname=candidate.model)
+        transcriber = engine_cls(device=_DEVICE[candidate.accelerator], modelname=model_arg)
     except ImportError:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "engine dependencies missing") from None
+    except Exception as exc:
+        if _is_out_of_memory(exc):
+            raise ExecutionFailure(ExitCode.OUT_OF_MEMORY) from None
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "asr model load failed") from None
 
     started = time.perf_counter()
     try:
@@ -132,9 +217,9 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
             word_timestamps=bool(options.get("word_timestamps", False)),
             vad_filter=bool(options.get("vad_filter", False)),
         )
-    except MemoryError:
-        raise
-    except Exception:
+    except Exception as exc:
+        if _is_out_of_memory(exc):
+            raise ExecutionFailure(ExitCode.OUT_OF_MEMORY) from None
         raise ExecutionFailure(ExitCode.ENGINE_ERROR, "asr failed") from None
     seconds = time.perf_counter() - started
 
@@ -152,7 +237,7 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
                     stage="asr",
                     engine=candidate.engine,
                     model=candidate.model,
-                    model_revision=candidate.model_revision,
+                    model_revision=revision,
                     accelerator=candidate.accelerator,
                     seconds=seconds,
                 )
@@ -190,18 +275,51 @@ def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Pa
         raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "invalid document options") from None
 
     try:
-        return convert_document(input_path, options=document_options, accelerator=candidate.accelerator)
+        result = convert_document(input_path, options=document_options, accelerator=candidate.accelerator)
     except (UnsupportedMediaType, DocumentConversionFailed):
         raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "document not convertible") from None
     except UnsupportedDocumentOptions:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "document options unsupported") from None
-    except MemoryError:
-        raise
-    except Exception:
+    except Exception as exc:
+        if _is_out_of_memory(exc):
+            raise ExecutionFailure(ExitCode.OUT_OF_MEMORY) from None
         raise ExecutionFailure(ExitCode.ENGINE_ERROR, "document conversion failed") from None
+    return result.model_copy(update={"provenance": _resolved_stage_revisions(result.provenance)})
 
 
-def run(snapshot_path: Path, input_path: Path, out_path: Path) -> ExitCode:
+def _resolved_stage_revisions(provenance: Provenance) -> Provenance:
+    """Replace branch/tag revisions of HuggingFace-hosted stage models by the loaded snapshot hash."""
+    stages = []
+    for stage in provenance.stages:
+        if is_hub_repo(stage.model):
+            snapshot = local_snapshot(stage.model, stage.model_revision)
+            if snapshot is not None:
+                stage = stage.model_copy(update={"model_revision": snapshot.name})
+        stages.append(stage)
+    return provenance.model_copy(update={"stages": stages})
+
+
+def peak_accelerator_bytes() -> int | None:
+    """Peak device memory of this process where the framework reports a true peak (MLX, CUDA)."""
+    mx = sys.modules.get("mlx.core")
+    if mx is not None:
+        try:
+            peak = int(mx.get_peak_memory())
+            if peak > 0:  # MLX imported as a dependency but unused reports 0
+                return peak
+        except Exception:  # noqa: BLE001 - metrics are best effort
+            pass
+    torch = sys.modules.get("torch")
+    if torch is not None:
+        try:
+            if torch.cuda.is_initialized():
+                return int(torch.cuda.max_memory_allocated())
+        except Exception:  # noqa: BLE001 - metrics are best effort
+            pass
+    return None
+
+
+def run(snapshot_path: Path, input_path: Path, out_path: Path, metrics_path: Path | None = None) -> ExitCode:
     snapshot, candidate = _load_snapshot(snapshot_path)
     kind = snapshot["kind"]
     if kind == "audio":
@@ -211,6 +329,8 @@ def run(snapshot_path: Path, input_path: Path, out_path: Path) -> ExitCode:
     else:
         raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "unknown kind")
     out_path.write_text(result.model_dump_json(), encoding="utf-8")
+    if metrics_path is not None:
+        metrics_path.write_text(json.dumps({"peak_accelerator_bytes": peak_accelerator_bytes()}), encoding="utf-8")
     return ExitCode.OK
 
 
@@ -219,9 +339,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--metrics", type=Path, default=None)
     args = parser.parse_args(argv)
     try:
-        return int(run(args.snapshot, args.input, args.out))
+        return int(run(args.snapshot, args.input, args.out, args.metrics))
     except ExecutionFailure as exc:
         return int(exc.code)
     except MemoryError:

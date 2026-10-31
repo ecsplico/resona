@@ -181,9 +181,7 @@ Cloud providers (deepgram, openai, elevenlabs) appear automatically when their r
 
 ---
 
-### Audio (v1 — synchronous)
-
-These endpoints are synchronous: they call the engine and return the result directly, without creating a job.
+### Audio (v1 — OpenAI-compatible)
 
 #### Transcribe
 
@@ -192,19 +190,37 @@ POST /v1/audio/transcriptions
 Content-Type: multipart/form-data
 ```
 
-OpenAI-compatible speech-to-text. A postprocessing profile is applied to the transcript before it is returned.
+OpenAI-compatible speech-to-text, implemented as an adapter onto the job path. The hub never runs
+STT itself: it creates an audio job with the same admission and policy checks as `POST /v1/jobs`,
+then waits up to `RESONA_SYNC_WAIT_SECONDS` (default `60`) for a worker to finish it. An optional
+`Idempotency-Key` header works as for `POST /v1/jobs`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `file` | file | yes | Audio file |
-| `model` | string | no | Model override (passed to engine) |
-| `language` | string | no | BCP-47 language code (default: `"de"`) |
-| `prompt` | string | no | Initial prompt / vocabulary hint |
-| `temperature` | float | no | Sampling temperature (engine-dependent) |
+| `model` | string | no | `whisper-1` uses the execution profile's default; anything else must be an approved candidate |
+| `language` | string | no | Language hint (default: the organization's setting) |
 | `response_format` | string | no | `"json"` (default), `"text"`, or `"verbose_json"` |
-| `engine` | string | no | Engine name, or `"local"` to require a local engine |
-| `private` | bool | no | Refuse cloud engines and cloud postprocess steps (default: `true`); `false` needs organization cloud approval |
-| `profile` | string | no | Organization profile name; omit to use the organization default |
+| `prompt` | string | no | Accepted and ignored |
+| `temperature` | float | no | Accepted and ignored |
+| `engine` | string | no | Engine override; must be an approved candidate of the execution profile |
+| `execution_profile` | string | no | Execution profile (default: the organization's default) |
+| `profile` | string | no | Stored organization profile name; omit to use the organization default |
+| `private` | bool | no | Default `true`; `false` needs `cloud_enabled=true` for the organization |
+
+Errors:
+
+- An override that matches no approved candidate: `422 unapproved_override`.
+- A failed job returns its error code: `403 policy_denied`, otherwise `502`.
+- Timeout: `504` with `Location: /v1/jobs/<job_id>`; the job keeps running and its result can be
+  fetched from the job routes.
+
+```json
+{"error": "timeout", "message": "...", "job_id": 42}
+```
+
+With the Python client, `ResonaClient.create_transcription(...)` raises `SyncWaitTimeout` (with
+`.job_id`) on `504`.
 
 `response_format` responses:
 

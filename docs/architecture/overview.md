@@ -53,7 +53,7 @@ Resona is a modular transcription platform composed of loosely coupled packages.
 
 ### resona-cli (apps/resona-cli)
 
-The user-facing entry point. Provides subcommands for transcription (`transcribe`, `watch`), recording TUIs (`rec`, `ui`), live transcription (`live`), speech synthesis (`speech`), and CRUD for engines, replacements, and prompts. Delegates all server operations to `resona-client`. In local-only mode it can run an engine in-process without any server.
+The user-facing entry point. Provides subcommands for hub jobs (`transcribe`, `doc`, `watch`, `jobs`), organization settings (`settings`), recording TUIs (`rec`, `ui`), live transcription (`live`), speech synthesis (`speech`), and management of hub entries and profiles. Delegates all hub operations to `resona-client`. Only with an explicit `--local` does it run a job on this machine, through `resona-worker`'s execution subprocess; it never falls back to local processing automatically.
 
 ### resona-client
 
@@ -61,11 +61,11 @@ A thin `httpx`-based client for the hub's `/v1/uploads` and `/v1/jobs` routes, w
 
 ### resona-api (:7000)
 
-The hub. Authenticates org-bound bearer tokens issued by `resona-admin`, accepts uploads (`POST /v1/uploads`, 200 MiB cap), persists organization-scoped jobs to SQLite (`/v1/jobs`), leases them to pull workers (`/v1/workers/*`) and applies retention. It runs no inference for queued jobs. Also exposes an OpenAI-compatible audio API (`GET /v1/engines`, `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`).
+The hub. Authenticates org-bound bearer tokens issued by `resona-admin`, accepts uploads (`POST /v1/uploads`, 200 MiB cap), persists organization-scoped jobs to SQLite (`/v1/jobs`), leases them to pull workers (`/v1/workers/*`) and applies retention. It runs no inference for queued jobs. Also exposes an OpenAI-compatible audio API (`GET /v1/engines`, `POST /v1/audio/speech`, and `POST /v1/audio/transcriptions`, an adapter that creates a job and waits for a worker).
 
 ### resona-worker
 
-An outbound-only pull worker for a Mac or Linux GPU machine. `resona-worker run --hub <url> --token-file <path> --capabilities-file <json> --work-dir <dir>` long-polls the hub for jobs it is approved for, runs each job in an isolated engine subprocess, uploads the result and deletes its scratch data. It opens no listening port. The worker token comes from `resona-admin worker enroll`; an admin must approve the worker (`resona-admin worker approve`) before it can claim jobs.
+An outbound-only pull worker for a Mac or Linux GPU machine. `resona-worker prepare --profile <name>` verifies cached weights, runs synthetic jobs and writes a capabilities manifest of tested tuples. `resona-worker run --hub <url> --token-file <path> --capabilities-file <manifest> --work-dir <dir>` long-polls the hub for jobs, runs each job in an isolated engine subprocess, uploads the result and deletes its scratch data. It offers only tuples that it tested and that the hub approved. It opens no listening port. The worker token comes from `resona-admin worker enroll`; an admin must approve the worker (`resona-admin worker approve`) before it can claim jobs. On macOS, `resona-worker install` runs the worker as a launchd user agent (see [Mac Worker](../server/mac-worker.md)).
 
 ### resona-engine-server + engine plugin (:7001)
 

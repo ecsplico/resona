@@ -19,9 +19,8 @@ from resona_job_core import JobResult
 
 from resona_worker.execute import ExitCode, subprocess_env
 
-TESTS = Path(__file__).parent
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DE_SHORT = TESTS / "fixtures" / "de_short.wav"
+DE_SHORT = Path(__file__).resolve().parents[1] / "src" / "resona_worker" / "fixtures" / "de_short.wav"
 DIGITAL_PDF = REPO_ROOT / "packages" / "engine-docling" / "tests" / "fixtures" / "digital.pdf"
 
 WHISPER_MODEL = "Systran/faster-whisper-large-v3"

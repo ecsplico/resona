@@ -329,125 +329,24 @@ def test_config_round_trip_with_ssh_fields(tmp_path, monkeypatch):
     assert loaded.engines[0].ssh_remote_port == 7000
 
 
-# ── EngineEntry cloud fields ──────────────────────────────────────────────────
+# ── Legacy config migration ───────────────────────────────────────────────────
 
-def test_engine_entry_defaults_are_resona_api_non_private():
-    e = EngineEntry(name="srv", api_url="http://srv:7000")
-    assert e.type == "resona-api"
-    assert e.provider is None
-    assert e.model is None
-    assert e.private is False
-    assert e.options == {}
-
-
-def test_engine_entry_cloud_fields():
-    e = EngineEntry(
-        name="dg", type="cloud", provider="deepgram", model="nova-3",
-        options={"smart_format": True},
-    )
-    assert e.api_url == ""
-    assert e.provider == "deepgram"
-    assert e.options == {"smart_format": True}
-
-
-def test_is_private_true_for_marked_resona_api():
-    assert EngineEntry(name="s", api_url="http://s:7000", private=True).is_private() is True
-
-
-def test_is_private_false_for_unmarked_resona_api():
-    assert EngineEntry(name="s", api_url="http://s:7000").is_private() is False
-
-
-def test_is_private_always_false_for_cloud_even_if_private_flag_set():
-    e = EngineEntry(name="dg", type="cloud", provider="deepgram", private=True)
-    assert e.is_private() is False
-
-
-def test_is_usable_cloud_true_when_env_key_set(monkeypatch):
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
-    e = EngineEntry(name="dg", type="cloud", provider="deepgram")
-    assert e.is_usable() is True
-
-
-def test_is_usable_cloud_false_when_env_key_missing(monkeypatch):
-    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
-    e = EngineEntry(name="dg", type="cloud", provider="deepgram")
-    assert e.is_usable() is False
-
-
-def test_is_usable_resona_api_probes_health():
-    e = EngineEntry(name="s", api_url="http://s:7000")
-    with respx.mock:
-        respx.get("http://s:7000/health").mock(return_value=httpx.Response(200))
-        assert e.is_usable() is True
-
-
-# ── EngineConfig cloud validation + default_private ───────────────────────────
-
-def test_engine_config_default_private_defaults_false():
-    assert EngineConfig().default_private is False
-
-
-def test_load_default_private_from_config(tmp_path, monkeypatch):
+def test_load_legacy_config_drops_cloud_entry_and_ignores_obsolete_keys(tmp_path, monkeypatch, caplog):
     config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({"engines": [], "default_private": True}))
-    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
-    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
-    assert EngineConfig.load().default_private is True
-
-
-def test_save_persists_default_private(tmp_path, monkeypatch):
-    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
-    config_file = tmp_path / "config.json"
-    monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
-    EngineConfig(default_private=True).save()
-    assert json.loads(config_file.read_text())["default_private"] is True
-
-
-def test_add_rejects_cloud_entry_with_unknown_provider(tmp_path, monkeypatch):
-    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
-    cfg = EngineConfig()
-    with pytest.raises(ValueError, match="provider"):
-        cfg.add(EngineEntry(name="bad", type="cloud", provider="nonsense"))
-
-
-def test_add_accepts_valid_cloud_entry(tmp_path, monkeypatch):
-    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
-    cfg = EngineConfig()
-    cfg.add(EngineEntry(name="dg", type="cloud", provider="deepgram"))
-    assert cfg.get("dg") is not None
-
-
-def test_load_skips_invalid_cloud_entry_with_warning(tmp_path, monkeypatch, caplog):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({"engines": [
-        {"name": "good", "type": "cloud", "provider": "openai"},
-        {"name": "bad", "type": "cloud", "provider": "nonsense"},
+    config_file.write_text(json.dumps({"default_private": True, "engines": [
+        {"name": "hub", "api_url": "http://hub:7000", "type": "resona-api",
+         "private": True, "provider": None, "model": None, "options": {}},
+        {"name": "dg", "type": "cloud", "provider": "deepgram", "api_url": ""},
     ]}))
     monkeypatch.setattr("resona_client.config.CONFIG_FILE", config_file)
     monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
     cfg = EngineConfig.load()
-    names = [e.name for e in cfg.engines]
-    assert names == ["good"]
-    assert "bad" in caplog.text
+    assert [e.name for e in cfg.engines] == ["hub"]
+    assert cfg.engines[0].api_url == "http://hub:7000"
+    assert "dg" in caplog.text
 
 
-def test_cloud_entry_round_trips_through_save_load(tmp_path, monkeypatch):
-    monkeypatch.setattr("resona_client.config.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("resona_client.config.CONFIG_FILE", tmp_path / "config.json")
-    monkeypatch.setattr("resona_client.config._LEGACY_CONFIG_FILE", tmp_path / "nope.json")
-    EngineConfig(engines=[
-        EngineEntry(name="dg", type="cloud", provider="deepgram",
-                    model="nova-3", options={"smart_format": True}),
-    ]).save()
-    loaded = EngineConfig.load()
-    assert loaded.engines[0].type == "cloud"
-    assert loaded.engines[0].options == {"smart_format": True}
-
-
-# ── resolve_engine: name pinning, private_only, cloud, compose_dir ────────────
+# ── resolve_engine: name pinning, compose_dir ─────────────────────────────────
 
 def test_resolve_engine_name_pins_specific_entry(monkeypatch):
     e1 = EngineEntry(name="a", api_url="http://a:7000")
@@ -463,33 +362,6 @@ def test_resolve_engine_name_unknown_returns_none(monkeypatch):
     monkeypatch.setattr("resona_client.config.EngineConfig.load",
                         lambda: EngineConfig(engines=[]))
     assert resolve_engine(name="ghost", auto_start=False) is None
-
-
-def test_resolve_engine_private_only_skips_non_private(monkeypatch):
-    public = EngineEntry(name="pub", api_url="http://pub:7000", private=False)
-    priv = EngineEntry(name="priv", api_url="http://priv:7000", private=True)
-    monkeypatch.setattr("resona_client.config.EngineConfig.load",
-                        lambda: EngineConfig(engines=[public, priv]))
-    with patch("resona_client.config.is_reachable", return_value=True):
-        result = resolve_engine(private_only=True, auto_start=False)
-    assert result is priv
-
-
-def test_resolve_engine_cloud_usable_when_env_key_set(monkeypatch):
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
-    dg = EngineEntry(name="dg", type="cloud", provider="deepgram")
-    monkeypatch.setattr("resona_client.config.EngineConfig.load",
-                        lambda: EngineConfig(engines=[dg]))
-    result = resolve_engine(auto_start=False)
-    assert result is dg
-
-
-def test_resolve_engine_cloud_skipped_when_env_key_missing(monkeypatch):
-    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
-    dg = EngineEntry(name="dg", type="cloud", provider="deepgram")
-    monkeypatch.setattr("resona_client.config.EngineConfig.load",
-                        lambda: EngineConfig(engines=[dg]))
-    assert resolve_engine(auto_start=False) is None
 
 
 def test_resolve_engine_skips_missing_compose_dir_with_warning(monkeypatch, caplog, tmp_path):

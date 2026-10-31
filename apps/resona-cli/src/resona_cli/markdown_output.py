@@ -3,7 +3,11 @@ from pathlib import Path
 
 
 def _yaml_scalar(value) -> str:
-    """Render a value as a safely-quoted YAML scalar."""
+    """Render a value as a YAML scalar: booleans/numbers plain, everything else quoted."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
     text = str(value)
     escaped = text.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
@@ -16,8 +20,8 @@ def _unquote_yaml_scalar(value: str) -> str:
     return value
 
 
-def write_markdown(out_path: Path, text: str, meta: dict) -> None:
-    """Write transcript as markdown with YAML frontmatter (omitting empty values)."""
+def render_markdown(text: str, meta: dict) -> str:
+    """Render markdown with YAML frontmatter (omitting empty values)."""
     lines = ["---"]
     for key, value in meta.items():
         if value in (None, ""):
@@ -26,7 +30,12 @@ def write_markdown(out_path: Path, text: str, meta: dict) -> None:
     lines.append("---")
     lines.append("")
     body = text if text.endswith("\n") else text + "\n"
-    out_path.write_text("\n".join(lines) + "\n" + body, encoding="utf-8")
+    return "\n".join(lines) + "\n" + body
+
+
+def write_markdown(out_path: Path, text: str, meta: dict) -> None:
+    """Write transcript as markdown with YAML frontmatter (omitting empty values)."""
+    out_path.write_text(render_markdown(text, meta), encoding="utf-8")
 
 
 def strip_frontmatter(text: str) -> tuple[str, dict]:
