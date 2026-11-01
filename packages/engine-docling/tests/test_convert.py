@@ -20,6 +20,7 @@ from resona_engine_docling import (
 )
 from resona_engine_docling import convert as convert_module
 from resona_job_core import JobResult
+from resona_job_core.options import DocumentOptions as WireDocumentOptions
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DARWIN_ONLY = pytest.mark.skipif(sys.platform != "darwin", reason="ocrmac is Apple Vision (macOS only)")
@@ -67,7 +68,8 @@ def test_scanned_pdf_recovers_german_words_with_ocrmac(ocr: str) -> None:
     for word in ("Schwellenwert", "Brücke", "Übergewicht", "Vorgaben"):
         assert word in result.markdown, word
     ocr_stage = next(stage for stage in result.provenance.stages if stage.stage == "ocr")
-    assert (ocr_stage.engine, ocr_stage.accelerator) == ("ocrmac", "metal")
+    # Apple Vision chooses its device itself and does not report it: recorded as 'auto', never 'metal'.
+    assert (ocr_stage.engine, ocr_stage.accelerator) == ("ocrmac", "auto")
     assert [page.number for page in result.pages] == [1, 2]
 
 
@@ -131,6 +133,23 @@ def test_page_range_returns_only_selected_page() -> None:
 def test_invalid_document_options_are_rejected(fields: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         DocumentOptions(**fields)
+
+
+def test_engine_options_layer_defaults_over_the_shared_wire_contract() -> None:
+    wire = WireDocumentOptions(page_start=2, ocr_engine="rapidocr")
+
+    resolved = DocumentOptions.model_validate(wire.model_dump(exclude_none=True))
+
+    assert isinstance(resolved, WireDocumentOptions)
+    assert (resolved.languages, resolved.ocr, resolved.ocr_engine, resolved.pipeline) == (
+        ["de", "en"], "auto", "rapidocr", "standard",
+    )
+    assert (resolved.page_start, resolved.page_end) == (2, None)
+
+
+def test_apple_vision_ocr_is_recorded_as_os_selected_device() -> None:
+    # Apple Vision does not report whether it used CPU, GPU or Neural Engine.
+    assert convert_module._ocr_engine_identity("ocrmac")[2] == "auto"
 
 
 def test_unsupported_media_type_is_rejected_before_conversion(tmp_path: Path) -> None:

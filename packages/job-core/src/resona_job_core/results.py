@@ -44,15 +44,23 @@ class Page(_Strict):
 class StageProvenance(_Strict):
     """One executed stage. In-process stages record the accelerator actually used;
     endpoint stages (``llm`` via an approved endpoint) record ``endpoint_id`` and
-    ``accelerator='external'`` because the endpoint process owns its device."""
+    ``accelerator='external'`` because the endpoint process owns its device.
+    ``accelerator='auto'`` marks an in-process stage whose device the operating
+    system selects and does not report (Apple Vision OCR may use CPU, GPU or Neural
+    Engine); it records that the device was not observed, not that it was a GPU.
+
+    ``peak_accelerator_bytes`` is the peak device memory (CUDA allocator / MLX) of the
+    execution process, recorded on stages that ran on ``cuda``/``metal``; stages run
+    together by one engine call (Docling layout + table structure) share the value."""
 
     stage: Literal["asr", "ocr", "layout", "llm"]
     engine: str
     model: str
     model_revision: str | None = None
-    accelerator: Literal["metal", "cuda", "cpu", "external"]
+    accelerator: Literal["metal", "cuda", "cpu", "auto", "external"]
     endpoint_id: str | None = None
     seconds: float
+    peak_accelerator_bytes: int | None = None
 
 
 class Provenance(_Strict):

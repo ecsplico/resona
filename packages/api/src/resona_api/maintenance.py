@@ -35,8 +35,12 @@ log = logging.getLogger(__name__)
 
 METADATA_TTL = timedelta(days=7)
 STAGING_GRACE = timedelta(hours=1)
+INTERVAL_SECONDS = 30.0
 _TERMINAL = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
 _ATTEMPT_PREFIX = "attempt-"
+
+last_tick: datetime | None = None
+"""When the running loop last finished a pass without error (``/ready`` reads it)."""
 
 
 def _expired(value: datetime | None, now: datetime) -> bool:
@@ -186,11 +190,13 @@ def run_once() -> dict[str, int]:
     }
 
 
-async def maintenance_loop(interval: float = 30.0) -> None:
-    """Run :func:`run_once` every ``interval`` seconds until cancelled."""
+async def maintenance_loop(interval: float = INTERVAL_SECONDS) -> None:
+    """Run :func:`run_once` every ``interval`` seconds until cancelled; record each successful pass."""
+    global last_tick
     while True:
         try:
             counts = await asyncio.to_thread(run_once)
+            last_tick = clock.now()
             changed = {name: count for name, count in counts.items() if count}
             if changed:
                 log.info("Maintenance: %s", changed)
@@ -199,4 +205,4 @@ async def maintenance_loop(interval: float = 30.0) -> None:
         await asyncio.sleep(interval)
 
 
-__all__ = ["METADATA_TTL", "STAGING_GRACE", "maintenance_loop", "run_once"]
+__all__ = ["INTERVAL_SECONDS", "METADATA_TTL", "STAGING_GRACE", "last_tick", "maintenance_loop", "run_once"]

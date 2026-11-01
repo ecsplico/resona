@@ -1,13 +1,17 @@
 """Hub-local administration: ``resona-admin``.
 
-Runs directly against the hub database. Every command migrates the schema first.
-Issued tokens are printed once; only their SHA-256 hashes are stored.
+Runs directly against the hub database. Every command migrates the schema first,
+except ``restore``, which runs only while the hub is stopped (see ``restore.py``).
+Issued tokens are printed once; only their SHA-256 hashes are stored. With
+``--token-sha256`` a token generated elsewhere is registered by its hash alone, so
+the token itself never passes through the hub host or its logs.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import secrets
 import sys
 from datetime import UTC, datetime
@@ -23,6 +27,8 @@ from .auth import ROLE_CLIENT, ROLE_ORG_ADMIN, ROLE_WORKER, hash_token
 from .db.engine import create_db_and_tables, engine
 from .db.models import ApprovedReleaseTuple, Credential, Organization, Release, SettingsRevision, Worker
 
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
 
 class AdminError(RuntimeError):
     """A requested admin operation is invalid."""
@@ -34,6 +40,17 @@ def _now() -> datetime:
 
 def _new_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def _secret_hash(token_sha256: str | None) -> tuple[str, str | None]:
+    """``(stored hash, token to show once)``: a fresh token, or a caller-supplied hash and no token."""
+    if token_sha256 is None:
+        token = _new_token()
+        return hash_token(token), token
+    value = token_sha256.strip().lower()
+    if not _SHA256_HEX.fullmatch(value):
+        raise AdminError("--token-sha256 must be 64 lowercase hex characters (SHA-256 of the token)")
+    return value, None
 
 
 def create_organization(session: Session, org_id: str) -> Organization:
@@ -61,15 +78,22 @@ def _require_organization(session: Session, org_id: str) -> None:
         raise AdminError(f"unknown organization {org_id!r}")
 
 
-def issue_credential(session: Session, organization_id: str, role: str) -> tuple[str, str]:
-    """Issue a client or org_admin credential. Returns ``(credential_id, token)``."""
+def issue_credential(
+    session: Session, organization_id: str, role: str, *, token_sha256: str | None = None
+) -> tuple[str, str | None]:
+    """Issue a client or org_admin credential. Returns ``(credential_id, token)``.
+
+    With ``token_sha256`` the credential is registered by that hash and no token is returned.
+    """
     if role not in (ROLE_CLIENT, ROLE_ORG_ADMIN):
         raise AdminError("role must be 'client' or 'org_admin'")
     _require_organization(session, organization_id)
-    token = _new_token()
+    secret_hash, token = _secret_hash(token_sha256)
+    if session.exec(select(Credential).where(Credential.secret_hash == secret_hash)).first() is not None:
+        raise AdminError("a credential with this token already exists")
     cred = Credential(
         id=f"cred_{secrets.token_hex(8)}",
-        secret_hash=hash_token(token),
+        secret_hash=secret_hash,
         organization_id=organization_id,
         role=role,
         created_at=_now(),
@@ -79,14 +103,20 @@ def issue_credential(session: Session, organization_id: str, role: str) -> tuple
     return cred.id, token
 
 
-def enroll_worker(session: Session, name: str, organization_id: str) -> tuple[str, str]:
+def enroll_worker(
+    session: Session, name: str, organization_id: str, *, token_sha256: str | None = None
+) -> tuple[str, str | None]:
     """Enroll an unapproved worker with its single worker credential.
 
-    Returns ``(worker_id, token)``. The worker cannot claim work until approved.
+    Returns ``(worker_id, token)`` (no token with ``token_sha256``). The worker cannot
+    claim work until approved.
     """
     if not name.strip():
         raise AdminError("worker name must not be empty")
     _require_organization(session, organization_id)
+    secret_hash, token = _secret_hash(token_sha256)
+    if session.exec(select(Credential).where(Credential.secret_hash == secret_hash)).first() is not None:
+        raise AdminError("a credential with this token already exists")
     worker = Worker(
         id=f"wrk_{secrets.token_hex(8)}",
         organization_id=organization_id,
@@ -97,11 +127,10 @@ def enroll_worker(session: Session, name: str, organization_id: str) -> tuple[st
     )
     session.add(worker)
     session.flush()  # the credential's worker_id FK needs the worker row first
-    token = _new_token()
     session.add(
         Credential(
             id=f"cred_{secrets.token_hex(8)}",
-            secret_hash=hash_token(token),
+            secret_hash=secret_hash,
             organization_id=organization_id,
             role=ROLE_WORKER,
             worker_id=worker.id,
@@ -191,6 +220,9 @@ def _build_parser() -> argparse.ArgumentParser:
     cred_issue = cred.add_parser("issue")
     cred_issue.add_argument("--organization", required=True)
     cred_issue.add_argument("--role", required=True, choices=[ROLE_CLIENT, ROLE_ORG_ADMIN])
+    cred_issue.add_argument(
+        "--token-sha256", help="register a token generated elsewhere by its SHA-256 hex digest (no token printed)"
+    )
     cred_revoke = cred.add_parser("revoke")
     cred_revoke.add_argument("credential_id")
 
@@ -198,6 +230,9 @@ def _build_parser() -> argparse.ArgumentParser:
     w_enroll = worker.add_parser("enroll")
     w_enroll.add_argument("name")
     w_enroll.add_argument("--organization", required=True)
+    w_enroll.add_argument(
+        "--token-sha256", help="register a token generated elsewhere by its SHA-256 hex digest (no token printed)"
+    )
     w_approve = worker.add_parser("approve")
     w_approve.add_argument("worker_id")
     scope = w_approve.add_mutually_exclusive_group(required=True)
@@ -211,11 +246,46 @@ def _build_parser() -> argparse.ArgumentParser:
     r_stage = release.add_parser("stage", help="admit a release manifest for evaluation jobs")
     r_stage.add_argument("--manifest", required=True)
     release.add_parser("list", help="releases and their approved (organization, profile, platform) tuples")
+
+    restore = top.add_parser(
+        "restore",
+        help="restore a database backup while the hub is stopped; revokes every restored credential",
+    )
+    restore.add_argument("backup", help="SQLite backup file of a hub database")
     return parser
+
+
+def _print_token(token: str | None) -> None:
+    if token is None:
+        print("token: registered by hash (not shown)")
+        return
+    print(f"token: {token}")
+    print("Store this token now; it is shown only once.", file=sys.stderr)
+
+
+def _restore(backup: str) -> int:
+    from .hublock import HubRunning
+    from .restore import RestoreError, restore
+
+    try:
+        report = restore(Path(backup))
+    except (HubRunning, RestoreError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print("restore complete")
+    for name in ("credentials_revoked", "workers_revoked", "leases_invalidated",
+                 "inputs_unavailable", "results_unavailable", "uploads_dropped"):
+        print(f"  {name}: {getattr(report, name)}")
+    for name, count in report.maintenance.items():
+        print(f"  maintenance.{name}: {count}")
+    print("Every restored credential is revoked; issue fresh credentials and re-enroll workers.")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.group == "restore":
+        return _restore(args.backup)
     create_db_and_tables()
     try:
         with Session(engine) as session:
@@ -223,18 +293,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 create_organization(session, args.id)
                 print(f"organization {args.id} created (settings revision 1)")
             elif args.group == "credential" and args.action == "issue":
-                cred_id, token = issue_credential(session, args.organization, args.role)
+                cred_id, token = issue_credential(
+                    session, args.organization, args.role, token_sha256=args.token_sha256
+                )
                 print(f"credential_id: {cred_id}")
-                print(f"token: {token}")
-                print("Store this token now; it is shown only once.", file=sys.stderr)
+                _print_token(token)
             elif args.group == "credential" and args.action == "revoke":
                 revoke_credential(session, args.credential_id)
                 print(f"credential {args.credential_id} revoked")
             elif args.group == "worker" and args.action == "enroll":
-                worker_id, token = enroll_worker(session, args.name, args.organization)
+                worker_id, token = enroll_worker(
+                    session, args.name, args.organization, token_sha256=args.token_sha256
+                )
                 print(f"worker_id: {worker_id}")
-                print(f"token: {token}")
-                print("Store this token now; it is shown only once.", file=sys.stderr)
+                _print_token(token)
             elif args.group == "worker" and args.action == "approve":
                 approve_worker(
                     session,

@@ -21,6 +21,7 @@ resona-admin credential revoke <credential-id>
 resona-admin worker enroll mac-studio --organization acme           # worker token, unapproved
 resona-admin worker approve <worker-id> --private --capabilities-file caps.json
 resona-admin worker revoke <worker-id>
+resona-admin restore <backup.sqlite>                                # hub stopped; see docs/server/coolify.md
 ```
 
 Roles: `client` (submit and read jobs, read settings), `org_admin` (also change settings and profiles), `worker` (worker routes only).
@@ -29,16 +30,19 @@ Error bodies have the form `{"error": "<code>", "message": "<safe text>"}`.
 
 ## Endpoints
 
-### Health
+### Health and readiness (no auth)
 
 ```
 GET /health
+GET /ready
 ```
 
-Returns liveness status.
+`/health` is liveness only and always returns `{"status": "ok"}` while the process serves HTTP.
+
+`/ready` returns `200` when the schema is at the target version, the data and database directories are writable and the maintenance loop finished a pass within the last 90 seconds; otherwise `503` with `status: not_ready`. `capacity` is `available` when an approved worker was seen recently and `degraded` otherwise. Offline workers never fail readiness: jobs wait in the queue.
 
 ```json
-{"status": "ok"}
+{"status": "ready", "checks": {"schema": true, "data_writable": true, "maintenance": true}, "capacity": "degraded"}
 ```
 
 ---

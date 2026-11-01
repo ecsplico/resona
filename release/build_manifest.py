@@ -8,7 +8,7 @@
         --out dist/release-manifest.json
 
 Every ``*.whl`` in ``--dist`` is pinned by name, version and SHA-256. The
-``resona-api`` and ``resona-worker`` wheels must carry exactly ``--release-id``:
+``resona-api`` and ``resona-worker`` wheels must both be present and carry exactly ``--release-id``:
 workers report their ``resona-worker`` version as their release, and the hub
 reports its ``resona-api`` version. Images must be given by digest; tags such as
 ``:latest`` or ``:cuda`` are refused. ``--constraints`` (a file in ``--dist``,
@@ -83,7 +83,9 @@ def build(
     wheels = wheel_pins(dist)
     for package in RELEASE_PACKAGES:
         versions = [w["version"] for w in wheels if w["name"] == package]
-        if versions and versions != [release_id]:
+        if not versions:
+            raise BuildError(f"no {package} wheel in {dist}; a release needs both {' and '.join(RELEASE_PACKAGES)}")
+        if versions != [release_id]:
             raise BuildError(f"{package} wheel version {versions} does not match release {release_id}")
     body = {
         "release_id": release_id,

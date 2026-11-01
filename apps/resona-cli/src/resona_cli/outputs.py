@@ -1,13 +1,16 @@
 """Write a job result as ``<stem>.md`` plus ``<stem>.result.json``.
 
-Both files are written to a temporary file in the target directory and then
-renamed into place, so a reader never sees a partial file. Without ``force`` an
-existing target is never replaced: the rename is a hard link that fails if the
-name exists.
+The pair is written all-or-nothing: both files are rendered and staged as
+temporary files in the target directory, then renamed into place one after the
+other. If the second rename fails, the first is rolled back (a file it replaced
+under ``force`` is restored), so a failure leaves neither new file and a retry
+starts clean. Without ``force`` an existing target is never replaced: the rename
+is a hard link that fails if the name exists.
 """
 from __future__ import annotations
 
 import os
+import secrets
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,20 +45,38 @@ def output_paths(source: Path, output_dir: Optional[Path]) -> OutputPaths:
     )
 
 
-def _write_atomic(path: Path, data: str, *, force: bool) -> None:
+def _stage(path: Path, data: str) -> Path:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(data)
-        if force:
-            os.replace(tmp, path)
-        else:
-            try:
-                os.link(tmp, path)
-            except FileExistsError:
-                raise OutputExists(path) from None
-    finally:
+    except BaseException:
         Path(tmp).unlink(missing_ok=True)
+        raise
+    return Path(tmp)
+
+
+def _promote(staged: Path, path: Path, *, force: bool) -> None:
+    if force:
+        os.replace(staged, path)
+        return
+    try:
+        os.link(staged, path)
+    except FileExistsError:
+        raise OutputExists(path) from None
+
+
+def _backup(path: Path) -> Optional[Path]:
+    """Hard-link an existing ``path`` to a fresh hidden name so a replaced file can be restored."""
+    while True:
+        backup = path.with_name(f".{path.name}.{secrets.token_hex(6)}.bak")
+        try:
+            os.link(path, backup)
+        except FileNotFoundError:
+            return None
+        except FileExistsError:
+            continue
+        return backup
 
 
 def result_metadata(source: Path, result: JobResult, *, job_id: Optional[int],
@@ -81,14 +102,38 @@ def result_metadata(source: Path, result: JobResult, *, job_id: Optional[int],
 
 
 def write_result(paths: OutputPaths, result: JobResult, meta: dict[str, Any], *, force: bool) -> None:
-    """Write ``<stem>.result.json`` (the validated JobResult) and ``<stem>.md``.
+    """Write ``<stem>.result.json`` (the validated JobResult) and ``<stem>.md`` as one unit.
 
     Raises OutputExists without touching either file when one exists and not ``force``.
+    Any failure leaves both targets as they were before the call.
     """
     if not force:
         existing = paths.existing()
         if existing:
             raise OutputExists(existing[0])
+    markdown = render_markdown(result.markdown or result.raw_text, meta)
+    payload = result.model_dump_json(indent=2) + "\n"
     paths.markdown.parent.mkdir(parents=True, exist_ok=True)
-    _write_atomic(paths.result, result.model_dump_json(indent=2) + "\n", force=force)
-    _write_atomic(paths.markdown, render_markdown(result.markdown or result.raw_text, meta), force=force)
+
+    pair = ((paths.result, payload), (paths.markdown, markdown))
+    staged: list[Path] = []
+    backups: list[Optional[Path]] = []
+    promoted: list[tuple[Path, Optional[Path]]] = []
+    try:
+        for target, data in pair:
+            staged.append(_stage(target, data))
+        for (target, _), tmp in zip(pair, staged):
+            backup = _backup(target) if force else None
+            backups.append(backup)
+            _promote(tmp, target, force=force)
+            promoted.append((target, backup))
+    except BaseException:
+        for target, backup in reversed(promoted):
+            if backup is not None:
+                os.replace(backup, target)
+            else:
+                target.unlink(missing_ok=True)
+        raise
+    finally:
+        for leftover in [*staged, *(b for b in backups if b is not None)]:
+            leftover.unlink(missing_ok=True)

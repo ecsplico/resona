@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import logging
-import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
+from . import hublock
 from .db.engine import create_db_and_tables
 from .errors import install_error_handlers
 from .maintenance import maintenance_loop
@@ -23,6 +23,7 @@ tags_metadata = [
     {"name": "Config", "description": "Postprocessing profiles configuration."},
     {"name": "Audio", "description": "OpenAI-compatible speech API."},
     {"name": "Engines", "description": "Engine discovery."},
+    {"name": "Health", "description": "Liveness and readiness probes."},
 ]
 
 
@@ -66,7 +67,7 @@ def _remove_legacy_markdown_exports() -> int:
     """
     from .paths import DATA_PATH
 
-    configured = os.getenv("MD_PATH")
+    configured = config("MD_PATH", default="")
     directory = Path(configured) if configured else DATA_PATH / "md"
     if not directory.is_absolute():
         directory = Path.cwd() / directory
@@ -85,23 +86,27 @@ def _remove_legacy_markdown_exports() -> int:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _validate_env()
+    # One hub per data volume; offline restores take the same lock.
+    lock = hublock.acquire()
+    try:
+        log.info("Initializing database...")
+        create_db_and_tables()
+        removed = _remove_legacy_markdown_exports()
+        if removed:
+            log.info("Removed %d legacy result export files", removed)
 
-    log.info("Initializing database...")
-    create_db_and_tables()
-    removed = _remove_legacy_markdown_exports()
-    if removed:
-        log.info("Removed %d legacy result export files", removed)
+        log.info("Starting maintenance loop...")
+        maintenance = asyncio.create_task(maintenance_loop())
 
-    log.info("Starting maintenance loop...")
-    maintenance = asyncio.create_task(maintenance_loop())
+        yield
 
-    yield
-
-    log.info("Shutting down...")
-    maintenance.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await maintenance
-    log.info("Background tasks stopped")
+        log.info("Shutting down...")
+        maintenance.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await maintenance
+        log.info("Background tasks stopped")
+    finally:
+        lock.release()
 
 
 app = FastAPI(openapi_tags=tags_metadata, lifespan=lifespan, title="resona-api")
@@ -117,12 +122,7 @@ app.add_middleware(
 )
 
 
-@app.get("/health", tags=["Job"])
-async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
-
-
+from .health_routes import router as health_router
 from .jobs_routes import router as jobs_router
 from .worker_routes import router as worker_router
 from .audio_routes import router as audio_router
@@ -131,6 +131,7 @@ from .settings_routes import router as settings_router
 from .streaming_routes import router as streaming_router
 from .evaluations_routes import router as evaluations_router
 app.include_router(jobs_router)
+app.include_router(health_router)
 app.include_router(worker_router)
 app.include_router(audio_router)
 app.include_router(profiles_router)

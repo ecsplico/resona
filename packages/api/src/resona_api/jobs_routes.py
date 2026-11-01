@@ -174,15 +174,19 @@ def _queue_reason(job: Job, workers: list[tuple[bool, set[Candidate]]]) -> str |
     return "waiting_capacity" if capable else "no_capable_worker"
 
 
+CONTENT_UNAVAILABLE = "content_unavailable"
+"""Error code of a job whose payload files did not survive a restore (``resona-admin restore``)."""
+
+
 def _result_available(job: Job, now: datetime) -> bool:
-    if job.status != JobStatus.COMPLETED or not job.result_manifest:
+    if job.status != JobStatus.COMPLETED or not job.result_manifest or job.error_code == CONTENT_UNAVAILABLE:
         return False
     return job.result_expires_at is None or clock.as_utc(job.result_expires_at) > now
 
 
 def _view(job: Job, workers: list[tuple[bool, set[Candidate]]], now: datetime) -> dict[str, Any]:
     error = None
-    if job.error_code and job.status != JobStatus.COMPLETED:
+    if job.error_code and (job.status != JobStatus.COMPLETED or job.error_code == CONTENT_UNAVAILABLE):
         error = {"code": job.error_code, "message": job.error_message or job.error_code}
     return {
         "job_id": job.id,
@@ -714,15 +718,17 @@ def get_result(
     principal: Principal = Depends(client_principal),
     session: Session = Depends(get_db_session),
 ) -> FileResponse:
-    """Stream the accepted JobResult JSON. 409 before completion, 410 after retention."""
+    """Stream the accepted JobResult JSON. 409 before completion, 410 after retention or a lossy restore."""
     job = _owned_job(session, principal.organization_id, job_id)
     if job.status != JobStatus.COMPLETED:
         raise api_error(409, "not_ready", "job has not completed")
+    if job.error_code == CONTENT_UNAVAILABLE:
+        raise api_error(410, CONTENT_UNAVAILABLE, "result content was not restored")
     if job.result_expires_at is not None and clock.as_utc(job.result_expires_at) <= clock.now():
         raise api_error(410, "result_expired", "result was removed by retention")
     path = storage.result_path(_storage_id(session, job.organization_id), job.id)
     if not path.is_file():
-        raise api_error(410, "result_expired", "result is no longer available")
+        raise api_error(410, CONTENT_UNAVAILABLE, "result content is unavailable")
     return FileResponse(path, media_type="application/json")
 
 

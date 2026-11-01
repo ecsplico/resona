@@ -329,3 +329,42 @@ def test_expands_directories_globs_and_deduplicates(tmp_path, hub):
     assert result.exit_code == 0, result.output
     assert client.submit_job.call_count == 2
     assert "Not found" in result.output
+
+
+def test_colliding_output_names_exit_2_before_any_submission(tmp_path, hub):
+    """a.wav and a.mp3 would both write a.md/a.result.json: refuse the run up front."""
+    make_wav(tmp_path / "a.wav")
+    make_wav(tmp_path / "a.mp3")
+    client = make_client()
+
+    result = invoke(client, [str(tmp_path / "a.wav"), str(tmp_path / "a.mp3")])
+
+    assert result.exit_code == 2
+    assert "'a'" in result.output and "a.wav" in result.output and "a.mp3" in result.output
+    client.submit_job.assert_not_called()
+    assert not (tmp_path / "a.md").exists()
+
+
+def test_colliding_output_dir_destinations_exit_2(tmp_path, hub):
+    for name in ("one", "two"):
+        (tmp_path / name).mkdir()
+        make_wav(tmp_path / name / "memo.wav")
+    client = make_client()
+
+    result = invoke(client, [str(tmp_path / "one" / "memo.wav"), str(tmp_path / "two" / "memo.wav"),
+                             "--output-dir", str(tmp_path / "out")])
+
+    assert result.exit_code == 2
+    assert "'memo'" in result.output
+    client.submit_job.assert_not_called()
+
+
+def test_no_wait_writes_nothing_so_equal_stems_are_submitted(tmp_path, hub):
+    make_wav(tmp_path / "a.wav")
+    make_wav(tmp_path / "a.mp3")
+    client = make_client()
+
+    result = invoke(client, [str(tmp_path / "a.wav"), str(tmp_path / "a.mp3"), "--no-wait"])
+
+    assert result.exit_code == 0, result.output
+    assert client.submit_job.call_count == 2

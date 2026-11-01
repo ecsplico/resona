@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import typer
@@ -55,49 +55,24 @@ def pull_settings():
     typer.echo(f"cached revision {doc.revision} of organization {doc.organization_id} -> {entry.path}")
 
 
-def _parse_assignment(raw: str) -> tuple[str, Any]:
-    key, sep, value = raw.partition("=")
-    key = key.strip()
-    if not sep or not key:
-        fail(f"expected key=value, got {raw!r}")
-    if key not in OrganizationSettings.model_fields:
-        fail(f"unknown settings key {key!r}; known: {', '.join(OrganizationSettings.model_fields)}")
-    try:
-        return key, json.loads(value)
-    except ValueError:
-        return key, value
-
-
 @settings_app.command("set")
 def set_settings(
-    assignments: Optional[list[str]] = typer.Argument(
-        None, help="Top-level key=value changes (values parsed as JSON when possible).",
-        metavar="[KEY=VALUE]..."),
-    file: Optional[Path] = typer.Option(None, "--file", help="JSON file with the complete settings."),
+    file: Path = typer.Option(..., "--file", help="JSON file with the complete settings object."),
 ):
     """Replace the organization's settings (org_admin), checked against the cached revision.
 
-    Examples: `resona settings set language=en default_execution_profile=cpu-private`,
+    Example: `resona settings get | jq .settings > settings.json`, edit the file, then
     `resona settings set --file settings.json`.
     """
-    if bool(file) == bool(assignments):
-        fail("give either --file or key=value assignments")
+    try:
+        new_settings = json.loads(file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        fail(f"cannot read {file}: {e}")
+    if not isinstance(new_settings, dict):
+        fail(f"{file} must contain a JSON object")
     client = connect_hub()
     cached = settings_cache.find(client.base_url, client.api_key)
     base: SettingsDoc | settings_cache.CachedSettings = cached or _fetch(client)
-
-    if file is not None:
-        try:
-            new_settings = json.loads(file.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            fail(f"cannot read {file}: {e}")
-        if not isinstance(new_settings, dict):
-            fail(f"{file} must contain a JSON object")
-    else:
-        new_settings = dict(base.settings)
-        for raw in assignments or []:
-            key, value = _parse_assignment(raw)
-            new_settings[key] = value
     try:
         validated = OrganizationSettings.model_validate(new_settings)
     except ValidationError as e:

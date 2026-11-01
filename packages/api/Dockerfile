@@ -1,5 +1,6 @@
-# Hub image (CPU only): job API, SQLite, worker broker, evaluations. No model or GPU
-# dependencies: inference runs on approved pull workers.
+# Hub image (CPU only): job API, SQLite, worker broker, evaluations, plus the hosted
+# MCP server (`resona-mcp http`, run as its own container from this image). No model
+# or GPU dependencies: inference runs on approved pull workers.
 # ---- build ----
 FROM python:3.12-slim AS builder
 
@@ -17,7 +18,10 @@ COPY packages/cloud-tts/ ./packages/cloud-tts/
 COPY packages/tts-local/ ./packages/tts-local/
 COPY packages/postprocess/ ./packages/postprocess/
 COPY packages/job-core/ ./packages/job-core/
-RUN uv sync --package resona-api --frozen --no-dev --no-editable --compile-bytecode
+COPY packages/client/ ./packages/client/
+COPY apps/resona-mcp/ ./apps/resona-mcp/
+RUN uv sync --package resona-api --frozen --no-dev --no-editable --compile-bytecode \
+    && uv sync --package resona-mcp --inexact --frozen --no-dev --no-editable --compile-bytecode
 
 # ---- runtime ----
 FROM python:3.12-slim
@@ -27,7 +31,7 @@ FROM python:3.12-slim
 ARG RESONA_RELEASE_ID=""
 
 LABEL org.opencontainers.image.title="resona-api"
-LABEL org.opencontainers.image.description="Resona hub: org-scoped job API, SQLite, pull-worker broker and evaluations on :7000 (OpenAI-compatible /v1/audio routes)"
+LABEL org.opencontainers.image.description="Resona hub: org-scoped job API, SQLite, pull-worker broker and evaluations on :7000 (OpenAI-compatible /v1/audio routes); hosted MCP via resona-mcp http"
 LABEL org.opencontainers.image.source="https://github.com/ecsplico/resona"
 LABEL org.opencontainers.image.documentation="https://ecsplico.github.io/resona/"
 LABEL org.opencontainers.image.licenses="Apache-2.0"

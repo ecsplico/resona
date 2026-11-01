@@ -44,8 +44,8 @@ job 12: private=true execution_profile=cpu-private candidate=faster-whisper/larg
 
 Cloud processing needs **both**:
 
-1. the organization setting `cloud_enabled=true` (set by an `org_admin`, e.g.
-   `resona settings set cloud_enabled=true`), and
+1. the organization setting `cloud_enabled: true` (set by an `org_admin` in the settings file
+   passed to `resona settings set --file settings.json`), and
 2. `--allow-cloud` on the command (mutually exclusive with `--private`).
 
 ```bash

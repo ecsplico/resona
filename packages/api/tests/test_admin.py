@@ -157,3 +157,40 @@ def test_cli_approve_rejects_invalid_candidates_and_leaves_worker_unapproved(
         worker = session.get(Worker, worker_id)
         assert worker.approved is False
         assert worker.approved_capabilities == "[]"
+
+
+def test_cli_registers_tokens_by_hash_without_printing_them(capsys, anon_client, fresh_org):
+    import secrets
+
+    client_token, worker_token = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    client_hash = hashlib.sha256(client_token.encode()).hexdigest()
+    worker_hash = hashlib.sha256(worker_token.encode()).hexdigest()
+
+    assert main(["credential", "issue", "--organization", fresh_org, "--role", "client",
+                 "--token-sha256", client_hash]) == 0
+    assert main(["worker", "enroll", "pc-hash", "--organization", fresh_org,
+                 "--token-sha256", worker_hash]) == 0
+    captured = capsys.readouterr()
+    assert "registered by hash" in captured.out
+    assert client_token not in captured.out + captured.err
+
+    assert anon_client.get(
+        "/v1/settings", headers={"Authorization": f"Bearer {client_token}"},
+    ).status_code == 200
+    with Session(engine) as session:
+        assert resolve_token(session, worker_token).role == "worker"
+
+
+@pytest.mark.parametrize("value", ["abc", "g" * 64])
+def test_cli_rejects_malformed_token_hash(capsys, fresh_org, value):
+    assert main(["credential", "issue", "--organization", fresh_org, "--role", "client",
+                 "--token-sha256", value]) == 1
+    assert "--token-sha256" in capsys.readouterr().err
+
+
+def test_cli_rejects_a_duplicate_token_hash(capsys, fresh_org):
+    digest = hashlib.sha256(b"same-token").hexdigest()
+    args = ["credential", "issue", "--organization", fresh_org, "--role", "client", "--token-sha256", digest]
+    assert main(args) == 0
+    assert main(args) == 1
+    assert "already exists" in capsys.readouterr().err

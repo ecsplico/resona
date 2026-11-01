@@ -5,7 +5,7 @@ waits and writes ``<stem>.md`` + ``<stem>.result.json``. ``--local`` runs the sa
 policy path on this machine (:mod:`.local_run`). There is no automatic fallback
 between the two: an unreachable hub, a timeout or a policy denial is an error.
 
-Exit codes: 0 success, 1 error or failed job, 2 policy denial.
+Exit codes: 0 success, 1 error or failed job, 2 policy denial or colliding output names.
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from .hub import EXIT_ERROR, EXIT_POLICY_DENIED, candidate_label, connect_hub, p
 from .outputs import OutputExists, output_paths, result_metadata, write_result
 
 Options = Union[AudioOptions, DocumentOptions]
+EXIT_OUTPUT_COLLISION = 2
 
 
 @dataclass
@@ -134,6 +135,29 @@ def _admission_error(e: ResonaAPIError) -> str:
     return f"{e.code or e.status}: {e.message}"
 
 
+def _reject_colliding_outputs(req: MediaRequest) -> None:
+    """Compute every input's ``<stem>.md``/``<stem>.result.json`` before any work starts.
+
+    Two inputs with the same stem (``a.mp3`` and ``a.wav``, or one file given twice)
+    would write the same files; reject the whole run with exit 2 rather than let the
+    second result overwrite or fail after both jobs ran. Names are compared
+    case-insensitively because the default macOS filesystem is.
+    """
+    seen: dict[str, Path] = {}
+    for source in req.files:
+        markdown = output_paths(source, req.output_dir).markdown
+        key = str(markdown.resolve()).casefold()
+        if key in seen:
+            typer.echo(
+                f"Error: {seen[key].name} and {source.name} would both write {markdown} "
+                f"(stem {source.stem!r}); nothing was started. Rename one input or process them "
+                "into different --output-dir directories.",
+                err=True,
+            )
+            raise typer.Exit(EXIT_OUTPUT_COLLISION)
+        seen[key] = source
+
+
 def run_media(req: MediaRequest) -> None:
     if req.local:
         if req.no_wait:
@@ -148,6 +172,8 @@ def run_media(req: MediaRequest) -> None:
 
 def _run_hub(req: MediaRequest) -> None:
     profile = hub_profile_name(req.profile)
+    if not req.no_wait:
+        _reject_colliding_outputs(req)
     client = connect_hub()
     run = _Run(as_json=req.as_json)
     submitted: list[tuple[Path, int]] = []
@@ -261,6 +287,7 @@ def _wait_and_write(client: ResonaClient, req: MediaRequest, run: _Run, source: 
 def _run_local(req: MediaRequest) -> None:
     from .local_run import LocalRunError, load_local_settings, plan_local, run_local
 
+    _reject_colliding_outputs(req)
     run = _Run(as_json=req.as_json)
     local = load_local_settings()
     try:

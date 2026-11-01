@@ -137,7 +137,7 @@ def _read_result(job: Job) -> JobResult:
     try:
         return JobResult.model_validate_json(path.read_bytes())
     except FileNotFoundError:
-        raise api_error(410, "result_expired", "result is no longer available") from None
+        raise api_error(410, "content_unavailable", "result content is unavailable") from None
 
 
 def _job_error(job: Job) -> JSONResponse:

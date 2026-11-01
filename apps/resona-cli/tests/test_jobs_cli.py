@@ -107,6 +107,7 @@ def test_result_writes_files_without_overwriting(tmp_path):
 @pytest.mark.parametrize("error, message", [
     (JobNotReady(409, "job_not_ready", "pending"), "job_not_ready"),
     (ResultExpired(410, "result_expired", "gone"), "result_expired"),
+    (ResultExpired(410, "content_unavailable", "gone"), "content_unavailable"),
 ])
 def test_result_not_ready_or_expired(error, message):
     client = MagicMock()

@@ -79,11 +79,17 @@ def test_cache_is_keyed_by_hub_and_organization(tmp_path):
     assert settings_cache.find(HUB, "other-token").organization_id == "org-b"
 
 
-def test_set_key_value_sends_if_match_from_cache_and_updates_cache():
+def _settings_file(tmp_path, content):
+    path = tmp_path / "settings.json"
+    path.write_text(content if isinstance(content, str) else json.dumps(content))
+    return str(path)
+
+
+def test_set_file_sends_if_match_from_cache_and_updates_cache(tmp_path):
     client = _client(_doc(3))
     _run(client, "pull")
 
-    result = _run(client, "set", "language=en", "polish=false")
+    result = _run(client, "set", "--file", _settings_file(tmp_path, _doc(language="en").settings))
 
     assert result.exit_code == 0, result.output
     sent, kwargs = client.put_settings.call_args.args[0], client.put_settings.call_args.kwargs
@@ -93,58 +99,57 @@ def test_set_key_value_sends_if_match_from_cache_and_updates_cache():
     assert "applies to new jobs only" in result.output
 
 
-def test_set_without_cache_uses_fresh_etag():
+def test_set_without_cache_uses_fresh_etag(tmp_path):
     client = _client(_doc(6))
 
-    result = _run(client, "set", "default_execution_profile=cpu-private")
+    result = _run(client, "set", "--file", _settings_file(tmp_path, _doc().settings))
 
     assert result.exit_code == 0, result.output
     assert client.put_settings.call_args.kwargs["if_match"] == '"6"'
 
 
-def test_set_from_file(tmp_path):
-    client = _client(_doc(2))
-    path = tmp_path / "settings.json"
-    path.write_text(json.dumps(_doc(language="en").settings))
+def test_set_rejects_key_value_assignments(tmp_path):
+    """No stringly-typed config mutation: only a complete settings document is accepted."""
+    client = _client(_doc(3))
 
-    result = _run(client, "set", "--file", str(path))
+    result = _run(client, "set", "language=en")
 
-    assert result.exit_code == 0, result.output
-    assert client.put_settings.call_args.args[0]["language"] == "en"
+    assert result.exit_code != 0
+    client.put_settings.assert_not_called()
 
 
-def test_set_conflict_exits_1_with_clear_message():
+def test_set_conflict_exits_1_with_clear_message(tmp_path):
     client = _client(_doc(3))
     _run(client, "pull")
     client.put_settings.side_effect = RevisionConflict(409, "revision_conflict", "stale")
 
-    result = _run(client, "set", "language=en")
+    result = _run(client, "set", "--file", _settings_file(tmp_path, _doc(language="en").settings))
 
     assert result.exit_code == 1
     assert "revision_conflict" in result.output and "resona settings pull" in result.output
 
 
-@pytest.mark.parametrize("args, message", [
-    (["nonsense=1"], "unknown settings key"),
-    (["language"], "expected key=value"),
-    (["cloud_enabled=maybe"], "invalid settings"),
-    ([], "either --file or key=value"),
+@pytest.mark.parametrize("content, message", [
+    ({**_doc().settings, "nonsense": 1}, "invalid settings"),
+    ({**_doc().settings, "cloud_enabled": "maybe"}, "invalid settings"),
+    ("[1, 2]", "must contain a JSON object"),
+    ("{not json", "cannot read"),
 ])
-def test_set_validates_before_sending(args, message):
+def test_set_validates_before_sending(tmp_path, content, message):
     client = _client(_doc(3))
 
-    result = _run(client, "set", *args)
+    result = _run(client, "set", "--file", _settings_file(tmp_path, content))
 
     assert result.exit_code == 1
     assert message in result.output
     client.put_settings.assert_not_called()
 
 
-def test_set_requires_admin():
+def test_set_requires_admin(tmp_path):
     client = _client(_doc(3))
     client.put_settings.side_effect = ResonaAPIError(403, "forbidden", "org_admin role required")
 
-    result = _run(client, "set", "language=en")
+    result = _run(client, "set", "--file", _settings_file(tmp_path, _doc().settings))
 
     assert result.exit_code == 1
     assert "org_admin role required" in result.output

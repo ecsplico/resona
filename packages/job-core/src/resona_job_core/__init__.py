@@ -9,6 +9,7 @@ from .policy import (
     is_loopback_url,
 )
 from .settings import Candidate, ExecutionProfile, OrganizationSettings, default_settings
+from .options import AudioOptions, DocumentOptions, DocumentPipeline, Language, OcrEngine, OcrMode
 from .results import BBox, JobResult, Page, PageBlock, Provenance, Segment, StageProvenance
 
 __all__ = [
@@ -24,6 +25,12 @@ __all__ = [
     "check_policy",
     "default_settings",
     "is_loopback_url",
+    "AudioOptions",
+    "DocumentOptions",
+    "DocumentPipeline",
+    "Language",
+    "OcrEngine",
+    "OcrMode",
     "BBox",
     "JobResult",
     "Page",

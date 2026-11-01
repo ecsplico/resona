@@ -242,10 +242,10 @@ def _seconds(result: object, keys: tuple[str, ...]) -> float:
 
 
 def _ocr_engine_identity(engine: str) -> tuple[str, str | None, str]:
-    """Return (model name, model revision, accelerator actually used by that OCR engine)."""
+    """Return (model name, model revision, accelerator of that OCR engine)."""
     if engine == "ocrmac":
-        # Apple Vision runs on Apple Silicon's GPU/Neural Engine; recorded as the closest Metal-class path.
-        return "apple-vision", None, "metal"
+        # Apple Vision picks CPU/GPU/Neural Engine itself and does not report which: 'auto', not observed.
+        return "apple-vision", None, "auto"
     if engine == "rapidocr":
         # onnxruntime CPU provider only; the layout stage may still run on CUDA.
         return "rapidocr-ppocr", importlib.metadata.version("rapidocr"), "cpu"
@@ -264,6 +264,16 @@ _TABLEFORMER_REVISION = "v2.3.0"
 
 def _tableformer_accelerator(accelerator: Accelerator) -> Accelerator:
     return "cpu" if accelerator == "metal" else accelerator
+
+
+def stage_weights() -> list[tuple[str, str | None]]:
+    """HuggingFace (repo, revision) pairs the standard pipeline loads: layout and table structure.
+
+    Workers fetch these during preparation; conversions then run with the HF cache offline.
+    RapidOCR's default ONNX models ship inside the ``rapidocr`` wheel.
+    """
+    spec = _layout_spec()
+    return [(spec.repo_id, spec.revision), (_TABLEFORMER_REPO, _TABLEFORMER_REVISION)]
 
 
 def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accelerator = "cpu") -> JobResult:

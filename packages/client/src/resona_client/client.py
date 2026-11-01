@@ -20,8 +20,9 @@ from pathlib import Path
 from typing import Any, Literal, Mapping, NoReturn, Optional, Union
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ValidationError
 from resona_job_core import JobResult
+from resona_job_core.options import AudioOptions, DocumentOptions
 
 log = logging.getLogger(__name__)
 
@@ -30,35 +31,6 @@ JobPurpose = Literal["production", "evaluation"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _POST_JOB_ATTEMPTS = 3
 _RETRYABLE_STATUSES = frozenset({502, 503, 504})
-
-
-class AudioOptions(BaseModel):
-    """Typed audio job options; the hub forwards nothing else to the engine."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    translate: bool = False
-    word_timestamps: bool = False
-    vad_filter: bool = True
-
-
-class DocumentOptions(BaseModel):
-    """Typed document job options. Unset fields are resolved by the execution profile."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    languages: Optional[list[Literal["de", "en"]]] = Field(default=None, min_length=1)
-    ocr: Optional[Literal["auto", "force", "off"]] = None
-    ocr_engine: Optional[Literal["ocrmac", "rapidocr", "tesseract"]] = None
-    page_start: Optional[int] = Field(default=None, ge=1)
-    page_end: Optional[int] = Field(default=None, ge=1)
-    pipeline: Optional[Literal["standard"]] = None
-
-    @model_validator(mode="after")
-    def _check_page_range(self) -> "DocumentOptions":
-        if self.page_start is not None and self.page_end is not None and self.page_start > self.page_end:
-            raise ValueError("page_start must be <= page_end")
-        return self
 
 
 _OPTIONS_MODEL: dict[str, type[BaseModel]] = {
@@ -87,7 +59,7 @@ class JobNotReady(ResonaAPIError):
 
 
 class ResultExpired(ResonaAPIError):
-    """410 on result fetch: the result was removed by retention."""
+    """410 on result fetch: removed by retention (``result_expired``) or lost in a hub restore (``content_unavailable``)."""
 
 
 class RevisionConflict(ResonaAPIError):

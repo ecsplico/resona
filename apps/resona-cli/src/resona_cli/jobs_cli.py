@@ -28,7 +28,9 @@ def _call(fn: Callable[[], T]) -> T:
         return fn()
     except JobNotReady:
         fail("job_not_ready: the job has not completed yet (try `resona jobs wait`)")
-    except ResultExpired:
+    except ResultExpired as e:
+        if e.code == "content_unavailable":
+            fail("content_unavailable: the result did not survive a hub restore")
         fail("result_expired: the result was removed by retention")
     except ResonaAPIError as e:
         if e.status == 404:

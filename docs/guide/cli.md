@@ -51,7 +51,10 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 
 **Outputs**
 
-Each input produces two files, written atomically:
+Each input produces two files, written as a pair: both are staged first and a failure leaves
+neither new file (a file replaced under `--force` is restored). Inputs whose outputs would collide
+(same stem, e.g. `a.wav` and `a.mp3`, or same name from two directories with one `--output-dir`)
+stop the run with exit code 2 before any job is submitted.
 
 - `<stem>.md` — Markdown with YAML frontmatter (`source`, `kind`, `job_id`, `language`, `engine`,
   `model`, `accelerator`, `execution_profile`, `private`, `worker`, `settings_revision`, `created_at`).
@@ -61,7 +64,7 @@ Each input produces two files, written atomically:
 For every job one policy summary line goes to stderr, e.g.
 `job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed`.
 
-**Exit codes:** `0` success, `1` error or timeout, `2` `policy_denied`.
+**Exit codes:** `0` success, `1` error or timeout, `2` `policy_denied` or colliding output names.
 
 **Examples**
 
@@ -194,15 +197,16 @@ Read and change the organization's revisioned settings on the hub (`GET /v1/sett
 ```bash
 resona settings get                     # print current revision as JSON, refresh the cache
 resona settings pull                    # cache the current revision for --local runs
-resona settings set language=en default_execution_profile=cpu-private
-resona settings set --file settings.json
+resona settings get | jq .settings > settings.json   # edit the complete settings object …
+resona settings set --file settings.json              # … and replace it on the hub
 ```
 
 Settings are cached without secrets per hub URL and `organization_id` in
 `~/.resona/settings-cache/<hash>.json` (`hub_url`, `organization_id`, `credential` — a SHA-256
 prefix of the token, never the token —, `revision`, `etag`, `settings`, `fetched_at`, `stale`).
 
-`set` needs the `org_admin` role, validates values against `OrganizationSettings` and sends
+`set` takes only `--file` with the complete settings object (no `key=value` edits); it needs the
+`org_admin` role, validates the document against `OrganizationSettings` and sends
 `If-Match` with the cached revision. A `409 revision_conflict` exits 1 with
 "run `resona settings pull` and retry". Changes apply to new jobs only; existing jobs keep their
 settings snapshot.
