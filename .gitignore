@@ -9,6 +9,8 @@ db/
 files/
 md/
 inbox/
+# ...but never the resona-api db package (schema.py, models.py)
+!packages/api/src/resona_api/db/
 
 # ── Model weights / benchmark artifacts ─────────────────────────────
 # lightning-whisper-mlx downloads here when LIGHTNING_MLX_MODELS_DIR is unset
