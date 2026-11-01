@@ -75,8 +75,8 @@
       "execution_profile": "linux-cuda",
       "platform": "linux-cuda",
       "revision": 1,
-      "evaluation_id": 2,
-      "promoted_at": "2026-11-01T01:42:43+00:00",
+      "evaluation_id": 3,
+      "promoted_at": "2026-11-01T19:07:39+00:00",
       "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
       "release_id": "0.1.0",
       "runtime_versions": [
