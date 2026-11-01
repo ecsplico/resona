@@ -2105,7 +2105,7 @@ image by <code>sha256:</code> digest, every model by exact revision. Release ids
 </code></pre></div>
 <p>Image names carry no tag; mutable revisions (<code>latest</code>, <code>cuda</code>, <code>main</code>, …) are rejected. Build one locally with
 <code>uv run python release/build_manifest.py --release-id X --dist dist/ --image NAME=sha256:... --constraints dist/worker-constraints.txt --out dist/release-manifest.json</code>
-(model pins come from <code>release/models.json</code>). <code>worker-constraints.txt</code> is
+(model pins come from <code>apps/resona-worker/src/resona_worker/models.json</code>, the same file <code>resona-worker prepare</code> uses by default). <code>worker-constraints.txt</code> is
 <code>uv export --frozen --package resona-worker --all-extras --no-emit-workspace --no-hashes --no-header --no-annotate</code>:
 the third-party versions from <code>uv.lock</code>, shipped next to the wheels. Without it a fresh worker environment resolves
 whatever the index serves that day (observed: a newer <code>huggingface_hub</code> that rejects the cached model snapshots).</p>
@@ -2116,8 +2116,12 @@ whatever the index serves that day (observed: a newer <code>huggingface_hub</cod
 with wheels, manifest, <code>worker-constraints.txt</code>, schema and <code>tool-inventory.json</code> as assets.</p>
 <p>Repository variables (all optional): <code>RESONA_IMAGE_NAMESPACE</code> (default <code>ghcr.io/ecsplico</code>, unverified),
 <code>RESONA_PUBLISH_PYPI=true</code> (PyPI trusted publishing; namespace unverified, so GitHub release assets are canonical),
-<code>RESONA_DISPATCH_MCP_RELEASE=true</code> with secrets <code>RELEASE_DISPATCH_APP_ID</code>/<code>RELEASE_DISPATCH_APP_KEY</code> to dispatch
-<code>mcp-release</code> (<code>{mcp: "resona-hub", version, tools}</code>, same shape as <code>skaile-ai/excel-mcp</code>) to <code>skaile-ai/ai-assets</code> and <code>skaile-ai/platform</code>.
+<code>RESONA_DISPATCH_MCP_RELEASE=true</code> with repo secrets <code>RELEASE_DISPATCH_APP_ID</code>/<code>RELEASE_DISPATCH_APP_KEY</code> to dispatch
+<code>mcp-release</code> (<code>{mcp: "resona-hub", version, tools}</code>, same shape as <code>skaile-ai/excel-mcp</code>) to <code>skaile-ai/ai-assets</code>, whose
+<code>mcp-release-bump.yml</code> opens the catalog bump PR for <code>mcp/resona-hub/MCP.md</code> and diffs its tool block against <code>tools</code>.
+Not to <code>skaile-ai/platform</code>: its <code>mcp-release</code> handler only adopts flake-pinned stdio servers. The secrets are the
+<code>skaile-release-dispatch</code> GitHub App's id and private key; in <code>skaile-ai</code> they are organization secrets, which this
+<code>ecsplico</code> repository does not inherit, so a <code>skaile-ai</code> org owner must add them here (unset as of 2026-11-01).
 Regenerate the inventory with <code>uv run python scripts/gen_tool_inventory.py</code> after changing MCP tools.</p>
 <h2 id="hub-staging-evaluation-approval">Hub: staging, evaluation, approval<a class="headerlink" href="#hub-staging-evaluation-approval" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>resona-admin<span class="w"> </span>release<span class="w"> </span>stage<span class="w"> </span>--manifest<span class="w"> </span>release-manifest.json<span class="w">   </span><span class="c1"># admits the release for evaluation jobs only</span>

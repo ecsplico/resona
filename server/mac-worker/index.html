@@ -2205,11 +2205,12 @@
 <h2 id="3-prepare">3. Prepare<a class="headerlink" href="#3-prepare" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>.venv/bin/resona-worker<span class="w"> </span>prepare<span class="w"> </span>--profile<span class="w"> </span>mac-private<span class="w"> </span>--out<span class="w"> </span>~/.resona/worker-caps.json
 </code></pre></div>
-<p>For each candidate of the profile, <code>prepare</code>:</p>
+<p><code>resona worker prepare --profile mac-private …</code> (the unified <code>resona</code> CLI) runs the same command; every <code>resona-worker &lt;command&gt;</code> below is also available as <code>resona worker &lt;command&gt;</code>.</p>
+<p>The model revisions come from the release: by default the pins packaged with the installed <code>resona-worker</code> (<code>resona_worker/models.json</code>), or <code>--release-manifest release-manifest.json</code>. A model or Docling stage weight without a pin fails <code>prepare</code>; an unpinned <code>main</code> snapshot is never accepted. For each candidate of the profile, <code>prepare</code>:</p>
 <ol>
-<li>verifies that the weights are in the local HuggingFace cache. If the profile pins <code>model_revision</code>, that snapshot must exist. The snapshot commit hash is recorded as the model revision.</li>
+<li>makes every model it loads resolve to its pinned commit in the local HuggingFace cache: the ASR model and Docling's layout (<code>docling-project/docling-layout-heron</code>) and table-structure (<code>docling-project/docling-models</code>) weights. A missing pinned commit is downloaded; the branch or tag the engine loads offline (<code>main</code>, <code>v2.3.0</code>) is pointed at that commit. With <code>--offline</code>, <code>prepare</code> never downloads and fails with the missing <code>repo@revision</code>. This happens for all candidates before the first synthetic run.</li>
 <li>runs a real synthetic job through the same execution subprocess and private environment as production jobs: a short German WAV for audio and a scanned German PDF for documents. It checks the recognized German words.</li>
-<li>checks that the primary stage ran on the requested accelerator (<code>asr</code> on Metal, Docling <code>layout</code> on Metal).</li>
+<li>checks that the primary stage ran on the requested accelerator (<code>asr</code> on Metal, Docling <code>layout</code> on Metal) and that every HuggingFace model the run recorded in its provenance is the pinned revision.</li>
 <li>records seconds, peak RSS, peak Metal memory and the device of every stage.</li>
 </ol>
 <p>Use <code>--settings-file settings.json</code> to prepare the organization's current profiles (the body of <code>GET /v1/settings</code>) instead of the seeded defaults. If a step fails, <code>prepare</code> exits non-zero and does not change the existing manifest.</p>
