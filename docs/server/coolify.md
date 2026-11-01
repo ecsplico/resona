@@ -4,7 +4,7 @@ The public hub runs on the ecsplico Coolify server from `docker-compose.coolify.
 
 | Service | Image | Listens | Route |
 |---------|-------|---------|-------|
-| `hub` | `packages/api/Dockerfile` | `:7000` (`expose` only) | `https://resona.ecsplico.de/*` |
+| `hub` | `ghcr.io/ecsplico/resona-hub@sha256:<digest>` | `:7000` (`expose` only) | `https://resona.ecsplico.de/*` |
 | `mcp` | same image, `resona-mcp http` | `:7010` (`expose` only) | `https://resona.ecsplico.de/mcp` |
 
 There are no models, GPUs, Docker socket mounts, privileges or published ports. Both containers run as UID 1000 with a read-only root filesystem, all capabilities dropped and `no-new-privileges`. SQLite and the transient job payloads live on the named volume `resona-data` (`/data`); the database is never exposed. Inference runs on approved pull workers that connect outbound over HTTPS ([Mac worker](mac-worker.md), [Linux CUDA worker](full-stack.md)). When no worker is online, jobs wait in the queue.
@@ -13,7 +13,15 @@ TLS ends at Coolify's Caddy proxy. In raw mode Coolify adds no labels or network
 
 ## Image
 
-Coolify builds `packages/api/Dockerfile` from the deployed commit, so the running image is pinned by that commit. When release images are published to GHCR (see [Releases](releases.md)), replace `build:` with `image: ghcr.io/ecsplico/resona-api@sha256:<digest>` from the release manifest.
+Both services run the released hub image `ghcr.io/ecsplico/resona-hub`, pinned by digest; the compose file has no `build:`, so Coolify only pulls. The GHCR package is public, so the Coolify server pulls without registry credentials.
+
+Bump per release:
+
+1. The release workflow ([Releases](releases.md)) pushes `ghcr.io/ecsplico/resona-hub:<version>` and records its digest in `release-manifest.json` (`images[].name == "ghcr.io/ecsplico/resona-hub"`).
+2. Replace the digest in **both** `image:` lines of `docker-compose.coolify.yml` with that digest, commit and push to `main`.
+3. Deploy (below), then confirm the running digest: `docker inspect --format '{{index .RepoDigests 0}}' <app-uuid>-hub-1` (scheduled task on the host or the deployment log's pull line).
+
+Manual build outside the workflow (the first image, `0.1.0-d7405d3`, was built this way): build from a clean `git archive <commit>` tree, never the working tree, `docker buildx build --platform linux/amd64 -f packages/api/Dockerfile -t ghcr.io/ecsplico/resona-hub:<version>-<commit> --push --metadata-file meta.json .`, and pin `containerimage.digest` from `meta.json`. The Coolify server is amd64.
 
 ## Environment
 

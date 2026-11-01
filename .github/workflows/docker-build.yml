@@ -33,7 +33,7 @@ jobs:
           - { name: resona-engine-faster-whisper, dockerfile: packages/engine-faster-whisper/Dockerfile, build_args: "" }
           - { name: resona-engine-whisper,        dockerfile: packages/engine-whisper/Dockerfile,        build_args: "" }
           - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile,        build_args: "" }
-          - { name: resona-api,                   dockerfile: packages/api/Dockerfile,                   build_args: "" }
+          - { name: resona-hub,                   dockerfile: packages/api/Dockerfile,                   build_args: "" }
           - { name: resona-worker,                dockerfile: apps/resona-worker/Dockerfile,             build_args: "" }
           - name: resona-worker-cuda
             dockerfile: apps/resona-worker/Dockerfile

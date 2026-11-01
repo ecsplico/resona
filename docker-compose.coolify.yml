@@ -8,13 +8,10 @@
 # HTTPS. In raw mode Coolify adds no networks/labels, so the proxy wiring (Caddy
 # labels, `coolify` network) is declared here.
 #
-# Image: built by Coolify from packages/api/Dockerfile at the deployed commit, so
-# the running image is pinned by that commit. Coolify builds in the cloned repo but
-# starts the stack from its own directory without the sources, so `hub` must not
-# set `pull_policy: build` (start would rebuild from a missing context); `mcp`
-# reuses the freshly built local tag. Once release images are published, replace
-# `build:` with `image: ghcr.io/ecsplico/resona-api@sha256:<digest>` from the
-# release manifest and drop `pull_policy` from `mcp`.
+# Image: the released hub image from GHCR, pinned by digest (never a mutable tag).
+# The release workflow pushes ghcr.io/ecsplico/resona-hub; bump both `image:` lines
+# to the digest from that release's release-manifest.json (docs/server/coolify.md).
+# Current: ghcr.io/ecsplico/resona-hub:0.1.0-d7405d3 (linux/amd64, commit d7405d3).
 #
 # No variable is required: defaults serve https://resona.ecsplico.de.
 #   RESONA_PUBLIC_URL        public origin (Caddy site, CORS, MCP Origin allowlist)
@@ -32,10 +29,7 @@ x-hardening: &hardening
 services:
   hub:
     <<: *hardening
-    build:
-      context: .
-      dockerfile: packages/api/Dockerfile
-    image: resona-hub:coolify
+    image: ghcr.io/ecsplico/resona-hub@sha256:13d4c881083998ba0a5b2697ff88de1af61a165b3479471b43c9147a977d8fd1
     restart: unless-stopped
     stop_grace_period: 30s
     expose: ['7000']
@@ -61,8 +55,7 @@ services:
 
   mcp:
     <<: *hardening
-    image: resona-hub:coolify
-    pull_policy: never
+    image: ghcr.io/ecsplico/resona-hub@sha256:13d4c881083998ba0a5b2697ff88de1af61a165b3479471b43c9147a977d8fd1
     command: ['resona-mcp', 'http', '--host', '0.0.0.0', '--port', '7010']
     restart: unless-stopped
     depends_on:

@@ -2,7 +2,7 @@
 
     uv run python release/build_manifest.py \
         --release-id 0.2.0 --dist dist/ \
-        --image ghcr.io/ecsplico/resona-api=sha256:<64 hex> \
+        --image ghcr.io/ecsplico/resona-hub=sha256:<64 hex> \
         --image ghcr.io/ecsplico/resona-worker=sha256:<64 hex> \
         --models release/models.json --constraints dist/worker-constraints.txt \
         --out dist/release-manifest.json

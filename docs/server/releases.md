@@ -11,7 +11,7 @@ image by `sha256:` digest, every model by exact revision. Release ids are packag
 ```json
 {"release_id": "0.2.0", "created_at": "...", "worker_protocol": 1,
  "wheels": [{"name": "resona-worker", "version": "0.2.0", "sha256": "<64 hex>"}],
- "images": [{"name": "ghcr.io/ecsplico/resona-api", "digest": "sha256:<64 hex>"}],
+ "images": [{"name": "ghcr.io/ecsplico/resona-hub", "digest": "sha256:<64 hex>"}],
  "models": [{"engine": "faster-whisper", "model": "Systran/faster-whisper-large-v3", "revision": "<commit>"}],
  "constraints": {"name": "worker-constraints.txt", "sha256": "<64 hex>"}}
 ```

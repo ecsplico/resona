@@ -44,7 +44,7 @@ That's it. The `Release` workflow takes over.
    - `uv build --package <name>` produces sdist + wheel into `dist/`
    - Build artifacts uploaded to the workflow run
    - `pypa/gh-action-pypi-publish@release/v1` uploads to PyPI via OIDC (no token secret needed — see one-time setup below)
-2. **`docker`** — for each of the four images (`resona-engine-faster-whisper`, `resona-engine-whisper`, `resona-engine-voxtral`, `resona-api`):
+2. **`docker`** — for each of the four images (`resona-engine-faster-whisper`, `resona-engine-whisper`, `resona-engine-voxtral`, `resona-hub` from `packages/api/Dockerfile`):
    - Logs in to `ghcr.io` using the workflow's `GITHUB_TOKEN` (which has `packages: write` via the `permissions:` block)
    - Builds `linux/amd64` (engines are CUDA — no arm64) with GHA cache
    - Pushes `ghcr.io/ecsplico/<name>:<tag>`, `…:vX.Y`, and `…:latest`

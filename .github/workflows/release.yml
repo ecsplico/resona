@@ -117,7 +117,7 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: resona-api,                   dockerfile: packages/api/Dockerfile,           build_args: "" }
+          - { name: resona-hub,                   dockerfile: packages/api/Dockerfile,           build_args: "" }
           - { name: resona-worker,                dockerfile: apps/resona-worker/Dockerfile,     build_args: "" }
           - name: resona-worker-cuda
             dockerfile: apps/resona-worker/Dockerfile
