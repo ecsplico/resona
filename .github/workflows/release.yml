@@ -21,8 +21,8 @@ name: Release
 # Repository variables (Settings > Variables), all optional:
 #   RESONA_IMAGE_NAMESPACE        registry/namespace for images (default ghcr.io/ecsplico)
 #   RESONA_PUBLISH_PYPI           'true' to also publish wheels to PyPI (OIDC trusted publishing)
-#   RESONA_DISPATCH_MCP_RELEASE   'true' to dispatch mcp-release to skaile-ai/ai-assets + platform;
-#                                 needs secrets RELEASE_DISPATCH_APP_ID / RELEASE_DISPATCH_APP_KEY
+#   RESONA_DISPATCH_MCP_RELEASE   'true' to dispatch mcp-release to skaile-ai/ai-assets;
+#                                 needs repo secrets RELEASE_DISPATCH_APP_ID / RELEASE_DISPATCH_APP_KEY
 
 on:
   push:
@@ -195,7 +195,7 @@ jobs:
       - name: Prepare pinned models
         run: |
           set -euo pipefail
-          rev=$(jq -r '.[] | select(.model == "Systran/faster-whisper-large-v3") | .revision' release/models.json)
+          rev=$(jq -r '.[] | select(.model == "Systran/faster-whisper-large-v3") | .revision' apps/resona-worker/src/resona_worker/models.json)
           uv run hf download Systran/faster-whisper-large-v3 --revision "$rev" > /dev/null
           uv run docling-tools models download > /dev/null
 
@@ -268,7 +268,7 @@ jobs:
             --no-hashes --no-header --no-annotate --output-file dist/worker-constraints.txt
           uv run --frozen --no-dev --package resona-job-core python release/build_manifest.py \
             --release-id "$VERSION" --dist dist/ "${args[@]}" \
-            --models release/models.json --constraints dist/worker-constraints.txt \
+            --models apps/resona-worker/src/resona_worker/models.json --constraints dist/worker-constraints.txt \
             --out dist/release-manifest.json
           cp tool-inventory.json release/manifest.schema.json dist/
 
@@ -288,8 +288,18 @@ jobs:
 
   # SKAILE catalog update, same payload shape as skaile-ai/excel-mcp's notify-downstream:
   # {event_type:"mcp-release", client_payload:{mcp, version, tools}} with tools = the
-  # checked-in tool-inventory.json ([{name, deferred}], sorted). Off unless the repository
-  # variable RESONA_DISPATCH_MCP_RELEASE is 'true' and the dispatch App secrets exist.
+  # checked-in tool-inventory.json ([{name, deferred}], sorted). ai-assets'
+  # mcp-release-bump.yml maps mcp "resona-hub" to mcp/resona-hub/MCP.md, bumps its
+  # `# mcp-catalog-version` line and diffs the <!-- mcp-catalog-tools --> block against
+  # `tools`. skaile-ai/platform is NOT a target: its mcp-release-issue.yml only handles
+  # flake-pinned stdio servers (excel/ppt/word) and fails on any other name; a hosted
+  # HTTP server has nothing to adopt there.
+  #
+  # Credentials: the skaile-release-dispatch GitHub App (owned by skaile-ai). Its id/key
+  # are skaile-ai ORGANIZATION secrets, which a repo in the ecsplico org never receives,
+  # so this repo needs its own secrets RELEASE_DISPATCH_APP_ID / RELEASE_DISPATCH_APP_KEY
+  # (same App; the token is minted for owner skaile-ai) plus the variable
+  # RESONA_DISPATCH_MCP_RELEASE=true. Off until both exist.
   notify-downstream:
     name: Dispatch mcp-release
     needs: [verify, manifest]
@@ -308,18 +318,16 @@ jobs:
           app-id: ${{ secrets.RELEASE_DISPATCH_APP_ID }}
           private-key: ${{ secrets.RELEASE_DISPATCH_APP_KEY }}
           owner: skaile-ai
-          repositories: ai-assets,platform
+          repositories: ai-assets
 
-      - name: Dispatch mcp-release to ai-assets and platform
+      - name: Dispatch mcp-release to ai-assets
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
           set -euo pipefail
           jq -e 'type == "array" and length > 0' tool-inventory.json > /dev/null
-          for repo in skaile-ai/ai-assets skaile-ai/platform; do
-            jq -nc --arg v "$VERSION" --argjson t "$(cat tool-inventory.json)" \
-              '{event_type:"mcp-release",client_payload:{mcp:"resona-hub",version:$v,tools:$t}}' \
-              | gh api "repos/$repo/dispatches" --input -
-            echo "dispatched mcp-release resona-hub@$VERSION -> $repo"
-          done
+          jq -nc --arg v "$VERSION" --argjson t "$(cat tool-inventory.json)" \
+            '{event_type:"mcp-release",client_payload:{mcp:"resona-hub",version:$v,tools:$t}}' \
+            | gh api repos/skaile-ai/ai-assets/dispatches --input -
+          echo "dispatched mcp-release resona-hub@$VERSION -> skaile-ai/ai-assets"

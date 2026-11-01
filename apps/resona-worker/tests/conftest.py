@@ -278,6 +278,17 @@ PREPARE_EXECUTOR_SCRIPT = r'''
 import argparse, json, os, sys
 from pathlib import Path
 
+from resona_worker.weights import is_hub_repo, local_snapshot
+
+
+def loaded(model, revision):
+    """Like the real executor: HF repos load the cached snapshot, provenance names its commit."""
+    if not is_hub_repo(model):
+        return revision
+    snapshot = local_snapshot(model, revision)
+    return snapshot.name if snapshot is not None else revision
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--snapshot", required=True)
 parser.add_argument("--input", required=True)
@@ -292,10 +303,12 @@ device = "cpu" if "wrongdevice" in cand["model"] else cand["accelerator"]
 if snapshot["kind"] == "audio":
     text = "Guten Tag, das ist ein Test."
     stages = [{"stage": "asr", "engine": cand["engine"], "model": cand["model"],
-               "model_revision": cand["model_revision"], "accelerator": device, "seconds": 0.1}]
+               "model_revision": loaded(cand["model"], cand["model_revision"]), "accelerator": device, "seconds": 0.1}]
 else:
     text = "Dies ist ein synthetisches Testdokument. Die Straße führt über die Brücke."
-    stages = [{"stage": "layout", "engine": "docling-layout", "model": "layout", "accelerator": device, "seconds": 0.1},
+    layout = "docling-project/docling-layout-heron"
+    stages = [{"stage": "layout", "engine": "docling-layout", "model": layout, "model_revision": loaded(layout, "main"),
+               "accelerator": device, "seconds": 0.1},
               {"stage": "ocr", "engine": cand["ocr_engine"], "model": "apple-vision", "accelerator": "metal", "seconds": 0.1}]
 if "garbage" in cand["model"]:
     text = "lorem ipsum"
@@ -313,3 +326,25 @@ def prepare_executor(tmp_path: Path) -> Path:
     path = tmp_path / "fake_prepare_exec.py"
     path.write_text(PREPARE_EXECUTOR_SCRIPT, encoding="utf-8")
     return path
+
+
+@pytest.fixture
+def hf_cache(tmp_path: Path, monkeypatch):
+    """An empty HuggingFace hub cache (``HF_HUB_CACHE``); ``add(repo, commit, *refs)`` caches a snapshot."""
+    root = tmp_path / "hf-cache"
+    root.mkdir()
+    monkeypatch.setenv("HF_HUB_CACHE", str(root))
+    monkeypatch.delenv("RESONA_MODELS_DIR", raising=False)
+    monkeypatch.delenv("VOICEBOX_MODELS_DIR", raising=False)
+
+    def add(repo: str, commit: str, *refs: str) -> Path:
+        folder = root / f"models--{repo.replace('/', '--')}"
+        snapshot = folder / "snapshots" / commit
+        snapshot.mkdir(parents=True, exist_ok=True)
+        (snapshot / "config.json").write_text("{}", encoding="utf-8")
+        for ref in refs:
+            (folder / "refs").mkdir(exist_ok=True)
+            (folder / "refs" / ref).write_text(commit, encoding="utf-8")
+        return snapshot
+
+    return SimpleNamespace(root=root, add=add)

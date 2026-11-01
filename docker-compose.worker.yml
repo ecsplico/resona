@@ -7,10 +7,10 @@
 #   RESONA_HUB_URL            hub base URL, https (or loopback http for a host-local tunnel)
 #   RESONA_WORKER_TOKEN_FILE  host path of the worker token file, mode 0600, owned by UID 1000
 #
-# One-off preparation (downloads the pinned weights into the `models` volume, runs real
-# CUDA inference, writes the tested tuples to the `state` volume):
+# One-off preparation (downloads the release's pinned weights into the `models` volume,
+# runs real CUDA inference, writes the tested tuples to the `state` volume):
 #   docker compose -f docker-compose.worker.yml run --rm worker \
-#     prepare --profile linux-cuda --download --out /state/capabilities.json
+#     prepare --profile linux-cuda --out /state/capabilities.json
 # Then:
 #   docker compose -f docker-compose.worker.yml up -d
 
@@ -31,7 +31,7 @@ services:
       - /work
     restart: unless-stopped
     volumes:
-      # Model weights survive restarts and image updates; prepared once with --download.
+      # Model weights survive restarts and image updates; `prepare` fetches the pinned revisions once.
       - models:/models
       # Capabilities manifest written by `prepare`.
       - state:/state

@@ -49,11 +49,13 @@ Do not put the worker token into `~/.resona/config.json`, into environment varia
 .venv/bin/resona-worker prepare --profile mac-private --out ~/.resona/worker-caps.json
 ```
 
-For each candidate of the profile, `prepare`:
+`resona worker prepare --profile mac-private …` (the unified `resona` CLI) runs the same command; every `resona-worker <command>` below is also available as `resona worker <command>`.
 
-1. verifies that the weights are in the local HuggingFace cache. If the profile pins `model_revision`, that snapshot must exist. The snapshot commit hash is recorded as the model revision.
+The model revisions come from the release: by default the pins packaged with the installed `resona-worker` (`resona_worker/models.json`), or `--release-manifest release-manifest.json`. A model or Docling stage weight without a pin fails `prepare`; an unpinned `main` snapshot is never accepted. For each candidate of the profile, `prepare`:
+
+1. makes every model it loads resolve to its pinned commit in the local HuggingFace cache: the ASR model and Docling's layout (`docling-project/docling-layout-heron`) and table-structure (`docling-project/docling-models`) weights. A missing pinned commit is downloaded; the branch or tag the engine loads offline (`main`, `v2.3.0`) is pointed at that commit. With `--offline`, `prepare` never downloads and fails with the missing `repo@revision`. This happens for all candidates before the first synthetic run.
 2. runs a real synthetic job through the same execution subprocess and private environment as production jobs: a short German WAV for audio and a scanned German PDF for documents. It checks the recognized German words.
-3. checks that the primary stage ran on the requested accelerator (`asr` on Metal, Docling `layout` on Metal).
+3. checks that the primary stage ran on the requested accelerator (`asr` on Metal, Docling `layout` on Metal) and that every HuggingFace model the run recorded in its provenance is the pinned revision.
 4. records seconds, peak RSS, peak Metal memory and the device of every stage.
 
 Use `--settings-file settings.json` to prepare the organization's current profiles (the body of `GET /v1/settings`) instead of the seeded defaults. If a step fails, `prepare` exits non-zero and does not change the existing manifest.

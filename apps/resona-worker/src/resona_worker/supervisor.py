@@ -32,8 +32,8 @@ from resona_postprocess.llm import legacy_endpoint_id
 from resona_postprocess.pipeline import PostprocessResult, build_pipeline
 from resona_postprocess.profile import Profile, ProfileError
 
-from resona_worker.config import WorkerConfig, runtime_version
-from resona_worker.drain import (
+from .config import WorkerConfig, runtime_version
+from .drain import (
     clear_drained,
     clear_running,
     drain_requested,
@@ -41,8 +41,8 @@ from resona_worker.drain import (
     mark_running,
     take_superseded,
 )
-from resona_worker.execute import ExitCode, mentions_out_of_memory, subprocess_env
-from resona_worker.hub import (
+from .execute import ExitCode, mentions_out_of_memory, subprocess_env
+from .hub import (
     MAX_RESULT_BYTES,
     ClaimedJob,
     HubClient,

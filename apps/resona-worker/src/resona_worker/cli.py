@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from resona_job_core import OrganizationSettings, default_settings
 from resona_job_core.release import ReleaseManifest
 
-from resona_worker.config import (
+from .config import (
     ConfigError,
     PreparedCapability,
     WorkerConfig,
@@ -22,11 +22,11 @@ from resona_worker.config import (
     load_token,
     validate_hub_url,
 )
-from resona_worker.hub import HubClient, HubError
-from resona_worker.launchd import DEFAULT_LABEL, InstallError, install as install_service, uninstall as uninstall_service
-from resona_worker.prepare import DEFAULT_TIMEOUT_SECONDS, PrepareError, prepare as prepare_profile, write_manifest
-from resona_worker.supervisor import Supervisor
-from resona_worker.update import PROFILE_EXTRAS, Steps, UpdateError, UpdateRequest, run_update
+from .hub import HubClient, HubError
+from .launchd import DEFAULT_LABEL, InstallError, install as install_service, uninstall as uninstall_service
+from .prepare import DEFAULT_TIMEOUT_SECONDS, PrepareError, prepare as prepare_profile, write_manifest
+from .supervisor import Supervisor
+from .update import PROFILE_EXTRAS, Steps, UpdateError, UpdateRequest, run_update
 
 app = typer.Typer(help="Outbound-only pull worker for the Resona hub.", no_args_is_help=True)
 
@@ -111,23 +111,26 @@ def prepare(
     timeout: Annotated[float, typer.Option("--timeout", help="Seconds per synthetic run.")] = DEFAULT_TIMEOUT_SECONDS,
     release_manifest: Annotated[
         Path | None,
-        typer.Option("--release-manifest", help="Release manifest whose model revisions the local weights must match."),
+        typer.Option(
+            "--release-manifest",
+            help="Release manifest whose model pins to prepare (default: the pins of the installed release).",
+        ),
     ] = None,
-    download: Annotated[
+    offline: Annotated[
         bool,
-        typer.Option("--download", help="Fetch the pinned weights into the local caches first (network)."),
+        typer.Option("--offline", help="Never download: fail when a pinned revision is not in the local caches."),
     ] = False,
 ) -> None:
-    """Verify weights offline and run synthetic jobs for every candidate of a profile.
+    """Pin the release's model weights locally and run synthetic jobs for every candidate of a profile.
 
-    `--download` fetches the pinned weights first; jobs never download.
+    Missing pinned weights are downloaded (unless --offline); jobs never download.
     Writes the manifest only when every candidate passes; a failed prepare keeps the previous file.
     """
     try:
         settings = _load_settings(settings_file)
         model_pins = _load_model_pins(release_manifest) if release_manifest is not None else None
         manifest = prepare_profile(
-            settings, profile, timeout=timeout, model_pins=model_pins, download=download,
+            settings, profile, timeout=timeout, model_pins=model_pins, offline=offline,
             on_tested=lambda item: typer.echo(_describe(item), err=True),
         )
     except (ConfigError, PrepareError) as exc:

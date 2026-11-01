@@ -11,7 +11,9 @@ import pytest
 from resona_job_core.release import ReleaseManifest
 
 from resona_worker import drain
+from resona_worker import update as update_module
 from resona_worker.hub import ReleaseStatus
+from resona_worker.launchd import InstallError
 from resona_worker.update import Steps, UpdateError, UpdateRequest, current_release, run_update
 
 RELEASE = "0.2.0"
@@ -221,8 +223,11 @@ def test_failed_prepare_keeps_previous_release_and_capabilities(tmp_path, layout
     assert not (releases / RELEASE).exists()
 
 
-def test_bogus_model_revision_fails_the_real_prepare_without_replacing_the_release(tmp_path, layout) -> None:
+def test_bogus_model_revision_fails_the_real_prepare_without_replacing_the_release(
+    tmp_path, layout, monkeypatch
+) -> None:
     """The new environment's ``prepare`` (this interpreter) must find the manifest's exact revision."""
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")  # the pinned commit does not exist; never ask the network
     releases, caps = layout
     manifest_path, manifest = _manifest(tmp_path, revision=BOGUS_REVISION)
     settings = tmp_path / "settings.json"
@@ -299,3 +304,100 @@ def test_drain_timeout_installs_nothing_and_resumes(tmp_path, layout) -> None:
     assert events == [f"hub:{RELEASE}", "drain", "resume"]
     assert current_release(releases) == "0.1.0"
     assert not (releases / RELEASE).exists()
+
+
+def _assert_previous_release_kept(releases: Path, caps: Path) -> None:
+    assert current_release(releases) == "0.1.0"
+    assert caps.read_text() == "PREVIOUS"
+    assert not (releases / RELEASE).exists()
+    assert not list(caps.parent.glob(f".{caps.name}.*"))
+
+
+def test_failed_restart_restores_previous_release_capabilities_and_service(tmp_path, layout) -> None:
+    releases, caps = layout
+    old_python = releases / "0.1.0" / "venv" / "bin" / "python"
+    old_python.parent.mkdir(parents=True)
+    old_python.write_text("")
+    manifest_path, manifest = _manifest(tmp_path)
+    events: list[str] = []
+    restarts: list[Path] = []
+    steps = _recording_steps(events)
+
+    def restart(python: Path) -> None:
+        restarts.append(python)
+        if python != old_python:
+            raise InstallError("launchctl bootstrap failed (5)")
+
+    steps.restart = restart
+
+    with pytest.raises(InstallError, match="bootstrap failed"):
+        run_update(_request(tmp_path, manifest_path, releases, caps), FakeHub(events, _status(manifest)), steps)
+
+    assert restarts == [releases / RELEASE / "venv" / "bin" / "python", old_python]
+    assert events[-1] == "resume" and "supersede" not in events
+    _assert_previous_release_kept(releases, caps)
+
+
+def test_failed_swap_of_current_leaves_previous_release_and_capabilities(tmp_path, layout, monkeypatch) -> None:
+    releases, caps = layout
+    manifest_path, manifest = _manifest(tmp_path)
+    events: list[str] = []
+    swap = update_module._swap_current
+
+    def failing_swap(releases_dir: Path, release_id: str) -> None:
+        if release_id == RELEASE:
+            raise OSError(28, "No space left on device")
+        swap(releases_dir, release_id)
+
+    monkeypatch.setattr(update_module, "_swap_current", failing_swap)
+
+    with pytest.raises(OSError, match="No space left"):
+        run_update(_request(tmp_path, manifest_path, releases, caps), FakeHub(events, _status(manifest)),
+                   _recording_steps(events))
+
+    assert "restart" not in events and events[-1] == "resume"
+    _assert_previous_release_kept(releases, caps)
+
+
+def test_failed_capabilities_replace_points_current_back(tmp_path, layout, monkeypatch) -> None:
+    releases, caps = layout
+    manifest_path, manifest = _manifest(tmp_path)
+    events: list[str] = []
+
+    def failing_replace(source: Path, dest: Path) -> None:
+        assert current_release(releases) == RELEASE  # `current` is swapped first
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(update_module, "_replace_file", failing_replace)
+
+    with pytest.raises(OSError, match="No space left"):
+        run_update(_request(tmp_path, manifest_path, releases, caps), FakeHub(events, _status(manifest)),
+                   _recording_steps(events))
+
+    assert "restart" not in events
+    _assert_previous_release_kept(releases, caps)
+
+
+@pytest.mark.parametrize("bundled", [True, False])
+def test_release_without_approved_tuples_warns_even_when_bundled(tmp_path, layout, caplog, bundled) -> None:
+    releases, caps = layout
+    manifest_path, manifest = _manifest(tmp_path)
+    events: list[str] = []
+
+    with caplog.at_level("WARNING", logger="resona_worker.update"):
+        run_update(_request(tmp_path, manifest_path, releases, caps),
+                   FakeHub(events, _status(manifest, bundled=bundled, approved_tuples=[])), _recording_steps(events))
+
+    assert "only run evaluation jobs" in caplog.text
+
+
+def test_approved_release_does_not_warn(tmp_path, layout, caplog) -> None:
+    releases, caps = layout
+    manifest_path, manifest = _manifest(tmp_path)
+    events: list[str] = []
+
+    with caplog.at_level("WARNING", logger="resona_worker.update"):
+        run_update(_request(tmp_path, manifest_path, releases, caps), FakeHub(events, _status(manifest)),
+                   _recording_steps(events))
+
+    assert "only run evaluation jobs" not in caplog.text

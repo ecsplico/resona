@@ -18,7 +18,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from resona_job_core import Candidate, PolicyDenied
 
-from resona_worker import WORKER_PROTOCOL
+from . import WORKER_PROTOCOL
 
 log = logging.getLogger("resona_worker.hub")
 MAX_RESULT_BYTES = 200 * 1024 * 1024

@@ -78,12 +78,12 @@ The service:
 
 ```bash
 docker compose -f docker-compose.worker.yml run --rm worker \
-  prepare --profile linux-cuda --download --out /state/capabilities.json
+  prepare --profile linux-cuda --out /state/capabilities.json
 ```
 
-`--download` fetches the pinned weights into the `models` volume: the openai-whisper `large-v3` checkpoint (its revision is the published SHA-256, verified after download) and the Docling layout (`docling-project/docling-layout-heron`) and table-structure (`docling-project/docling-models` `v2.3.0`) snapshots. RapidOCR's ONNX models are part of the `rapidocr` wheel. Jobs never download.
+`prepare` takes the model pins of the image's release (`resona_worker/models.json` in the `resona-worker` wheel; `--release-manifest` selects another manifest) and downloads each missing pinned revision into the `models` volume: the openai-whisper `large-v3` checkpoint (its revision is the published SHA-256, verified after download) and the Docling layout (`docling-project/docling-layout-heron`) and table-structure (`docling-project/docling-models`) snapshots at their pinned commits. A model without a pin fails `prepare`; an unpinned `main` snapshot is never used. RapidOCR's ONNX models are part of the `rapidocr` wheel. Add `--offline` to forbid downloads: a missing pin then fails with its `repo@revision`. Jobs never download.
 
-Then `prepare` runs a real synthetic job for each candidate in the private, offline execution subprocess, checks the recognized German words and checks that the primary stage ran on CUDA. It records seconds, peak RSS, peak CUDA memory (`torch.cuda.max_memory_allocated`) and the device of every stage. If a step fails, `prepare` exits non-zero and does not change the existing manifest.
+Then `prepare` runs a real synthetic job for each candidate in the private, offline execution subprocess, checks the recognized German words, checks that the primary stage ran on CUDA and that every HuggingFace model the run recorded is the pinned revision. It records seconds, peak RSS, peak CUDA memory (`torch.cuda.max_memory_allocated`) and the device of every stage. If a step fails, `prepare` exits non-zero and does not change the existing manifest.
 
 Output on an RTX 5070 Ti (16 GB, driver 615.78.08):
 
@@ -93,7 +93,7 @@ ok document: docling docling-standard [cuda] 18.9s, peak RSS 3197 MiB, peak cuda
 prepared 2 capability tuple(s) for linux-cuda -> /state/capabilities.json
 ```
 
-The first `--download` run took about 6 minutes; later runs without `--download` take about 45 seconds.
+The first run, which downloaded the weights, took about 6 minutes; later runs with the weights cached take about 45 seconds.
 
 ## 5. Approve and run
 

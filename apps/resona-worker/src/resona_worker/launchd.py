@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from resona_worker.config import ConfigError, load_manifest, load_token, validate_hub_url
+from .config import ConfigError, load_manifest, load_token, validate_hub_url
 
 DEFAULT_LABEL = "de.ecsplico.resona-worker"
 _LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$")

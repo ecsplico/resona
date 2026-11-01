@@ -18,7 +18,7 @@ image by `sha256:` digest, every model by exact revision. Release ids are packag
 
 Image names carry no tag; mutable revisions (`latest`, `cuda`, `main`, …) are rejected. Build one locally with
 `uv run python release/build_manifest.py --release-id X --dist dist/ --image NAME=sha256:... --constraints dist/worker-constraints.txt --out dist/release-manifest.json`
-(model pins come from `release/models.json`). `worker-constraints.txt` is
+(model pins come from `apps/resona-worker/src/resona_worker/models.json`, the same file `resona-worker prepare` uses by default). `worker-constraints.txt` is
 `uv export --frozen --package resona-worker --all-extras --no-emit-workspace --no-hashes --no-header --no-annotate`:
 the third-party versions from `uv.lock`, shipped next to the wheels. Without it a fresh worker environment resolves
 whatever the index serves that day (observed: a newer `huggingface_hub` that rejects the cached model snapshots).
@@ -32,8 +32,12 @@ with wheels, manifest, `worker-constraints.txt`, schema and `tool-inventory.json
 
 Repository variables (all optional): `RESONA_IMAGE_NAMESPACE` (default `ghcr.io/ecsplico`, unverified),
 `RESONA_PUBLISH_PYPI=true` (PyPI trusted publishing; namespace unverified, so GitHub release assets are canonical),
-`RESONA_DISPATCH_MCP_RELEASE=true` with secrets `RELEASE_DISPATCH_APP_ID`/`RELEASE_DISPATCH_APP_KEY` to dispatch
-`mcp-release` (`{mcp: "resona-hub", version, tools}`, same shape as `skaile-ai/excel-mcp`) to `skaile-ai/ai-assets` and `skaile-ai/platform`.
+`RESONA_DISPATCH_MCP_RELEASE=true` with repo secrets `RELEASE_DISPATCH_APP_ID`/`RELEASE_DISPATCH_APP_KEY` to dispatch
+`mcp-release` (`{mcp: "resona-hub", version, tools}`, same shape as `skaile-ai/excel-mcp`) to `skaile-ai/ai-assets`, whose
+`mcp-release-bump.yml` opens the catalog bump PR for `mcp/resona-hub/MCP.md` and diffs its tool block against `tools`.
+Not to `skaile-ai/platform`: its `mcp-release` handler only adopts flake-pinned stdio servers. The secrets are the
+`skaile-release-dispatch` GitHub App's id and private key; in `skaile-ai` they are organization secrets, which this
+`ecsplico` repository does not inherit, so a `skaile-ai` org owner must add them here (unset as of 2026-11-01).
 Regenerate the inventory with `uv run python scripts/gen_tool_inventory.py` after changing MCP tools.
 
 ## Hub: staging, evaluation, approval

@@ -102,3 +102,37 @@ def test_failed_prepare_keeps_the_previous_manifest(tmp_path: Path, monkeypatch,
     assert result.exit_code == 1
     assert "prepare failed" in result.output
     assert out.read_text() == "previous working manifest"
+
+
+def test_prepare_with_a_release_manifest_whose_layout_pin_differs_fails_offline(
+    tmp_path: Path, monkeypatch, hf_cache
+) -> None:
+    from resona_job_core.release import ReleaseManifest
+
+    from resona_worker import prepare as prepare_module
+
+    layout, other = "docling-project/docling-layout-heron", "1" * 40
+    hf_cache.add(layout, "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8", "main")
+    monkeypatch.setattr(prepare_module, "_stage_weights", lambda kind: [(layout, "main")] if kind == "document" else [])
+    manifest = ReleaseManifest.model_validate({
+        "release_id": "0.2.0", "created_at": "2026-11-01T00:00:00Z",
+        "wheels": [{"name": "resona-worker", "version": "0.2.0", "sha256": "a" * 64}],
+        "models": [{"engine": "docling-layout", "model": layout, "revision": other}],
+    })
+    manifest_file = tmp_path / "release-manifest.json"
+    manifest_file.write_text(manifest.model_dump_json(), encoding="utf-8")
+    settings = {"execution_profiles": {"docs": {"audio": [], "document": [
+        {"engine": "docling", "model": "docling-standard", "accelerator": "cpu", "ocr_engine": "rapidocr"},
+    ]}}}
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps(settings), encoding="utf-8")
+    out = tmp_path / "caps.json"
+
+    result = runner.invoke(cli.app, [
+        "prepare", "--profile", "docs", "--settings-file", str(settings_file), "--out", str(out),
+        "--release-manifest", str(manifest_file), "--offline",
+    ])
+
+    assert result.exit_code == 1
+    assert f"prepare failed: {layout}@{other} is not in the local HuggingFace cache and --offline" in result.output
+    assert not out.exists()

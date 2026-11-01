@@ -4,7 +4,7 @@
         --release-id 0.2.0 --dist dist/ \
         --image ghcr.io/ecsplico/resona-hub=sha256:<64 hex> \
         --image ghcr.io/ecsplico/resona-worker=sha256:<64 hex> \
-        --models release/models.json --constraints dist/worker-constraints.txt \
+        --models apps/resona-worker/src/resona_worker/models.json --constraints dist/worker-constraints.txt \
         --out dist/release-manifest.json
 
 Every ``*.whl`` in ``--dist`` is pinned by name, version and SHA-256. The
@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--dist", type=Path, required=True, help="directory with the built wheels")
     parser.add_argument("--image", action="append", default=[], help="NAME=sha256:DIGEST (repeatable)")
-    parser.add_argument("--models", type=Path, default=Path(__file__).with_name("models.json"))
+    parser.add_argument("--models", type=Path, default=Path(__file__).parents[1] / "apps/resona-worker/src/resona_worker/models.json")
     parser.add_argument("--constraints", type=Path, help="uv.lock export inside --dist (third-party pins)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)

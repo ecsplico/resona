@@ -10,10 +10,12 @@ Run on the worker machine by its operator; the hub cannot trigger it. Order:
 5. Install the wheels into a fresh per-release environment ``<releases-dir>/<id>/venv``.
 6. Run ``prepare`` from that environment with the manifest's model pins, into a new
    capabilities file.
-7. Only if prepare succeeds: atomically replace the capabilities file, point
-   ``<releases-dir>/current`` at the new release and restart the service on it.
+7. Only if prepare succeeds: point ``<releases-dir>/current`` at the new release, then
+   atomically replace the capabilities file, then restart the service on it. If any of
+   these fails, ``current`` and the capabilities file are restored (and the service is
+   restarted on the previous release when it lives in ``<releases-dir>``).
 8. Release the drain. On any failure after step 4 the previous environment,
-   capabilities file and service are untouched, so the old release simply resumes.
+   capabilities file and service are kept or restored, so the old release simply resumes.
 """
 
 from __future__ import annotations
@@ -33,9 +35,9 @@ import httpx
 from pydantic import ValidationError
 from resona_job_core.release import ReleaseManifest, WheelPin
 
-from resona_worker import drain
-from resona_worker.config import ConfigError, load_manifest, validate_hub_url
-from resona_worker.hub import HubClient, ReleaseStatus
+from . import drain
+from .config import ConfigError, load_manifest, validate_hub_url
+from .hub import HubClient, ReleaseStatus
 
 log = logging.getLogger("resona_worker.update")
 
@@ -191,9 +193,10 @@ def _check_hub(status: ReleaseStatus | None, manifest: ReleaseManifest) -> None:
         raise UpdateError(
             f"manifest for {manifest.release_id} differs from the one staged on the hub; refusing to install it"
         )
-    if not status.bundled and not status.approved_tuples:
+    if not status.approved_tuples:
+        # Bundled or staged alike: production jobs need a promoted evaluation of this release.
         log.warning(
-            "release %s is staged but not approved for any profile of this organization: "
+            "release %s is not approved for any profile of this organization: "
             "this worker will only run evaluation jobs for it until an evaluation is promoted",
             manifest.release_id,
         )
@@ -209,6 +212,55 @@ def _swap_current(releases_dir: Path, release_id: str) -> None:
     tmp.unlink(missing_ok=True)
     tmp.symlink_to(release_id)
     os.replace(tmp, releases_dir / CURRENT)
+
+
+def _restore_current(releases_dir: Path, previous: str | None) -> None:
+    if previous is None:
+        (releases_dir / CURRENT).unlink(missing_ok=True)
+    else:
+        _swap_current(releases_dir, previous)
+
+
+def _activate(
+    request: UpdateRequest, releases_dir: Path, new_caps: Path, python: Path, restart: Callable[[Path], None] | None
+) -> None:
+    """Step 7: ``current`` first, then the capabilities file, then the restart; all or nothing."""
+    caps_file = request.capabilities_file
+    previous = current_release(releases_dir)
+    backup = caps_file.parent / f".{caps_file.name}.previous"
+    had_caps = caps_file.exists()
+    if had_caps:
+        shutil.copy2(caps_file, backup)
+    restarting = False
+    try:
+        _swap_current(releases_dir, request.release_id)
+        _replace_file(new_caps, caps_file)
+        if restart is not None:
+            restarting = True
+            restart(python)
+    except BaseException:
+        _restore_current(releases_dir, previous)
+        if had_caps:
+            os.replace(backup, caps_file)
+        else:
+            caps_file.unlink(missing_ok=True)
+        if restarting:
+            _restart_previous(restart, releases_dir, previous)
+        raise
+    finally:
+        backup.unlink(missing_ok=True)
+
+
+def _restart_previous(restart: Callable[[Path], None], releases_dir: Path, previous: str | None) -> None:
+    """Best effort after a failed restart: the service may already be stopped."""
+    python = releases_dir / previous / "venv" / "bin" / "python" if previous is not None else None
+    if python is None or not python.exists():
+        log.error("restart on the new release failed; reinstall the worker service on the previous release")
+        return
+    try:
+        restart(python)
+    except Exception as exc:  # noqa: BLE001 - the original failure is re-raised by the caller
+        log.error("restart on the previous release %s failed too: %s", previous, exc)
 
 
 def _replace_file(source: Path, dest: Path) -> None:
@@ -318,12 +370,13 @@ def run_update(request: UpdateRequest, hub: HubClient, steps: Steps | None = Non
         except BaseException:
             shutil.rmtree(target, ignore_errors=True)
             raise
-        # Point of no return: the new release passed prepare on this machine.
-        _replace_file(new_caps, request.capabilities_file)
-        _swap_current(releases_dir, request.release_id)
+        # The new release passed prepare on this machine; activation restores the old one on failure.
+        try:
+            _activate(request, releases_dir, new_caps, python, steps.restart)
+        except BaseException:
+            shutil.rmtree(target, ignore_errors=True)
+            raise
         installed = True
-        if steps.restart is not None:
-            steps.restart(python)
         return python
     finally:
         shutil.rmtree(staging, ignore_errors=True)

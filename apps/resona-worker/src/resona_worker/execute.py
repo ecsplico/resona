@@ -29,7 +29,7 @@ from typing import Any
 from pydantic import ValidationError
 from resona_job_core import Candidate, JobResult, Provenance, Segment, StageProvenance
 
-from resona_worker.weights import is_hub_repo, is_whisper_alias, local_snapshot, whisper_checkpoint, whisper_revision
+from .weights import is_hub_repo, is_whisper_alias, local_snapshot, whisper_checkpoint, whisper_revision
 
 
 class ExitCode(IntEnum):
