@@ -99,6 +99,18 @@ class JobHeartbeat(BaseModel):
     cancel_requested: bool = False
 
 
+class ReleaseStatus(BaseModel):
+    """``GET /v1/workers/releases/{id}``: whether this organization may run a release."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    release_id: str
+    status: str
+    manifest_sha256: str
+    bundled: bool = False
+    approved_tuples: list[dict[str, str]] = Field(default_factory=list)
+
+
 def lease_deadline_mono(started_mono: float, started_wall: float, lease_until: datetime) -> float:
     """Monotonic deadline for a lease, measured from a request started before the server replied.
 
@@ -155,7 +167,7 @@ class HubClient:
         self._rng = rng or random.Random()
         self._client = httpx.Client(
             base_url=base_url,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": str(WORKER_PROTOCOL)},
             timeout=_REQUEST_TIMEOUT,
             transport=transport,
         )
@@ -188,6 +200,18 @@ class HubClient:
             response = self._client.post("/v1/workers/heartbeat", json=body)
             _raise_for_status(response)
             return HeartbeatReply.model_validate(response.json())
+
+        return self._retrying(op, max_attempts=4)
+
+    def release(self, release_id: str) -> ReleaseStatus | None:
+        """The hub's view of one release for this worker's organization; None when not staged."""
+
+        def op() -> ReleaseStatus | None:
+            response = self._client.get(f"/v1/workers/releases/{release_id}")
+            if response.status_code == 404:
+                return None
+            _raise_for_status(response)
+            return ReleaseStatus.model_validate(response.json())
 
         return self._retrying(op, max_attempts=4)
 
@@ -367,6 +391,7 @@ __all__ = [
     "MAX_INPUT_BYTES",
     "MAX_RESULT_BYTES",
     "ProtocolIncompatible",
+    "ReleaseStatus",
     "StaleLease",
     "lease_deadline_mono",
     "sha256_file",

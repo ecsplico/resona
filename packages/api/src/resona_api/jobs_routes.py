@@ -42,7 +42,7 @@ from resona_job_core import (
 from resona_postprocess.pipeline import build_pipeline
 from resona_postprocess.profile import ProfileError
 
-from . import clock, storage
+from . import clock, releases, storage
 from . import engine_registry as reg
 from .auth import ROLE_ORG_ADMIN, Principal, client_principal
 from .broker import _finish_terminal, _immediate, _remove_input
@@ -121,6 +121,8 @@ class JobRequest(BaseModel):
     private: bool = True
     provenance: Optional[Provenance] = None
     purpose: Literal["production", "evaluation"] = "production"
+    # Evaluation jobs name the staged release under test; workers on exactly that release run them.
+    release_id: Optional[str] = Field(default=None, pattern=r"^[0-9][0-9A-Za-z.+-]{0,63}$")
 
 
 _OPTIONS_MODEL: dict[str, type[BaseModel]] = {"audio": AudioOptions, "document": DocumentOptions}
@@ -513,6 +515,7 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         "settings_revision": revision,
         "execution_profile": name,
         "purpose": req.purpose,
+        "release_id": req.release_id,
     }
     return snapshot, postprocess[1] if postprocess else None
 
@@ -616,6 +619,11 @@ def _validation_message(exc: ValidationError) -> str:
     return "invalid fields: " + ", ".join(fields)
 
 
+def _release_staged(release_id: str) -> bool:
+    with Session(engine) as session:
+        return releases.is_known(session, release_id)
+
+
 @router.post("/v1/jobs", status_code=202)
 async def submit_job(
     request: Request,
@@ -642,6 +650,11 @@ async def submit_job(
         raise api_error(422, "invalid_options", _validation_message(exc)) from None
     if req.purpose == "evaluation" and principal.role != ROLE_ORG_ADMIN:
         raise api_error(403, "forbidden", "evaluation jobs require an org_admin credential")
+    if req.purpose == "evaluation":
+        if req.release_id is None or not await run_in_threadpool(_release_staged, req.release_id):
+            raise api_error(422, "release_not_staged", "evaluation jobs need the release_id of a staged release")
+    elif req.release_id is not None:
+        raise api_error(422, "invalid_request", "release_id is only valid for evaluation jobs")
 
     code, body = await run_in_threadpool(_admit, principal.organization_id, key, req, options)
     return JSONResponse(body, status_code=code)

@@ -176,3 +176,69 @@ class IdempotencyRecord(SQLModel, table=True):
         default_factory=lambda: clock.now(),
         sa_column=Column(DateTime, nullable=False),
     )
+
+
+class Release(SQLModel, table=True):
+    """A release manifest known to the hub.
+
+    ``staged`` admits the release for evaluation jobs only; production use needs an
+    :class:`ApprovedReleaseTuple`. ``bundled`` is the release the hub itself ships,
+    which is approved for every tuple (so existing deployments keep working).
+    """
+
+    release_id: str = Field(primary_key=True)
+    status: str = Field(sa_column=Column(String, nullable=False, server_default="staged"))
+    manifest_json: str = Field(sa_column=Column(Text, nullable=False))
+    manifest_sha256: str
+    staged_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class Evaluation(SQLModel, table=True):
+    """A recorded evaluation summary: metrics and provenance only, never content."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
+    profile: str
+    execution_profile: str
+    platform: str
+    release_id: str
+    corpus_sha256: str
+    baseline_revision: Optional[int] = Field(default=None)
+    fixtures_json: str = Field(sa_column=Column(Text, nullable=False))
+    gate_json: str = Field(sa_column=Column(Text, nullable=False))
+    promoted_revision: Optional[int] = Field(default=None)
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class Baseline(SQLModel, table=True):
+    """Revisioned baseline per (organization, execution profile, platform); the highest revision is current."""
+
+    organization_id: str = Field(foreign_key="organization.id", primary_key=True)
+    execution_profile: str = Field(primary_key=True)
+    platform: str = Field(primary_key=True)
+    revision: int = Field(primary_key=True)
+    evaluation_id: int = Field(foreign_key="evaluation.id")
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class ApprovedReleaseTuple(SQLModel, table=True):
+    """A release approved for production jobs of one organization's (execution profile, platform)."""
+
+    organization_id: str = Field(foreign_key="organization.id", primary_key=True)
+    execution_profile: str = Field(primary_key=True)
+    platform: str = Field(primary_key=True)
+    release_id: str = Field(foreign_key="release.release_id", primary_key=True)
+    evaluation_id: int = Field(foreign_key="evaluation.id")
+    approved_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )

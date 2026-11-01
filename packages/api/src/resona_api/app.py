@@ -129,12 +129,14 @@ from .audio_routes import router as audio_router
 from .profiles_routes import router as profiles_router
 from .settings_routes import router as settings_router
 from .streaming_routes import router as streaming_router
+from .evaluations_routes import router as evaluations_router
 app.include_router(jobs_router)
 app.include_router(worker_router)
 app.include_router(audio_router)
 app.include_router(profiles_router)
 app.include_router(settings_router)
 app.include_router(streaming_router)
+app.include_router(evaluations_router)
 
 try:
     app.mount("/static", StaticFiles(directory='webapp', html=True), name="static")

@@ -17,16 +17,19 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import Path as FastAPIPath
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 from resona_job_core import Candidate
+from resona_job_core.release import RELEASE_ID_PATTERN
 
-from . import broker, storage
+from . import broker, releases, storage
 from .auth import Principal, worker_principal
 from .broker import BrokerError
+from .db.models import Release
 
 router = APIRouter(prefix="/v1/workers", tags=["workers"])
 
@@ -34,6 +37,7 @@ MAX_RESULT_BYTES = 200 * 1024 * 1024
 MAX_LONG_POLL_SECONDS = 25
 LONG_POLL_TICK_SECONDS = 0.5
 CODE_PATTERN = r"^[a-z_]{1,64}$"
+PROTOCOL_HEADER = "X-Resona-Worker-Protocol"
 _HEX = frozenset("0123456789abcdef")
 
 
@@ -126,11 +130,44 @@ async def heartbeat(request: Request, principal: Principal = Depends(worker_prin
     )
 
 
+def compatible_worker(
+    principal: Principal = Depends(worker_principal),
+    x_resona_worker_protocol: Optional[str] = Header(default=None, alias=PROTOCOL_HEADER),
+) -> Principal:
+    """Authenticated worker whose ``X-Resona-Worker-Protocol`` major matches the hub's.
+
+    Every route except the heartbeat (which carries the version in its body) requires
+    the header, so an incompatible worker gets 426 before it can claim or download.
+    """
+    if _protocol_major(x_resona_worker_protocol) != broker.PROTOCOL_VERSION:
+        raise _error(426, "protocol_incompatible", "worker protocol version is not supported")
+    return principal
+
+
+@router.get("/releases/{release_id}")
+async def release_status(
+    release_id: str = FastAPIPath(pattern=RELEASE_ID_PATTERN),
+    principal: Principal = Depends(compatible_worker),
+) -> dict[str, Any]:
+    """What this worker's organization may do with one release (``resona-worker update``)."""
+
+    def lookup(session: Session) -> dict[str, Any] | None:
+        row = session.get(Release, release_id)
+        if row is None:
+            return None
+        return releases.release_view(session, row, principal.organization_id)
+
+    view = await run_in_threadpool(_run_with_session, lookup)
+    if view is None:
+        raise _error(404, "release_not_found", "release is not staged on this hub")
+    return view
+
+
 @router.post("/claim", response_model=None)
 async def claim(
     body: ClaimRequest,
     wait: int = Query(default=0, ge=0, le=MAX_LONG_POLL_SECONDS),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> Response:
     """Claim the oldest eligible job, long-polling up to ``wait`` seconds. 204 when none."""
     worker_id = _worker_id(principal)
@@ -154,7 +191,7 @@ async def claim(
 async def job_input(
     job_id: int,
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> FileResponse:
     path: Path = await _broker(
         broker.input_path,
@@ -170,7 +207,7 @@ async def job_input(
 async def job_postprocess(
     job_id: int,
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> FileResponse:
     """The resolved postprocess profile named by the job's execution snapshot."""
     path: Path = await _broker(
@@ -187,7 +224,7 @@ async def job_postprocess(
 async def job_heartbeat(
     job_id: int,
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> dict[str, Any]:
     return await _broker(
         broker.heartbeat_job,
@@ -203,7 +240,7 @@ async def job_policy(
     job_id: int,
     body: PolicyRequest,
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> dict[str, Any]:
     """Fresh policy check against current organization settings before an external stage."""
     await _broker(
@@ -224,7 +261,7 @@ async def job_result(
     request: Request,
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
     x_resona_result_sha256: Optional[str] = Header(default=None, alias="X-Resona-Result-Sha256"),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> dict[str, Any]:
     """Accept a JSON result: stream to an attempt temp file, verify, validate, then complete."""
     worker_id = _worker_id(principal)
@@ -290,7 +327,7 @@ async def job_fail(
     job_id: int,
     body: FailRequest,
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
-    principal: Principal = Depends(worker_principal),
+    principal: Principal = Depends(compatible_worker),
 ) -> dict[str, Any]:
     status = await _broker(
         broker.fail_job,

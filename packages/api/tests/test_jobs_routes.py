@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from resona_job_core import Candidate, Endpoint, default_settings
 from resona_api import clock, jobs_routes, storage
 from resona_api.admin import approve_worker, enroll_worker, revoke_credential, revoke_worker
+from resona_api.releases import hub_release_id
 from resona_api.auth import hash_token
 from resona_api.db.engine import engine
 from resona_api.db.models import Credential, Job, JobStatus, Organization
@@ -51,8 +52,10 @@ def make_worker(org_id, *, capabilities=(MAC_AUDIO,)):
     with Session(engine) as session:
         worker_id, token = enroll_worker(session, "jobs-worker", org_id)
         approve_worker(session, worker_id, private=True,
-                       capabilities=[c.model_dump(mode="json") for c in capabilities])
-    return worker_id, {"Authorization": f"Bearer {token}"}
+                       capabilities=[c.model_dump(mode="json") for c in capabilities]
+                       ).runtime_version = hub_release_id()
+        session.commit()
+    return worker_id, {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
 
 
 def claim(http, headers, caps=(MAC_AUDIO,)):
@@ -493,7 +496,7 @@ def test_revoked_worker_credential_is_401(http, fresh_org):
         worker_id, token = enroll_worker(session, "pc-revoked", fresh_org)
         revoke_worker(session, worker_id)
     resp = http.post("/v1/workers/claim?wait=0", json={"capabilities": []},
-                     headers={"Authorization": f"Bearer {token}"})
+                     headers={"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"})
     assert resp.status_code == 401
 
 

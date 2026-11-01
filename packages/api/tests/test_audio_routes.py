@@ -13,6 +13,7 @@ from resona_job_core import Candidate
 from resona_api import audio_routes
 from resona_api import engine_registry as reg
 from resona_api.admin import approve_worker, enroll_worker
+from resona_api.releases import hub_release_id
 from resona_api.db.engine import engine
 from resona_api.db.models import Job, JobStatus, Upload
 
@@ -104,8 +105,10 @@ def _error(resp) -> dict:
 def _worker(org_id) -> dict[str, str]:
     with Session(engine) as session:
         worker_id, token = enroll_worker(session, "sync-worker", org_id)
-        approve_worker(session, worker_id, private=True, capabilities=[MAC_AUDIO.model_dump(mode="json")])
-    return {"Authorization": f"Bearer {token}"}
+        approve_worker(session, worker_id, private=True,
+                       capabilities=[MAC_AUDIO.model_dump(mode="json")]).runtime_version = hub_release_id()
+        session.commit()
+    return {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
 
 
 def _transcribe_in_background(http, data, wav_bytes):

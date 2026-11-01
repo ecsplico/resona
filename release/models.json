@@ -1,0 +1,22 @@
+[
+  {
+    "engine": "mlx-whisper",
+    "model": "mlx-community/whisper-large-v3-mlx",
+    "revision": "49e6aa286ad60c14352c404340ded53710378a11"
+  },
+  {
+    "engine": "faster-whisper",
+    "model": "Systran/faster-whisper-large-v3",
+    "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478"
+  },
+  {
+    "engine": "whisper",
+    "model": "large-v3",
+    "revision": "e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb"
+  },
+  {
+    "engine": "docling",
+    "model": "docling-standard",
+    "revision": "docling-2.129.0"
+  }
+]

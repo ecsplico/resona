@@ -14,7 +14,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from _metrics import normalize, score  # noqa: E402
+from resona_eval.metrics import normalize, score  # noqa: E402
 
 CACHE = HERE / "cache"
 OUT = HERE / "diagnose"

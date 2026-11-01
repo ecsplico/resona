@@ -3,13 +3,26 @@ name: Release
 # Fires on:
 #   - pushing a tag like vX.Y.Z (the normal release path)
 #   - manual run from the Actions UI (workflow_dispatch) for re-runs / dry-runs
+#     (dry-run: images are built but not pushed, no GitHub release, no dispatch)
 #
-# What it does (in three parallel jobs):
-#   pypi    — builds every publishable workspace package and publishes to PyPI
-#             via OIDC trusted publishing (no API token secret needed).
-#   docker  — builds each engine + api image and pushes to ghcr.io/ecsplico/.
-#   release — drafts a GitHub release with auto-generated notes; depends on the
-#             other two so a partial release never publishes notes.
+# A Resona release is an immutable pin set (see docs/server/releases.md):
+#   verify   - tag == resona-api/resona-worker version, privacy/lease/release tests,
+#              tool-inventory.json matches the MCP tool surface
+#   wheels   - `uv build` of every workspace package
+#   images   - hub CPU image, worker CPU image, worker CUDA image, legacy engine images;
+#              each pushed by tag and recorded by DIGEST
+#   eval-cpu - `resona eval --profile cpu-private` (local mode) on eval/corpus against
+#              eval/baselines.json; a gate failure or missing baseline fails the release
+#   manifest - release-manifest.json (wheels by sha256, images by digest, models by
+#              revision), validated against release/manifest.schema.json; draft GitHub
+#              release with wheels + manifest + tool-inventory.json as assets
+#   notify-downstream - optional SKAILE `mcp-release` dispatch (see the job)
+#
+# Repository variables (Settings > Variables), all optional:
+#   RESONA_IMAGE_NAMESPACE        registry/namespace for images (default ghcr.io/ecsplico)
+#   RESONA_PUBLISH_PYPI           'true' to also publish wheels to PyPI (OIDC trusted publishing)
+#   RESONA_DISPATCH_MCP_RELEASE   'true' to dispatch mcp-release to skaile-ai/ai-assets + platform;
+#                                 needs secrets RELEASE_DISPATCH_APP_ID / RELEASE_DISPATCH_APP_KEY
 
 on:
   push:
@@ -18,44 +31,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # needed by softprops/action-gh-release
-  packages: write   # needed to push to ghcr.io
-  id-token: write   # needed by PyPI trusted-publishing OIDC
+  contents: read
+
+env:
+  IMAGE_NAMESPACE: ${{ vars.RESONA_IMAGE_NAMESPACE || 'ghcr.io/ecsplico' }}
+  PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────
-  # PyPI publishing.
-  #
-  # PREREQUISITE — one-time setup per project on PyPI:
-  #   https://pypi.org/manage/account/publishing/
-  # Register each package name below as a "pending publisher" tied to:
-  #   owner          = ecsplico
-  #   repository     = resona
-  #   workflow name  = Release          (must match the `name:` above)
-  #   environment    = (leave blank)
-  # Until this is configured, the publish step will fail with
-  # "invalid-publisher" — that's the OIDC handshake refusing.
-  # ──────────────────────────────────────────────────────────────────────
-  pypi:
-    name: Build & publish ${{ matrix.package.name }} to PyPI
+  verify:
+    name: Verify versions, privacy/lease tests, tool inventory
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - { name: resona-asr-core,              path: packages/asr-core }
-          - { name: resona-engine-server,         path: packages/engine-server }
-          - { name: resona-engine-faster-whisper, path: packages/engine-faster-whisper }
-          - { name: resona-engine-whisper,        path: packages/engine-whisper }
-          - { name: resona-engine-voxtral,        path: packages/engine-voxtral }
-          - { name: resona-cloud-stt,             path: packages/cloud-stt }
-          - { name: resona-cloud-tts,             path: packages/cloud-tts }
-          - { name: resona-postprocess,           path: packages/postprocess }
-          - { name: resona-api,                   path: packages/api }
-          - { name: resona-client,                path: packages/client }
-          - { name: resona-cli,                   path: apps/resona-cli }
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg
 
       # setup-uv dropped moving major tags in v8 — pin a specific version.
       - uses: astral-sh/setup-uv@v8.1.0
@@ -66,92 +58,219 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
-      - name: Build sdist + wheel
-        run: uv build --package ${{ matrix.package.name }} --out-dir dist/
+      - name: Install workspace packages
+        run: uv sync --all-packages --frozen
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v5
-        with:
-          name: dist-${{ matrix.package.name }}
-          path: dist/
+      # Workers report their resona-worker version as their release and the hub its
+      # resona-api version, so both must equal the tag (v0.2.0 -> 0.2.0).
+      - name: Resolve and check the release id
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          api=$(uv run python -c "import importlib.metadata as m; print(m.version('resona-api'))")
+          worker=$(uv run python -c "import importlib.metadata as m; print(m.version('resona-worker'))")
+          if [ "$IS_TAG" = "true" ]; then version="${REF_NAME#v}"; else version="$api"; fi
+          if [ "$api" != "$version" ] || [ "$worker" != "$version" ]; then
+            echo "::error::release $version needs resona-api ($api) and resona-worker ($worker) at the same version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to PyPI (trusted publishing / OIDC)
-        # Skips automatically if the dist/ directory contains an already-uploaded
-        # version. Set skip-existing: true if you want to re-run after a partial
-        # failure.
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
-          skip-existing: true
+      - name: Privacy, lease, release and update tests
+        run: >-
+          uv run pytest -q
+          packages/api/tests packages/job-core packages/postprocess/tests
+          apps/resona-worker/tests apps/resona-mcp/tests packages/client/tests
+          -k 'not smoke'
 
-  # ──────────────────────────────────────────────────────────────────────
-  # Docker images → GHCR.
-  #
-  # GHCR uses the `org.opencontainers.image.source` LABEL on each Dockerfile
-  # to link the image to the source repo and inherit its permissions. That
-  # label is already set in each Dockerfile.
-  #
-  # GPU engines are linux/amd64 only — no arm64 (CUDA wheels are amd64).
-  # ──────────────────────────────────────────────────────────────────────
-  docker:
-    name: Build & push ${{ matrix.image.name }} to GHCR
+      - name: tool-inventory.json matches the MCP tool surface
+        run: uv run python scripts/gen_tool_inventory.py --check
+
+  wheels:
+    name: Build wheels
+    needs: verify
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Build every workspace package
+        run: uv build --all-packages --wheel --out-dir dist/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: wheels
+          path: dist/*.whl
+          if-no-files-found: error
+
+  images:
+    name: Image ${{ matrix.image.name }}
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
         image:
-          - { name: resona-engine-faster-whisper, dockerfile: packages/engine-faster-whisper/Dockerfile }
-          - { name: resona-engine-whisper,        dockerfile: packages/engine-whisper/Dockerfile }
-          - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile }
-          - { name: resona-api,                   dockerfile: packages/api/Dockerfile }
+          - { name: resona-api,                   dockerfile: packages/api/Dockerfile,           build_args: "" }
+          - { name: resona-worker,                dockerfile: apps/resona-worker/Dockerfile,     build_args: "" }
+          - name: resona-worker-cuda
+            dockerfile: apps/resona-worker/Dockerfile
+            build_args: |
+              BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04
+              WORKER_EXTRAS=--extra cuda --extra documents
+          - { name: resona-engine-faster-whisper, dockerfile: packages/engine-faster-whisper/Dockerfile, build_args: "" }
+          - { name: resona-engine-whisper,        dockerfile: packages/engine-whisper/Dockerfile,        build_args: "" }
+          - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile,        build_args: "" }
     steps:
       - uses: actions/checkout@v5
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: env.PUBLISH == 'true' && startsWith(env.IMAGE_NAMESPACE, 'ghcr.io/')
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve image tags
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/ecsplico/${{ matrix.image.name }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build & push
+      - name: Build${{ env.PUBLISH == 'true' && ' & push' || '' }}
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
           platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          push: ${{ env.PUBLISH == 'true' }}
+          # Version tag only; consumers pin the digest from release-manifest.json.
+          tags: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}:${{ needs.verify.outputs.version }}
+          build-args: |
+            RESONA_RELEASE_ID=${{ needs.verify.outputs.version }}
+            ${{ matrix.image.build_args }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
 
-  # ──────────────────────────────────────────────────────────────────────
-  # Draft a GitHub release with auto-generated notes once both publish
-  # jobs succeed.
-  # ──────────────────────────────────────────────────────────────────────
-  release:
-    name: Draft GitHub release
+      - name: Record the digest
+        if: env.PUBLISH == 'true'
+        env:
+          NAME: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          case "$DIGEST" in sha256:*) ;; *) echo "::error::no digest for $NAME"; exit 1 ;; esac
+          mkdir -p digests
+          printf '%s=%s\n' "$NAME" "$DIGEST" > "digests/${{ matrix.image.name }}.txt"
+
+      - uses: actions/upload-artifact@v5
+        if: env.PUBLISH == 'true'
+        with:
+          name: digest-${{ matrix.image.name }}
+          path: digests/
+          if-no-files-found: error
+
+  eval-cpu:
+    name: CPU corpus evaluation (cpu-private)
+    needs: verify
     runs-on: ubuntu-latest
-    needs: [pypi, docker]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Install workspace packages
+        run: uv sync --all-packages --frozen
+
+      # Weights are fetched here, at the revisions the release pins, never by a job.
+      - name: Prepare pinned models
+        run: |
+          set -euo pipefail
+          rev=$(jq -r '.[] | select(.model == "Systran/faster-whisper-large-v3") | .revision' release/models.json)
+          uv run hf download Systran/faster-whisper-large-v3 --revision "$rev" > /dev/null
+          uv run docling-tools models download > /dev/null
+
+      - name: Evaluate against eval/baselines.json
+        run: uv run resona eval --profile cpu-private --platform cpu --output-dir eval-report
+
+      # Metrics and provenance only; the corpus is synthetic.
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: eval-cpu-report
+          path: eval-report/
+          if-no-files-found: warn
+
+  # PyPI is opt-in (RESONA_PUBLISH_PYPI) because the namespace is unverified; the GitHub
+  # release assets are the canonical wheel distribution. PREREQUISITE, once per package:
+  # register it at https://pypi.org/manage/account/publishing/ as a pending publisher for
+  # owner=ecsplico, repository=resona, workflow name=Release, environment blank; otherwise
+  # the publish step fails with "invalid-publisher".
+  pypi:
+    name: Publish wheels to PyPI
+    needs: [wheels, eval-cpu]
+    if: startsWith(github.ref, 'refs/tags/v') && vars.RESONA_PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # PyPI trusted-publishing OIDC; each name needs a pending publisher first
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: wheels
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
+  manifest:
+    name: Release manifest and draft GitHub release
+    needs: [verify, wheels, images, eval-cpu]
     if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # softprops/action-gh-release
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # full history so release notes can diff against the prior tag
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - uses: actions/download-artifact@v5
+        with:
+          name: wheels
+          path: dist/
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: digest-*
+          path: digests/
+          merge-multiple: true
+
+      - name: Build release-manifest.json
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          args=()
+          for file in digests/*.txt; do args+=(--image "$(cat "$file")"); done
+          # Third-party versions resona-worker was tested with; `resona-worker update` installs under them.
+          uv export --frozen --package resona-worker --all-extras --no-emit-workspace \
+            --no-hashes --no-header --no-annotate --output-file dist/worker-constraints.txt
+          uv run --frozen --no-dev --package resona-job-core python release/build_manifest.py \
+            --release-id "$VERSION" --dist dist/ "${args[@]}" \
+            --models release/models.json --constraints dist/worker-constraints.txt \
+            --out dist/release-manifest.json
+          cp tool-inventory.json release/manifest.schema.json dist/
 
       - name: Create draft release
         uses: softprops/action-gh-release@v2
@@ -160,3 +279,47 @@ jobs:
           generate_release_notes: true
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          files: |
+            dist/*.whl
+            dist/release-manifest.json
+            dist/worker-constraints.txt
+            dist/tool-inventory.json
+            dist/manifest.schema.json
+
+  # SKAILE catalog update, same payload shape as skaile-ai/excel-mcp's notify-downstream:
+  # {event_type:"mcp-release", client_payload:{mcp, version, tools}} with tools = the
+  # checked-in tool-inventory.json ([{name, deferred}], sorted). Off unless the repository
+  # variable RESONA_DISPATCH_MCP_RELEASE is 'true' and the dispatch App secrets exist.
+  notify-downstream:
+    name: Dispatch mcp-release
+    needs: [verify, manifest]
+    if: startsWith(github.ref, 'refs/tags/v') && vars.RESONA_DISPATCH_MCP_RELEASE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}   # the tagged commit, never a moving main
+          fetch-depth: 1
+
+      - name: Mint installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_DISPATCH_APP_ID }}
+          private-key: ${{ secrets.RELEASE_DISPATCH_APP_KEY }}
+          owner: skaile-ai
+          repositories: ai-assets,platform
+
+      - name: Dispatch mcp-release to ai-assets and platform
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          jq -e 'type == "array" and length > 0' tool-inventory.json > /dev/null
+          for repo in skaile-ai/ai-assets skaile-ai/platform; do
+            jq -nc --arg v "$VERSION" --argjson t "$(cat tool-inventory.json)" \
+              '{event_type:"mcp-release",client_payload:{mcp:"resona-hub",version:$v,tools:$t}}' \
+              | gh api "repos/$repo/dispatches" --input -
+            echo "dispatched mcp-release resona-hub@$VERSION -> $repo"
+          done

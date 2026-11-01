@@ -21,6 +21,8 @@ dependencies = [
 audio-cpu = ["resona-engine-faster-whisper>=0.1.0"]
 apple = ["resona-engine-mlx-whisper>=0.1.0"]
 documents = ["resona-engine-docling>=0.1.0"]
+# Linux NVIDIA profile: openai-whisper on the cu130 Torch wheels (see the root index config).
+cuda = ["resona-engine-whisper>=0.1.0"]
 
 [project.scripts]
 resona-worker = "resona_worker.cli:app"
@@ -35,3 +37,4 @@ resona-asr-core = { workspace = true }
 resona-engine-faster-whisper = { workspace = true }
 resona-engine-mlx-whisper = { workspace = true }
 resona-engine-docling = { workspace = true }
+resona-engine-whisper = { workspace = true }

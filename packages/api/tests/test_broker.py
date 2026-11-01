@@ -17,6 +17,7 @@ from sqlmodel import Session
 from resona_job_core import Candidate
 from resona_api import broker, clock, storage
 from resona_api.admin import approve_worker, enroll_worker
+from resona_api.releases import hub_release_id
 from resona_api.db.engine import engine
 from resona_api.db.models import Job, JobStatus, Organization
 
@@ -44,7 +45,8 @@ def make_worker(org_id: str, *, private: bool = True, capabilities=(CAND,)) -> s
         approve_worker(
             session, worker_id, private=private,
             capabilities=[c.model_dump(mode="json") for c in capabilities],
-        )
+        ).runtime_version = hub_release_id()
+        session.commit()
     return worker_id
 
 

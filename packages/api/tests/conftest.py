@@ -183,24 +183,26 @@ def worker_headers():
         with Session(engine) as session:
             _, token = enroll_worker(session, "test-worker", organization_id)
             session.commit()
-        return {"Authorization": f"Bearer {token}"}
+        return {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
     return make
 
 
 @pytest.fixture(scope="session")
 def test_app():
-    """Minimal FastAPI app with the job, worker, audio, profile and settings routers (no lifespan)."""
+    """Minimal FastAPI app with the job, worker, audio, profile, settings and evaluation routers (no lifespan)."""
     from resona_api.jobs_routes import router as jobs_router
     from resona_api.worker_routes import router as worker_router
     from resona_api.audio_routes import router as audio_router
     from resona_api.profiles_routes import router as profiles_router
     from resona_api.settings_routes import router as settings_router
+    from resona_api.evaluations_routes import router as evaluations_router
     app = FastAPI()
     app.include_router(jobs_router)
     app.include_router(worker_router)
     app.include_router(audio_router)
     app.include_router(profiles_router)
     app.include_router(settings_router)
+    app.include_router(evaluations_router)
     return app
 
 

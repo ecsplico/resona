@@ -14,6 +14,7 @@ import logging
 import numpy as np
 from decouple import config
 
+from resona_asr_core.audio import SAMPLE_RATE
 from resona_asr_core.protocol import TranscriptionResult
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,39 @@ DEFAULT_MODEL: str = config(
 
 def _resolve_repo(name: str) -> str:
     return _MODEL_ALIASES.get(name, name)
+
+
+def _speech_chunks(audio: np.ndarray, vad_parameters: dict | None) -> list[dict]:
+    """Silero VAD speech spans (sample offsets) — faster-whisper's bundled ONNX model, no download."""
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+    return get_speech_timestamps(audio, VadOptions(**(vad_parameters or {})), sampling_rate=SAMPLE_RATE)
+
+
+def _restore_times(result: dict, chunks: list[dict]) -> list[dict]:
+    """Map segment/word times from the concatenated speech back to original-audio time."""
+    from faster_whisper.vad import SpeechTimestampsMap
+
+    ts_map = SpeechTimestampsMap(chunks, SAMPLE_RATE)
+    segments = []
+    for segment in result.get("segments", []) or []:
+        segment = dict(segment)
+        words = segment.get("words")
+        if words:
+            restored = []
+            for word in words:
+                word = dict(word)
+                index = ts_map.get_chunk_index((word["start"] + word["end"]) / 2)
+                word["start"] = ts_map.get_original_time(word["start"], index)
+                word["end"] = ts_map.get_original_time(word["end"], index)
+                restored.append(word)
+            segment["words"] = restored
+            segment["start"], segment["end"] = restored[0]["start"], restored[-1]["end"]
+        else:
+            segment["start"] = ts_map.get_original_time(segment["start"])
+            segment["end"] = ts_map.get_original_time(segment["end"])
+        segments.append(segment)
+    return segments
 
 
 class MLXWhisperTranscriber:
@@ -65,9 +99,10 @@ class MLXWhisperTranscriber:
     ) -> TranscriptionResult:
         import mlx_whisper  # heavy/optional; imported lazily for fast startup
 
-        # vad_filter/vad_parameters are faster-whisper-only knobs; mlx_whisper
-        # has no VAD path and forwards unknown kwargs to DecodingOptions, so they
-        # must be consumed here rather than passed through.
+        # mlx_whisper has no VAD and forwards unknown kwargs to DecodingOptions, so
+        # vad_filter/vad_parameters are consumed here. With vad_filter, only the
+        # Silero-detected speech is decoded (like faster-whisper): no speech means an
+        # empty transcript instead of Whisper's "Vielen Dank."-style hallucinations.
 
         # mlx_whisper expects a float32 waveform (or path); ensure the dtype.
         audio = np.asarray(audio, dtype=np.float32)
@@ -81,10 +116,21 @@ class MLXWhisperTranscriber:
         if initial_prompt:
             opts["initial_prompt"] = initial_prompt
 
-        result = mlx_whisper.transcribe(audio, **opts)
+        if not vad_filter:
+            result = mlx_whisper.transcribe(audio, **opts)
+            return TranscriptionResult(
+                text=result.get("text", ""),
+                language=result.get("language", language),
+                segments=result.get("segments", []),
+            )
 
+        chunks = _speech_chunks(audio, vad_parameters)
+        if not chunks:
+            return TranscriptionResult(text="", language=language, segments=[])
+        speech = np.concatenate([audio[c["start"]:c["end"]] for c in chunks])
+        result = mlx_whisper.transcribe(speech, **opts)
         return TranscriptionResult(
             text=result.get("text", ""),
             language=result.get("language", language),
-            segments=result.get("segments", []),
+            segments=_restore_times(result, chunks),
         )

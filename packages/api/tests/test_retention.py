@@ -17,6 +17,7 @@ from sqlmodel import Session
 from resona_job_core import Candidate
 from resona_api import broker, clock, maintenance, storage
 from resona_api.admin import approve_worker, enroll_worker
+from resona_api.releases import hub_release_id
 from resona_api.db.engine import engine
 from resona_api.db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload
 
@@ -163,7 +164,9 @@ def test_expired_lease_is_requeued_and_abandoned_attempt_removed(fresh_org, at):
     job_id = make_job(fresh_org)
     with Session(engine) as session:
         worker_id, _ = enroll_worker(session, "retention-worker", fresh_org)
-        approve_worker(session, worker_id, private=True, capabilities=[CAND.model_dump(mode="json")])
+        approve_worker(session, worker_id, private=True,
+                       capabilities=[CAND.model_dump(mode="json")]).runtime_version = hub_release_id()
+        session.commit()
     with Session(engine) as session:
         claim = broker.try_claim(
             session, worker_id=worker_id, organization_id=fresh_org, capabilities=[CAND]

@@ -9,6 +9,7 @@ on:
     paths:
       - 'packages/**/Dockerfile'
       - 'packages/**/pyproject.toml'
+      - 'apps/resona-worker/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/docker-build.yml'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'packages/**/Dockerfile'
       - 'packages/**/pyproject.toml'
+      - 'apps/resona-worker/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/docker-build.yml'
@@ -28,10 +30,16 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: resona-engine-faster-whisper, dockerfile: packages/engine-faster-whisper/Dockerfile }
-          - { name: resona-engine-whisper,        dockerfile: packages/engine-whisper/Dockerfile }
-          - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile }
-          - { name: resona-api,                   dockerfile: packages/api/Dockerfile }
+          - { name: resona-engine-faster-whisper, dockerfile: packages/engine-faster-whisper/Dockerfile, build_args: "" }
+          - { name: resona-engine-whisper,        dockerfile: packages/engine-whisper/Dockerfile,        build_args: "" }
+          - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile,        build_args: "" }
+          - { name: resona-api,                   dockerfile: packages/api/Dockerfile,                   build_args: "" }
+          - { name: resona-worker,                dockerfile: apps/resona-worker/Dockerfile,             build_args: "" }
+          - name: resona-worker-cuda
+            dockerfile: apps/resona-worker/Dockerfile
+            build_args: |
+              BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04
+              WORKER_EXTRAS=--extra cuda --extra documents
     steps:
       - uses: actions/checkout@v5
 
@@ -44,5 +52,6 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           platforms: linux/amd64
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: ${{ matrix.image.build_args }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}

@@ -33,7 +33,7 @@ from resona_job_core import (
     check_policy,
 )
 
-from . import clock, storage
+from . import clock, releases, storage
 from .auth import hash_token
 from .db.models import Job, JobStatus, Organization, Worker
 from .settings_store import current_settings
@@ -276,6 +276,7 @@ def try_claim(
         allowed = set(_candidates(worker.approved_capabilities)) & requested
         storage_id = session.get(Organization, organization_id).storage_id
         settings = _settings_or_none(session, organization_id)
+        approved_releases = releases.approved_tuples(session, organization_id)
 
         pending = session.exec(
             select(Job)
@@ -295,7 +296,23 @@ def try_claim(
                 continue
             if job.private and not worker.approved_private:
                 continue
-            pick = next((c for c in _snapshot_candidates(job) if c in allowed), None)
+            snapshot = _snapshot(job)
+            pick = next(
+                (
+                    c
+                    for c in _snapshot_candidates(job)
+                    if c in allowed
+                    and releases.may_run(
+                        worker_release=worker.runtime_version,
+                        purpose=job.purpose,
+                        snapshot_release=snapshot.get("release_id"),
+                        execution_profile=job.execution_profile,
+                        candidate=c,
+                        approved=approved_releases,
+                    )
+                ),
+                None,
+            )
             if pick is not None:
                 chosen = (job.id, job.attempt, pick)
 

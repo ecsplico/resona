@@ -22,8 +22,9 @@ from sqlmodel import Session
 from resona_job_core import Candidate, Endpoint
 from resona_api import admin, broker, clock, storage, worker_routes
 from resona_api.admin import approve_worker, enroll_worker
+from resona_api.releases import hub_release_id
 from resona_api.db.engine import engine
-from resona_api.db.models import Job, JobStatus, Organization
+from resona_api.db.models import Job, JobStatus, Organization, Worker
 
 CAND = Candidate(
     engine="mlx-whisper",
@@ -86,7 +87,11 @@ def make_worker(org_id, *, approved=True, private=True, capabilities=(CAND,)):
                 session, worker_id, private=private,
                 capabilities=[c.model_dump(mode="json") for c in capabilities],
             )
-    return worker_id, {"Authorization": f"Bearer {token}"}
+        worker = session.get(Worker, worker_id)
+        worker.runtime_version = hub_release_id()
+        session.add(worker)
+        session.commit()
+    return worker_id, {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
 
 
 def job_row(job_id: int) -> Job:

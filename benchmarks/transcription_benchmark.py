@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _datasets import custom_sample, load_sample  # noqa: E402
 from _hardware import hardware_info, relevant_env  # noqa: E402
-from _metrics import score  # noqa: E402
+from resona_eval.metrics import score  # noqa: E402
 
 log = logging.getLogger("benchmark")
 

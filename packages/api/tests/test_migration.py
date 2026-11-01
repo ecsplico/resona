@@ -9,7 +9,9 @@ from sqlalchemy import create_engine
 
 from resona_job_core import JobResult
 from resona_api import paths, storage
+from resona_api.db import schema
 from resona_api.db.schema import SchemaError, migrate
+from resona_api.releases import STATUS_BUNDLED, hub_release_id
 
 PAYLOAD_COLUMNS = {"transcript", "md", "segments", "structured", "translation", "filename"}
 
@@ -98,7 +100,7 @@ def test_upgrade_converts_completed_payload_to_result_artifact(legacy_db, monkey
     assert not storage.result_path(storage_id, 9).exists()
     assert not columns & PAYLOAD_COLUMNS
     assert not legacy_input.exists()
-    assert not (legacy_db.parent / "legacy.db.pre-v1.bak").exists()
+    assert not (legacy_db.parent / f"legacy.db.pre-v{schema.TARGET_VERSION}.bak").exists()
 
 
 def test_unverifiable_conversion_refuses_and_keeps_backup(legacy_db, monkeypatch):
@@ -117,7 +119,7 @@ def test_unverifiable_conversion_refuses_and_keeps_backup(legacy_db, monkeypatch
     with pytest.raises(SchemaError, match="backup is kept"):
         migrate(_engine_for(legacy_db))
 
-    backup = sqlite3.connect(f"{legacy_db}.pre-v1.bak")
+    backup = sqlite3.connect(f"{legacy_db}.pre-v{schema.TARGET_VERSION}.bak")
     backup_rows = backup.execute("SELECT id, transcript FROM job ORDER BY id").fetchall()
     backup.close()
     raw = sqlite3.connect(legacy_db)
@@ -156,6 +158,28 @@ def test_migrate_is_idempotent(legacy_db, monkeypatch):
     count = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
     raw.close()
     assert count == 2
+
+
+def test_v1_database_upgrades_to_releases_and_records_the_bundled_release(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:1])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 1)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    versions = [r[0] for r in raw.execute("SELECT version FROM schema_version ORDER BY version")]
+    tables = {r[0] for r in raw.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    release = raw.execute("SELECT release_id, status FROM release").fetchall()
+    jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
+    raw.close()
+    assert versions == [1, 2]
+    assert {"release", "evaluation", "baseline", "approvedreleasetuple"} <= tables
+    assert release == [(hub_release_id(), STATUS_BUNDLED)]
+    assert jobs == 2
+
 
 
 def test_engine_connections_enforce_foreign_keys_and_wal():

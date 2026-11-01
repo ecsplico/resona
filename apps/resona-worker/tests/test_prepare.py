@@ -68,6 +68,40 @@ def test_pinned_revision_missing_locally_fails_before_any_synthetic_run(
     assert cached_weights == [("mlx-community/missing-model", "abc123")]
 
 
+def test_release_pin_must_match_the_cached_revision_before_any_synthetic_run(cached_weights) -> None:
+    bogus = "0" * 40
+
+    with pytest.raises(PrepareError, match=f"release pins {AUDIO.model} at {bogus}"):
+        prepare(
+            _settings([AUDIO], []), "mac-private",
+            executor=(sys.executable, "-c", "raise SystemExit(99)"), model_pins={AUDIO.model: bogus},
+        )
+
+    assert cached_weights == [(AUDIO.model, bogus)]
+
+
+@pytest.mark.parametrize(
+    ("candidate", "pins", "reason"),
+    [
+        (AUDIO, {}, "does not pin a revision"),
+        (AUDIO.model_copy(update={"model_revision": "1" * 40}), {AUDIO.model: SNAPSHOT_HASH}, "the release pins"),
+    ],
+)
+def test_release_without_or_contradicting_a_pin_fails(cached_weights, candidate, pins, reason) -> None:
+    with pytest.raises(PrepareError, match=reason):
+        prepare(_settings([candidate], []), "mac-private",
+                executor=(sys.executable, "-c", "raise SystemExit(99)"), model_pins=pins)
+
+
+def test_release_pin_matching_the_cache_prepares(prepare_executor: Path, cached_weights) -> None:
+    manifest = prepare(
+        _settings([AUDIO], []), "mac-private",
+        executor=(sys.executable, str(prepare_executor)), model_pins={AUDIO.model: SNAPSHOT_HASH},
+    )
+
+    assert [(w.repo, w.revision) for w in manifest.tested[0].weights] == [(AUDIO.model, SNAPSHOT_HASH)]
+
+
 @pytest.mark.parametrize(
     ("model", "reason"),
     [

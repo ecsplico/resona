@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "ConstraintsPin": {
+      "additionalProperties": false,
+      "description": "A pip constraints file exported from ``uv.lock`` (third-party versions the worker\nwas tested with), shipped next to the wheels. Without it a fresh environment would\nresolve whatever its index serves that day.",
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.txt$",
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "title": "ConstraintsPin",
+      "type": "object"
+    },
+    "ImagePin": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Repository without tag, e.g. ghcr.io/ecsplico/resona-hub",
+          "pattern": "^[a-z0-9][a-z0-9.-]*(:[0-9]+)?(/[a-z0-9][a-z0-9._-]*)+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "digest"
+      ],
+      "title": "ImagePin",
+      "type": "object"
+    },
+    "ModelPin": {
+      "additionalProperties": false,
+      "description": "One model at an exact revision. HuggingFace repos (``owner/name``) need a commit hash.",
+      "properties": {
+        "engine": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Engine",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "revision": {
+          "pattern": "^[0-9A-Za-z._+-]{1,128}$",
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "model",
+        "revision"
+      ],
+      "title": "ModelPin",
+      "type": "object"
+    },
+    "WheelPin": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^[0-9][0-9A-Za-z.+!-]{0,63}$",
+          "title": "Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "sha256"
+      ],
+      "title": "WheelPin",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "release_id": {
+      "pattern": "^[0-9][0-9A-Za-z.+-]{0,63}$",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "wheels": {
+      "items": {
+        "$ref": "#/$defs/WheelPin"
+      },
+      "minItems": 1,
+      "title": "Wheels",
+      "type": "array"
+    },
+    "images": {
+      "items": {
+        "$ref": "#/$defs/ImagePin"
+      },
+      "title": "Images",
+      "type": "array"
+    },
+    "models": {
+      "items": {
+        "$ref": "#/$defs/ModelPin"
+      },
+      "title": "Models",
+      "type": "array"
+    },
+    "constraints": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConstraintsPin"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "worker_protocol": {
+      "const": 1,
+      "default": 1,
+      "title": "Worker Protocol",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "release_id",
+    "created_at",
+    "wheels"
+  ],
+  "title": "ReleaseManifest",
+  "type": "object"
+}

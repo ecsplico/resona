@@ -1,0 +1,34 @@
+[
+  {
+    "name": "cancel_job",
+    "deferred": false
+  },
+  {
+    "name": "convert_document",
+    "deferred": false
+  },
+  {
+    "name": "get_job",
+    "deferred": false
+  },
+  {
+    "name": "get_result",
+    "deferred": false
+  },
+  {
+    "name": "get_settings",
+    "deferred": false
+  },
+  {
+    "name": "list_engines",
+    "deferred": false
+  },
+  {
+    "name": "transcribe_audio",
+    "deferred": false
+  },
+  {
+    "name": "upload_content",
+    "deferred": false
+  }
+]

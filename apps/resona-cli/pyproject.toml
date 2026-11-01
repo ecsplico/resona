@@ -33,6 +33,8 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "python-decouple>=3.8",
     "resona-client>=0.1.0",
+    # `resona eval`: corpus scoring, quality gate and baselines (no ML deps).
+    "resona-eval>=0.1.0",
     "resona-cloud-stt>=0.1.0",
     "resona-postprocess>=0.1.0",
     "textual>=3.2.0",
@@ -94,6 +96,7 @@ explicit = true
 
 [tool.uv.sources]
 resona-client = { workspace = true }
+resona-eval = { workspace = true }
 resona-cloud-stt = { workspace = true }
 resona-postprocess = { workspace = true }
 resona-asr-core = { workspace = true }

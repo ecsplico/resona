@@ -26,6 +26,7 @@ from resona_job_core import JobResult
 log = logging.getLogger(__name__)
 
 JobKind = Literal["audio", "document"]
+JobPurpose = Literal["production", "evaluation"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _POST_JOB_ATTEMPTS = 3
 _RETRYABLE_STATUSES = frozenset({502, 503, 504})
@@ -90,7 +91,7 @@ class ResultExpired(ResonaAPIError):
 
 
 class RevisionConflict(ResonaAPIError):
-    """409 on settings write: If-Match names a stale revision."""
+    """409 on a revisioned write: settings If-Match or expected baseline revision is stale."""
 
 
 class SyncWaitTimeout(ResonaAPIError):
@@ -333,6 +334,8 @@ class ResonaClient:
         private: bool = True,
         idempotency_key: Optional[str] = None,
         provenance: Optional[Mapping[str, Any]] = None,
+        purpose: JobPurpose = "production",
+        release_id: Optional[str] = None,
     ) -> JobRef:
         """Upload a file and create a job for it. POST /v1/uploads, then POST /v1/jobs.
 
@@ -354,6 +357,8 @@ class ResonaClient:
             private=private,
             idempotency_key=idempotency_key,
             provenance=provenance,
+            purpose=purpose,
+            release_id=release_id,
         )
 
     def submit_upload(
@@ -370,11 +375,15 @@ class ResonaClient:
         private: bool = True,
         idempotency_key: Optional[str] = None,
         provenance: Optional[Mapping[str, Any]] = None,
+        purpose: JobPurpose = "production",
+        release_id: Optional[str] = None,
     ) -> JobRef:
         """Create a job for an existing upload. POST /v1/jobs
 
         The Idempotency-Key (generated unless given) is reused for every retry of
         the POST, so a lost response cannot create a duplicate job.
+        ``purpose='evaluation'`` needs an org-admin credential and the ``release_id``
+        of a release staged on the hub (``resona-admin release stage``).
         """
         checked = _checked_options(kind, options)
         key = idempotency_key or str(uuid.uuid4())
@@ -391,6 +400,8 @@ class ResonaClient:
             "profile": profile,
             "options": checked,
             "provenance": dict(provenance) if provenance is not None else None,
+            "purpose": purpose if purpose != "production" else None,
+            "release_id": release_id,
         }
         body.update({k: v for k, v in optional.items() if v is not None})
 
@@ -504,6 +515,49 @@ class ResonaClient:
             expected={409: RevisionConflict},
         )
         return _settings_from(resp)
+
+    # ── Releases, evaluations and baselines ───────────────────────────
+
+    def get_version(self) -> dict:
+        """Hub release and worker protocol. GET /v1/version (no auth needed)"""
+        return self._send("GET", "/v1/version").json()
+
+    def create_evaluation(self, evaluation: Mapping[str, Any]) -> dict:
+        """Record an evaluation summary (metrics only). POST /v1/evaluations (org_admin)"""
+        return self._send("POST", "/v1/evaluations", json=dict(evaluation)).json()
+
+    def get_evaluation(self, evaluation_id: int) -> dict:
+        """One recorded evaluation. GET /v1/evaluations/{id} (org_admin)"""
+        return self._send("GET", f"/v1/evaluations/{evaluation_id}").json()
+
+    def get_baseline(self, *, execution_profile: str, platform: str) -> Optional[dict]:
+        """Current baseline for the profile/platform, or None (hub 404 ``baseline_required``).
+
+        GET /v1/baselines (org_admin)
+        """
+        resp = self._client.get(
+            f"{self.base_url}/v1/baselines",
+            params={"execution_profile": execution_profile, "platform": platform},
+        )
+        if resp.status_code == 404 and _parse_error_body(resp)[0] == "baseline_required":
+            return None
+        if resp.is_error:
+            _raise_for(resp)
+        return resp.json()
+
+    def promote_evaluation(
+        self, evaluation_id: int, *, expected_baseline_revision: Optional[int],
+    ) -> dict:
+        """Make a recorded, passing evaluation the new baseline. POST /v1/evaluations/{id}/promote
+
+        Raises RevisionConflict (409 ``baseline_revision_mismatch``) when the baseline
+        moved since ``expected_baseline_revision`` was read.
+        """
+        return self._send(
+            "POST", f"/v1/evaluations/{evaluation_id}/promote",
+            json={"expected_baseline_revision": expected_baseline_revision},
+            expected={409: RevisionConflict},
+        ).json()
 
     # ── v1 Audio & Engine routes ──────────────────────────────────────
 

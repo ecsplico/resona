@@ -11,7 +11,8 @@ resona/
 ├── pyproject.toml          ← workspace root
 ├── uv.lock
 ├── docker-compose.resona.yml
-├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member)
+├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member; scores via resona-eval)
+├── eval/                   ← evaluation corpus (eval/corpus, synthetic, CC0) + promoted baselines (eval/baselines.json)
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
@@ -34,6 +35,7 @@ resona/
     ├── tts-local/          ← resona-tts-local: local/offline TTS engines (Kokoro, Chatterbox, Qwen3-TTS) — ported from Voicebox
     ├── postprocess/        ← resona-postprocess: profile-based postprocessing pipeline (replacements + LLM + extract)
     ├── api/                ← resona-api: job queue + DB + postprocessing + unified STT/TTS API, :7000
+    ├── eval/               ← resona-eval: corpus loader, WER/CER + document scoring, quality gate, baselines. No ML deps.
     └── client/             ← resona-client: httpx client library
 ```
 
@@ -105,7 +107,7 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - Configured via `DEFAULT_VOXTRAL_MODEL` env var (default: `openai/whisper-large-v3`)
 
 ### resona-engine-mlx-whisper (Apple Silicon, GPU)
-- `transcriber.py` — `MLXWhisperTranscriber`: Whisper on the Apple GPU via the MLX framework. Lazy-imports `mlx_whisper`. Maps short model names (`large-v3`) to `mlx-community/*` repos.
+- `transcriber.py` — `MLXWhisperTranscriber`: Whisper on the Apple GPU via the MLX framework. Lazy-imports `mlx_whisper`. Maps short model names (`large-v3`) to `mlx-community/*` repos. `vad_filter=True` (the hub job default) runs faster-whisper's Silero VAD (ONNX weights bundled in the `faster-whisper` wheel, no download), decodes only the concatenated speech spans and maps segment/word times back to original-audio time; no speech → empty transcript without decoding (large-v3 otherwise emits "Vielen Dank." on noise). `vad_filter=False` decodes the full waveform as before.
 - Configured via `DEFAULT_MLX_WHISPER_MODEL` (default `mlx-community/whisper-large-v3-mlx`). macOS arm64 only (dependency gated by platform marker).
 
 ### resona-engine-whispercpp (Metal)
@@ -136,6 +138,8 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `config.py` — token file (0600 regular file, no symlinks), hub URL (HTTPS, or loopback HTTP), capabilities manifest (`CapabilitiesManifest`, `schema_version` 1; a bare JSON list is rejected — run `prepare`).
 - `launchd.py` — macOS user agent: `install` writes `~/Library/LaunchAgents/<label>.plist` (token *path* only, allowlisted env, umask 077, logs `~/Library/Logs/resona-worker/`) and `launchctl bootstrap gui/<uid>`; `uninstall` boots out and deletes it.
 - `cli.py` — `resona-worker prepare --profile <name> --out caps.json [--settings-file]`, `capabilities caps.json` (approve list for `resona-admin worker approve`), `run --hub --token-file --capabilities-file --work-dir [--once]`, `install --profile --hub --token-file --capabilities-file [--label]`, `uninstall [--label]`.
+- `update.py` — `resona-worker update --version --manifest [--wheels] --profile --hub --token-file --capabilities-file --work-dir [--releases-dir --extras --settings-file --label --worker-stopped --drain-timeout]`: manifest → hub release check (`GET /v1/workers/releases/{id}`, same digest) → SHA-256-verified wheels + `worker-constraints.txt` (uv.lock export) → drain → venv with only the `resona-worker` wheel (other wheels as URL constraints) → `prepare` with manifest model pins → swap caps/`current`, restart (launchd) or supersede. Any failure keeps the previous release. No hub-triggered path.
+- `drain.py` — work-dir handshake files `drain`/`drained`/`superseded`/`supervisor.pid`; `wait_drained` also returns when the recorded supervisor is dead. Docs: `docs/server/releases.md`.
 - The worker holds no ML dependencies in the base install; extras `audio-cpu`, `apple`, `documents` add the engine packages. It opens no listening socket. Mac setup: `docs/server/mac-worker.md`.
 
 ### resona-mcp (lives in `apps/resona-mcp/`)
@@ -145,6 +149,15 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `http.py` — `create_app()`: Streamable HTTP at `/mcp`. `BearerAuth` requires `Authorization: Bearer` on every request, verifies it against the hub (`HubTokenVerifier`, `GET /v1/settings`, 30 s positive cache) and binds each MCP session id to the token hash (other token → 404). Tool calls build a per-request `ResonaClient` with the caller's token; the server holds no hub key. Remote input policy rejects `path`. Host/Origin allowlists via SDK `TransportSecuritySettings` (`RESONA_MCP_ALLOWED_HOSTS`/`RESONA_MCP_ALLOWED_ORIGINS`).
 - `cli.py` — `resona-mcp stdio` | `resona-mcp http --host --port`; logs to stderr only.
 - Uses `ResonaClient.upload_bytes` / `submit_upload` for in-memory uploads. Docs: `docs/guide/mcp.md`.
+
+### resona-eval (lives in `packages/eval/`)
+- `metrics.py` — versioned normalizations (`text-v1`: lowercase, ’→', non-word chars → space, whitespace collapsed; `markdown-v1`: HTML comments removed, then `text-v1`), `wer`/`cer`/`score` (also used by `benchmarks/`), `inserted_words`, `missing_table_cells` (cells of Markdown pipe tables), `reading_order_failures` (ordered anchors)
+- `corpus.py` — `load_corpus(dir)`: `eval/corpus/MANIFEST.json` (per fixture: kind, file, SHA-256, source, license, exact reference, checks, table cells, reading-order anchors); refuses files that do not match their hash. Corpus hash = SHA-256 of MANIFEST.json
+- `scoring.py` — `score_fixture(fixture, JobResult)`: audio on `raw_text` (WER/CER, `silence_insertions`), documents on `markdown` (CER, `missing_cells`, `order_failures`). Numbers only
+- `gate.py` — `evaluate_gate(candidate, baseline)`: pure; fails on missing cells, order failures, silence insertions, WER/CER > baseline + 0.02 absolute, fixtures/metrics absent from the baseline (`baseline_required:<id>`) or baseline fixtures not evaluated (`missing_fixture:<id>`). No comparable baseline (none, or another corpus hash) → outcome `baseline_required`; `Gate.record()` then reports only the absolute checks so the hub can admit a first promotion
+- `evaluation.py` — `build_report(...)` (report.json: metrics + provenance, platform from the ASR/layout stage accelerator, model revisions, sorted `runtime_versions`) and `evaluation_record(...)` (`POST /v1/evaluations` body)
+- `baselines.py` — `eval/baselines.json` keyed `<execution_profile>/<platform>`: corpus hash, release, runtime versions, normalization ids, model revisions, per-fixture metrics; `upsert_baseline` writes atomically
+- Corpus generator: `eval/corpus/make_corpus.py` (macOS `say -v Anna`, numpy, reportlab). Regenerating changes the corpus hash, so every baseline must be re-promoted. Docs: `docs/guide/evaluation.md`
 
 ### resona-cloud-stt
 - `types.py` — `TranscriptionResult` TypedDict: `{text, language, segments}`
@@ -207,7 +220,9 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `db/engine.py` — SQLite engine (WAL, `foreign_keys=ON`, `busy_timeout=5000`); `db/schema.py` runs ordered numbered migrations under `BEGIN EXCLUSIVE` with a pre-upgrade backup (`<db>.pre-v<N>.bak`); `migrate(engine)` is called at startup. Legacy job rows require `RESONA_BOOTSTRAP_ORGANIZATION_ID`
 - `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH` resolved from env
 - `auth.py` — `Principal(credential_id, organization_id, role, worker_id)` resolved from stored, unrevoked credentials (`Authorization: Bearer` or `X-API-Key`; conflicting values → 401). `require_roles(...)` enforces roles (403 on mismatch); `websocket_principal` resolves WS tokens the same way. No auth-disabled mode
-- `admin.py` — hub-local `resona-admin`: `organization create`, `credential issue|revoke`, `worker enroll|approve|revoke`. Tokens are shown once; only their hash is stored
+- `admin.py` — hub-local `resona-admin`: `organization create`, `credential issue|revoke`, `worker enroll|approve|revoke`, `release stage --manifest <file>|list`. Tokens are shown once; only their hash is stored
+- `releases.py` — release identity (`hub_release_id()` = `RESONA_RELEASE_ID` else installed `resona-api` version), `stage_release` (validated `resona_job_core.release.ReleaseManifest`, immutable per id; the bundled placeholder may be filled by its real manifest), `approved_tuples`, `may_run`. The bundled hub release is approved for every (profile, platform) tuple (recorded by migration 2 and at startup); any other worker release claims production jobs only for tuples approved by promotion
+- `evaluations_routes.py` — `GET /v1/version` (no auth), `POST/GET /v1/evaluations`, `POST /v1/evaluations/{id}/promote`, `GET /v1/baselines` (org_admin; metrics only). Gate re-checked on promote: 422 `gate_failed`, 409 `baseline_revision_mismatch`. Worker routes return 426 `protocol_incompatible` unless `X-Resona-Worker-Protocol` major is 1. Docs: `docs/server/releases.md`
 
 ### resona-client
 - `client.py` — `ResonaClient`: the hub's canonical v1 job API. Reads `RESONA_API_URL` / `RESONA_API_KEY` and sends `Authorization: Bearer <key>` (the hub derives the organization from it). `upload(path) -> Upload`; `submit_job(path, *, kind='audio'|'document', execution_profile, language, engine, model, profile, options: AudioOptions|DocumentOptions, private=True, idempotency_key, provenance) -> JobRef` uploads then `POST /v1/jobs` with an `Idempotency-Key` (uuid4 unless given), reusing the same key on bounded retries after transport errors / 502–504. `get_job`/`cancel_job -> JobView`, `list_jobs(cursor, limit) -> JobPage`, `wait_for_job(id, timeout, poll)` (raises `JobTimeout`; never falls back locally), `get_result -> resona_job_core.JobResult` (409 → `JobNotReady`, 410 → `ResultExpired`), `delete_job`, `get_settings`/`put_settings(settings, if_match=etag) -> SettingsDoc` (409 → `RevisionConflict`). Error bodies `{error, message}` → `ResonaAPIError(status, code, message)`; 403 `policy_denied` → `PolicyDeniedError`. Also `create_transcription(audio_path, *, model, language, response_format, engine, execution_profile, private=True, profile)` (`/v1/audio/transcriptions`; 504 → `SyncWaitTimeout` carrying `job_id`, the job keeps running), `create_speech`, `list_engines` and profile methods on `/profiles/{name}` (`list_profiles`, `get_profile`, `put_profile`, `delete_profile`). Depends on `resona-job-core` (pydantic only), no ML stack.
@@ -220,6 +235,7 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `transcribe.py` / `doc.py` — `resona transcribe <files|globs|dirs>` (audio; `--translate`, `--word-timestamps`) and `resona doc` (PDF/PNG/JPEG/TIFF; `DocumentOptions` flags `--ocr auto|force|off`, `--ocr-engine`, `--languages de,en`, `--pages a-b`). Shared flags: `--execution-profile` (approved candidates) separate from postprocess `--profile` (stored profile name; file/inline JSON only with `--local`), `--engine/--model` overrides (hub accepts approved candidates only), `--language`, `--output-dir`, `--force`, `--json`, `--no-wait`, `--timeout`, `--private`/`--allow-cloud`, `--local`
 - `outputs.py` — `output_paths(source, output_dir)` → `<stem>.md` + `<stem>.result.json`; `write_result(...)` writes both via temp file + link/rename, refusing to replace existing files without `force` (`OutputExists`)
 - `jobs_cli.py` — `resona jobs get|wait|result|cancel|delete <id>` and `jobs list [--cursor --limit --json]`; `wait` exits 0/1/2 by outcome, `result` prints Markdown (`--json` the JobResult) or writes files with `--output-dir [--stem] [--force]`
+- `eval_cli.py` — `resona eval --profile <execution profile> --output-dir <dir> [--remote] [--platform] [--release-id] [--corpus] [--baselines]`: local mode runs each fixture through `local_run` (organization polish disabled) and compares with `eval/baselines.json`; `--remote` submits `purpose=evaluation` jobs (org-admin key, staged release, default the hub's `/v1/version` release), records `POST /v1/evaluations` and compares with `GET /v1/baselines`. Exit 0 pass, 3 gate failed, 4 `baseline_required`. `resona eval promote <id> --report <dir>/report.json` promotes on the hub (expected revision = the hub baseline seen by that run) and pins the entry in `eval/baselines.json`
 - `settings_cli.py` / `settings_cache.py` — `resona settings get|pull|set`: revisioned non-secret settings cached per `(hub URL, organization_id)` in `~/.resona/settings-cache/` (`credential` = SHA-256 prefix of the token, never the token; `stale` flag). `set --file <json>` or `key=value` validates against `OrganizationSettings`, sends `If-Match` from the cached (else freshly fetched) ETag; 409 → exit 1 with a pull hint; changes apply to new jobs only
 - `local_run.py` — explicit `--local`: loads cached settings for the configured hub+credential (marks them `stale`) or built-in private defaults, resolves the execution profile's approved candidates, runs `check_policy` (+ `build_pipeline` with `local_policy(profile, base=org policy)`) before any processing, then runs the candidate in the worker's execution subprocess (`python -m resona_worker.execute`, private env: offline caches, no credentials). Cloud only when allowed by the cached org settings
 - `watch.py` — `watch` subcommand: polls a directory and runs each new audio file as a private hub job (or `--local`), writing `<stem>.md` + `.result.json`; existing outputs are skipped, policy denial stops with exit 2
@@ -456,7 +472,7 @@ libs; the benchmark runs real inference and is not part of `pytest`.
 
 ```bash
 uv sync --all-packages
-uv run --with jiwer --with datasets --with soundfile \
+uv run --with datasets --with soundfile \
     python benchmarks/transcription_benchmark.py
 ```
 

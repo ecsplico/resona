@@ -25,7 +25,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import as_file, files
@@ -78,15 +78,34 @@ def profile_candidates(settings: OrganizationSettings, profile: str) -> list[tup
     return pairs
 
 
-def _verify_weights(candidate: Candidate) -> list[WeightRecord]:
+def _required_revision(candidate: Candidate, model_pins: Mapping[str, str] | None) -> str | None:
+    """The revision prepare must find: the settings pin, checked against a release manifest's pin."""
+    if model_pins is None:
+        return candidate.model_revision
+    pinned = model_pins.get(candidate.model)
+    if pinned is None:
+        raise PrepareError(f"the release manifest does not pin a revision for {candidate.model}")
+    if candidate.model_revision and candidate.model_revision != pinned:
+        raise PrepareError(
+            f"settings pin {candidate.model} at {candidate.model_revision}, the release pins {pinned}"
+        )
+    return pinned
+
+
+def _verify_weights(candidate: Candidate, model_pins: Mapping[str, str] | None = None) -> list[WeightRecord]:
     if not is_hub_repo(candidate.model):
         return []
-    snapshot = local_snapshot(candidate.model, candidate.model_revision)
+    revision = _required_revision(candidate, model_pins)
+    snapshot = local_snapshot(candidate.model, revision)
     if snapshot is None:
-        pinned = f" at revision {candidate.model_revision}" if candidate.model_revision else ""
+        pinned = f" at revision {revision}" if revision else ""
         raise PrepareError(
             f"weights for {candidate.model}{pinned} are not in the local HuggingFace cache; "
             f"download them first (e.g. `hf download {candidate.model}`)"
+        )
+    if model_pins is not None and snapshot.name != revision:
+        raise PrepareError(
+            f"the release pins {candidate.model} at {revision}, the local cache resolves {snapshot.name}"
         )
     return [WeightRecord(repo=candidate.model, revision=snapshot.name)]
 
@@ -183,8 +202,9 @@ def prepare_candidate(
     *,
     executor: Sequence[str],
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    model_pins: Mapping[str, str] | None = None,
 ) -> PreparedCapability:
-    weights = _verify_weights(candidate)
+    weights = _verify_weights(candidate, model_pins)
     synthetic = _SYNTHETIC[kind]
     snapshot = {
         "kind": kind,
@@ -225,11 +245,21 @@ def prepare(
     executor: Sequence[str] = (sys.executable, "-m", "resona_worker.execute"),
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     on_tested: Callable[[PreparedCapability], None] | None = None,
+    model_pins: Mapping[str, str] | None = None,
 ) -> CapabilitiesManifest:
-    """Prepare every candidate of ``profile``; raise ``PrepareError`` on the first failure."""
+    """Prepare every candidate of ``profile``; raise ``PrepareError`` on the first failure.
+
+    ``model_pins`` (``model -> revision`` from a release manifest) makes every HuggingFace
+    model need exactly the release's revision in the local cache; all weights are checked
+    before the first synthetic run.
+    """
+    pairs = profile_candidates(settings, profile)
+    if model_pins is not None:
+        for _, candidate in pairs:
+            _verify_weights(candidate, model_pins)
     tested = []
-    for kind, candidate in profile_candidates(settings, profile):
-        item = prepare_candidate(kind, candidate, executor=executor, timeout=timeout)
+    for kind, candidate in pairs:
+        item = prepare_candidate(kind, candidate, executor=executor, timeout=timeout, model_pins=model_pins)
         tested.append(item)
         if on_tested is not None:
             on_tested(item)

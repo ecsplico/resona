@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "baselines": {
+    "cpu-private/cpu": {
+      "execution_profile": "cpu-private",
+      "platform": "cpu",
+      "revision": 1,
+      "evaluation_id": 1,
+      "promoted_at": "2026-10-31T23:06:55+00:00",
+      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
+      "release_id": "0.1.0",
+      "runtime_versions": [
+        "0.1.0"
+      ],
+      "normalization": {
+        "audio": "text-v1",
+        "document": "markdown-v1"
+      },
+      "models": [
+        {
+          "stage": "asr",
+          "engine": "faster-whisper",
+          "model": "Systran/faster-whisper-large-v3",
+          "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "accelerator": "cpu"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-layout",
+          "model": "docling-project/docling-layout-heron",
+          "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+          "accelerator": "cpu"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-tableformer",
+          "model": "docling-project/docling-models",
+          "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
+          "accelerator": "cpu"
+        },
+        {
+          "stage": "ocr",
+          "engine": "rapidocr",
+          "model": "rapidocr-ppocr",
+          "revision": "3.9.2",
+          "accelerator": "cpu"
+        }
+      ],
+      "fixtures": {
+        "de-speech": {
+          "wer": 0.0,
+          "cer": 0.0
+        },
+        "de-numbers": {
+          "wer": 0.0455,
+          "cer": 0.0381
+        },
+        "silence": {
+          "silence_insertions": 0
+        },
+        "digital-pdf": {
+          "cer": 0.0
+        },
+        "scan-pdf": {
+          "cer": 0.0
+        },
+        "table-columns-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0,
+          "order_failures": 0
+        }
+      }
+    },
+    "mac-private/mac-metal": {
+      "execution_profile": "mac-private",
+      "platform": "mac-metal",
+      "revision": 1,
+      "evaluation_id": 2,
+      "promoted_at": "2026-10-31T23:06:55+00:00",
+      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
+      "release_id": "0.1.0",
+      "runtime_versions": [
+        "0.1.0"
+      ],
+      "normalization": {
+        "audio": "text-v1",
+        "document": "markdown-v1"
+      },
+      "models": [
+        {
+          "stage": "asr",
+          "engine": "mlx-whisper",
+          "model": "mlx-community/whisper-large-v3-mlx",
+          "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+          "accelerator": "metal"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-layout",
+          "model": "docling-project/docling-layout-heron",
+          "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+          "accelerator": "metal"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-tableformer",
+          "model": "docling-project/docling-models",
+          "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
+          "accelerator": "cpu"
+        },
+        {
+          "stage": "ocr",
+          "engine": "ocrmac",
+          "model": "apple-vision",
+          "revision": null,
+          "accelerator": "metal"
+        }
+      ],
+      "fixtures": {
+        "de-speech": {
+          "wer": 0.0,
+          "cer": 0.0
+        },
+        "de-numbers": {
+          "wer": 0.0455,
+          "cer": 0.0381
+        },
+        "silence": {
+          "silence_insertions": 0
+        },
+        "digital-pdf": {
+          "cer": 0.0
+        },
+        "scan-pdf": {
+          "cer": 0.0
+        },
+        "table-columns-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0,
+          "order_failures": 0
+        }
+      }
+    }
+  }
+}

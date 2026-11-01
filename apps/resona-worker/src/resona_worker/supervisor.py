@@ -33,6 +33,14 @@ from resona_postprocess.pipeline import PostprocessResult, build_pipeline
 from resona_postprocess.profile import Profile, ProfileError
 
 from resona_worker.config import WorkerConfig, runtime_version
+from resona_worker.drain import (
+    clear_drained,
+    clear_running,
+    drain_requested,
+    mark_drained,
+    mark_running,
+    take_superseded,
+)
 from resona_worker.execute import ExitCode, mentions_out_of_memory, subprocess_env
 from resona_worker.hub import (
     MAX_RESULT_BYTES,
@@ -54,6 +62,7 @@ log = logging.getLogger("resona_worker.supervisor")
 _NOT_APPROVED_RETRY_SECONDS = 30.0
 _BACKOFF_MIN = 1.0
 _BACKOFF_MAX = 30.0
+_DRAIN_POLL_SECONDS = 2.0
 _FAIL_MESSAGE_MAX = 500
 _LEASE_RETRY_SECONDS = 5.0
 _KILL_WAIT_SECONDS = 5.0
@@ -195,6 +204,7 @@ class Supervisor:
         self._config.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.rmtree(self._jobs_dir, ignore_errors=True)
         self._jobs_dir.mkdir(mode=0o700)
+        mark_running(self._config.work_dir)
 
     def run(self, *, once: bool = False) -> int:
         """Serve claims until interrupted. ``once`` returns after one claim cycle."""
@@ -208,11 +218,25 @@ class Supervisor:
         except ProtocolIncompatible:
             log.error("hub speaks an incompatible worker protocol; stopping")
             return 2
+        finally:
+            clear_running(self._config.work_dir)
 
     def _loop(self, *, once: bool) -> int:
         self.start()
         backoff = _BACKOFF_MIN
         while True:
+            # Checked between jobs only, so a running job always finishes before an update.
+            if take_superseded(self._config.work_dir):
+                clear_drained(self._config.work_dir)
+                log.info("release replaced by resona-worker update; exiting so the new release can start")
+                return 0
+            if drain_requested(self._config.work_dir):
+                mark_drained(self._config.work_dir)
+                if once:
+                    return 0
+                self._sleep(_DRAIN_POLL_SECONDS)
+                continue
+            clear_drained(self._config.work_dir)
             claimable = [c for c in self._config.capabilities if c not in self._withdrawn]
             try:
                 reply = self._hub.heartbeat(claimable, ready=bool(claimable), runtime=runtime_version())
@@ -602,6 +626,11 @@ def _kill_group(proc: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
+        pass
+    except PermissionError:
+        # macOS answers EPERM when the group still exists but holds only zombies (the
+        # executor exited and was reaped): nothing is left to kill. Every member runs as
+        # this user, so EPERM never means a live process we failed to stop.
         pass
     try:
         proc.wait(timeout=_KILL_WAIT_SECONDS)

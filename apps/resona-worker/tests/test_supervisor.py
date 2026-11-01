@@ -264,3 +264,27 @@ def test_document_input_of_unknown_type_fails_terminally(build_supervisor, fakes
     failure = json.loads(body)
     assert (failure["code"], failure["retryable"]) == ("unsupported_input", False)
     assert hub.paths("/result") == []
+
+
+def test_exited_executor_group_answering_eperm_does_not_crash_the_worker(build_supervisor, fakes, monkeypatch) -> None:
+    """macOS: killpg on a reaped group that still holds zombies raises EPERM. The job's
+    result must still be uploaded instead of the supervisor dying mid-job."""
+    import os
+
+    from resona_worker import supervisor as supervisor_module
+
+    calls: list[int] = []
+
+    def killpg(pid: int, sig: int) -> None:
+        calls.append(pid)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(supervisor_module.os, "killpg", killpg)
+    hub = fakes.FakeHub(CAND)
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    assert supervisor.run(once=True) == 0
+
+    assert calls and all(pid != os.getpid() for pid in calls)
+    assert len(hub.paths("/result")) == 1
+    assert hub.paths("/fail") == []

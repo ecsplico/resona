@@ -61,7 +61,16 @@ def _sqlite_pragmas(dbapi_connection, _record):
 
 
 def create_db_and_tables():
-    """Bring the database schema to the latest version (see ``db/schema.py``)."""
+    """Bring the database schema to the latest version (see ``db/schema.py``).
+
+    Also records the hub's own release, so an upgraded hub's bundled release is listed.
+    """
+    from sqlmodel import Session
+
+    from ..releases import record_bundled_release
+
     log.info("Migrating database schema...")
     migrate(engine)
+    with Session(engine) as session:
+        record_bundled_release(session)
     log.info("Database schema is current.")

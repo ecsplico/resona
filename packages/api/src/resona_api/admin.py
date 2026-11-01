@@ -18,9 +18,10 @@ from sqlmodel import Session, select
 
 from resona_job_core import Candidate, default_settings
 
+from . import releases
 from .auth import ROLE_CLIENT, ROLE_ORG_ADMIN, ROLE_WORKER, hash_token
 from .db.engine import create_db_and_tables, engine
-from .db.models import Credential, Organization, SettingsRevision, Worker
+from .db.models import ApprovedReleaseTuple, Credential, Organization, Release, SettingsRevision, Worker
 
 
 class AdminError(RuntimeError):
@@ -162,6 +163,22 @@ def _read_capabilities(path: str) -> list[dict]:
     return data
 
 
+def list_releases(session: Session) -> list[str]:
+    """One line per release, then one indented line per approved tuple."""
+    lines = []
+    for row in session.exec(select(Release).order_by(Release.staged_at)).all():
+        lines.append(f"{row.release_id}\t{row.status}\t{row.manifest_sha256}")
+        approvals = session.exec(
+            select(ApprovedReleaseTuple).where(ApprovedReleaseTuple.release_id == row.release_id)
+        ).all()
+        for item in sorted(approvals, key=lambda a: (a.organization_id, a.execution_profile, a.platform)):
+            lines.append(
+                f"  approved\t{item.organization_id}\t{item.execution_profile}\t{item.platform}"
+                f"\tevaluation {item.evaluation_id}"
+            )
+    return lines
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="resona-admin", description="Hub administration")
     top = parser.add_subparsers(dest="group", required=True)
@@ -189,6 +206,11 @@ def _build_parser() -> argparse.ArgumentParser:
     w_approve.add_argument("--capabilities-file", required=True)
     w_revoke = worker.add_parser("revoke")
     w_revoke.add_argument("worker_id")
+
+    release = top.add_parser("release").add_subparsers(dest="action", required=True)
+    r_stage = release.add_parser("stage", help="admit a release manifest for evaluation jobs")
+    r_stage.add_argument("--manifest", required=True)
+    release.add_parser("list", help="releases and their approved (organization, profile, platform) tuples")
     return parser
 
 
@@ -224,6 +246,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.group == "worker" and args.action == "revoke":
                 revoke_worker(session, args.worker_id)
                 print(f"worker {args.worker_id} revoked")
+            elif args.group == "release" and args.action == "stage":
+                try:
+                    raw = Path(args.manifest).read_bytes()
+                except OSError as exc:
+                    raise AdminError(f"cannot read manifest: {exc.strerror}") from None
+                release = releases.stage_release(session, raw)
+                print(f"release {release.release_id} {release.status} (manifest sha256 {release.manifest_sha256})")
+            elif args.group == "release" and args.action == "list":
+                for line in list_releases(session):
+                    print(line)
     except (AdminError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

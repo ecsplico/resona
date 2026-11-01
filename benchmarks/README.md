@@ -24,13 +24,14 @@ Bring your own instead with `--audio file.wav --reference file.txt` (single
 
 ## Running
 
-The benchmark needs `jiwer` (WER/CER), and `datasets` + `soundfile` (only when
-downloading FLEURS). Install the engines you want to compare first:
+WER/CER come from `resona_eval.metrics` (workspace package `resona-eval`, the same
+scoring `resona eval` uses); `datasets` + `soundfile` are needed only when
+downloading FLEURS. Install the engines you want to compare first:
 
 ```bash
 uv sync --all-packages          # installs all engines (incl. Apple MLX ones on a Mac)
 
-uv run --with jiwer --with datasets --with soundfile \
+uv run --with datasets --with soundfile \
     python benchmarks/transcription_benchmark.py
 ```
 

@@ -71,10 +71,12 @@ nav:
     - Speech Synthesis: guide/tts.md
     - MCP Server: guide/mcp.md
     - Privacy: guide/privacy.md
+    - Evaluation & Baselines: guide/evaluation.md
   - Server Setup:
     - Docker Deployment: server/docker.md
     - Full-Stack (uv): server/full-stack.md
     - Mac Worker (Apple Silicon): server/mac-worker.md
+    - Releases & Worker Updates: server/releases.md
   - Configuration:
     - Environment Variables: configuration/environment.md
     - Config Files: configuration/config-files.md
