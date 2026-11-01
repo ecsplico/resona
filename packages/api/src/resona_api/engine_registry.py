@@ -22,6 +22,12 @@ CLOUD_STT_MODELS = {
     "elevenlabs": "scribe_v1",
 }
 
+
+def cloud_asr_endpoint_id(engine: str) -> str | None:
+    """Registry endpoint ID a cloud ASR provider must be approved under, or None for local engines."""
+    return f"cloud-asr:{engine}" if engine in CLOUD_PROVIDERS else None
+
+
 _CACHE_TTL = 5.0
 
 
@@ -137,6 +143,11 @@ def _local_tts_engines() -> list[EngineInfo]:
     return out
 
 
+def speech_catalogue() -> list[EngineInfo]:
+    """Synchronous TTS engines of ``/v1/audio/speech``, without probing any engine-server."""
+    return _local_tts_engines() + [e for e in _cloud_engines() if "tts" in e.capabilities]
+
+
 def build_catalogue() -> list[EngineInfo]:
     """Probe every local backend + cloud provider; dedupe local engine names."""
     catalogue: list[EngineInfo] = []
@@ -240,16 +251,6 @@ def resolve(
         if e.kind == "local":
             return e
     return candidates[0]
-
-
-def effective_default(
-    capability: str = "stt", catalogue: list[EngineInfo] | None = None
-) -> str | None:
-    """The engine name a no-``engine`` request would resolve to, or None."""
-    try:
-        return resolve(None, capability, False, catalogue=catalogue).name
-    except EngineError:
-        return None
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

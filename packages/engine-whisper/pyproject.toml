@@ -35,6 +35,11 @@ dependencies = [
     # build on Python 3.13. Floor numba to a release with cp313 wheels + a real
     # numpy cap; numpy then floats to whatever that numba permits.
     "numba>=0.61",
+    # vad_filter uses faster-whisper's Silero VAD (resona_asr_core.vad); its ONNX
+    # weights ship inside the wheel, so private offline workers never download them.
+    "faster-whisper>=1.1.1",
+    # faster-whisper 1.1.1 imports `requests` but does not declare it.
+    "requests>=2.31",
 ]
 
 [project.urls]

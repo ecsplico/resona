@@ -16,7 +16,7 @@ import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +26,9 @@ from sqlmodel import Session, select
 
 from resona_job_core import (
     Candidate,
-    EndpointKind,
+    Endpoint,
     JobResult,
+    OrganizationSettings,
     PolicyDenied,
     Stage,
     check_policy,
@@ -35,6 +36,7 @@ from resona_job_core import (
 
 from . import clock, releases, storage
 from .auth import hash_token
+from .engine_registry import cloud_asr_endpoint_id
 from .db.models import Job, JobStatus, Organization, Worker
 from .settings_store import current_settings
 
@@ -44,6 +46,9 @@ PROTOCOL_VERSION = 1
 LEASE_SECONDS = 120
 RESULT_TTL = timedelta(hours=24)
 MAX_MESSAGE_CHARS = 500
+JOB_DELETED = "deleted"
+"""Error code of a deleted job's tombstone: kept (cancelled, lease fenced, invisible
+to clients) only until the lease it replaced would have expired, then purged."""
 
 
 class BrokerError(Exception):
@@ -76,6 +81,16 @@ class Claim:
             "input_sha256": self.input_sha256,
             "execution_snapshot": self.execution_snapshot,
         }
+
+
+@dataclass(frozen=True)
+class LeaseRef:
+    """What a lease-bound worker call presents: who, which job, and the lease token."""
+
+    worker_id: str
+    organization_id: str
+    job_id: int
+    lease_token: str
 
 
 @dataclass(frozen=True)
@@ -141,26 +156,18 @@ def _load_job(session: Session, *, organization_id: str, job_id: int) -> Job:
     return job
 
 
-def _lease_job(
-    session: Session,
-    *,
-    worker_id: str,
-    organization_id: str,
-    job_id: int,
-    lease_token: str,
-    allow_cancel: bool = False,
-) -> Job:
+def _lease_job(session: Session, lease: LeaseRef, *, allow_cancel: bool = False) -> Job:
     """Return the job when the presented lease is the current, unexpired lease of this worker."""
     now = _now()
-    _approved_worker(session, worker_id=worker_id, organization_id=organization_id)
-    job = _load_job(session, organization_id=organization_id, job_id=job_id)
+    _approved_worker(session, worker_id=lease.worker_id, organization_id=lease.organization_id)
+    job = _load_job(session, organization_id=lease.organization_id, job_id=lease.job_id)
     if (
         job.status != JobStatus.PROCESSING
-        or job.worker_id != worker_id
+        or job.worker_id != lease.worker_id
         or job.lease_token_hash is None
         or job.lease_until is None
         or _utc(job.lease_until) <= now
-        or not hmac.compare_digest(job.lease_token_hash, hash_token(lease_token))
+        or not hmac.compare_digest(job.lease_token_hash, hash_token(lease.lease_token))
     ):
         raise BrokerError(409, "stale_lease", "lease is not current")
     if job.cancel_requested and not allow_cancel:
@@ -168,7 +175,7 @@ def _lease_job(
     return job
 
 
-def _settings_or_none(session: Session, organization_id: str):
+def _settings_or_none(session: Session, organization_id: str) -> OrganizationSettings | None:
     try:
         _, settings = current_settings(session, organization_id)
     except LookupError:
@@ -212,13 +219,13 @@ def _remove_input(storage_id: str, job_id: int) -> None:
     storage.remove_file(storage.postprocess_path(storage_id, job_id))
 
 
-def _accepted_duplicate(job: Job, *, worker_id: str, lease_token: str, sha256: str) -> None:
+def _accepted_duplicate(job: Job, lease: LeaseRef, sha256: str) -> None:
     """A completed job answers only its own accepted lease; anything else is stale."""
     manifest = json.loads(job.result_manifest or "{}")
     same_lease = (
-        manifest.get("lease_token_hash") == hash_token(lease_token)
+        manifest.get("lease_token_hash") == hash_token(lease.lease_token)
         and manifest.get("attempt") == job.attempt
-        and manifest.get("worker_id") == worker_id
+        and manifest.get("worker_id") == lease.worker_id
     )
     if not same_lease:
         raise BrokerError(409, "stale_lease", "job already completed under another lease")
@@ -253,6 +260,55 @@ def record_heartbeat(
     }
 
 
+def job_endpoint_ids(snapshot: dict[str, Any], kind: str, candidate: Candidate) -> list[str]:
+    """Endpoints a job uses when run with ``candidate``: its postprocess LLM endpoints
+    plus the cloud ASR endpoint the candidate implies.
+
+    Snapshots admitted before ``endpoint_ids`` was recorded count every endpoint of
+    their policy registry when they carry a postprocess profile.
+    """
+    ids = snapshot.get("endpoint_ids")
+    if ids is None:
+        policy = snapshot.get("policy") or {}
+        ids = [ep["id"] for ep in policy.get("endpoints", [])] if snapshot.get("postprocess") else []
+    ids = list(ids)
+    cloud = cloud_asr_endpoint_id(candidate.engine) if kind == "audio" else None
+    if cloud is not None:
+        ids.append(cloud)
+    return ids
+
+
+def endpoints_assigned(
+    snapshot: dict[str, Any],
+    kind: str,
+    candidate: Candidate,
+    *,
+    worker_id: str,
+    settings: OrganizationSettings | None,
+) -> bool:
+    """Whether every endpoint the job uses that is assigned to a worker is assigned to ``worker_id``.
+
+    Assignments come from the organization's current settings, falling back to the
+    job's snapshot for endpoints no longer registered (those stages are denied by
+    :func:`check_stage` anyway).
+    """
+    registry = {
+        ep["id"]: Endpoint.model_validate(ep) for ep in (snapshot.get("policy") or {}).get("endpoints", [])
+    }
+    if settings is not None:
+        registry.update((ep.id, ep) for ep in settings.endpoints)
+    for endpoint_id in job_endpoint_ids(snapshot, kind, candidate):
+        endpoint = registry.get(endpoint_id)
+        if endpoint is not None and endpoint.worker_id not in (None, worker_id):
+            return False
+    return True
+
+
+def cloud_denied(job: Job, settings: OrganizationSettings | None) -> bool:
+    """A non-private job whose organization no longer allows cloud processing."""
+    return not job.private and (settings is None or not settings.cloud_enabled)
+
+
 def try_claim(
     session: Session,
     *,
@@ -262,39 +318,40 @@ def try_claim(
 ) -> Claim | None:
     """Claim the oldest eligible pending job, or return None when nothing is eligible.
 
-    Non-private jobs whose organization no longer allows cloud processing are
-    failed with ``policy_denied`` in the same transaction and skipped.
+    Eligible: privacy class equal to the worker's approval (private jobs only on
+    private-approved workers, cloud opt-in jobs only on non-private ones), a
+    snapshot candidate both offered and hub-approved, a worker release approved
+    for it, and every worker-assigned endpoint of the job assigned to this worker.
+    Ineligible jobs are skipped, never modified: non-private jobs whose
+    organization disabled cloud processing are failed by :func:`sweep_leases`.
     """
     now = _now()
     requested = set(capabilities)
     claim: Claim | None = None
-    denied: list[int] = []
     with _immediate(session):
         worker = _approved_worker(session, worker_id=worker_id, organization_id=organization_id)
         worker.last_seen = now
         session.add(worker)
         allowed = set(_candidates(worker.approved_capabilities)) & requested
-        storage_id = session.get(Organization, organization_id).storage_id
+        if not allowed:
+            return None
         settings = _settings_or_none(session, organization_id)
         approved_releases = releases.approved_tuples(session, organization_id)
 
         pending = session.exec(
             select(Job)
-            .where(Job.organization_id == organization_id, Job.status == JobStatus.PENDING)
+            .where(
+                Job.organization_id == organization_id,
+                Job.status == JobStatus.PENDING,
+                Job.private == worker.approved_private,
+            )
             .order_by(Job.id)
         ).all()
         chosen: tuple[int, int, Candidate] | None = None
         for job in pending:
-            if not job.private and (settings is None or not settings.cloud_enabled):
-                _finish_terminal(job, JobStatus.FAILED, "policy_denied", now)
-                session.add(job)
-                denied.append(job.id)
-                continue
-            if chosen is not None or not allowed:
-                continue
             if job.cancel_requested or _utc(job.deadline_at) <= now or job.attempt >= job.max_attempts:
                 continue
-            if job.private and not worker.approved_private:
+            if cloud_denied(job, settings):
                 continue
             snapshot = _snapshot(job)
             pick = next(
@@ -310,11 +367,13 @@ def try_claim(
                         candidate=c,
                         approved=approved_releases,
                     )
+                    and endpoints_assigned(snapshot, job.kind, c, worker_id=worker.id, settings=settings)
                 ),
                 None,
             )
             if pick is not None:
                 chosen = (job.id, job.attempt, pick)
+                break
 
         if chosen is not None:
             job_id, prior_attempt, pick = chosen
@@ -348,25 +407,14 @@ def try_claim(
                     input_sha256=job.input_sha256,
                     execution_snapshot=snapshot,
                 )
-    for job_id in denied:
-        _remove_input(storage_id, job_id)
     return claim
 
 
-def heartbeat_job(
-    session: Session, *, worker_id: str, organization_id: str, job_id: int, lease_token: str
-) -> dict[str, Any]:
+def heartbeat_job(session: Session, lease: LeaseRef) -> dict[str, Any]:
     now = _now()
     until = now + timedelta(seconds=LEASE_SECONDS)
     with _immediate(session):
-        job = _lease_job(
-            session,
-            worker_id=worker_id,
-            organization_id=organization_id,
-            job_id=job_id,
-            lease_token=lease_token,
-            allow_cancel=True,
-        )
+        job = _lease_job(session, lease, allow_cancel=True)
         job.lease_until = until
         job.updated_at = now
         session.add(job)
@@ -374,64 +422,36 @@ def heartbeat_job(
     return {"lease_until": until.isoformat(), "cancel_requested": cancel_requested}
 
 
-def input_path(
-    session: Session, *, worker_id: str, organization_id: str, job_id: int, lease_token: str
-) -> Path:
-    job = _lease_job(
-        session,
-        worker_id=worker_id,
-        organization_id=organization_id,
-        job_id=job_id,
-        lease_token=lease_token,
-    )
+def input_path(session: Session, lease: LeaseRef) -> Path:
+    job = _lease_job(session, lease)
     if job.input_deleted:
         raise BrokerError(410, "input_gone", "job input has been removed")
-    storage_id = session.get(Organization, organization_id).storage_id
-    path = storage.job_input_path(storage_id, job_id)
+    storage_id = session.get(Organization, lease.organization_id).storage_id
+    path = storage.job_input_path(storage_id, lease.job_id)
     if not path.is_file():
         raise BrokerError(410, "input_gone", "job input has been removed")
     return path
 
 
-def postprocess_path(
-    session: Session, *, worker_id: str, organization_id: str, job_id: int, lease_token: str
-) -> Path:
+def postprocess_path(session: Session, lease: LeaseRef) -> Path:
     """The leased job's resolved postprocess profile; same checks as :func:`input_path`."""
-    job = _lease_job(
-        session,
-        worker_id=worker_id,
-        organization_id=organization_id,
-        job_id=job_id,
-        lease_token=lease_token,
-    )
+    job = _lease_job(session, lease)
     if job.input_deleted:
         raise BrokerError(410, "input_gone", "job input has been removed")
-    storage_id = session.get(Organization, organization_id).storage_id
-    path = storage.postprocess_path(storage_id, job_id)
+    storage_id = session.get(Organization, lease.organization_id).storage_id
+    path = storage.postprocess_path(storage_id, lease.job_id)
     if not path.is_file():
         raise BrokerError(404, "postprocess_not_found", "job has no postprocess profile")
     return path
 
 
-def check_stage(
-    session: Session,
-    *,
-    worker_id: str,
-    organization_id: str,
-    job_id: int,
-    lease_token: str,
-    stage: str,
-    endpoint_id: str | None,
-) -> None:
-    """Fresh policy check against current organization settings before an external stage."""
-    job = _lease_job(
-        session,
-        worker_id=worker_id,
-        organization_id=organization_id,
-        job_id=job_id,
-        lease_token=lease_token,
-    )
-    settings = _settings_or_none(session, organization_id)
+def check_stage(session: Session, lease: LeaseRef, *, stage: str, endpoint_id: str | None) -> None:
+    """Fresh policy check against current organization settings before an external stage.
+
+    An endpoint assigned to another worker is denied: its secret file lives there.
+    """
+    job = _lease_job(session, lease)
+    settings = _settings_or_none(session, lease.organization_id)
     if settings is None:
         raise BrokerError(403, "policy_denied", "organization has no settings")
     endpoint = None
@@ -439,35 +459,23 @@ def check_stage(
         endpoint = next((ep for ep in settings.endpoints if ep.id == endpoint_id), None)
         if endpoint is None:
             raise BrokerError(403, "policy_denied", "endpoint is not registered")
+        if endpoint.worker_id is not None and endpoint.worker_id != lease.worker_id:
+            raise BrokerError(403, "policy_denied", "endpoint is assigned to another worker")
     try:
         check_policy(settings.policy(private=job.private), [Stage(name=stage, kind="llm", endpoint=endpoint)])
     except PolicyDenied as exc:
         raise BrokerError(403, "policy_denied", str(exc)) from exc
 
 
-def begin_result(
-    session: Session,
-    *,
-    worker_id: str,
-    organization_id: str,
-    job_id: int,
-    lease_token: str,
-    sha256: str,
-) -> ResultSlot | None:
+def begin_result(session: Session, lease: LeaseRef, *, sha256: str) -> ResultSlot | None:
     """Admit a result upload. Returns None when this exact result was already accepted."""
-    job = _load_job(session, organization_id=organization_id, job_id=job_id)
-    _approved_worker(session, worker_id=worker_id, organization_id=organization_id)
+    job = _load_job(session, organization_id=lease.organization_id, job_id=lease.job_id)
+    _approved_worker(session, worker_id=lease.worker_id, organization_id=lease.organization_id)
     if job.status == JobStatus.COMPLETED:
-        _accepted_duplicate(job, worker_id=worker_id, lease_token=lease_token, sha256=sha256)
+        _accepted_duplicate(job, lease, sha256)
         return None
-    job = _lease_job(
-        session,
-        worker_id=worker_id,
-        organization_id=organization_id,
-        job_id=job_id,
-        lease_token=lease_token,
-    )
-    storage_id = session.get(Organization, organization_id).storage_id
+    job = _lease_job(session, lease)
+    storage_id = session.get(Organization, lease.organization_id).storage_id
     return ResultSlot(storage_id=storage_id, attempt=job.attempt, kind=job.kind)
 
 
@@ -481,17 +489,7 @@ def parse_result(path: Path, kind: str) -> None:
         raise BrokerError(422, "kind_mismatch", "result kind does not match the job")
 
 
-def finish_result(
-    session: Session,
-    *,
-    worker_id: str,
-    organization_id: str,
-    job_id: int,
-    lease_token: str,
-    sha256: str,
-    temp_path: Path,
-    size: int,
-) -> str:
+def finish_result(session: Session, lease: LeaseRef, *, sha256: str, temp_path: Path, size: int) -> str:
     """Promote a validated staged result and complete the job in one locked transaction.
 
     The lease is re-checked under the write lock, so a superseded attempt can never
@@ -499,28 +497,22 @@ def finish_result(
     """
     now = _now()
     with _immediate(session):
-        job = _load_job(session, organization_id=organization_id, job_id=job_id)
-        _approved_worker(session, worker_id=worker_id, organization_id=organization_id)
+        job = _load_job(session, organization_id=lease.organization_id, job_id=lease.job_id)
+        _approved_worker(session, worker_id=lease.worker_id, organization_id=lease.organization_id)
         if job.status == JobStatus.COMPLETED:
-            _accepted_duplicate(job, worker_id=worker_id, lease_token=lease_token, sha256=sha256)
+            _accepted_duplicate(job, lease, sha256)
             storage.remove_file(temp_path)
             return "completed"
-        job = _lease_job(
-            session,
-            worker_id=worker_id,
-            organization_id=organization_id,
-            job_id=job_id,
-            lease_token=lease_token,
-        )
-        storage_id = session.get(Organization, organization_id).storage_id
-        dest = storage.result_path(storage_id, job_id)
+        job = _lease_job(session, lease)
+        storage_id = session.get(Organization, lease.organization_id).storage_id
+        dest = storage.result_path(storage_id, lease.job_id)
         dest.parent.mkdir(parents=True, exist_ok=True)
         os.replace(temp_path, dest)
         manifest = {
             "sha256": sha256,
             "size": size,
             "attempt": job.attempt,
-            "worker_id": worker_id,
+            "worker_id": lease.worker_id,
             "lease_token_hash": job.lease_token_hash,
         }
         job.status = JobStatus.COMPLETED
@@ -532,17 +524,18 @@ def finish_result(
         job.input_deleted = True
         job.updated_at = now
         session.add(job)
-    _remove_input(storage_id, job_id)
+    _remove_input(storage_id, lease.job_id)
     return "completed"
+
+
+def _capability_label(candidate: Candidate) -> str:
+    return f"{candidate.engine}:{candidate.model}@{candidate.accelerator}"
 
 
 def fail_job(
     session: Session,
+    lease: LeaseRef,
     *,
-    worker_id: str,
-    organization_id: str,
-    job_id: int,
-    lease_token: str,
     code: str,
     message: str,
     retryable: bool,
@@ -550,24 +543,16 @@ def fail_job(
 ) -> str:
     """Release or fail the current assignment.
 
-    ``withdraw`` removes a capability this worker can no longer serve (for example
-    after an out-of-memory failure) until it is re-prepared and re-approved.
+    ``withdraw`` names a capability the worker stopped offering (for example after
+    an out-of-memory failure). Withdrawal is worker-local: the worker stops
+    reporting and claiming it until it is re-prepared. The hub only notes it on the
+    job's error message; the worker's hub approval is never changed here.
     """
     now = _now()
+    if withdraw is not None:
+        message = f"{message} (worker withdrew {_capability_label(withdraw)})".strip()
     with _immediate(session):
-        job = _lease_job(
-            session,
-            worker_id=worker_id,
-            organization_id=organization_id,
-            job_id=job_id,
-            lease_token=lease_token,
-            allow_cancel=True,
-        )
-        if withdraw is not None:
-            worker = session.get(Worker, worker_id)
-            remaining = [c for c in _candidates(worker.approved_capabilities) if c != withdraw]
-            worker.approved_capabilities = _dump_candidates(remaining)
-            session.add(worker)
+        job = _lease_job(session, lease, allow_cancel=True)
         job.error_message = message[:MAX_MESSAGE_CHARS]
         if job.cancel_requested:
             _finish_terminal(job, JobStatus.CANCELLED, code, now)
@@ -576,17 +561,19 @@ def fail_job(
         session.add(job)
         status = job.status.value
     if status in (JobStatus.FAILED.value, JobStatus.CANCELLED.value):
-        _remove_input(session.get(Organization, organization_id).storage_id, job_id)
+        _remove_input(session.get(Organization, lease.organization_id).storage_id, lease.job_id)
     return status
 
 
 def sweep_leases(session: Session) -> int:
-    """Requeue or fail expired leases and pending jobs past their deadline. Returns rows changed."""
+    """Requeue or fail expired leases, fail pending jobs past their deadline or no longer
+    allowed by policy, and purge deleted-job tombstones whose lease is dead. Returns rows changed."""
     now = _now()
     ended: list[tuple[str, int]] = []
     changed = 0
     with _immediate(session):
         storage_ids = {org.id: org.storage_id for org in session.exec(select(Organization)).all()}
+        settings: dict[str, OrganizationSettings | None] = {}
         for job in session.exec(select(Job).where(Job.status == JobStatus.PROCESSING)).all():
             if job.lease_until is None or _utc(job.lease_until) > now:
                 continue
@@ -601,9 +588,24 @@ def sweep_leases(session: Session) -> int:
         for job in session.exec(select(Job).where(Job.status == JobStatus.PENDING)).all():
             if _utc(job.deadline_at) <= now:
                 _finish_terminal(job, JobStatus.FAILED, "deadline_exceeded", now)
-                session.add(job)
-                changed += 1
+            elif not job.private:
+                if job.organization_id not in settings:
+                    settings[job.organization_id] = _settings_or_none(session, job.organization_id)
+                if not cloud_denied(job, settings[job.organization_id]):
+                    continue
+                _finish_terminal(job, JobStatus.FAILED, "policy_denied", now)
+                job.error_message = "cloud processing is disabled for this organization"
+            else:
+                continue
+            session.add(job)
+            changed += 1
+            ended.append((storage_ids[job.organization_id], job.id))
+        tombstones = select(Job).where(Job.status == JobStatus.CANCELLED, Job.error_code == JOB_DELETED)
+        for job in session.exec(tombstones).all():
+            if job.lease_until is None or _utc(job.lease_until) <= now:
                 ended.append((storage_ids[job.organization_id], job.id))
+                session.delete(job)
+                changed += 1
     for storage_id, job_id in ended:
         _remove_input(storage_id, job_id)
     return changed
@@ -612,11 +614,16 @@ def sweep_leases(session: Session) -> int:
 __all__ = [
     "BrokerError",
     "Claim",
+    "JOB_DELETED",
     "LEASE_SECONDS",
+    "LeaseRef",
     "PROTOCOL_VERSION",
     "ResultSlot",
     "begin_result",
     "check_stage",
+    "cloud_denied",
+    "endpoints_assigned",
+    "job_endpoint_ids",
     "fail_job",
     "finish_result",
     "heartbeat_job",

@@ -15,7 +15,7 @@ resona-api uses this package for the `POST /v1/audio/speech` route. You can also
 !!! note "Deepgram voice selection"
     For Deepgram, the voice is encoded in the model name (e.g. `aura-2-thalia-en`). Pass the desired voice model as the `model` parameter; the `voice` parameter is ignored.
 
-Cloud TTS engines appear in `GET /v1/engines` with `"tts"` in `capabilities` when their API key env var is set.
+Cloud TTS engines appear in `GET /v1/engines` (`job_kind: "speech"`, `"tts"` in `capabilities`) only for organizations with `cloud_enabled=true`; `available` is true when their API key env var is set on the hub.
 
 ## Supported output formats
 

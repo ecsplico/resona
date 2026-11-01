@@ -69,6 +69,7 @@ _KILL_WAIT_SECONDS = 5.0
 _STAGE_LLM_TYPES = frozenset({"llm", "extract"})
 _OUT_OF_MEMORY_RC = frozenset({int(ExitCode.OUT_OF_MEMORY), -9})
 _STDERR_SCAN_BYTES = 64 * 1024
+_PROBE_TIMEOUT_SECONDS = 120.0
 
 
 class LeaseLost(Exception):
@@ -186,12 +187,14 @@ class Supervisor:
         monotonic: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        probe: Callable[[str], bool] | None = None,
     ) -> None:
         self._config = config
         self._hub = hub or HubClient(config.hub_url, config.token, sleep=sleep)
         self._monotonic = monotonic
         self._wall = wall
         self._sleep = sleep
+        self._probe = probe or self._probe_with_executor
         self._withdrawn: set[Candidate] = set()
         self._approved_private = False
         self._worker_id: str | None = None
@@ -200,11 +203,38 @@ class Supervisor:
     # -- lifecycle ----------------------------------------------------------
 
     def start(self) -> None:
-        """Create a clean work directory, discarding leftovers from a previous run."""
+        """Create a clean work directory, discarding leftovers from a previous run.
+
+        Tuples whose accelerator this host cannot use right now (a CUDA container started
+        without a GPU, a missing driver) are withdrawn before the first heartbeat, so the
+        hub never schedules them here and their jobs stay eligible for other workers.
+        """
         self._config.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.rmtree(self._jobs_dir, ignore_errors=True)
         self._jobs_dir.mkdir(mode=0o700)
         mark_running(self._config.work_dir)
+        for accelerator in sorted({c.accelerator for c in self._config.capabilities} - {"cpu"}):
+            if self._probe(accelerator):
+                continue
+            unavailable = {c for c in self._config.capabilities if c.accelerator == accelerator}
+            self._withdrawn |= unavailable
+            log.warning("%s is not available on this host; not offering %d tuple(s)", accelerator, len(unavailable))
+
+    def _probe_with_executor(self, accelerator: str) -> bool:
+        """Ask the execution environment (where the ML frameworks live) whether ``accelerator`` works."""
+        try:
+            completed = subprocess.run(
+                [*self._config.executor, "--probe-accelerator", accelerator],
+                env=subprocess_env(private=True, base=os.environ),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=_PROBE_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return completed.returncode == ExitCode.OK
 
     def run(self, *, once: bool = False) -> int:
         """Serve claims until interrupted. ``once`` returns after one claim cycle."""

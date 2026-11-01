@@ -32,7 +32,7 @@ from .paths import PathRejected, looks_like_url, resolve_input_path
 log = logging.getLogger(__name__)
 
 MAX_UPLOAD_CONTENT_BYTES = 8 * 1024 * 1024
-MAX_RESULT_CHUNK_CHARS = 20_000
+MAX_RESULT_CHUNK_CHARS = 32_768
 # Largest base64 text that can decode to MAX_UPLOAD_CONTENT_BYTES (padding included).
 _MAX_BASE64_CHARS = 4 * -(-MAX_UPLOAD_CONTENT_BYTES // 3)
 _UPLOAD_ID = re.compile(r"^upl_[0-9a-f]{24}$")
@@ -237,21 +237,18 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
 
         def call() -> dict[str, Any]:
             with client:
-                result = client.get_result(job_id)
-            markdown = result.markdown
-            total = len(markdown)
-            end = min(offset + limit, total)
+                chunk = client.get_result_markdown(job_id, offset=offset, limit=limit)
             return {
                 "job_id": job_id,
-                "kind": result.kind,
-                "language": result.language,
-                "markdown": markdown[offset:end],
-                "offset": offset,
-                "next_offset": end if end < total else None,
-                "total_chars": total,
-                "page_count": len(result.pages),
-                "warnings": list(result.warnings),
-                "provenance": result.provenance.model_dump(mode="json"),
+                "kind": chunk.kind,
+                "language": chunk.language,
+                "markdown": chunk.text,
+                "offset": chunk.offset,
+                "next_offset": chunk.next_offset,
+                "total_chars": chunk.total_chars,
+                "page_count": chunk.page_count,
+                "warnings": list(chunk.warnings),
+                "provenance": dict(chunk.provenance),
             }
 
         return await _run(call)

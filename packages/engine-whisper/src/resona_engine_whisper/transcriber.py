@@ -7,6 +7,7 @@ import whisper
 from decouple import config
 
 from resona_asr_core.protocol import TranscriptionResult
+from resona_asr_core.vad import decode_speech
 
 log = logging.getLogger(__name__)
 
@@ -34,8 +35,12 @@ class WhisperTranscriber:
         initial_prompt: str | None = None,
         word_timestamps: bool = False,
         vad_filter: bool = False,
+        vad_parameters: dict | None = None,
         **kwargs,
     ) -> TranscriptionResult:
+        # openai-whisper has no VAD; vad_filter/vad_parameters are consumed here
+        # (resona_asr_core.vad) so noise-only input yields an empty transcript.
+        audio = np.asarray(audio, dtype=np.float32)
         opts = {
             "language": language,
             "task": task,
@@ -45,10 +50,10 @@ class WhisperTranscriber:
         if initial_prompt:
             opts["initial_prompt"] = initial_prompt
 
-        result = self.model.transcribe(audio, **opts)
-
-        return TranscriptionResult(
-            text=result.get("text", ""),
-            language=result.get("language", language),
-            segments=result.get("segments", []),
+        return decode_speech(
+            audio,
+            lambda waveform: self.model.transcribe(waveform, **opts),
+            language=language,
+            vad_filter=vad_filter,
+            vad_parameters=vad_parameters,
         )

@@ -9,11 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from resona_job_core import Candidate
+from resona_job_core import Candidate, Endpoint, default_settings
 from resona_api import audio_routes
 from resona_api import engine_registry as reg
 from resona_api.admin import approve_worker, enroll_worker
 from resona_api.releases import hub_release_id
+from release_approval import approve_release
 from resona_api.db.engine import engine
 from resona_api.db.models import Job, JobStatus, Upload
 
@@ -35,18 +36,84 @@ def _catalogue():
     ]
 
 
-def test_list_engines_returns_catalogue(client):
-    with patch.object(reg, "get_catalogue", return_value=_catalogue()):
-        resp = client.get("/v1/engines")
+DEEPGRAM = Candidate(engine="deepgram", model="nova-3", accelerator="cpu")
+
+
+def _engine_worker(org_id, caps, *, reported=None, private=True, online=True) -> str:
+    """An approved worker with ``caps`` approved and ``reported`` (default: caps) tested."""
+    from resona_api import clock
+    from resona_api.db.models import Worker
+
+    with Session(engine) as session:
+        worker_id, _ = enroll_worker(session, "engines-worker", org_id)
+        approve_worker(session, worker_id, private=private, capabilities=[c.model_dump(mode="json") for c in caps])
+        worker = session.get(Worker, worker_id)
+        worker.reported_capabilities = json.dumps(
+            [c.model_dump(mode="json") for c in (caps if reported is None else reported)])
+        worker.last_seen = clock.now() if online else None
+        session.add(worker)
+        session.commit()
+    return worker_id
+
+
+def _engines(http) -> dict:
+    with patch.object(reg, "speech_catalogue", return_value=[]), \
+         patch.object(reg, "get_catalogue", side_effect=AssertionError("no engine-server probe")):
+        resp = http.get("/v1/engines")
     assert resp.status_code == 200
-    body = resp.json()
-    names = {e["name"] for e in body["engines"]}
-    assert names == {"faster-whisper", "deepgram"}
-    fw = next(e for e in body["engines"] if e["name"] == "faster-whisper")
-    assert fw["private"] is True
-    assert fw["kind"] == "local"
-    assert "url" not in fw
-    assert body["default"] == "faster-whisper"
+    return resp.json()
+
+
+def test_engines_without_workers_lists_nothing(fresh_client):
+    assert _engines(fresh_client) == {"engines": [], "default": None}
+
+
+def test_engines_lists_tested_approved_candidates_of_the_org(fresh_client, fresh_org, org_b):
+    _engine_worker(fresh_org, [MAC_AUDIO])
+    # Approved but never tested (prepared): not exposed.
+    _engine_worker(fresh_org, [Candidate(engine="whisper", model="large-v3", accelerator="cuda")], reported=[])
+    # Another organization's worker never leaks.
+    _engine_worker(org_b, [Candidate(engine="faster-whisper", model="Systran/faster-whisper-large-v3",
+                                     accelerator="cpu")])
+
+    body = _engines(fresh_client)
+
+    assert [e["name"] for e in body["engines"]] == ["mlx-whisper"]
+    mlx = body["engines"][0]
+    assert (mlx["kind"], mlx["job_kind"], mlx["private"], mlx["available"]) == ("local", "audio", True, True)
+    assert mlx["capabilities"] == ["stt"]
+    assert mlx["models"] == [MAC_AUDIO.model]
+    assert "url" not in mlx
+    [listed] = mlx["candidates"]
+    assert listed["candidate"] == MAC_AUDIO.model_dump(mode="json")
+    assert listed["execution_profiles"] == ["mac-private", "private-auto"]
+    assert body["default"] == "mlx-whisper"
+
+
+def test_engines_marks_offline_workers_unavailable(fresh_client, fresh_org):
+    _engine_worker(fresh_org, [MAC_AUDIO], online=False)
+    [mlx] = _engines(fresh_client)["engines"]
+    assert mlx["available"] is False
+
+
+def test_cloud_engines_only_when_org_allows_cloud(fresh_client, fresh_org, store_settings):
+    profiles = {name: p.model_dump(mode="json") for name, p in default_settings().execution_profiles.items()}
+    profiles["cloud"] = {"audio": [DEEPGRAM.model_dump(mode="json")], "document": []}
+    endpoint = Endpoint(id="cloud-asr:deepgram", kind="cloud_asr", model="nova-3")
+    store_settings(fresh_org, execution_profiles=profiles, endpoints=[endpoint.model_dump(mode="json")])
+    _engine_worker(fresh_org, [DEEPGRAM], private=False)
+    # A private worker never offers a cloud provider, even if approved for it.
+    _engine_worker(fresh_org, [DEEPGRAM], private=True)
+
+    assert _engines(fresh_client)["engines"] == []
+
+    store_settings(fresh_org, cloud_enabled=True)
+    [deepgram] = _engines(fresh_client)["engines"]
+    assert (deepgram["name"], deepgram["kind"], deepgram["private"]) == ("deepgram", "cloud", False)
+    assert deepgram["candidates"][0]["execution_profiles"] == ["cloud"]
+
+    store_settings(fresh_org, endpoints=[])
+    assert _engines(fresh_client)["engines"] == []
 
 
 def test_speech_returns_audio_for_cloud_enabled_org(fresh_client, fresh_org, store_settings):
@@ -108,6 +175,7 @@ def _worker(org_id) -> dict[str, str]:
         approve_worker(session, worker_id, private=True,
                        capabilities=[MAC_AUDIO.model_dump(mode="json")]).runtime_version = hub_release_id()
         session.commit()
+    approve_release(org_id)
     return {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
 
 

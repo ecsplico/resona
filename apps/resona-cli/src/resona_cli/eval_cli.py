@@ -221,6 +221,10 @@ def promote(
     evaluation_id: int = typer.Argument(..., help="Evaluation recorded by `resona eval --remote`."),
     report_path: Path = typer.Option(..., "--report", help="report.json written by that evaluation."),
     baselines: Path = typer.Option(Path("eval/baselines.json"), "--baselines", help="Pinned baselines file to update."),
+    rebaseline: bool = typer.Option(
+        False, "--rebaseline",
+        help="Start a new baseline on a changed corpus (absolute checks only, no regression comparison).",
+    ),
 ):
     """Promote a recorded evaluation to the hub baseline and pin it in eval/baselines.json."""
     try:
@@ -232,7 +236,7 @@ def promote(
     client = connect_hub()
     try:
         promoted = client.promote_evaluation(
-            evaluation_id, expected_baseline_revision=report.get("hub_baseline_revision"))
+            evaluation_id, expected_baseline_revision=report.get("hub_baseline_revision"), rebaseline=rebaseline)
     except PolicyDeniedError as e:
         exit_policy_denied(e.message)
     except ResonaAPIError as e:

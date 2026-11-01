@@ -17,17 +17,18 @@ from decouple import config
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ValidationError
-from resona_job_core import JobResult, PolicyDenied
-from sqlmodel import Session
+from resona_job_core import Candidate, JobResult, PolicyDenied, Stage, check_policy
+from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
 from . import engine_registry as reg
-from . import jobs_routes, storage
+from . import clock, jobs_routes, storage
 from .auth import Principal, client_principal
 from .db.engine import engine as db_engine
-from .db.models import Job, JobStatus, Organization
-from .errors import api_error
+from .db.models import Job, JobStatus, Organization, Worker
+from .errors import api_error, validation_message
 from .privacy import admit_speech
+from .settings_store import current_settings
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,24 +68,112 @@ def _policy_denied(exc: PolicyDenied) -> JSONResponse:
     )
 
 
+def _org_engines(session: Session, organization_id: str) -> dict:
+    """Engines this organization can actually use.
+
+    Audio/document engines: candidate tuples of the organization's execution
+    profiles that at least one approved, unrevoked worker of the organization is
+    both hub-approved for and reported as tested (prepared). Cloud ASR candidates
+    appear only when org settings enable cloud processing and approve their
+    endpoint, and only on non-private workers. ``available`` means such a worker
+    is online now. Synchronous TTS engines of ``/v1/audio/speech`` follow the
+    same cloud rule. Nothing is probed over the network.
+    """
+    try:
+        _, settings = current_settings(session, organization_id)
+    except LookupError:
+        return {"engines": [], "default": None}
+    cloud_policy = settings.policy(private=False)
+    online = {w.worker_id for w in jobs_routes._online_workers(session, organization_id, clock.now())}
+    workers = session.exec(
+        select(Worker).where(
+            Worker.organization_id == organization_id,
+            Worker.approved.is_(True),
+            Worker.revoked_at.is_(None),
+        )
+    ).all()
+    offered: dict[Candidate, set[str]] = {}
+    for worker in workers:
+        approved = {Candidate.model_validate(c) for c in json.loads(worker.approved_capabilities or "[]")}
+        tested = {Candidate.model_validate(c) for c in json.loads(worker.reported_capabilities or "[]")}
+        for candidate in approved & tested:
+            cloud = reg.cloud_asr_endpoint_id(candidate.engine) is not None
+            if cloud and worker.approved_private:
+                continue
+            offered.setdefault(candidate, set()).add(worker.id)
+
+    def cloud_allowed(candidate: Candidate) -> bool:
+        endpoint_id = reg.cloud_asr_endpoint_id(candidate.engine)
+        if endpoint_id is None:
+            return True
+        endpoint = cloud_policy.endpoint(endpoint_id)
+        if endpoint is None:
+            return False
+        try:
+            check_policy(cloud_policy, [Stage(name="asr", kind="asr", endpoint=endpoint)])
+        except PolicyDenied:
+            return False
+        return True
+
+    engines: dict[tuple[str, str], dict] = {}
+    for profile_name, profile in sorted(settings.execution_profiles.items()):
+        for kind in ("audio", "document"):
+            for candidate in profile.candidates(kind):
+                worker_ids = offered.get(candidate)
+                if not worker_ids or not cloud_allowed(candidate):
+                    continue
+                cloud = reg.cloud_asr_endpoint_id(candidate.engine) is not None
+                entry = engines.setdefault((candidate.engine, kind), {
+                    "name": candidate.engine,
+                    "kind": "cloud" if cloud else "local",
+                    "job_kind": kind,
+                    "capabilities": ["stt"] if kind == "audio" else ["document"],
+                    "private": not cloud,
+                    "available": False,
+                    "models": [],
+                    "candidates": [],
+                })
+                entry["available"] = entry["available"] or bool(worker_ids & online)
+                if candidate.model not in entry["models"]:
+                    entry["models"].append(candidate.model)
+                listed = next(
+                    (c for c in entry["candidates"] if c["candidate"] == candidate.model_dump(mode="json")), None
+                )
+                if listed is None:
+                    listed = {"candidate": candidate.model_dump(mode="json"), "execution_profiles": []}
+                    entry["candidates"].append(listed)
+                listed["execution_profiles"].append(profile_name)
+    speech = [
+        {
+            "name": e.name,
+            "kind": e.kind,
+            "job_kind": "speech",
+            "capabilities": ["tts"],
+            "private": e.private,
+            "available": e.available,
+            "models": e.models,
+            "candidates": [],
+        }
+        for e in reg.speech_catalogue()
+        if e.kind == "local" or settings.cloud_enabled
+    ]
+    default_profile = settings.execution_profiles.get(settings.default_execution_profile)
+    default = next(
+        (
+            c.engine
+            for c in (default_profile.candidates("audio") if default_profile is not None else [])
+            if (c.engine, "audio") in engines
+        ),
+        None,
+    )
+    return {"engines": [*engines.values(), *speech], "default": default}
+
+
 @router.get("/v1/engines", tags=["Engines"])
 def list_engines(principal: Principal = Depends(client_principal)):
-    """List every engine this gateway exposes, with capabilities and status."""
-    catalogue = reg.get_catalogue(fresh=True)
-    return {
-        "engines": [
-            {
-                "name": e.name,
-                "kind": e.kind,
-                "capabilities": e.capabilities,
-                "private": e.private,
-                "available": e.available,
-                "models": e.models,
-            }
-            for e in catalogue
-        ],
-        "default": reg.effective_default("stt", catalogue=catalogue),
-    }
+    """Engines the caller's organization can use: tested, approved and policy-filtered."""
+    with Session(db_engine) as session:
+        return _org_engines(session, principal.organization_id)
 
 
 def _form_bool(value: str | None, *, default: bool) -> bool:
@@ -122,7 +211,7 @@ def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.Jo
     try:
         return jobs_routes.JobRequest.model_validate(body), response_format
     except ValidationError as exc:
-        raise api_error(422, "invalid_request", jobs_routes._validation_message(exc)) from None
+        raise api_error(422, "invalid_request", validation_message(exc)) from None
 
 
 def _load_job(job_id: int) -> Job:

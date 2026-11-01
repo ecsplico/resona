@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import re
 import sys
 import time
@@ -28,7 +29,7 @@ from typing import Any
 from pydantic import ValidationError
 from resona_job_core import Candidate, JobResult, Provenance, Segment, StageProvenance
 
-from resona_worker.weights import is_hub_repo, local_snapshot
+from resona_worker.weights import is_hub_repo, is_whisper_alias, local_snapshot, whisper_checkpoint, whisper_revision
 
 
 class ExitCode(IntEnum):
@@ -161,15 +162,48 @@ def _resolve_weights(candidate: Candidate) -> tuple[str, str | None]:
     """Return (model argument for the engine, resolved model revision).
 
     HuggingFace repos resolve to the local snapshot at the pinned revision (or the
-    cached ``main``); the snapshot directory name is the commit hash. Missing weights
-    mean this worker was not prepared for the candidate.
+    cached ``main``); the snapshot directory name is the commit hash. openai-whisper
+    aliases resolve to the prepared checkpoint file (passing the path keeps the
+    library from downloading); their revision is the published SHA-256. Missing
+    weights mean this worker was not prepared for the candidate.
     """
+    if is_whisper_alias(candidate.engine, candidate.model):
+        revision = whisper_revision(candidate.model)
+        if candidate.model_revision not in (None, revision):
+            raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "installed whisper does not match the pinned revision")
+        checkpoint = whisper_checkpoint(candidate.model)
+        if checkpoint is None:
+            raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "model weights not prepared on this worker")
+        return str(checkpoint), revision
     if not is_hub_repo(candidate.model):
         return candidate.model, candidate.model_revision
     snapshot = local_snapshot(candidate.model, candidate.model_revision)
     if snapshot is None:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "model weights not prepared on this worker")
     return str(snapshot), snapshot.name
+
+
+def accelerator_available(accelerator: str) -> bool:
+    """True when this host can run ``accelerator`` now (cuda: PyTorch sees a CUDA device)."""
+    if accelerator == "cuda":
+        try:
+            import torch
+        except ImportError:
+            return False
+        try:
+            return bool(torch.cuda.is_available())
+        except Exception:  # noqa: BLE001 - a broken driver means "unavailable"
+            return False
+    if accelerator == "metal":
+        return sys.platform == "darwin" and platform.machine() == "arm64"
+    return accelerator == "cpu"
+
+
+def _require_accelerator(candidate: Candidate) -> None:
+    # Frameworks silently fall back to CPU (Docling) or fail late (PyTorch); provenance must
+    # never claim a device that did not run, so a missing device is a missing capability.
+    if not accelerator_available(candidate.accelerator):
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, f"{candidate.accelerator} not available on this host")
 
 
 def _segment(seg: Any) -> Segment:
@@ -192,6 +226,7 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
     engine_cls = _load_engine(candidate.engine)
     configure_model_cache()
     model_arg, revision = _resolve_weights(candidate)
+    _require_accelerator(candidate)
     try:
         audio = load_audio_path(input_path)
     except (RuntimeError, ValueError, OSError):
@@ -274,6 +309,7 @@ def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Pa
     except ValidationError:
         raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "invalid document options") from None
 
+    _require_accelerator(candidate)
     try:
         result = convert_document(input_path, options=document_options, accelerator=candidate.accelerator)
     except (UnsupportedMediaType, DocumentConversionFailed):
@@ -319,6 +355,21 @@ def peak_accelerator_bytes() -> int | None:
     return None
 
 
+def _with_stage_peaks(result: JobResult, peak: int | None) -> JobResult:
+    """Record the process's peak device memory on the stages that ran on the device.
+
+    One execution process runs one job, so the peak covers model load and inference.
+    Docling interleaves layout and table models per page; both carry the same process peak.
+    """
+    if peak is None:
+        return result
+    stages = [
+        stage.model_copy(update={"peak_accelerator_bytes": peak}) if stage.accelerator in ("cuda", "metal") else stage
+        for stage in result.provenance.stages
+    ]
+    return result.model_copy(update={"provenance": result.provenance.model_copy(update={"stages": stages})})
+
+
 def run(snapshot_path: Path, input_path: Path, out_path: Path, metrics_path: Path | None = None) -> ExitCode:
     snapshot, candidate = _load_snapshot(snapshot_path)
     kind = snapshot["kind"]
@@ -328,13 +379,20 @@ def run(snapshot_path: Path, input_path: Path, out_path: Path, metrics_path: Pat
         result = _run_document(snapshot, candidate, input_path)
     else:
         raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "unknown kind")
+    peak = peak_accelerator_bytes()
+    result = _with_stage_peaks(result, peak)
     out_path.write_text(result.model_dump_json(), encoding="utf-8")
     if metrics_path is not None:
-        metrics_path.write_text(json.dumps({"peak_accelerator_bytes": peak_accelerator_bytes()}), encoding="utf-8")
+        metrics_path.write_text(json.dumps({"peak_accelerator_bytes": peak}), encoding="utf-8")
     return ExitCode.OK
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--probe-accelerator"]:
+        # `--probe-accelerator <cpu|cuda|metal>`: exit 0 when usable, else UNSUPPORTED_CAPABILITY.
+        usable = len(argv) == 2 and accelerator_available(argv[1])
+        return int(ExitCode.OK if usable else ExitCode.UNSUPPORTED_CAPABILITY)
     parser = argparse.ArgumentParser(prog="resona-worker-exec")
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+from resona_job_core import JobResult, Provenance, StageProvenance
 
 from resona_worker import execute
 from resona_worker.execute import ExitCode, main, subprocess_env
@@ -85,11 +90,11 @@ def test_executor_rejects_unknown_job_kind_with_invalid_snapshot_exit(tmp_path: 
     assert not (tmp_path / "out.json").exists()
 
 
-def _audio_snapshot(tmp_path: Path, model: str = "tiny") -> Path:
+def _audio_snapshot(tmp_path: Path, model: str = "tiny", *, engine: str = "fake", accelerator: str = "cpu") -> Path:
     snapshot = tmp_path / "snapshot.json"
     snapshot.write_text(
         json.dumps(
-            {"kind": "audio", "language": "de", "candidate": {"engine": "fake", "model": model, "accelerator": "metal"}}
+            {"kind": "audio", "language": "de", "candidate": {"engine": engine, "model": model, "accelerator": accelerator}}
         ),
         encoding="utf-8",
     )
@@ -167,5 +172,105 @@ def test_provenance_records_the_loaded_snapshot_revision(tmp_path: Path, monkeyp
     assert (stage["model"], stage["model_revision"], stage["accelerator"]) == (
         "mlx-community/whisper-large-v3-mlx",
         "49e6aa286ad60c14352c404340ded53710378a11",
-        "metal",
+        "cpu",
     )
+
+
+def test_cuda_candidate_on_a_host_without_cuda_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:
+    # Provenance must never claim a device that did not run: no engine is constructed.
+    constructed: list[str] = []
+
+    class Engine:
+        def __init__(self, device: str, modelname: str) -> None:
+            constructed.append(device)
+
+    monkeypatch.setattr(execute, "_load_engine", lambda name: Engine)
+    monkeypatch.setattr(execute, "accelerator_available", lambda accelerator: accelerator != "cuda")
+    out = tmp_path / "out.json"
+
+    code = main(["--snapshot", str(_audio_snapshot(tmp_path, accelerator="cuda")), "--input", str(DE_SHORT), "--out", str(out)])
+
+    assert code == ExitCode.UNSUPPORTED_CAPABILITY
+    assert constructed == []
+    assert not out.exists()
+
+
+def test_probe_reports_cuda_unavailable_when_no_gpu_is_visible(tmp_path: Path) -> None:
+    env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
+    probe = [sys.executable, "-m", "resona_worker.execute", "--probe-accelerator"]
+
+    hidden = subprocess.run([*probe, "cuda"], env=env, capture_output=True, check=False)
+    cpu = subprocess.run([*probe, "cpu"], env=env, capture_output=True, check=False)
+    unknown = subprocess.run([*probe, "tpu"], env=env, capture_output=True, check=False)
+
+    assert (hidden.returncode, cpu.returncode, unknown.returncode) == (
+        ExitCode.UNSUPPORTED_CAPABILITY,
+        ExitCode.OK,
+        ExitCode.UNSUPPORTED_CAPABILITY,
+    )
+
+
+def test_whisper_alias_loads_the_prepared_checkpoint_file_and_records_its_sha(tmp_path: Path, monkeypatch) -> None:
+    import whisper
+
+    published = whisper._MODELS["large-v3"].split("/")[-2]
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    loaded: list[str] = []
+
+    class Engine:
+        def __init__(self, device: str, modelname: str) -> None:
+            loaded.append(modelname)
+
+        def transcribe(self, audio, **kwargs):
+            return {"text": "Guten Tag", "language": "de", "segments": []}
+
+    monkeypatch.setattr(execute, "_load_engine", lambda name: Engine)
+    snapshot = _audio_snapshot(tmp_path, model="large-v3", engine="whisper")
+    out = tmp_path / "out.json"
+    args = ["--snapshot", str(snapshot), "--input", str(DE_SHORT), "--out", str(out)]
+
+    # Not prepared: the alias must not fall through to openai-whisper's own downloader.
+    assert main(args) == ExitCode.UNSUPPORTED_CAPABILITY
+    assert loaded == []
+
+    checkpoint = tmp_path / "cache" / "whisper" / "large-v3.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"prepared")
+    assert main(args) == ExitCode.OK
+    assert loaded == [str(checkpoint)]
+    stage = json.loads(out.read_text())["provenance"]["stages"][0]
+    assert (stage["model"], stage["model_revision"]) == ("large-v3", published)
+
+
+def test_whisper_alias_pinned_to_another_revision_is_refused(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(execute, "_load_engine", lambda name: lambda **kwargs: pytest.fail("engine must not be built"))
+    checkpoint = tmp_path / "cache" / "whisper" / "large-v3.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"prepared")
+    snapshot = tmp_path / "snapshot.json"
+    candidate = {"engine": "whisper", "model": "large-v3", "model_revision": "0" * 64, "accelerator": "cpu"}
+    snapshot.write_text(json.dumps({"kind": "audio", "language": "de", "candidate": candidate}), encoding="utf-8")
+
+    code = main(["--snapshot", str(snapshot), "--input", str(DE_SHORT), "--out", str(tmp_path / "out.json")])
+
+    assert code == ExitCode.UNSUPPORTED_CAPABILITY
+
+
+def test_device_peak_is_recorded_on_device_stages_only() -> None:
+    result = JobResult(
+        kind="document",
+        raw_text="x",
+        markdown="x",
+        provenance=Provenance(
+            stages=[
+                StageProvenance(stage="layout", engine="docling-layout", model="m", accelerator="cuda", seconds=1.0),
+                StageProvenance(stage="ocr", engine="rapidocr", model="r", accelerator="cpu", seconds=1.0),
+            ]
+        ),
+    )
+
+    stages = execute._with_stage_peaks(result, 3 * 2**30).provenance.stages
+
+    assert [s.peak_accelerator_bytes for s in stages] == [3 * 2**30, None]
+    assert execute._with_stage_peaks(result, None) == result

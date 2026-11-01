@@ -23,6 +23,7 @@ from resona_job_core import Candidate, Endpoint
 from resona_api import admin, broker, clock, storage, worker_routes
 from resona_api.admin import approve_worker, enroll_worker
 from resona_api.releases import hub_release_id
+from release_approval import approve_release
 from resona_api.db.engine import engine
 from resona_api.db.models import Job, JobStatus, Organization, Worker
 
@@ -91,6 +92,7 @@ def make_worker(org_id, *, approved=True, private=True, capabilities=(CAND,)):
         worker.runtime_version = hub_release_id()
         session.add(worker)
         session.commit()
+    approve_release(org_id)
     return worker_id, {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
 
 
@@ -470,7 +472,7 @@ def test_policy_check_follows_current_cloud_setting_for_non_private_job(
                         url="https://llm.example.com/v1")
     store_settings(fresh_org, cloud_enabled=True, endpoints=[endpoint])
     make_job(fresh_org, private=False)
-    _, headers = make_worker(fresh_org)
+    _, headers = make_worker(fresh_org, private=False)
     token = claim(http, headers).json()["lease_token"]
     job_id = claim_job_id(http, headers, token)
 
@@ -513,10 +515,12 @@ def test_heartbeat_reports_cancel_and_extends_lease(http, fresh_org, frozen):
     assert job_row(job_id).lease_until.replace(tzinfo=UTC) == T0 + timedelta(seconds=220)
 
 
-def test_out_of_memory_requeues_and_withdraws_only_that_workers_capability(http, fresh_org):
+def test_out_of_memory_requeues_and_never_changes_hub_approval(http, fresh_org):
     job_id = make_job(fresh_org, max_attempts=3)
-    _, oom_headers = make_worker(fresh_org)
+    oom_id, oom_headers = make_worker(fresh_org)
     _, other_headers = make_worker(fresh_org)
+    with Session(engine) as session:
+        approved_before = session.get(Worker, oom_id).approved_capabilities
     lease = claim(http, oom_headers).json()
 
     response = http.post(
@@ -531,9 +535,15 @@ def test_out_of_memory_requeues_and_withdraws_only_that_workers_capability(http,
     )
 
     assert response.json() == {"status": "pending"}
-    assert job_row(job_id).status == JobStatus.PENDING
-    assert heartbeat(http, oom_headers).json()["approved_capabilities"] == []
-    assert claim(http, oom_headers).status_code == 204
+    row = job_row(job_id)
+    assert row.status == JobStatus.PENDING
+    assert "withdrew" in row.error_message
+    # Withdrawal is worker-local: the hub approval stays exactly as the admin set it.
+    with Session(engine) as session:
+        assert session.get(Worker, oom_id).approved_capabilities == approved_before
+    assert heartbeat(http, oom_headers, caps=()).json()["approved_capabilities"] == [CAND.model_dump(mode="json")]
+    # The worker no longer offers the tuple, so it claims nothing; another worker retries.
+    assert claim(http, oom_headers, caps=()).status_code == 204
     retry = claim(http, other_headers)
     assert retry.status_code == 200
     assert retry.json()["attempt"] == 2

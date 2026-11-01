@@ -76,6 +76,7 @@ nav:
     - Docker Deployment: server/docker.md
     - Full-Stack (uv): server/full-stack.md
     - Mac Worker (Apple Silicon): server/mac-worker.md
+    - Linux Worker (NVIDIA, Docker): server/linux-worker.md
     - Coolify Deployment (public hub): server/coolify.md
     - Releases & Worker Updates: server/releases.md
   - Configuration:

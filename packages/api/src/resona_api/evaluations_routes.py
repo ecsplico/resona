@@ -10,8 +10,14 @@ Promoting an evaluation makes it the next baseline revision of its
 ``(execution_profile, platform)`` and approves its release for production jobs
 of that tuple. The hub re-checks the gate itself: the first baseline (or one on
 a changed corpus) needs zero silence insertions, missing cells and order
-failures; later baselines additionally need every baseline fixture present and
-no WER/CER regression above :data:`REGRESSION_LIMIT`.
+failures; later baselines additionally need every baseline fixture and metric
+present and no WER/CER regression above :data:`REGRESSION_LIMIT`.
+
+Every recorded fixture declares its kind and corpus checks, and must carry
+exactly the metrics those checks produce, so an empty metrics object cannot
+pass the absolute checks. Promoting onto a corpus other than the current
+baseline's is refused (``baseline_corpus_mismatch``) unless the admin asks for
+``rebaseline``; that first baseline of the new corpus passes on absolute checks.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from .auth import Principal, admin_principal
 from .broker import PROTOCOL_VERSION, _immediate
 from .db.models import ApprovedReleaseTuple, Baseline, Evaluation, Release
 from .deps import get_db_session
-from .errors import api_error
+from .errors import api_error, validation_message
 from .releases import hub_release_id, hub_version, is_known
 
 router = APIRouter(tags=["Evaluations"])
@@ -37,6 +43,17 @@ router = APIRouter(tags=["Evaluations"])
 REGRESSION_LIMIT = 0.02
 ABSOLUTE_CHECKS = ("silence_insertions", "missing_cells", "order_failures")
 RATE_METRICS = ("wer", "cer")
+METRIC_OF_CHECK = {
+    "wer": "wer",
+    "cer": "cer",
+    "silence": "silence_insertions",
+    "table_cells": "missing_cells",
+    "reading_order": "order_failures",
+}
+CHECKS_OF_KIND = {
+    "audio": frozenset({"wer", "cer", "silence"}),
+    "document": frozenset({"cer", "table_cells", "reading_order"}),
+}
 MAX_BODY_BYTES = 1024 * 1024
 _NAME = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 _FIXTURE_ID = r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$"
@@ -52,6 +69,18 @@ class FixtureMetrics(BaseModel):
     silence_insertions: Optional[StrictInt] = Field(default=None, ge=0)
     missing_cells: Optional[StrictInt] = Field(default=None, ge=0)
     order_failures: Optional[StrictInt] = Field(default=None, ge=0)
+
+
+Check = Literal["wer", "cer", "silence", "table_cells", "reading_order"]
+
+
+class FixtureChecks(BaseModel):
+    """What the corpus manifest declares for one fixture."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["audio", "document"]
+    checks: list[Check] = Field(min_length=1, max_length=len(METRIC_OF_CHECK))
 
 
 class Gate(BaseModel):
@@ -73,6 +102,9 @@ class EvaluationRequest(BaseModel):
     fixtures: dict[Annotated[str, StringConstraints(pattern=_FIXTURE_ID)], FixtureMetrics] = Field(
         min_length=1, max_length=500
     )
+    fixture_checks: dict[Annotated[str, StringConstraints(pattern=_FIXTURE_ID)], FixtureChecks] = Field(
+        min_length=1, max_length=500
+    )
     gate: Gate
 
 
@@ -80,9 +112,36 @@ class PromoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_baseline_revision: Optional[StrictInt] = Field(...)
+    rebaseline: StrictBool = False
 
 
 # ── gate (pure) ─────────────────────────────────────────────────────────────
+
+def completeness_failures(
+    fixtures: dict[str, dict[str, Any]], checks: dict[str, FixtureChecks]
+) -> list[str]:
+    """Fixtures whose metrics are not exactly what their declared kind and checks produce."""
+    failures = []
+    for fixture_id in sorted(set(fixtures) | set(checks)):
+        declared = checks.get(fixture_id)
+        if declared is None:
+            failures.append(f"{fixture_id}: checks missing")
+            continue
+        if fixture_id not in fixtures:
+            failures.append(f"{fixture_id}: metrics missing")
+            continue
+        invalid = sorted(set(declared.checks) - CHECKS_OF_KIND[declared.kind])
+        if invalid:
+            failures.append(f"{fixture_id}: {', '.join(invalid)} not a {declared.kind} check")
+            continue
+        required = {METRIC_OF_CHECK[check] for check in declared.checks}
+        present = set(fixtures[fixture_id])
+        for metric in sorted(required - present):
+            failures.append(f"{fixture_id}: {metric} missing")
+        for metric in sorted(present - required):
+            failures.append(f"{fixture_id}: {metric} not declared")
+    return failures
+
 
 def absolute_failures(fixtures: dict[str, dict[str, Any]]) -> list[str]:
     """Fixtures with any silence insertion, missing table cell or reading-order failure."""
@@ -105,14 +164,14 @@ def regression_failures(
         if candidate is None:
             failures.append(f"{fixture_id}: baseline_required (fixture missing from evaluation)")
             continue
-        for metric in RATE_METRICS:
+        for metric in (*RATE_METRICS, *ABSOLUTE_CHECKS):
             reference = baseline[fixture_id].get(metric)
             if reference is None:
                 continue
             value = candidate.get(metric)
             if value is None:
                 failures.append(f"{fixture_id}: {metric} missing")
-            elif value > reference + REGRESSION_LIMIT + _EPSILON:
+            elif metric in RATE_METRICS and value > reference + REGRESSION_LIMIT + _EPSILON:
                 failures.append(f"{fixture_id}: {metric} {value:.4f} > baseline {reference:.4f} + {REGRESSION_LIMIT}")
     return failures
 
@@ -126,8 +185,7 @@ async def _json_body(request: Request, model: type[BaseModel]) -> Any:
     try:
         return model.model_validate_json(raw or b"null")
     except ValidationError as exc:
-        fields = sorted({".".join(str(p) for p in err["loc"]) or "body" for err in exc.errors()})
-        raise api_error(422, "invalid_request", "invalid fields: " + ", ".join(fields)) from None
+        raise api_error(422, "invalid_request", validation_message(exc)) from None
     except ValueError:
         raise api_error(422, "invalid_request", "body must be JSON") from None
 
@@ -190,6 +248,9 @@ async def create_evaluation(
     if not is_known(session, body.release_id):
         raise api_error(422, "release_not_staged", "release is not staged on this hub")
     fixtures = {key: value.model_dump(exclude_none=True) for key, value in body.fixtures.items()}
+    incomplete = completeness_failures(fixtures, body.fixture_checks)
+    if incomplete:
+        raise api_error(422, "incomplete_metrics", "; ".join(incomplete)[:500])
     evaluation = Evaluation(
         organization_id=principal.organization_id,
         profile=body.profile,
@@ -269,6 +330,9 @@ async def promote_evaluation(
             raise api_error(422, "release_not_staged", "release is not staged on this hub")
 
         fixtures = json.loads(evaluation.fixtures_json)
+        empty = sorted(fixture_id for fixture_id, metrics in fixtures.items() if not metrics)
+        if empty:
+            raise api_error(422, "incomplete_metrics", ("no metrics: " + ", ".join(empty))[:500])
         absolute = absolute_failures(fixtures)
         if absolute:
             raise api_error(422, "gate_failed", "; ".join(absolute)[:500])
@@ -278,6 +342,11 @@ async def promote_evaluation(
                 regressions = regression_failures(fixtures, json.loads(reference.fixtures_json))
                 if regressions:
                     raise api_error(422, "gate_failed", "; ".join(regressions)[:500])
+            elif not body.rebaseline:
+                raise api_error(
+                    409, "baseline_corpus_mismatch",
+                    "current baseline was measured on another corpus; promote with rebaseline to start a new one",
+                )
 
         revision = (current_revision or 0) + 1
         session.add(Baseline(
@@ -314,4 +383,4 @@ async def promote_evaluation(
     }
 
 
-__all__ = ["REGRESSION_LIMIT", "absolute_failures", "regression_failures", "router"]
+__all__ = ["REGRESSION_LIMIT", "absolute_failures", "completeness_failures", "regression_failures", "router"]

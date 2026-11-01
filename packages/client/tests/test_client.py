@@ -327,6 +327,45 @@ def test_get_result_maps_not_ready_and_expired(client):
             client.get_result(9)
 
 
+def test_get_result_markdown_reads_one_range(client):
+    body = {"text": "itel", "offset": 3, "next_offset": 7, "total_chars": 12, "kind": "document",
+            "language": "de", "page_count": 2, "warnings": ["w"], "provenance": {"stages": []}}
+    with respx.mock:
+        route = respx.get(f"{BASE}/v1/jobs/9/result/markdown").mock(
+            return_value=httpx.Response(200, json=body))
+        chunk = client.get_result_markdown(9, offset=3, limit=4)
+    assert dict(route.calls.last.request.url.params) == {"offset": "3", "limit": "4"}
+    assert (chunk.text, chunk.offset, chunk.next_offset, chunk.total_chars) == ("itel", 3, 7, 12)
+    assert (chunk.kind, chunk.page_count, chunk.warnings) == ("document", 2, ("w",))
+
+
+def test_get_result_markdown_maps_not_ready_and_expired(client):
+    with respx.mock:
+        respx.get(f"{BASE}/v1/jobs/9/result/markdown").mock(return_value=httpx.Response(
+            409, json={"error": "not_ready", "message": "job is still processing"}))
+        with pytest.raises(JobNotReady):
+            client.get_result_markdown(9)
+        respx.get(f"{BASE}/v1/jobs/9/result/markdown").mock(return_value=httpx.Response(
+            410, json={"error": "expired", "message": "result was removed"}))
+        with pytest.raises(ResultExpired):
+            client.get_result_markdown(9)
+
+
+def test_promote_evaluation_sends_rebaseline_and_maps_corpus_conflict(client):
+    with respx.mock:
+        route = respx.post(f"{BASE}/v1/evaluations/4/promote").mock(return_value=httpx.Response(
+            409, json={"error": "baseline_corpus_mismatch", "message": "corpus changed"}))
+        with pytest.raises(RevisionConflict) as exc:
+            client.promote_evaluation(4, expected_baseline_revision=2)
+        assert exc.value.code == "baseline_corpus_mismatch"
+        assert json.loads(route.calls.last.request.content) == {
+            "expected_baseline_revision": 2, "rebaseline": False}
+        route.mock(return_value=httpx.Response(200, json={"baseline_revision": 3}))
+        assert client.promote_evaluation(4, expected_baseline_revision=2, rebaseline=True) == {
+            "baseline_revision": 3}
+        assert json.loads(route.calls.last.request.content)["rebaseline"] is True
+
+
 def test_cancel_and_delete_job(client):
     with respx.mock:
         respx.post(f"{BASE}/v1/jobs/5/cancel").mock(

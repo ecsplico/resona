@@ -37,7 +37,17 @@ from resona_job_core import Candidate, JobResult, OrganizationSettings
 
 from resona_worker.config import CapabilitiesManifest, PreparedCapability, WeightRecord, runtime_version
 from resona_worker.execute import ExitCode, subprocess_env
-from resona_worker.weights import is_hub_repo, local_snapshot
+from resona_worker.weights import (
+    WeightsError,
+    download_snapshot,
+    download_whisper_checkpoint,
+    is_hub_repo,
+    is_whisper_alias,
+    local_snapshot,
+    sha256_file,
+    whisper_checkpoint,
+    whisper_revision,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 900.0
 
@@ -93,6 +103,8 @@ def _required_revision(candidate: Candidate, model_pins: Mapping[str, str] | Non
 
 
 def _verify_weights(candidate: Candidate, model_pins: Mapping[str, str] | None = None) -> list[WeightRecord]:
+    if is_whisper_alias(candidate.engine, candidate.model):
+        return [_verify_whisper_checkpoint(candidate, model_pins)]
     if not is_hub_repo(candidate.model):
         return []
     revision = _required_revision(candidate, model_pins)
@@ -101,13 +113,56 @@ def _verify_weights(candidate: Candidate, model_pins: Mapping[str, str] | None =
         pinned = f" at revision {revision}" if revision else ""
         raise PrepareError(
             f"weights for {candidate.model}{pinned} are not in the local HuggingFace cache; "
-            f"download them first (e.g. `hf download {candidate.model}`)"
+            f"download them first (`resona-worker prepare --download` or `hf download {candidate.model}`)"
         )
     if model_pins is not None and snapshot.name != revision:
         raise PrepareError(
             f"the release pins {candidate.model} at {revision}, the local cache resolves {snapshot.name}"
         )
     return [WeightRecord(repo=candidate.model, revision=snapshot.name)]
+
+
+def _verify_whisper_checkpoint(candidate: Candidate, model_pins: Mapping[str, str] | None) -> WeightRecord:
+    """openai-whisper alias: the checkpoint must exist and hash to the published (and pinned) SHA-256."""
+    published = whisper_revision(candidate.model)
+    required = _required_revision(candidate, model_pins)
+    if required is not None and required != published:
+        raise PrepareError(
+            f"pinned revision of whisper {candidate.model} is {required}, the installed openai-whisper publishes {published}"
+        )
+    checkpoint = whisper_checkpoint(candidate.model)
+    if checkpoint is None:
+        raise PrepareError(
+            f"whisper checkpoint {candidate.model} is not prepared; download it first (`resona-worker prepare --download`)"
+        )
+    if sha256_file(checkpoint) != published:
+        raise PrepareError(f"whisper checkpoint {candidate.model} does not match its published SHA-256")
+    return WeightRecord(repo=candidate.model, revision=published)
+
+
+def _stage_weights(kind: str) -> list[tuple[str, str | None]]:
+    """HuggingFace weights an engine loads beyond the candidate model (Docling layout/table models)."""
+    if kind != "document":
+        return []
+    try:
+        from resona_engine_docling import stage_weights
+    except ImportError:
+        raise PrepareError("Docling is not installed in this environment") from None
+    return stage_weights()
+
+
+def download_weights(kind: str, candidate: Candidate, model_pins: Mapping[str, str] | None = None) -> None:
+    """Fetch the pinned weights a candidate needs into the local caches (network; preparation only)."""
+    try:
+        if is_whisper_alias(candidate.engine, candidate.model):
+            _required_revision(candidate, model_pins)
+            download_whisper_checkpoint(candidate.model)
+        elif is_hub_repo(candidate.model):
+            download_snapshot(candidate.model, _required_revision(candidate, model_pins))
+        for repo, revision in _stage_weights(kind):
+            download_snapshot(repo, revision)
+    except WeightsError as exc:
+        raise PrepareError(str(exc)) from None
 
 
 def _peak_rss_bytes(usage: resource.struct_rusage) -> int:
@@ -246,14 +301,18 @@ def prepare(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     on_tested: Callable[[PreparedCapability], None] | None = None,
     model_pins: Mapping[str, str] | None = None,
+    download: bool = False,
 ) -> CapabilitiesManifest:
     """Prepare every candidate of ``profile``; raise ``PrepareError`` on the first failure.
 
     ``model_pins`` (``model -> revision`` from a release manifest) makes every HuggingFace
     model need exactly the release's revision in the local cache; all weights are checked
-    before the first synthetic run.
+    before the first synthetic run. ``download`` first fetches the pinned weights.
     """
     pairs = profile_candidates(settings, profile)
+    if download:
+        for kind, candidate in pairs:
+            download_weights(kind, candidate, model_pins)
     if model_pins is not None:
         for _, candidate in pairs:
             _verify_weights(candidate, model_pins)

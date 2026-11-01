@@ -17,9 +17,9 @@ Two transports:
 | `transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, options?, private=true, idempotency_key?)` | Submit an audio job → `{job_id, status, private}` immediately. `options`: `translate`, `word_timestamps`, `vad_filter`. |
 | `convert_document(upload_id \| path, …, options?)` | Submit a PDF/image → Markdown job → `{job_id, status, private}`. `options`: `languages`, `ocr`, `ocr_engine`, `page_start`, `page_end`, `pipeline`. |
 | `get_job(job_id)` | Status (`pending` with `queue_reason`, `processing`, `completed`, `failed`, `cancelled`). |
-| `get_result(job_id, offset=0, limit=20000)` | One Markdown chunk plus `next_offset`, `total_chars`, language, warnings, provenance. Concatenating chunks from offset 0 until `next_offset` is `null` reproduces the REST `markdown` exactly. `limit` is capped at 20 000 characters. |
+| `get_result(job_id, offset=0, limit=32768)` | One Markdown chunk plus `next_offset`, `total_chars`, language, warnings, provenance. Each call is one hub range read (`GET /v1/jobs/{id}/result/markdown`), so the full result never passes through the MCP server. Concatenating chunks from offset 0 until `next_offset` is `null` reproduces the REST `markdown` exactly. `limit` is capped at 32 768 characters. |
 | `cancel_job(job_id)` | Request cancellation; later worker output is rejected. |
-| `list_engines()` | The organization's execution profiles (approved engine/model/accelerator candidates) and the hub engine catalogue. |
+| `list_engines()` | The organization's execution profiles (approved engine/model/accelerator candidates) and the engines it can use now (`GET /v1/engines`: tuples that an approved worker of the organization has tested; cloud providers only when cloud processing is enabled). |
 | `get_settings()` | The organization's current non-secret settings revision (read-only). |
 
 There are no tools that change settings or profiles, issue or revoke credentials, or enroll workers. Use `resona settings` and `resona-admin` for those.
@@ -32,8 +32,8 @@ A typical agent flow:
 upload_content("memo.wav", <base64>)          → {upload_id}
 transcribe_audio(upload_id=…)                  → {job_id: 12, status: "pending", private: true}
 get_job(12)                                    → … status: "completed"
-get_result(12)                                 → {markdown: "...", next_offset: 20000, total_chars: 51234}
-get_result(12, offset=20000)                   → … until next_offset is null
+get_result(12)                                 → {markdown: "...", next_offset: 32768, total_chars: 51234}
+get_result(12, offset=32768)                   → … until next_offset is null
 ```
 
 ## Local stdio

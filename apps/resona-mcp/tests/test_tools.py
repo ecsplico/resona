@@ -10,6 +10,7 @@ from resona_client.client import AudioOptions, ResonaAPIError
 from resona_job_core import JobResult, Provenance
 
 from resona_mcp.server import (
+    MAX_RESULT_CHUNK_CHARS,
     MAX_UPLOAD_CONTENT_BYTES,
     TOOL_NAMES,
     InputPolicy,
@@ -170,10 +171,19 @@ def test_result_chunks_reconstruct_markdown_exactly(hub, payload):
     assert "".join(chunks) == markdown
     assert totals == {len(markdown)}
     assert len(chunks) == -(-len(markdown) // 97)
+    # Every chunk is a hub range read; the full JobResult is never fetched.
+    assert {name for name, _ in hub.calls} == {"get_result_markdown"}
+    assert hub.calls[1][1] == (5, 97, 97)
+
+
+def test_result_default_limit_is_the_maximum_chunk(hub, payload):
+    payload(call(remote(hub), "get_result", {"job_id": 5}))
+    assert hub.calls == [("get_result_markdown", (5, 0, MAX_RESULT_CHUNK_CHARS))]
+    assert MAX_RESULT_CHUNK_CHARS == 32_768
 
 
 def test_result_limit_is_bounded(hub, error_text):
-    error_text(call(remote(hub), "get_result", {"job_id": 5, "limit": 20_001}))
+    error_text(call(remote(hub), "get_result", {"job_id": 5, "limit": MAX_RESULT_CHUNK_CHARS + 1}))
     assert hub.calls == []
 
 

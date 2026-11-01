@@ -30,6 +30,11 @@ EXECUTOR_SCRIPT = r'''
 import argparse, json, os, signal, sys, time
 from pathlib import Path
 
+if sys.argv[1:2] == ["--probe-accelerator"]:
+    # Mirrors the real probe's contract: CUDA_VISIBLE_DEVICES="" hides every GPU (exit 4).
+    hidden = sys.argv[2] == "cuda" and os.environ.get("CUDA_VISIBLE_DEVICES") == ""
+    sys.exit(4 if hidden else 0)
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--snapshot", required=True)
 parser.add_argument("--input", required=True)

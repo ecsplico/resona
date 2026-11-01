@@ -100,6 +100,20 @@ def _resolve_endpoint(step: dict, policy: ExecutionPolicy) -> Endpoint:
     return registered
 
 
+def endpoint_ids(profile: Profile) -> list[str]:
+    """IDs of the endpoints this profile's llm/extract steps call, in step order, without duplicates.
+
+    A step names its registry entry with ``endpoint``; a legacy step resolves to the
+    ID derived from its ``model``/``api_base``.
+    """
+    ids = (
+        step.get("endpoint") or legacy_endpoint_id(step)
+        for step in profile.steps
+        if step.get("type") in _LLM_STEP_TYPES
+    )
+    return list(dict.fromkeys(ids))
+
+
 def local_policy(profile: Profile, *, base: ExecutionPolicy) -> ExecutionPolicy:
     """Policy for explicit local CLI mode: ``base`` plus this profile's legacy-derived endpoints.
 

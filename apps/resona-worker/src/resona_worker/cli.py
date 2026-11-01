@@ -113,16 +113,21 @@ def prepare(
         Path | None,
         typer.Option("--release-manifest", help="Release manifest whose model revisions the local weights must match."),
     ] = None,
+    download: Annotated[
+        bool,
+        typer.Option("--download", help="Fetch the pinned weights into the local caches first (network)."),
+    ] = False,
 ) -> None:
     """Verify weights offline and run synthetic jobs for every candidate of a profile.
 
+    `--download` fetches the pinned weights first; jobs never download.
     Writes the manifest only when every candidate passes; a failed prepare keeps the previous file.
     """
     try:
         settings = _load_settings(settings_file)
         model_pins = _load_model_pins(release_manifest) if release_manifest is not None else None
         manifest = prepare_profile(
-            settings, profile, timeout=timeout, model_pins=model_pins,
+            settings, profile, timeout=timeout, model_pins=model_pins, download=download,
             on_tested=lambda item: typer.echo(_describe(item), err=True),
         )
     except (ConfigError, PrepareError) as exc:

@@ -128,3 +128,75 @@ def test_synthetic_runs_hang_are_killed_after_the_timeout(prepare_executor: Path
 
     with pytest.raises(PrepareError, match="exit -9"):
         prepare(_settings([AUDIO], []), "mac-private", executor=(sys.executable, str(hang)), timeout=0.5)
+
+
+CUDA_AUDIO = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
+CUDA_DOC = Candidate(engine="docling", model="docling-standard", accelerator="cuda", ocr_engine="rapidocr")
+
+
+def _cuda_settings(audio: list[Candidate], document: list[Candidate]) -> OrganizationSettings:
+    return OrganizationSettings(execution_profiles={"linux-cuda": ExecutionProfile(audio=audio, document=document)})
+
+
+def test_whisper_checkpoint_must_hash_to_the_published_revision(
+    tmp_path: Path, prepare_executor: Path, monkeypatch
+) -> None:
+    import hashlib
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    checkpoint = tmp_path / "cache" / "whisper" / "large-v3.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"tampered weights")
+    executor = (sys.executable, str(prepare_executor))
+
+    with pytest.raises(PrepareError, match="does not match its published SHA-256"):
+        prepare(_cuda_settings([CUDA_AUDIO], []), "linux-cuda", executor=executor)
+
+    published = hashlib.sha256(b"tampered weights").hexdigest()
+    monkeypatch.setattr(prepare_module, "whisper_revision", lambda model: published)
+    manifest = prepare(_cuda_settings([CUDA_AUDIO], []), "linux-cuda", executor=executor)
+    assert [(w.repo, w.revision) for w in manifest.tested[0].weights] == [("large-v3", published)]
+
+
+def test_release_pin_other_than_the_installed_whisper_checkpoint_fails(tmp_path: Path, prepare_executor: Path) -> None:
+    with pytest.raises(PrepareError, match="pinned revision of whisper large-v3"):
+        prepare(
+            _cuda_settings([CUDA_AUDIO], []),
+            "linux-cuda",
+            executor=(sys.executable, str(prepare_executor)),
+            model_pins={"large-v3": "0" * 64},
+        )
+
+
+def test_missing_whisper_checkpoint_names_the_download_flag(tmp_path: Path, prepare_executor: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty"))
+
+    with pytest.raises(PrepareError, match="--download"):
+        prepare(_cuda_settings([CUDA_AUDIO], []), "linux-cuda", executor=(sys.executable, str(prepare_executor)))
+
+
+def test_download_fetches_candidate_and_docling_stage_weights_before_any_run(
+    tmp_path: Path, prepare_executor: Path, monkeypatch
+) -> None:
+    fetched: list[tuple[str, str | None]] = []
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    def fake_whisper_download(model: str) -> Path:
+        fetched.append(("whisper", model))
+        raise prepare_module.WeightsError("download of whisper large-v3 failed: URLError")
+
+    monkeypatch.setattr(prepare_module, "download_whisper_checkpoint", fake_whisper_download)
+    monkeypatch.setattr(prepare_module, "download_snapshot", lambda repo, revision: fetched.append((repo, revision)))
+
+    with pytest.raises(PrepareError, match="download of whisper large-v3 failed"):
+        prepare(
+            _cuda_settings([CUDA_AUDIO], []), "linux-cuda",
+            executor=(sys.executable, str(prepare_executor)), download=True,
+        )
+    assert fetched == [("whisper", "large-v3")]
+
+    fetched.clear()
+    prepare_module.download_weights("document", CUDA_DOC)
+    repos = [repo for repo, _ in fetched]
+    assert repos == ["docling-project/docling-layout-heron", "docling-project/docling-models"]
+    assert fetched[1] == ("docling-project/docling-models", "v2.3.0")

@@ -17,17 +17,18 @@ import json
 import logging
 import os
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 from decouple import config
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 from starlette.concurrency import run_in_threadpool
 
 from resona_job_core import (
@@ -41,17 +42,17 @@ from resona_job_core import (
     Stage,
     check_policy,
 )
-from resona_postprocess.pipeline import build_pipeline
+from resona_postprocess.pipeline import build_pipeline, endpoint_ids
 from resona_postprocess.profile import ProfileError
 
 from . import clock, releases, storage
 from . import engine_registry as reg
 from .auth import ROLE_ORG_ADMIN, Principal, client_principal
-from .broker import _finish_terminal, _immediate, _remove_input
+from .broker import JOB_DELETED, _finish_terminal, _immediate, _remove_input, endpoints_assigned
 from .db.engine import engine
 from .db.models import IdempotencyRecord, Job, JobStatus, Organization, ProfileRevision, Upload, Worker
 from .deps import get_db_session
-from .errors import api_error
+from .errors import api_error, validation_message
 from .privacy import ProfileNotFound, is_profile_name, load_org_profile
 from .settings_store import current_settings
 
@@ -65,6 +66,7 @@ MAX_JOB_REQUEST_BYTES = 64 * 1024
 UPLOAD_TTL = timedelta(hours=1)
 JOB_DEADLINE = timedelta(hours=24)
 WORKER_ONLINE_WINDOW = timedelta(seconds=90)
+MAX_MARKDOWN_CHUNK_CHARS = 32768
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
 MAX_IDEMPOTENCY_KEY_CHARS = 200
@@ -113,8 +115,9 @@ def _storage_id(session: Session, organization_id: str) -> str:
 
 
 def _owned_job(session: Session, organization_id: str, job_id: int) -> Job:
+    """The caller's job; another organization's job or a deleted job's tombstone is 404."""
     job = session.get(Job, job_id)
-    if job is None or job.organization_id != organization_id:
+    if job is None or job.organization_id != organization_id or job.error_code == JOB_DELETED:
         raise api_error(404, "job_not_found", "job not found")
     return job
 
@@ -123,13 +126,23 @@ def _iso(value: datetime | None) -> str | None:
     return None if value is None else clock.as_utc(value).isoformat()
 
 
-def _snapshot_candidates(job: Job) -> set[Candidate]:
-    raw = json.loads(job.execution_snapshot or "{}").get("candidates", [])
-    return {Candidate.model_validate(item) for item in raw}
+@dataclass(frozen=True)
+class OnlineWorker:
+    """An approved worker seen recently, with the tuples it currently offers."""
+
+    worker_id: str
+    approved_private: bool
+    capabilities: frozenset[Candidate]
+    runtime_version: str | None
 
 
-def _online_workers(session: Session, organization_id: str, now: datetime) -> list[tuple[bool, set[Candidate]]]:
-    """``(approved_private, approved capabilities)`` of approved workers seen recently."""
+def _online_workers(session: Session, organization_id: str, now: datetime) -> list[OnlineWorker]:
+    """Approved, unrevoked workers seen within :data:`WORKER_ONLINE_WINDOW`.
+
+    A worker offers only tuples that are both hub-approved and reported in its latest
+    heartbeat: a CUDA worker started without a usable GPU reports none, so jobs that
+    only it could run wait as ``no_capable_worker``, not ``waiting_capacity``.
+    """
     rows = session.exec(
         select(Worker).where(Worker.organization_id == organization_id, Worker.revoked_at.is_(None))
     ).all()
@@ -139,17 +152,72 @@ def _online_workers(session: Session, organization_id: str, now: datetime) -> li
             continue
         if clock.as_utc(worker.last_seen) < now - WORKER_ONLINE_WINDOW:
             continue
-        caps = {Candidate.model_validate(item) for item in json.loads(worker.approved_capabilities or "[]")}
-        online.append((worker.approved_private, caps))
+        approved = {Candidate.model_validate(item) for item in json.loads(worker.approved_capabilities or "[]")}
+        reported = {Candidate.model_validate(item) for item in json.loads(worker.reported_capabilities or "[]")}
+        online.append(OnlineWorker(
+            worker_id=worker.id,
+            approved_private=worker.approved_private,
+            capabilities=frozenset(approved & reported),
+            runtime_version=worker.runtime_version,
+        ))
     return online
 
 
-def _queue_reason(job: Job, workers: list[tuple[bool, set[Candidate]]]) -> str | None:
+@dataclass(frozen=True)
+class QueueContext:
+    """Organization state that explains why pending jobs wait."""
+
+    workers: list[OnlineWorker]
+    approved_releases: set[tuple[str, str, str]]
+    settings: OrganizationSettings | None
+
+
+def _queue_context(session: Session, organization_id: str, now: datetime) -> QueueContext:
+    try:
+        _, settings = current_settings(session, organization_id)
+    except LookupError:
+        settings = None
+    return QueueContext(
+        workers=_online_workers(session, organization_id, now),
+        approved_releases=releases.approved_tuples(session, organization_id),
+        settings=settings,
+    )
+
+
+def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
+    """Why a pending job waits.
+
+    ``no_capable_worker``: no online worker of the job's privacy class offers one of
+    its candidates (with the job's worker-assigned endpoints). ``release_not_approved``:
+    such workers exist, but none runs a release approved for the job.
+    ``waiting_capacity``: an eligible worker is online and busy.
+    """
     if job.status != JobStatus.PENDING:
         return None
-    wanted = _snapshot_candidates(job)
-    capable = any((private or not job.private) and caps & wanted for private, caps in workers)
-    return "waiting_capacity" if capable else "no_capable_worker"
+    snapshot = json.loads(job.execution_snapshot or "{}")
+    wanted = [Candidate.model_validate(item) for item in snapshot.get("candidates", [])]
+    capable = [
+        (worker, candidate)
+        for worker in ctx.workers
+        if worker.approved_private == job.private
+        for candidate in wanted
+        if candidate in worker.capabilities
+        and endpoints_assigned(snapshot, job.kind, candidate, worker_id=worker.worker_id, settings=ctx.settings)
+    ]
+    if not capable:
+        return "no_capable_worker"
+    runnable = any(
+        releases.may_run(
+            worker_release=worker.runtime_version,
+            purpose=job.purpose,
+            snapshot_release=snapshot.get("release_id"),
+            execution_profile=job.execution_profile,
+            candidate=candidate,
+            approved=ctx.approved_releases,
+        )
+        for worker, candidate in capable
+    )
+    return "waiting_capacity" if runnable else "release_not_approved"
 
 
 CONTENT_UNAVAILABLE = "content_unavailable"
@@ -162,7 +230,7 @@ def _result_available(job: Job, now: datetime) -> bool:
     return job.result_expires_at is None or clock.as_utc(job.result_expires_at) > now
 
 
-def _view(job: Job, workers: list[tuple[bool, set[Candidate]]], now: datetime) -> dict[str, Any]:
+def _view(job: Job, ctx: QueueContext, now: datetime) -> dict[str, Any]:
     error = None
     if job.error_code and (job.status != JobStatus.COMPLETED or job.error_code == CONTENT_UNAVAILABLE):
         error = {"code": job.error_code, "message": job.error_message or job.error_code}
@@ -170,7 +238,7 @@ def _view(job: Job, workers: list[tuple[bool, set[Candidate]]], now: datetime) -
         "job_id": job.id,
         "kind": job.kind,
         "status": job.status.value,
-        "queue_reason": _queue_reason(job, workers),
+        "queue_reason": _queue_reason(job, ctx),
         "private": job.private,
         "execution_profile": job.execution_profile,
         "candidate": json.loads(job.candidate) if job.candidate else None,
@@ -185,7 +253,7 @@ def _view(job: Job, workers: list[tuple[bool, set[Candidate]]], now: datetime) -
 
 def _single_view(session: Session, job: Job) -> dict[str, Any]:
     now = clock.now()
-    return _view(job, _online_workers(session, job.organization_id, now), now)
+    return _view(job, _queue_context(session, job.organization_id, now), now)
 
 
 # ── Uploads ───────────────────────────────────────────────────────────────
@@ -405,7 +473,7 @@ async def create_upload(
 def _candidate_stage(candidate: Candidate, kind: str, settings: OrganizationSettings) -> Stage:
     """The processing stage a candidate implies. Cloud providers are egress endpoints."""
     if kind == "audio" and candidate.engine in reg.CLOUD_PROVIDERS:
-        endpoint_id = f"cloud-asr:{candidate.engine}"
+        endpoint_id = reg.cloud_asr_endpoint_id(candidate.engine)
         registered = next((ep for ep in settings.endpoints if ep.id == endpoint_id), None)
         endpoint = registered or Endpoint(id=endpoint_id, kind=EndpointKind.CLOUD_ASR, model=candidate.model)
         return Stage(name="asr", kind="asr", endpoint=endpoint)
@@ -435,8 +503,9 @@ def _resolve_candidates(req: JobRequest, options: dict[str, Any], settings: Orga
 
 
 def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest,
-                         settings: OrganizationSettings, policy) -> tuple[dict[str, Any], bytes] | None:
-    """Resolve the postprocess profile: snapshot identifiers plus the profile document.
+                         settings: OrganizationSettings, policy) -> tuple[dict[str, Any], bytes, list[str]] | None:
+    """Resolve the postprocess profile: snapshot identifiers, the profile document and
+    the endpoint IDs its LLM steps call.
 
     The document may contain LLM prompts, so it is stored as an expiring job
     artifact; the snapshot only carries ``{name, revision, sha256}``.
@@ -463,7 +532,7 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     revision = row.revision if row is not None and not row.deleted else 0
     document = json.dumps(profile.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
     meta = {"name": name, "revision": revision, "sha256": hashlib.sha256(document).hexdigest()}
-    return meta, document
+    return meta, document, endpoint_ids(profile)
 
 
 def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
@@ -488,6 +557,7 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         "language": req.language or settings.language,
         "options": options,
         "postprocess": postprocess[0] if postprocess else None,
+        "endpoint_ids": postprocess[2] if postprocess else [],
         "policy": {
             "private": policy.private,
             "cloud_enabled": policy.cloud_enabled,
@@ -596,11 +666,6 @@ def _admit(organization_id: str, key: str, req: JobRequest,
     return 202, {"job_id": job_id, "status": JobStatus.PENDING.value}
 
 
-def _validation_message(exc: ValidationError) -> str:
-    fields = sorted({".".join(str(p) for p in err["loc"]) or "body" for err in exc.errors()})
-    return "invalid fields: " + ", ".join(fields)
-
-
 def _release_staged(release_id: str) -> bool:
     with Session(engine) as session:
         return releases.is_known(session, release_id)
@@ -624,12 +689,12 @@ async def submit_job(
     try:
         req = JobRequest.model_validate(json.loads(raw or b"null"))
     except ValueError as exc:
-        message = _validation_message(exc) if isinstance(exc, ValidationError) else "body must be JSON"
+        message = validation_message(exc) if isinstance(exc, ValidationError) else "body must be JSON"
         raise api_error(422, "invalid_request", message) from None
     try:
         options = _OPTIONS_MODEL[req.kind].model_validate(req.options or {}).model_dump(mode="json", exclude_none=True)
     except ValidationError as exc:
-        raise api_error(422, "invalid_options", _validation_message(exc)) from None
+        raise api_error(422, "invalid_options", validation_message(exc)) from None
     if req.purpose == "evaluation" and principal.role != ROLE_ORG_ADMIN:
         raise api_error(403, "forbidden", "evaluation jobs require an org_admin credential")
     if req.purpose == "evaluation":
@@ -668,15 +733,18 @@ def list_jobs(
     """The organization's jobs, newest first, with an opaque cursor."""
     if not 1 <= limit <= MAX_PAGE_SIZE:
         raise api_error(422, "invalid_limit", f"limit must be between 1 and {MAX_PAGE_SIZE}")
-    query = select(Job).where(Job.organization_id == principal.organization_id)
+    query = select(Job).where(
+        Job.organization_id == principal.organization_id,
+        or_(Job.error_code.is_(None), Job.error_code != JOB_DELETED),
+    )
     if cursor is not None:
         query = query.where(Job.id < _decode_cursor(cursor))
     rows = session.exec(query.order_by(Job.id.desc()).limit(limit + 1)).all()
     page = rows[:limit]
     now = clock.now()
-    workers = _online_workers(session, principal.organization_id, now)
+    ctx = _queue_context(session, principal.organization_id, now)
     return {
-        "items": [_view(job, workers, now) for job in page],
+        "items": [_view(job, ctx, now) for job in page],
         "next_cursor": _encode_cursor(page[-1].id) if len(rows) > limit else None,
     }
 
@@ -690,14 +758,8 @@ def get_job(
     return _single_view(session, _owned_job(session, principal.organization_id, job_id))
 
 
-@router.get("/v1/jobs/{job_id}/result", response_model=None)
-def get_result(
-    job_id: int,
-    principal: Principal = Depends(client_principal),
-    session: Session = Depends(get_db_session),
-) -> FileResponse:
-    """Stream the accepted JobResult JSON. 409 before completion, 410 after retention or a lossy restore."""
-    job = _owned_job(session, principal.organization_id, job_id)
+def _result_file(session: Session, job: Job) -> Path:
+    """The accepted result file. 409 before completion, 410 after retention or a lossy restore."""
     if job.status != JobStatus.COMPLETED:
         raise api_error(409, "not_ready", "job has not completed")
     if job.error_code == CONTENT_UNAVAILABLE:
@@ -707,7 +769,53 @@ def get_result(
     path = storage.result_path(_storage_id(session, job.organization_id), job.id)
     if not path.is_file():
         raise api_error(410, CONTENT_UNAVAILABLE, "result content is unavailable")
+    return path
+
+
+@router.get("/v1/jobs/{job_id}/result", response_model=None)
+def get_result(
+    job_id: int,
+    principal: Principal = Depends(client_principal),
+    session: Session = Depends(get_db_session),
+) -> FileResponse:
+    """Stream the accepted JobResult JSON. 409 before completion, 410 after retention or a lossy restore."""
+    path = _result_file(session, _owned_job(session, principal.organization_id, job_id))
     return FileResponse(path, media_type="application/json")
+
+
+@router.get("/v1/jobs/{job_id}/result/markdown")
+def get_result_markdown(
+    job_id: int,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=MAX_MARKDOWN_CHUNK_CHARS, ge=1, le=MAX_MARKDOWN_CHUNK_CHARS),
+    principal: Principal = Depends(client_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """One character range of the result's Markdown plus small result metadata,
+    never the whole result.
+
+    ``next_offset`` is null once the range reaches the end. Same 404/409/410 rules as
+    the full result; an offset past the end returns empty text.
+    """
+    path = _result_file(session, _owned_job(session, principal.organization_id, job_id))
+    try:
+        result = json.loads(path.read_bytes())
+        markdown = result.get("markdown") or ""
+    except (OSError, ValueError, AttributeError):
+        raise api_error(410, CONTENT_UNAVAILABLE, "result content is unavailable") from None
+    total = len(markdown)
+    end = min(offset + limit, total)
+    return {
+        "text": markdown[offset:end] if offset < total else "",
+        "offset": offset,
+        "next_offset": end if end < total else None,
+        "total_chars": total,
+        "kind": result.get("kind"),
+        "language": result.get("language"),
+        "page_count": len(result.get("pages") or []),
+        "warnings": list(result.get("warnings") or []),
+        "provenance": result.get("provenance") or {},
+    }
 
 
 @router.post("/v1/jobs/{job_id}/cancel")
@@ -741,11 +849,17 @@ def delete_job(
     principal: Principal = Depends(client_principal),
     session: Session = Depends(get_db_session),
 ) -> Response:
-    """Delete a terminal job's row, idempotency keys and files. Non-terminal → 409."""
+    """Delete a job in any state; later reads are 404 at once.
+
+    A pending or terminal job's row, idempotency keys and files go now. A processing
+    job is cancelled first: its lease is fenced (the worker's next call is
+    ``stale_lease``), its input removed, and its row kept as an invisible
+    ``deleted`` tombstone until the replaced lease would have expired, so a late
+    worker cannot resurrect it; the maintenance sweep then purges it.
+    """
+    storage_id = _storage_id(session, principal.organization_id)
     with _immediate(session):
         job = _owned_job(session, principal.organization_id, job_id)
-        if job.status not in _TERMINAL:
-            raise api_error(409, "job_not_terminal", "cancel the job before deleting it")
         for record in session.exec(
             select(IdempotencyRecord).where(
                 IdempotencyRecord.organization_id == principal.organization_id,
@@ -753,6 +867,15 @@ def delete_job(
             )
         ).all():
             session.delete(record)
-        session.delete(job)
-    storage.remove_tree(storage.job_dir(_storage_id(session, principal.organization_id), job_id))
+        if job.status == JobStatus.PROCESSING:
+            lease_until = job.lease_until
+            _finish_terminal(job, JobStatus.CANCELLED, JOB_DELETED, clock.now())
+            job.cancel_requested = True
+            job.error_message = "deleted by client"
+            # The tombstone outlives the fenced lease; the sweep purges it afterwards.
+            job.lease_until = lease_until
+            session.add(job)
+        else:
+            session.delete(job)
+    storage.remove_tree(storage.job_dir(storage_id, job_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

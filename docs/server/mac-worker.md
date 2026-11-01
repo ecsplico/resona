@@ -122,7 +122,7 @@ Docling runs in-process. Its remote services stay at the default (disabled), and
 The worker treats a job as out of memory if the engine subprocess is killed with SIGKILL (for example by jetsam), raises `MemoryError`, or prints an out-of-memory marker such as MLX's `[metal::malloc]`. The worker then:
 
 - fails the attempt as retryable `out_of_memory`. The hub requeues the job until its attempt limit is reached, and another worker can claim it.
-- stops offering that tuple until the worker restarts. The hub also removes the tuple from the worker's approved capabilities. To use the tuple again, run `prepare` again and have the admin approve it again.
+- stops offering that tuple until the worker restarts. The hub records the withdrawal in the job's error message only and keeps the worker's approved capabilities unchanged, so after a restart (and `prepare`, if memory settings changed) the worker offers the tuple again without a new approval.
 
 ## Result provenance
 

@@ -110,6 +110,36 @@ def test_claims_only_tuples_both_tested_here_and_approved_by_the_hub(build_super
     assert claim_body["capabilities"] == [CAND.model_dump(mode="json")]
 
 
+def test_tuples_on_an_unavailable_accelerator_are_never_offered(build_supervisor, fakes, monkeypatch) -> None:
+    # A CUDA worker started without a GPU keeps its prepared manifest but offers no CUDA tuple,
+    # so the hub leaves those jobs queued for other workers (e.g. the Mac) instead of failing them here.
+    cuda = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    hub = fakes.FakeHub(cuda)
+    hub.approved_capabilities = [CAND, cuda]
+    supervisor = build_supervisor(hub, capabilities=(CAND, cuda))
+
+    supervisor.run(once=True)
+
+    assert hub.heartbeat_bodies[-1]["reported_capabilities"] == [CAND.model_dump(mode="json")]
+    claim_body = json.loads(hub.paths("/claim")[-1][3])
+    assert claim_body["capabilities"] == [CAND.model_dump(mode="json")]
+    assert hub.paths("/fail") == []
+
+
+def test_only_cuda_tuples_drop_out_when_the_gpu_is_missing(build_supervisor, fakes, monkeypatch) -> None:
+    cuda = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    hub = fakes.FakeHub(cuda)
+    hub.approved_capabilities = [cuda]
+    supervisor = build_supervisor(hub, capabilities=(cuda,))
+
+    assert supervisor.run(once=True) == 0
+
+    assert hub.heartbeat_bodies[-1] == {**hub.heartbeat_bodies[-1], "reported_capabilities": [], "ready": False}
+    assert hub.paths("/claim") == []
+
+
 def test_private_job_runs_offline_without_cloud_credentials(build_supervisor, fakes, monkeypatch) -> None:
     secrets = {
         "OPENAI_API_KEY": "sk-1",

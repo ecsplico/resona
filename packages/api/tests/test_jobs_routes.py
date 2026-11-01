@@ -13,6 +13,7 @@ from resona_job_core import Candidate, Endpoint, default_settings
 from resona_api import clock, jobs_routes, storage
 from resona_api.admin import approve_worker, enroll_worker, revoke_credential, revoke_worker
 from resona_api.releases import hub_release_id
+from release_approval import approve_release
 from resona_api.auth import hash_token
 from resona_api.db.engine import engine
 from resona_api.db.models import Credential, Job, JobStatus, Organization
@@ -55,6 +56,7 @@ def make_worker(org_id, *, capabilities=(MAC_AUDIO,)):
                        capabilities=[c.model_dump(mode="json") for c in capabilities]
                        ).runtime_version = hub_release_id()
         session.commit()
+    approve_release(org_id)
     return worker_id, {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
 
 
@@ -125,15 +127,31 @@ def test_upload_submit_claim_result_roundtrip(http, fresh_org, client_headers, w
     assert not storage.job_input_path(storage_id(fresh_org), job_id).exists()
 
 
+def _heartbeat(http, worker, reported):
+    beat = http.post("/v1/workers/heartbeat", headers=worker, json={
+        "worker_protocol": 1, "runtime_version": "0.1.0", "ready": bool(reported),
+        "reported_capabilities": [c.model_dump(mode="json") for c in reported],
+    })
+    assert beat.status_code == 200
+
+
 def test_queue_reason_waiting_capacity_when_capable_worker_online(http, fresh_org, client_headers, wav_bytes):
     headers = client_headers(fresh_org)
     job_id = new_job(http, headers, wav_bytes)
     _, worker = make_worker(fresh_org)
-    beat = http.post("/v1/workers/heartbeat", headers=worker, json={
-        "worker_protocol": 1, "runtime_version": "0.1.0", "reported_capabilities": [], "ready": True,
-    })
-    assert beat.status_code == 200
+    _heartbeat(http, worker, [MAC_AUDIO])
     assert http.get(f"/v1/jobs/{job_id}", headers=headers).json()["queue_reason"] == "waiting_capacity"
+
+
+def test_queue_reason_ignores_approved_tuples_the_worker_does_not_offer(http, fresh_org, client_headers, wav_bytes):
+    # An approved CUDA worker started without a GPU heartbeats with no tuples: it cannot
+    # claim, so the job waits for another worker (no_capable_worker), not for its capacity.
+    headers = client_headers(fresh_org)
+    job_id = new_job(http, headers, wav_bytes)
+    _, worker = make_worker(fresh_org)
+    _heartbeat(http, worker, [])
+    assert http.get(f"/v1/jobs/{job_id}", headers=headers).json()["queue_reason"] == "no_capable_worker"
+    assert claim(http, worker, caps=()).status_code == 204
 
 
 def test_result_expires_after_retention(http, fresh_org, client_headers, wav_bytes, monkeypatch):
@@ -413,17 +431,115 @@ def test_cancel_processing_job_fences_lease(http, fresh_org, client_headers, wav
     assert job_row(job_id).status != JobStatus.COMPLETED
 
 
-def test_delete_requires_terminal_state_then_removes_everything(http, fresh_org, client_headers, wav_bytes):
+def test_delete_pending_job_removes_everything_at_once(http, fresh_org, client_headers, wav_bytes):
     headers = client_headers(fresh_org)
     job_id = new_job(http, headers, wav_bytes)
-    resp = http.delete(f"/v1/jobs/{job_id}", headers=headers)
-    assert resp.status_code == 409
-    assert error_code(resp) == "job_not_terminal"
 
-    http.post(f"/v1/jobs/{job_id}/cancel", headers=headers)
     assert http.delete(f"/v1/jobs/{job_id}", headers=headers).status_code == 204
+
     assert http.get(f"/v1/jobs/{job_id}", headers=headers).status_code == 404
+    assert job_row(job_id) is None
     assert not storage.job_dir(storage_id(fresh_org), job_id).exists()
+    _, worker = make_worker(fresh_org)
+    assert claim(http, worker).status_code == 204
+
+
+def test_delete_processing_job_fences_lease_and_denies_reads_immediately(
+    http, fresh_org, client_headers, wav_bytes
+):
+    headers = client_headers(fresh_org)
+    job_id = new_job(http, headers, wav_bytes)
+    _, worker = make_worker(fresh_org)
+    lease = claim(http, worker).json()["lease_token"]
+    fenced = {**worker, "X-Resona-Lease": lease}
+
+    assert http.delete(f"/v1/jobs/{job_id}", headers=headers).status_code == 204
+
+    for path in (f"/v1/jobs/{job_id}", f"/v1/jobs/{job_id}/result", f"/v1/jobs/{job_id}/result/markdown"):
+        assert http.get(path, headers=headers).status_code == 404, path
+    assert http.post(f"/v1/jobs/{job_id}/cancel", headers=headers).status_code == 404
+    assert http.delete(f"/v1/jobs/{job_id}", headers=headers).status_code == 404
+    assert job_id not in [item["job_id"] for item in http.get("/v1/jobs", headers=headers).json()["items"]]
+    assert not storage.job_dir(storage_id(fresh_org), job_id).exists()
+    for method, path in (
+        ("get", f"/v1/workers/jobs/{job_id}/input"),
+        ("post", f"/v1/workers/jobs/{job_id}/heartbeat"),
+    ):
+        late = getattr(http, method)(path, headers=fenced)
+        assert (late.status_code, error_code(late)) == (409, "stale_lease"), path
+    late = post_result(http, job_id, worker, lease)
+    assert (late.status_code, error_code(late)) == (409, "stale_lease")
+    assert job_row(job_id).status == JobStatus.CANCELLED
+
+
+def test_deleted_job_tombstone_is_purged_once_its_lease_would_have_expired(
+    http, fresh_org, client_headers, wav_bytes, monkeypatch
+):
+    from resona_api import broker
+
+    headers = client_headers(fresh_org)
+    job_id = new_job(http, headers, wav_bytes)
+    _, worker = make_worker(fresh_org)
+    claim(http, worker)
+    http.delete(f"/v1/jobs/{job_id}", headers=headers)
+    with Session(engine) as session:
+        broker.sweep_leases(session)
+    assert job_row(job_id) is not None  # lease still live: keep the fence
+
+    later = clock.now() + timedelta(seconds=broker.LEASE_SECONDS + 1)
+    monkeypatch.setattr(clock, "now", lambda: later)
+    with Session(engine) as session:
+        broker.sweep_leases(session)
+    assert job_row(job_id) is None
+
+
+# ── Bounded Markdown reads ───────────────────────────────────────────────────
+
+def _completed_job(http, fresh_org, headers, wav_bytes, markdown):
+    job_id = new_job(http, headers, wav_bytes)
+    _, worker = make_worker(fresh_org)
+    lease = claim(http, worker).json()["lease_token"]
+    assert post_result(http, job_id, worker, lease, markdown=markdown).status_code == 200
+    return job_id
+
+
+def test_markdown_range_pages_through_the_result(http, fresh_org, client_headers, wav_bytes):
+    headers = client_headers(fresh_org)
+    markdown = "# Überschrift\n" + "äöü-" * 20_000
+    job_id = _completed_job(http, fresh_org, headers, wav_bytes, markdown)
+
+    chunks, offset = [], 0
+    while offset is not None:
+        page = http.get(f"/v1/jobs/{job_id}/result/markdown", params={"offset": offset}, headers=headers)
+        assert page.status_code == 200
+        body = page.json()
+        assert len(body["text"]) <= jobs_routes.MAX_MARKDOWN_CHUNK_CHARS
+        assert body["total_chars"] == len(markdown)
+        assert "raw_text" not in body and "segments" not in body
+        chunks.append(body["text"])
+        offset = body["next_offset"]
+    assert len(chunks) == 3
+    assert "".join(chunks) == markdown
+
+    small = http.get(f"/v1/jobs/{job_id}/result/markdown", params={"offset": 2, "limit": 5}, headers=headers).json()
+    assert (small["text"], small["offset"], small["next_offset"]) == (markdown[2:7], 2, 7)
+    assert small["kind"] == "audio"
+    past = http.get(f"/v1/jobs/{job_id}/result/markdown", params={"offset": 10**7}, headers=headers).json()
+    assert (past["text"], past["next_offset"]) == ("", None)
+
+
+def test_markdown_range_limits_and_states(http, fresh_org, org_b, client_headers, wav_bytes):
+    headers = client_headers(fresh_org)
+    job_id = _completed_job(http, fresh_org, headers, wav_bytes, "# x")
+    pending = new_job(http, headers, wav_bytes)
+    not_ready = http.get(f"/v1/jobs/{pending}/result/markdown", headers=headers)
+    assert (not_ready.status_code, error_code(not_ready)) == (409, "not_ready")
+    too_big = {"limit": jobs_routes.MAX_MARKDOWN_CHUNK_CHARS + 1}
+    assert http.get(f"/v1/jobs/{job_id}/result/markdown", params=too_big, headers=headers).status_code == 422
+    assert http.get(f"/v1/jobs/{job_id}/result/markdown", params={"offset": -1}, headers=headers).status_code == 422
+
+    other_org = client_headers(org_b)
+    assert http.get(f"/v1/jobs/{job_id}/result/markdown", headers=other_org).status_code == 404
 
 
 # ── Upload validation ────────────────────────────────────────────────────────

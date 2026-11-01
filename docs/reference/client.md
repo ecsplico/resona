@@ -55,10 +55,20 @@ else:
     print("not completed:", job.status, job.error)
 
 client.cancel_job(ref.job_id)   # fence the lease
-client.delete_job(ref.job_id)   # delete input and result now
+client.delete_job(ref.job_id)   # any state: fence the lease, delete job, input and result now
 ```
 
 `get_result()` raises `JobNotReady` (409) before completion and `ResultExpired` (410) after the 24-hour result retention.
+
+To read a large Markdown result in bounded pieces, `get_result_markdown(job_id, offset=0, limit=32768)` returns a `MarkdownChunk(text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance)` from `GET /v1/jobs/{id}/result/markdown`; `limit` is at most 32 768 characters and `next_offset` is `None` at the end. It raises the same `JobNotReady`/`ResultExpired`.
+
+```python
+offset, parts = 0, []
+while offset is not None:
+    chunk = client.get_result_markdown(ref.job_id, offset=offset)
+    parts.append(chunk.text)
+    offset = chunk.next_offset
+```
 
 For content already in memory (the MCP server's `upload_content`), upload and submit in two steps; the upload is consumed by exactly one job:
 
@@ -85,7 +95,7 @@ audio_bytes = client.create_speech("Hallo Welt", voice="alloy", engine="openai")
 with open("out.mp3", "wb") as f:
     f.write(audio_bytes)
 
-# List available engines
+# Engines the organization can use: tuples tested by its approved workers (GET /v1/engines)
 engines = client.list_engines()
 ```
 

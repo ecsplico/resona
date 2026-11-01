@@ -3,7 +3,7 @@ import json
 from typing import Any, Optional
 
 import pytest
-from resona_client.client import JobRef, JobView, SettingsDoc, Upload
+from resona_client.client import JobRef, JobView, MarkdownChunk, SettingsDoc, Upload
 from resona_job_core import JobResult, Provenance
 
 
@@ -57,9 +57,18 @@ class FakeClient:
         self._record("cancel_job", job_id)
         return JobView.from_dict({"job_id": job_id, "kind": "audio", "status": "cancelled", "private": True})
 
-    def get_result(self, job_id: int):
-        self._record("get_result", job_id)
-        return self.hub.result
+    def get_result_markdown(self, job_id: int, *, offset: int = 0, limit: int = 32768):
+        """Mirrors the hub's range read: only the requested slice ever leaves the hub."""
+        self._record("get_result_markdown", (job_id, offset, limit))
+        result = self.hub.result
+        markdown = result.markdown
+        end = min(offset + limit, len(markdown))
+        return MarkdownChunk(
+            text=markdown[offset:end], offset=offset,
+            next_offset=end if end < len(markdown) else None, total_chars=len(markdown),
+            kind=result.kind, language=result.language, page_count=len(result.pages),
+            warnings=tuple(result.warnings), provenance=result.provenance.model_dump(mode="json"),
+        )
 
     def get_settings(self):
         self._record("get_settings", None)

@@ -1,0 +1,60 @@
+# Resona Linux NVIDIA worker (execution profile `linux-cuda`). Outbound-only:
+# no published port, no Docker socket. Setup and proof: docs/server/linux-worker.md.
+#
+# Required environment (e.g. in a `.env` next to this file):
+#   RESONA_WORKER_IMAGE       pinned image *by digest*, e.g. ghcr.io/ecsplico/resona-worker@sha256:...
+#                             (never :latest/:cuda)
+#   RESONA_HUB_URL            hub base URL, https (or loopback http for a host-local tunnel)
+#   RESONA_WORKER_TOKEN_FILE  host path of the worker token file, mode 0600, owned by UID 1000
+#
+# One-off preparation (downloads the pinned weights into the `models` volume, runs real
+# CUDA inference, writes the tested tuples to the `state` volume):
+#   docker compose -f docker-compose.worker.yml run --rm worker \
+#     prepare --profile linux-cuda --download --out /state/capabilities.json
+# Then:
+#   docker compose -f docker-compose.worker.yml up -d
+
+name: resona-worker
+
+services:
+  worker:
+    image: ${RESONA_WORKER_IMAGE:?set RESONA_WORKER_IMAGE to the released image digest}
+    command:
+      - run
+      - --hub
+      - ${RESONA_HUB_URL:?set RESONA_HUB_URL}
+      - --token-file
+      - /run/secrets/resona-worker-token
+      - --capabilities-file
+      - /state/capabilities.json
+      - --work-dir
+      - /work
+    restart: unless-stopped
+    volumes:
+      # Model weights survive restarts and image updates; prepared once with --download.
+      - models:/models
+      # Capabilities manifest written by `prepare`.
+      - state:/state
+      - type: bind
+        source: ${RESONA_WORKER_TOKEN_FILE:?set RESONA_WORKER_TOKEN_FILE}
+        target: /run/secrets/resona-worker-token
+        read_only: true
+    # Disposable per-job directory: RAM-backed, empty on every container start.
+    tmpfs:
+      - /work:size=4g,mode=0700,uid=1000,gid=1000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+
+volumes:
+  models:
+  state:

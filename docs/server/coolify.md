@@ -28,6 +28,16 @@ No variable is required; the defaults serve `https://resona.ecsplico.de`.
 
 `RESONA_BOOTSTRAP_ORGANIZATION_ID` is needed only when an old pre-identity database with job rows is migrated. A fresh volume does not need it.
 
+### Migrating a pre-identity database
+
+The first start on an old (`/jobs`-era) database takes a SQLite backup, then runs the numbered migrations in one exclusive transaction. Every old job row is assigned to `RESONA_BOOTSTRAP_ORGANIZATION_ID`, keeps its integer ID and becomes `kind=audio`, `private=true`, with its old language or `de`:
+
+- **Completed** rows: transcript, segments and Markdown move out of the database into result artifacts with the normal 24-hour result lifetime; the old payload columns are dropped.
+- **Failed/cancelled** rows stay terminal; their input counts as deleted.
+- **Non-terminal** rows (`pending`, `processing`) are **not** revalidated or requeued. They have no approved execution snapshot and no input in the new storage layout, so the migration fails them with error code `legacy_unprocessed` ("queued before the upgrade; resubmit the input"). Submit those inputs again as new jobs. Old input files under `FILE_PATH` are deleted after the migration commits.
+
+After the converted results are verified, the pre-migration backup is deleted under the same retention rule as the content.
+
 ## Deploy
 
 ```bash
@@ -51,7 +61,7 @@ curl https://resona.ecsplico.de/v1/version   # {"release_id":...,"hub_version":.
 
 ## Provision credentials
 
-`resona-admin` runs inside the `hub` container (Coolify terminal, a Coolify scheduled task on the `hub` service, or `docker exec` on the server). Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:
+`resona-admin` runs inside the `hub` container. Root SSH to the Coolify host is not available, so use a Coolify scheduled task on the hub container (`<app-uuid>-hub-1`), execute it once, then delete it. The container's root filesystem is read-only; `/tmp` is a tmpfs. Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:
 
 ```bash
 # on your machine
@@ -65,7 +75,19 @@ resona-admin worker enroll mac-studio --organization ecsplico --token-sha256 <he
 resona-admin worker approve <worker-id> --private --capabilities-file caps.json
 ```
 
-Without `--token-sha256`, `resona-admin` generates the token and prints it once.
+```bash
+A=<app-uuid>
+coolify app task create $A --name admin --container $A-hub-1 --frequency "0 0 1 1 *" \
+  --command "resona-admin organization create ecsplico"
+coolify app task execute $A <task-uuid>
+coolify app task executions $A <task-uuid> --format json   # "status": "success"
+coolify app task update $A <task-uuid> --command "<next resona-admin command>"   # repeat
+coolify app task delete $A <task-uuid>
+```
+
+The task command is limited to about 250 characters. `worker approve` needs the capabilities file inside the container: write it to `/tmp` within the same command, for example `python -c "import base64,zlib;open('/tmp/c.json','wb').write(zlib.decompress(base64.b64decode('<b64>')))" && resona-admin worker approve ...`, split over several executions if needed. Check the result from your machine: `GET /v1/settings` with the new client token returns `200`, and a worker heartbeat returns its `approved_capabilities`.
+
+Without `--token-sha256`, `resona-admin` generates the token and prints it once into the task output, so prefer the hash.
 
 ## Restore a backup
 
@@ -98,7 +120,7 @@ It prints counts only, never identifiers of content.
 
 ## Logs
 
-The hub and MCP containers log request lines without query strings, plus counts from the maintenance loop. They never log transcripts, Markdown, original filenames or tokens.
+The hub and MCP containers log request lines without query strings, plus counts from the maintenance loop. They never log transcripts, Markdown, original filenames or tokens. Reading the container logs through the Coolify API or CLI (`coolify app logs`) needs a Coolify token with the `read:sensitive` ability.
 
 ## CPU fallback
 

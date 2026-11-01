@@ -106,6 +106,7 @@ def build_report(
         "fixtures": {
             run.fixture.id: {
                 "kind": run.fixture.kind,
+                "checks": list(run.fixture.checks),
                 "job_id": run.job_id,
                 "metrics": metrics[run.fixture.id],
                 "provenance": {
@@ -133,5 +134,9 @@ def evaluation_record(report: Mapping[str, Any], gate: Gate) -> dict[str, Any]:
         "corpus_sha256": report["corpus_sha256"],
         "baseline_revision": baseline["revision"] if baseline is not None else None,
         "fixtures": {fid: dict(entry["metrics"]) for fid, entry in report["fixtures"].items()},
+        "fixture_checks": {
+            fid: {"kind": entry["kind"], "checks": list(entry["checks"])}
+            for fid, entry in report["fixtures"].items()
+        },
         "gate": gate.record(),
     }

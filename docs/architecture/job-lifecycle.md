@@ -32,7 +32,7 @@ pending → processing → completed | failed | cancelled
 
 | State | Meaning |
 |-------|---------|
-| `pending` | Waiting for a capable worker; `queue_reason` says why (`no_capable_worker`, `waiting_capacity`) |
+| `pending` | Waiting for a capable worker; `queue_reason` says why: `waiting_capacity` (an eligible worker is online and busy), `release_not_approved` (a worker offers one of the job's tuples, but its release has no promoted evaluation for the job's execution profile and platform) or `no_capable_worker` (no online worker of the job's privacy class offers one, e.g. the only CUDA worker runs without a usable GPU) |
 | `processing` | Claimed by a worker under a lease |
 | `completed` | Result accepted and stored |
 | `failed` | Terminal error, `attempts_exhausted` (3 assignments) or `deadline_exceeded` (24 h) |
@@ -40,7 +40,9 @@ pending → processing → completed | failed | cancelled
 
 If a lease expires (worker offline or asleep), the job returns to `pending` and another worker can claim it. A late result from the old lease gets `409 stale_lease`. Execution is at-least-once; the hub accepts one result.
 
-Private jobs go only to workers that an admin approved with `resona-admin worker approve --private`. A worker cannot make itself private through its heartbeat. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.
+Private jobs go only to workers that an admin approved with `resona-admin worker approve --private`; cloud opt-in jobs (`private: false`) go only to workers approved with `--non-private`, so a private execution environment never receives cloud work. A worker cannot change its approval through its heartbeat, and an OOM failure withdraws a tuple only on that worker, never its hub approval. A job whose endpoint is assigned to one worker (its secret file lives there) is claimed only by that worker. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.
+
+`DELETE /v1/jobs/{id}` in any state removes the job and its files at once; for a processing job it first fences the lease, so the worker's next call gets `409 stale_lease` and its output is rejected.
 
 ### Retention
 

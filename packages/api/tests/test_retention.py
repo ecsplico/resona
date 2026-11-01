@@ -18,6 +18,7 @@ from resona_job_core import Candidate
 from resona_api import broker, clock, maintenance, storage
 from resona_api.admin import approve_worker, enroll_worker
 from resona_api.releases import hub_release_id
+from release_approval import approve_release
 from resona_api.db.engine import engine
 from resona_api.db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload
 
@@ -167,6 +168,7 @@ def test_expired_lease_is_requeued_and_abandoned_attempt_removed(fresh_org, at):
         approve_worker(session, worker_id, private=True,
                        capabilities=[CAND.model_dump(mode="json")]).runtime_version = hub_release_id()
         session.commit()
+    approve_release(fresh_org)
     with Session(engine) as session:
         claim = broker.try_claim(
             session, worker_id=worker_id, organization_id=fresh_org, capabilities=[CAND]
@@ -194,10 +196,9 @@ def test_expired_lease_is_requeued_and_abandoned_attempt_removed(fresh_org, at):
         )
     assert (reclaim.job_id, reclaim.attempt) == (job_id, 2)
     with Session(engine) as session:
-        path = broker.input_path(
-            session, worker_id=worker_id, organization_id=fresh_org,
-            job_id=job_id, lease_token=reclaim.lease_token,
-        )
+        path = broker.input_path(session, broker.LeaseRef(
+            worker_id=worker_id, organization_id=fresh_org, job_id=job_id, lease_token=reclaim.lease_token,
+        ))
     assert path.read_bytes() == b"input"
 
 

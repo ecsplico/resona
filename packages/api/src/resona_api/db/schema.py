@@ -303,11 +303,11 @@ def _v1_identity_settings_jobs(conn: sqlite3.Connection) -> AfterCommit | None:
 
 # ── migration 2: releases, evaluations, baselines, approved release tuples ─
 #
-# Records the hub's own (bundled) release, which stays approved for every
-# (execution profile, platform) tuple. Workers that report that release keep
-# claiming production jobs after the upgrade; any other release needs a staged
-# manifest and a promoted evaluation. On a fresh database migration 1 already
-# created these tables from the ORM metadata, so creation is idempotent.
+# Records the hub's own (bundled) release so it can run evaluation jobs without
+# being staged. Production jobs of any release, the bundled one included, need a
+# promoted evaluation of their (execution profile, platform, release). On a fresh
+# database migration 1 already created these tables from the ORM metadata, so
+# creation is idempotent.
 
 _V2_TABLES = ("release", "evaluation", "baseline", "approvedreleasetuple")
 

@@ -32,5 +32,5 @@ def test_mac_private_prepares_mlx_whisper_and_ocrmac_on_metal() -> None:
     assert audio.peak_accelerator_bytes and audio.peak_accelerator_bytes > 0
     assert document.candidate.ocr_engine == "ocrmac"
     assert document.stage_accelerators["layout:docling-layout"] == "metal"
-    assert document.stage_accelerators["ocr:ocrmac"] == "metal"
+    assert document.stage_accelerators["ocr:ocrmac"] == "auto"
     assert {w.repo for w in document.weights} >= {"docling-project/docling-layout-heron"}

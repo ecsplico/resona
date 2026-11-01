@@ -182,8 +182,8 @@ class Release(SQLModel, table=True):
     """A release manifest known to the hub.
 
     ``staged`` admits the release for evaluation jobs only; production use needs an
-    :class:`ApprovedReleaseTuple`. ``bundled`` is the release the hub itself ships,
-    which is approved for every tuple (so existing deployments keep working).
+    :class:`ApprovedReleaseTuple`. ``bundled`` is the release the hub itself ships;
+    it needs no staging for evaluation jobs but, like any release, an approval for production.
     """
 
     release_id: str = Field(primary_key=True)

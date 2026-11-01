@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Linux worker image. One Dockerfile, two variants selected by build args:
 #
 #   CPU  (default):  docker build -f apps/resona-worker/Dockerfile .
@@ -33,8 +34,11 @@ COPY packages/engine-whisper/ ./packages/engine-whisper/
 COPY packages/engine-docling/ ./packages/engine-docling/
 
 # A uv-managed CPython (not the base image's) so the same /opt/python + venv copy
-# runs on the CUDA runtime base, which ships no Python 3.12 of its own.
-RUN uv python install 3.12 \
+# runs on the CUDA runtime base, which ships no Python 3.12 of its own. The uv cache
+# mount keeps the multi-GB Torch/CUDA wheels across rebuilds; it is not in the image.
+ENV UV_LINK_MODE=copy
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv python install 3.12 \
     && uv venv --python 3.12 --relocatable /app/.venv \
     && uv pip install --python /app/.venv/bin/python "setuptools<81" wheel \
     && uv sync --package resona-worker ${WORKER_EXTRAS} --python /app/.venv/bin/python \
@@ -71,6 +75,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/python /opt/python
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
+# openai-whisper checkpoints (`large-v3.pt`) and other XDG caches live on the model volume.
+ENV XDG_CACHE_HOME=/models/cache
 
 USER resona
 WORKDIR /state

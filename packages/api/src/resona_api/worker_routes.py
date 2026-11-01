@@ -80,6 +80,15 @@ def _worker_id(principal: Principal) -> str:
     return principal.worker_id
 
 
+def _lease(principal: Principal, job_id: int, lease_token: Optional[str]) -> broker.LeaseRef:
+    return broker.LeaseRef(
+        worker_id=_worker_id(principal),
+        organization_id=principal.organization_id,
+        job_id=job_id,
+        lease_token=lease_token or "",
+    )
+
+
 def _run_with_session(fn: Callable[..., Any], **kwargs: Any) -> Any:
     """Run one broker call with its own session; executed in a worker thread."""
     from .db.engine import engine
@@ -193,13 +202,7 @@ async def job_input(
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
     principal: Principal = Depends(compatible_worker),
 ) -> FileResponse:
-    path: Path = await _broker(
-        broker.input_path,
-        worker_id=_worker_id(principal),
-        organization_id=principal.organization_id,
-        job_id=job_id,
-        lease_token=x_resona_lease or "",
-    )
+    path: Path = await _broker(broker.input_path, lease=_lease(principal, job_id, x_resona_lease))
     return FileResponse(path, media_type="application/octet-stream")
 
 
@@ -210,13 +213,7 @@ async def job_postprocess(
     principal: Principal = Depends(compatible_worker),
 ) -> FileResponse:
     """The resolved postprocess profile named by the job's execution snapshot."""
-    path: Path = await _broker(
-        broker.postprocess_path,
-        worker_id=_worker_id(principal),
-        organization_id=principal.organization_id,
-        job_id=job_id,
-        lease_token=x_resona_lease or "",
-    )
+    path: Path = await _broker(broker.postprocess_path, lease=_lease(principal, job_id, x_resona_lease))
     return FileResponse(path, media_type="application/json")
 
 
@@ -226,13 +223,7 @@ async def job_heartbeat(
     x_resona_lease: Optional[str] = Header(default=None, alias="X-Resona-Lease"),
     principal: Principal = Depends(compatible_worker),
 ) -> dict[str, Any]:
-    return await _broker(
-        broker.heartbeat_job,
-        worker_id=_worker_id(principal),
-        organization_id=principal.organization_id,
-        job_id=job_id,
-        lease_token=x_resona_lease or "",
-    )
+    return await _broker(broker.heartbeat_job, lease=_lease(principal, job_id, x_resona_lease))
 
 
 @router.post("/jobs/{job_id}/policy")
@@ -245,10 +236,7 @@ async def job_policy(
     """Fresh policy check against current organization settings before an external stage."""
     await _broker(
         broker.check_stage,
-        worker_id=_worker_id(principal),
-        organization_id=principal.organization_id,
-        job_id=job_id,
-        lease_token=x_resona_lease or "",
+        lease=_lease(principal, job_id, x_resona_lease),
         stage=body.stage,
         endpoint_id=body.endpoint_id,
     )
@@ -264,8 +252,7 @@ async def job_result(
     principal: Principal = Depends(compatible_worker),
 ) -> dict[str, Any]:
     """Accept a JSON result: stream to an attempt temp file, verify, validate, then complete."""
-    worker_id = _worker_id(principal)
-    lease = x_resona_lease or ""
+    lease = _lease(principal, job_id, x_resona_lease)
     expected = (x_resona_result_sha256 or "").lower()
     if len(expected) != 64 or any(ch not in _HEX for ch in expected):
         raise _error(422, "checksum_required", "X-Resona-Result-Sha256 must be a SHA-256 hex digest")
@@ -273,14 +260,7 @@ async def job_result(
     if declared is not None and declared.isdigit() and int(declared) > MAX_RESULT_BYTES:
         raise _error(413, "too_large", "result exceeds the 200 MiB limit")
 
-    slot = await _broker(
-        broker.begin_result,
-        worker_id=worker_id,
-        organization_id=principal.organization_id,
-        job_id=job_id,
-        lease_token=lease,
-        sha256=expected,
-    )
+    slot = await _broker(broker.begin_result, lease=lease, sha256=expected)
     if slot is None:
         # Accepted duplicate of the same lease and content: idempotent success.
         return {"status": "completed"}
@@ -308,10 +288,7 @@ async def job_result(
             raise _error(exc.status, exc.code, exc.message) from exc
         status = await _broker(
             broker.finish_result,
-            worker_id=worker_id,
-            organization_id=principal.organization_id,
-            job_id=job_id,
-            lease_token=lease,
+            lease=lease,
             sha256=expected,
             temp_path=temp,
             size=size,
@@ -331,10 +308,7 @@ async def job_fail(
 ) -> dict[str, Any]:
     status = await _broker(
         broker.fail_job,
-        worker_id=_worker_id(principal),
-        organization_id=principal.organization_id,
-        job_id=job_id,
-        lease_token=x_resona_lease or "",
+        lease=_lease(principal, job_id, x_resona_lease),
         code=body.code,
         message=body.message,
         retryable=body.retryable,

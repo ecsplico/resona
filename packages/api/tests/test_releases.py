@@ -16,6 +16,7 @@ from resona_api import releases
 from resona_api.admin import approve_worker, enroll_worker, main
 from resona_api.db.engine import engine
 from resona_api.db.models import Job, JobStatus, Release, Worker
+from release_approval import approve_release
 
 
 def _wav() -> bytes:
@@ -204,6 +205,7 @@ def _evaluation(http, admin, release_id: str, **changes) -> int:
         "profile": "mac-private", "execution_profile": "private-auto", "platform": "mac-metal",
         "release_id": release_id, "corpus_sha256": "c" * 64, "baseline_revision": None,
         "fixtures": {"de-short": {"wer": 0.05, "cer": 0.02, "silence_insertions": 0}},
+        "fixture_checks": {"de-short": {"kind": "audio", "checks": ["wer", "cer", "silence"]}},
         "gate": {"passed": True, "failures": []},
         **changes,
     }
@@ -219,7 +221,7 @@ def test_unapproved_release_claims_only_its_evaluation_jobs_until_promoted(
     stage(release_id)
     admin, client = admin_headers(fresh_org), client_headers(fresh_org)
     candidate = _worker(fresh_org, release_id)
-    bundled = _worker(fresh_org, releases.hub_release_id())
+    approved = _worker(fresh_org, approve_release(fresh_org))
 
     production = _submit(http, client).json()["job_id"]
     assert _claim(http, candidate).status_code == 204
@@ -231,10 +233,10 @@ def test_unapproved_release_claims_only_its_evaluation_jobs_until_promoted(
     assert claimed.json()["execution_snapshot"]["release_id"] == release_id
     assert _claim(http, candidate).status_code == 204  # still no production work
 
-    # The hub's bundled release runs production work but never another release's evaluation.
+    # An approved release runs production work but never another release's evaluation.
     other = _submit(http, admin, purpose="evaluation", release_id=release_id).json()["job_id"]
-    assert _claim(http, bundled).json()["job_id"] == production
-    assert _claim(http, bundled).status_code == 204
+    assert _claim(http, approved).json()["job_id"] == production
+    assert _claim(http, approved).status_code == 204
     with Session(engine) as session:
         assert session.get(Job, other).status == JobStatus.PENDING
 
@@ -246,6 +248,31 @@ def test_unapproved_release_claims_only_its_evaluation_jobs_until_promoted(
     later = _submit(http, client).json()["job_id"]
     picked = {_claim(http, candidate).json()["job_id"], _claim(http, candidate).json()["job_id"]}
     assert picked == {other, later}
+
+
+def test_bundled_release_needs_a_promoted_evaluation_for_production(
+    http, fresh_org, client_headers, admin_headers
+) -> None:
+    client = client_headers(fresh_org)
+    bundled = _worker(fresh_org, releases.hub_release_id())
+    beat = http.post("/v1/workers/heartbeat", headers=bundled, json={
+        "worker_protocol": 1, "runtime_version": releases.hub_release_id(),
+        "reported_capabilities": [MAC_AUDIO.model_dump(mode="json")],
+    })
+    assert beat.status_code == 200
+    job_id = _submit(http, client).json()["job_id"]
+
+    assert _claim(http, bundled).status_code == 204
+    view = http.get(f"/v1/jobs/{job_id}", headers=client).json()
+    assert (view["status"], view["queue_reason"]) == ("pending", "release_not_approved")
+    # The bundled release needs no staging to run its own evaluation jobs.
+    evaluation = _submit(http, admin_headers(fresh_org), purpose="evaluation",
+                         release_id=releases.hub_release_id()).json()["job_id"]
+    assert _claim(http, bundled).json()["job_id"] == evaluation
+
+    approve_release(fresh_org, execution_profiles=["private-auto"], platforms=["mac-metal"])
+    assert http.get(f"/v1/jobs/{job_id}", headers=client).json()["queue_reason"] == "waiting_capacity"
+    assert _claim(http, bundled).json()["job_id"] == job_id
 
 
 def test_approval_is_per_organization_and_platform(http, fresh_org, admin_headers, client_headers) -> None:
@@ -270,7 +297,7 @@ def test_approval_is_per_organization_and_platform(http, fresh_org, admin_header
 # -- worker protocol ----------------------------------------------------------------
 
 def test_incompatible_protocol_gets_426_before_any_input_download(http, fresh_org, client_headers) -> None:
-    bundled = _worker(fresh_org, releases.hub_release_id())
+    bundled = _worker(fresh_org, approve_release(fresh_org))
     job_id = _submit(http, client_headers(fresh_org)).json()["job_id"]
     claimed = _claim(http, bundled).json()
     lease = {"X-Resona-Lease": claimed["lease_token"]}

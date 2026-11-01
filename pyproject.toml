@@ -34,6 +34,8 @@ openai-whisper = ["setuptools<81", "wheel"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+# Shared hub test helpers (not collected: no test_ prefix).
+pythonpath = ["packages/api/tests/_support"]
 
 [dependency-groups]
 dev = [

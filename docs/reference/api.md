@@ -88,11 +88,24 @@ Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header 
 GET    /v1/jobs?cursor=<opaque>&limit=<1..100>   → {items: [JobView], next_cursor}
 GET    /v1/jobs/{id}                             → JobView
 GET    /v1/jobs/{id}/result                      → JobResult (409 not_ready, 410 expired)
+GET    /v1/jobs/{id}/result/markdown?offset=&limit=  → MarkdownChunk (409 not_ready, 410 expired)
 POST   /v1/jobs/{id}/cancel                      → JobView
 DELETE /v1/jobs/{id}                             → 204
 ```
 
-JobView fields: `job_id`, `kind`, `status`, `queue_reason` (`no_capable_worker`, `waiting_capacity` or null), `private`, `execution_profile`, `candidate`, `attempt`, `error` (`{code, message}` or null), `result_available`, `created_at`, `updated_at`, `deadline_at`.
+JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending`), `private`, `execution_profile`, `candidate`, `attempt`, `error` (`{code, message}` or null), `result_available`, `created_at`, `updated_at`, `deadline_at`.
+
+`queue_reason` of a pending job:
+
+| Value | Meaning |
+|-------|---------|
+| `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates with the job's worker-assigned endpoints |
+| `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release |
+| `waiting_capacity` | An eligible worker is online and busy |
+
+`GET /v1/jobs/{id}/result/markdown` returns one character range of the result's Markdown, never the whole result: `{text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance}`. `offset` ≥ 0 (default 0); `limit` 1–32768 characters (default 32768, larger → `422`). `next_offset` is `null` once the range reaches the end; an offset past the end returns empty `text`. Concatenating `text` from offset 0 until `next_offset` is `null` reproduces `JobResult.markdown` exactly.
+
+`DELETE /v1/jobs/{id}` works in every state. On a pending or processing job it also cancels the job: the lease is fenced, so the worker's next lease call returns `409 stale_lease` and its result is rejected. The job, its idempotency keys, input and result files are gone at once; every later client read (`GET`, result, cancel, list, delete) answers `404`. The hub keeps an invisible tombstone of a deleted processing job only until its lease would have expired, to fence the worker.
 
 JobResult fields: `schema_version`, `kind`, `raw_text`, `markdown`, `language`, `segments`, `pages`, `warnings`, `provenance`.
 
@@ -110,7 +123,7 @@ Retention: the input is deleted when the job reaches a terminal state, results a
 
 ### Worker routes (role `worker`)
 
-Used only by `resona-worker`. Every call checks the organization, that the worker is approved and not revoked, and the current policy. Private jobs go only to workers approved with `--private`.
+Used only by `resona-worker`. Every call checks the organization, that the worker is approved and not revoked, and the current policy. A worker claims only jobs of its privacy class: private jobs go only to workers approved with `--private`, `private: false` (cloud opt-in) jobs only to workers approved with `--non-private`. A job whose postprocess or cloud ASR endpoint is assigned to a worker (`worker_id` in the endpoint registry) is claimable only by that worker, and `POST …/policy` denies (`403 policy_denied`) an endpoint assigned to another worker. Production jobs need a worker release approved for the job's (execution profile, platform) by a promoted evaluation; no release, including the hub's own, is approved without one. A claim poll never modifies jobs it cannot take; the maintenance sweep fails non-private jobs whose organization has since disabled cloud processing (`policy_denied`).
 
 ```
 POST /v1/workers/heartbeat
@@ -122,7 +135,7 @@ POST /v1/workers/jobs/{id}/result       (X-Resona-Lease, X-Resona-Result-Sha256)
 POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
 ```
 
-A call with an expired or replaced lease returns `409 stale_lease`. An incompatible worker protocol returns `426`.
+A call with an expired or replaced lease, or on a cancelled or deleted job, returns `409 stale_lease`. An incompatible worker protocol returns `426`. `withdraw_capability` in a `fail` body is recorded in the job's error message only: the hub never changes a worker's approved capabilities; the worker itself stops offering the withdrawn tuple until it is prepared again.
 
 ---
 
@@ -144,7 +157,7 @@ PUT /v1/settings      (org_admin, If-Match: <revision>)
 GET /v1/engines
 ```
 
-Returns every engine the gateway knows about — local engine-servers plus any cloud provider whose API key is set.
+Returns the engines the caller's organization can use. Nothing is probed over the network. An audio/document engine appears when a candidate tuple of one of the organization's execution profiles is both approved for and reported as tested (prepared) by at least one approved, unrevoked worker of the organization. Cloud ASR candidates (deepgram, openai, elevenlabs) appear only when the organization has `cloud_enabled=true` and an approved `cloud-asr:<provider>` endpoint, and only through a non-private worker. Synchronous TTS engines of `POST /v1/audio/speech` follow the same cloud rule.
 
 Response:
 
@@ -152,36 +165,38 @@ Response:
 {
   "engines": [
     {
-      "name": "faster-whisper",
+      "name": "mlx-whisper",
       "kind": "local",
+      "job_kind": "audio",
       "capabilities": ["stt"],
       "private": true,
       "available": true,
-      "models": ["large-v3"]
-    },
-    {
-      "name": "deepgram",
-      "kind": "cloud",
-      "capabilities": ["stt", "tts"],
-      "private": false,
-      "available": true,
-      "models": ["nova-3"]
+      "models": ["mlx-community/whisper-large-v3-mlx"],
+      "candidates": [
+        {
+          "candidate": {"engine": "mlx-whisper", "model": "mlx-community/whisper-large-v3-mlx",
+                        "model_revision": null, "accelerator": "metal", "ocr_engine": null},
+          "execution_profiles": ["mac-private", "private-auto"]
+        }
+      ]
     }
   ],
-  "default": "faster-whisper"
+  "default": "mlx-whisper"
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Engine identifier used in `engine` fields |
-| `kind` | string | `"local"` (engine-server) or `"cloud"` (provider) |
-| `capabilities` | string[] | `"stt"` and/or `"tts"` |
+| `kind` | string | `"local"` (runs on a worker) or `"cloud"` (provider) |
+| `job_kind` | string | `audio`, `document` or `speech` (TTS) |
+| `capabilities` | string[] | `"stt"`, `"document"` or `"tts"` |
 | `private` | bool | `true` for local engines; cloud engines are always `false` |
-| `available` | bool | Local: /health reachable. Cloud: API key set |
-| `models` | string[] | Known model names for this engine |
+| `available` | bool | A worker offering it is online now (TTS: provider key set) |
+| `models` | string[] | Model names of the listed candidates |
+| `candidates` | object[] | Each approved tuple and the execution profiles that contain it |
 
-Cloud providers (deepgram, openai, elevenlabs) appear automatically when their respective `*_API_KEY` env var is set on the server. No extra configuration needed.
+`default` is the engine of the first listed audio candidate of the organization's default execution profile, or `null`.
 
 ---
 

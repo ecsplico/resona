@@ -5938,8 +5938,10 @@ name = "resona-engine-whisper"
 version = "0.1.0"
 source = { editable = "packages/engine-whisper" }
 dependencies = [
+    { name = "faster-whisper" },
     { name = "numba" },
     { name = "openai-whisper" },
+    { name = "requests" },
     { name = "resona-asr-core" },
     { name = "resona-engine-server" },
     { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
@@ -5948,8 +5950,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "faster-whisper", specifier = ">=1.1.1" },
     { name = "numba", specifier = ">=0.61" },
     { name = "openai-whisper", specifier = ">=20240930" },
+    { name = "requests", specifier = ">=2.31" },
     { name = "resona-asr-core", editable = "packages/asr-core" },
     { name = "resona-engine-server", editable = "packages/engine-server" },
     { name = "torch", marker = "sys_platform != 'linux'", specifier = ">=2.10" },

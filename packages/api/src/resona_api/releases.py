@@ -3,11 +3,11 @@
 Release identifiers are package versions (tag ``v0.2.0`` → release ``0.2.0``). A
 worker's release is the ``runtime_version`` it reports in its heartbeat (its
 installed ``resona-worker`` version). The hub's own release, ``RESONA_RELEASE_ID``
-or else the installed ``resona-api`` version, is the *bundled* release: approved
-for every (execution profile, platform) tuple, so a deployment whose workers run
-the same release as the hub keeps working without an evaluation. Any other
-release runs production jobs only for tuples approved by promoting a measured
-evaluation; a ``staged`` release runs evaluation jobs only.
+or else the installed ``resona-api`` version, is the *bundled* release: recorded
+at startup so it can run evaluation jobs without being staged first. Every
+release, bundled or staged, runs production jobs only for the (execution profile,
+platform) tuples approved by promoting a measured evaluation; a release without
+such an approval runs evaluation jobs only.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from resona_job_core.release import ReleaseManifest
 
 from . import clock
 from .db.models import ApprovedReleaseTuple, Release
+from .errors import validation_message
 
 Platform = Literal["mac-metal", "linux-cuda", "cpu"]
 PLATFORMS: tuple[str, ...] = ("mac-metal", "linux-cuda", "cpu")
@@ -47,7 +48,7 @@ def hub_version() -> str:
 
 
 def hub_release_id() -> str:
-    """The release this hub ships; workers running it need no further approval."""
+    """The release this hub ships (admissible for evaluation jobs without staging)."""
     return config("RESONA_RELEASE_ID", default="").strip() or hub_version()
 
 
@@ -59,8 +60,7 @@ def parse_manifest(raw: bytes) -> ReleaseManifest:
     try:
         return ReleaseManifest.model_validate_json(raw)
     except ValidationError as exc:
-        fields = sorted({".".join(str(p) for p in err["loc"]) or "manifest" for err in exc.errors()})
-        raise ReleaseError("invalid release manifest: " + ", ".join(fields)) from None
+        raise ReleaseError(validation_message(exc, prefix="invalid release manifest: ", root="manifest")) from None
 
 
 def _bundled_placeholder(release_id: str) -> str:
@@ -140,13 +140,15 @@ def may_run(
     candidate: Candidate,
     approved: set[tuple[str, str, str]],
 ) -> bool:
-    """Whether a worker on ``worker_release`` may run this job with ``candidate``."""
+    """Whether a worker on ``worker_release`` may run this job with ``candidate``.
+
+    Evaluation jobs run only on the release under test; production jobs need a
+    promoted evaluation of ``(execution_profile, platform, worker_release)``.
+    """
     if not worker_release:
         return False
     if purpose == "evaluation":
         return worker_release == snapshot_release
-    if worker_release == hub_release_id():
-        return True
     return (execution_profile, platform_of(candidate), worker_release) in approved
 
 
@@ -159,7 +161,7 @@ def release_view(session: Session, release: Release, organization_id: str) -> di
         "release_id": release.release_id,
         "status": release.status,
         "manifest_sha256": release.manifest_sha256,
-        # The hub's own release runs production jobs of every tuple without an evaluation.
+        # The hub's own release; like any other it runs production jobs only for approved tuples.
         "bundled": release.release_id == hub_release_id(),
         "approved_tuples": [{"execution_profile": p, "platform": pl} for p, pl in tuples],
     }

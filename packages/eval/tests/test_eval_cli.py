@@ -161,7 +161,10 @@ def test_remote_records_metrics_only_and_promote_pins_baseline(corpus, tmp_path,
             assert body["private"] is True and body["execution_profile"] == "cpu-private"
         (record,) = hub.evaluations
         assert set(record) == {"profile", "execution_profile", "platform", "release_id", "corpus_sha256",
-                               "baseline_revision", "fixtures", "gate"}
+                               "baseline_revision", "fixtures", "fixture_checks", "gate"}
+        assert record["fixture_checks"] == {
+            f.id: {"kind": f.kind, "checks": list(f.checks)} for f in corpus.fixtures
+        }
         assert record["platform"] == "cpu" and record["corpus_sha256"] == corpus.sha256
         assert record["gate"] == {"passed": True, "failures": []}
         assert all(isinstance(v, (int, float)) for m in record["fixtures"].values() for v in m.values())
@@ -173,7 +176,7 @@ def test_remote_records_metrics_only_and_promote_pins_baseline(corpus, tmp_path,
         promoted = runner.invoke(app, ["eval", "promote", "7", "--report", str(report_path),
                                        "--baselines", str(tmp_path / "baselines.json")])
         assert promoted.exit_code == 0, promoted.stderr
-        assert hub.promotions == [{"expected_baseline_revision": None}]
+        assert hub.promotions == [{"expected_baseline_revision": None, "rebaseline": False}]
 
     pinned = json.loads((tmp_path / "baselines.json").read_text(encoding="utf-8"))
     entry = pinned["baselines"]["cpu-private/cpu"]

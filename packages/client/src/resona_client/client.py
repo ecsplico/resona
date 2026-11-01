@@ -15,7 +15,7 @@ import mimetypes
 import os
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, NoReturn, Optional, Union
 
@@ -134,6 +134,35 @@ class JobView:
 class JobPage:
     items: list[JobView]
     next_cursor: Optional[str]
+
+
+@dataclass(frozen=True)
+class MarkdownChunk:
+    """A character range of a result's Markdown; ``next_offset`` is None at the end."""
+
+    text: str
+    offset: int
+    next_offset: Optional[int]
+    total_chars: int
+    kind: Optional[str] = None
+    language: Optional[str] = None
+    page_count: int = 0
+    warnings: tuple[str, ...] = ()
+    provenance: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "MarkdownChunk":
+        return cls(
+            text=data["text"],
+            offset=data["offset"],
+            next_offset=data.get("next_offset"),
+            total_chars=data["total_chars"],
+            kind=data.get("kind"),
+            language=data.get("language"),
+            page_count=int(data.get("page_count") or 0),
+            warnings=tuple(data.get("warnings") or ()),
+            provenance=dict(data.get("provenance") or {}),
+        )
 
 
 @dataclass(frozen=True)
@@ -456,6 +485,20 @@ class ResonaClient:
         )
         return JobResult.model_validate_json(resp.content)
 
+    def get_result_markdown(self, job_id: int, *, offset: int = 0, limit: int = 32768) -> MarkdownChunk:
+        """One character range of a completed job's Markdown.
+        GET /v1/jobs/{id}/result/markdown
+
+        ``limit`` is at most 32768 characters. Raises JobNotReady (409) before
+        completion and ResultExpired (410) after retention.
+        """
+        resp = self._send(
+            "GET", f"/v1/jobs/{job_id}/result/markdown",
+            params={"offset": offset, "limit": limit},
+            expected={409: JobNotReady, 410: ResultExpired},
+        )
+        return MarkdownChunk.from_dict(resp.json())
+
     def cancel_job(self, job_id: int) -> JobView:
         """Request cancellation; the lease is fenced. POST /v1/jobs/{id}/cancel"""
         return JobView.from_dict(self._send("POST", f"/v1/jobs/{job_id}/cancel").json())
@@ -518,16 +561,17 @@ class ResonaClient:
         return resp.json()
 
     def promote_evaluation(
-        self, evaluation_id: int, *, expected_baseline_revision: Optional[int],
+        self, evaluation_id: int, *, expected_baseline_revision: Optional[int], rebaseline: bool = False,
     ) -> dict:
         """Make a recorded, passing evaluation the new baseline. POST /v1/evaluations/{id}/promote
 
-        Raises RevisionConflict (409 ``baseline_revision_mismatch``) when the baseline
-        moved since ``expected_baseline_revision`` was read.
+        Raises RevisionConflict on 409: ``baseline_revision_mismatch`` when the baseline
+        moved since ``expected_baseline_revision`` was read, ``baseline_corpus_mismatch``
+        when the evaluation used another corpus and ``rebaseline`` was not requested.
         """
         return self._send(
             "POST", f"/v1/evaluations/{evaluation_id}/promote",
-            json={"expected_baseline_revision": expected_baseline_revision},
+            json={"expected_baseline_revision": expected_baseline_revision, "rebaseline": rebaseline},
             expected={409: RevisionConflict},
         ).json()
 
