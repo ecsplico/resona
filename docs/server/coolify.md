@@ -13,7 +13,7 @@ TLS ends at Coolify's Caddy proxy. In raw mode Coolify adds no labels or network
 
 ## Image
 
-Both services run the released hub image `ghcr.io/ecsplico/resona-hub`, pinned by digest; the compose file has no `build:`, so Coolify only pulls. The GHCR package is public, so the Coolify server pulls without registry credentials.
+Both services run the released hub image `ghcr.io/ecsplico/resona-hub`, pinned by digest; the compose file has no `build:`, so Coolify only pulls. The GHCR package is **private**. The Coolify host (`<user>@<coolify-host>`) holds a GitHub token with the single scope `read:packages` in `/root/.docker/config.json` (check with `curl -sI -H "Authorization: token <t>" https://api.github.com/user | grep x-oauth-scopes`), which Coolify's `docker compose pull` uses. Never put a token with wider scopes there. Should that token be revoked, pull the pinned digest from your own logged-in machine through the remote daemon instead of logging the server in: `docker --host ssh://<user>@<coolify-host> pull ghcr.io/ecsplico/resona-hub@sha256:<digest>` (the client sends the credential per request; nothing is stored on the server) and add `pull_policy: missing` to both services so Compose skips the pull of a digest that is already present.
 
 Bump per release:
 
@@ -67,9 +67,21 @@ curl https://resona.ecsplico.de/v1/version   # {"release_id":...,"hub_version":.
 
 `/ready` turns `503` when the schema is behind, `/data` is not writable or the maintenance loop stalls. Offline workers only change `capacity` to `degraded`.
 
+## Approve releases before production jobs
+
+A freshly deployed hub runs no production jobs until an evaluation of each `(execution profile, platform)` has been promoted on **this** hub ([Releases](releases.md)); jobs submitted before that wait with `queue_reason: release_not_approved`. With the Mac worker online, run per profile the clients use (`private-auto` is the organization default, `mac-private` the worker profile):
+
+```bash
+export RESONA_API_URL=https://resona.ecsplico.de RESONA_API_KEY=$(cat ~/.resona/hub-admin.token)
+resona eval --profile private-auto --remote --output-dir /tmp/eval-private-auto
+resona eval promote <evaluation-id> --report /tmp/eval-private-auto/report.json   # pins eval/baselines.json; commit it
+```
+
+Queued jobs are claimed as soon as the promotion lands. `resona-admin worker approve` on the hub, `/ready`, and `GET /v1/baselines?execution_profile=private-auto&platform=mac-metal` show the state (404 `baseline_required` until promoted).
+
 ## Provision credentials
 
-`resona-admin` runs inside the `hub` container. Root SSH to the Coolify host is not available, so use a Coolify scheduled task on the hub container (`<app-uuid>-hub-1`), execute it once, then delete it. The container's root filesystem is read-only; `/tmp` is a tmpfs. Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:
+`resona-admin` runs inside the `hub` container: `ssh <user>@<coolify-host> docker exec -i <app-uuid>-hub-1 resona-admin ...`. Without SSH, use a Coolify scheduled task on the hub container (`<app-uuid>-hub-1`), execute it once, then delete it. The container's root filesystem is read-only; `/tmp` is a tmpfs. Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:
 
 ```bash
 # on your machine
