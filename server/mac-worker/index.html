@@ -16,7 +16,7 @@
         <link rel="prev" href="../full-stack/">
       
       
-        <link rel="next" href="../coolify/">
+        <link rel="next" href="../linux-worker/">
       
       
         
@@ -939,6 +939,8 @@
       
         
       
+        
+      
     
     
     
@@ -1201,6 +1203,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2224,7 +2254,7 @@
 <p>The worker treats a job as out of memory if the engine subprocess is killed with SIGKILL (for example by jetsam), raises <code>MemoryError</code>, or prints an out-of-memory marker such as MLX's <code>[metal::malloc]</code>. The worker then:</p>
 <ul>
 <li>fails the attempt as retryable <code>out_of_memory</code>. The hub requeues the job until its attempt limit is reached, and another worker can claim it.</li>
-<li>stops offering that tuple until the worker restarts. The hub also removes the tuple from the worker's approved capabilities. To use the tuple again, run <code>prepare</code> again and have the admin approve it again.</li>
+<li>stops offering that tuple until the worker restarts. The hub records the withdrawal in the job's error message only and keeps the worker's approved capabilities unchanged, so after a restart (and <code>prepare</code>, if memory settings changed) the worker offers the tuple again without a new approval.</li>
 </ul>
 <h2 id="result-provenance">Result provenance<a class="headerlink" href="#result-provenance" title="Permanent link">&para;</a></h2>
 <p>Every result records the real device of each stage, for example:</p>
@@ -2285,13 +2315,13 @@
         
         
           
-          <a href="../coolify/" class="md-footer__link md-footer__link--next" aria-label="Next: Coolify Deployment (public hub)">
+          <a href="../linux-worker/" class="md-footer__link md-footer__link--next" aria-label="Next: Linux Worker (NVIDIA, Docker)">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Coolify Deployment (public hub)
+                Linux Worker (NVIDIA, Docker)
               </div>
             </div>
             <div class="md-footer__button md-icon">

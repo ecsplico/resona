@@ -937,6 +937,8 @@
       
         
       
+        
+      
     
     
     
@@ -1053,6 +1055,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
   
 
     
@@ -2587,10 +2617,36 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>GET    /v1/jobs?cursor=&lt;opaque&gt;&amp;limit=&lt;1..100&gt;   → {items: [JobView], next_cursor}
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>GET    /v1/jobs/{id}                             → JobView
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>GET    /v1/jobs/{id}/result                      → JobResult (409 not_ready, 410 expired)
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>POST   /v1/jobs/{id}/cancel                      → JobView
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>DELETE /v1/jobs/{id}                             → 204
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>GET    /v1/jobs/{id}/result/markdown?offset=&amp;limit=  → MarkdownChunk (409 not_ready, 410 expired)
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>POST   /v1/jobs/{id}/cancel                      → JobView
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>DELETE /v1/jobs/{id}                             → 204
 </code></pre></div>
-<p>JobView fields: <code>job_id</code>, <code>kind</code>, <code>status</code>, <code>queue_reason</code> (<code>no_capable_worker</code>, <code>waiting_capacity</code> or null), <code>private</code>, <code>execution_profile</code>, <code>candidate</code>, <code>attempt</code>, <code>error</code> (<code>{code, message}</code> or null), <code>result_available</code>, <code>created_at</code>, <code>updated_at</code>, <code>deadline_at</code>.</p>
+<p>JobView fields: <code>job_id</code>, <code>kind</code>, <code>status</code>, <code>queue_reason</code> (null unless <code>pending</code>), <code>private</code>, <code>execution_profile</code>, <code>candidate</code>, <code>attempt</code>, <code>error</code> (<code>{code, message}</code> or null), <code>result_available</code>, <code>created_at</code>, <code>updated_at</code>, <code>deadline_at</code>.</p>
+<p><code>queue_reason</code> of a pending job:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>no_capable_worker</code></td>
+<td>No online worker of the job's privacy class (private jobs: <code>--private</code> workers; <code>private: false</code> jobs: non-private workers) offers one of the job's candidates with the job's worker-assigned endpoints</td>
+</tr>
+<tr>
+<td><code>release_not_approved</code></td>
+<td>Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release</td>
+</tr>
+<tr>
+<td><code>waiting_capacity</code></td>
+<td>An eligible worker is online and busy</td>
+</tr>
+</tbody>
+</table>
+<p><code>GET /v1/jobs/{id}/result/markdown</code> returns one character range of the result's Markdown, never the whole result: <code>{text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance}</code>. <code>offset</code> ≥ 0 (default 0); <code>limit</code> 1–32768 characters (default 32768, larger → <code>422</code>). <code>next_offset</code> is <code>null</code> once the range reaches the end; an offset past the end returns empty <code>text</code>. Concatenating <code>text</code> from offset 0 until <code>next_offset</code> is <code>null</code> reproduces <code>JobResult.markdown</code> exactly.</p>
+<p><code>DELETE /v1/jobs/{id}</code> works in every state. On a pending or processing job it also cancels the job: the lease is fenced, so the worker's next lease call returns <code>409 stale_lease</code> and its result is rejected. The job, its idempotency keys, input and result files are gone at once; every later client read (<code>GET</code>, result, cancel, list, delete) answers <code>404</code>. The hub keeps an invisible tombstone of a deleted processing job only until its lease would have expired, to fence the worker.</p>
 <p>JobResult fields: <code>schema_version</code>, <code>kind</code>, <code>raw_text</code>, <code>markdown</code>, <code>language</code>, <code>segments</code>, <code>pages</code>, <code>warnings</code>, <code>provenance</code>.</p>
 <h4 id="job-state-machine">Job state machine<a class="headerlink" href="#job-state-machine" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pending → processing → completed | failed | cancelled
@@ -2599,7 +2655,7 @@
 <p>Retention: the input is deleted when the job reaches a terminal state, results after 24 hours, job metadata after 7 days.</p>
 <hr />
 <h3 id="worker-routes-role-worker">Worker routes (role <code>worker</code>)<a class="headerlink" href="#worker-routes-role-worker" title="Permanent link">&para;</a></h3>
-<p>Used only by <code>resona-worker</code>. Every call checks the organization, that the worker is approved and not revoked, and the current policy. Private jobs go only to workers approved with <code>--private</code>.</p>
+<p>Used only by <code>resona-worker</code>. Every call checks the organization, that the worker is approved and not revoked, and the current policy. A worker claims only jobs of its privacy class: private jobs go only to workers approved with <code>--private</code>, <code>private: false</code> (cloud opt-in) jobs only to workers approved with <code>--non-private</code>. A job whose postprocess or cloud ASR endpoint is assigned to a worker (<code>worker_id</code> in the endpoint registry) is claimable only by that worker, and <code>POST …/policy</code> denies (<code>403 policy_denied</code>) an endpoint assigned to another worker. Production jobs need a worker release approved for the job's (execution profile, platform) by a promoted evaluation; no release, including the hub's own, is approved without one. A claim poll never modifies jobs it cannot take; the maintenance sweep fails non-private jobs whose organization has since disabled cloud processing (<code>policy_denied</code>).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>POST /v1/workers/heartbeat
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>POST /v1/workers/claim?wait=&lt;0..25&gt;
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>GET  /v1/workers/jobs/{id}/input        (X-Resona-Lease)
@@ -2608,7 +2664,7 @@
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>POST /v1/workers/jobs/{id}/result       (X-Resona-Lease, X-Resona-Result-Sha256)
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
 </code></pre></div>
-<p>A call with an expired or replaced lease returns <code>409 stale_lease</code>. An incompatible worker protocol returns <code>426</code>.</p>
+<p>A call with an expired or replaced lease, or on a cancelled or deleted job, returns <code>409 stale_lease</code>. An incompatible worker protocol returns <code>426</code>. <code>withdraw_capability</code> in a <code>fail</code> body is recorded in the job's error message only: the hub never changes a worker's approved capabilities; the worker itself stops offering the withdrawn tuple until it is prepared again.</p>
 <hr />
 <h3 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>GET /v1/settings      → {organization_id, revision, settings} + ETag
@@ -2619,28 +2675,28 @@
 <h4 id="list-engines">List engines<a class="headerlink" href="#list-engines" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>GET /v1/engines
 </code></pre></div>
-<p>Returns every engine the gateway knows about — local engine-servers plus any cloud provider whose API key is set.</p>
+<p>Returns the engines the caller's organization can use. Nothing is probed over the network. An audio/document engine appears when a candidate tuple of one of the organization's execution profiles is both approved for and reported as tested (prepared) by at least one approved, unrevoked worker of the organization. Cloud ASR candidates (deepgram, openai, elevenlabs) appear only when the organization has <code>cloud_enabled=true</code> and an approved <code>cloud-asr:&lt;provider&gt;</code> endpoint, and only through a non-private worker. Synchronous TTS engines of <code>POST /v1/audio/speech</code> follow the same cloud rule.</p>
 <p>Response:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;faster-whisper&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span>
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">],</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;large-v3&quot;</span><span class="p">]</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepgram&quot;</span><span class="p">,</span>
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cloud&quot;</span><span class="p">,</span>
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tts&quot;</span><span class="p">],</span>
-<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;nova-3&quot;</span><span class="p">]</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">      </span><span class="nt">&quot;job_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">],</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">],</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">      </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">          </span><span class="nt">&quot;candidate&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">                        </span><span class="nt">&quot;model_revision&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;accelerator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ocr_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">},</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">          </span><span class="nt">&quot;execution_profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mac-private&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;private-auto&quot;</span><span class="p">]</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">      </span><span class="p">]</span>
 <a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">    </span><span class="p">}</span>
 <a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">  </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;faster-whisper&quot;</span>
+<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">  </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span>
 <a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="p">}</span>
 </code></pre></div>
 <table>
@@ -2660,12 +2716,17 @@
 <tr>
 <td><code>kind</code></td>
 <td>string</td>
-<td><code>"local"</code> (engine-server) or <code>"cloud"</code> (provider)</td>
+<td><code>"local"</code> (runs on a worker) or <code>"cloud"</code> (provider)</td>
+</tr>
+<tr>
+<td><code>job_kind</code></td>
+<td>string</td>
+<td><code>audio</code>, <code>document</code> or <code>speech</code> (TTS)</td>
 </tr>
 <tr>
 <td><code>capabilities</code></td>
 <td>string[]</td>
-<td><code>"stt"</code> and/or <code>"tts"</code></td>
+<td><code>"stt"</code>, <code>"document"</code> or <code>"tts"</code></td>
 </tr>
 <tr>
 <td><code>private</code></td>
@@ -2675,16 +2736,21 @@
 <tr>
 <td><code>available</code></td>
 <td>bool</td>
-<td>Local: /health reachable. Cloud: API key set</td>
+<td>A worker offering it is online now (TTS: provider key set)</td>
 </tr>
 <tr>
 <td><code>models</code></td>
 <td>string[]</td>
-<td>Known model names for this engine</td>
+<td>Model names of the listed candidates</td>
+</tr>
+<tr>
+<td><code>candidates</code></td>
+<td>object[]</td>
+<td>Each approved tuple and the execution profiles that contain it</td>
 </tr>
 </tbody>
 </table>
-<p>Cloud providers (deepgram, openai, elevenlabs) appear automatically when their respective <code>*_API_KEY</code> env var is set on the server. No extra configuration needed.</p>
+<p><code>default</code> is the engine of the first listed audio candidate of the organization's default execution profile, or <code>null</code>.</p>
 <hr />
 <h3 id="audio-v1-openai-compatible">Audio (v1 — OpenAI-compatible)<a class="headerlink" href="#audio-v1-openai-compatible" title="Permanent link">&para;</a></h3>
 <h4 id="transcribe">Transcribe<a class="headerlink" href="#transcribe" title="Permanent link">&para;</a></h4>

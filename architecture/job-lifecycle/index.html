@@ -937,6 +937,8 @@
       
         
       
+        
+      
     
     
     
@@ -1053,6 +1055,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
   
 
     
@@ -2085,7 +2115,7 @@
 <tbody>
 <tr>
 <td><code>pending</code></td>
-<td>Waiting for a capable worker; <code>queue_reason</code> says why (<code>no_capable_worker</code>, <code>waiting_capacity</code>)</td>
+<td>Waiting for a capable worker; <code>queue_reason</code> says why: <code>waiting_capacity</code> (an eligible worker is online and busy), <code>release_not_approved</code> (a worker offers one of the job's tuples, but its release has no promoted evaluation for the job's execution profile and platform) or <code>no_capable_worker</code> (no online worker of the job's privacy class offers one, e.g. the only CUDA worker runs without a usable GPU)</td>
 </tr>
 <tr>
 <td><code>processing</code></td>
@@ -2106,7 +2136,8 @@
 </tbody>
 </table>
 <p>If a lease expires (worker offline or asleep), the job returns to <code>pending</code> and another worker can claim it. A late result from the old lease gets <code>409 stale_lease</code>. Execution is at-least-once; the hub accepts one result.</p>
-<p>Private jobs go only to workers that an admin approved with <code>resona-admin worker approve --private</code>. A worker cannot make itself private through its heartbeat. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.</p>
+<p>Private jobs go only to workers that an admin approved with <code>resona-admin worker approve --private</code>; cloud opt-in jobs (<code>private: false</code>) go only to workers approved with <code>--non-private</code>, so a private execution environment never receives cloud work. A worker cannot change its approval through its heartbeat, and an OOM failure withdraws a tuple only on that worker, never its hub approval. A job whose endpoint is assigned to one worker (its secret file lives there) is claimed only by that worker. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.</p>
+<p><code>DELETE /v1/jobs/{id}</code> in any state removes the job and its files at once; for a processing job it first fences the lease, so the worker's next call gets <code>409 stale_lease</code> and its output is rejected.</p>
 <h3 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">&para;</a></h3>
 <p>Content is stored as files under <code>/data/organizations/&lt;storage_id&gt;/jobs/&lt;job_id&gt;/</code>, not in the database. A maintenance loop on the hub applies retention:</p>
 <ul>

@@ -939,6 +939,8 @@
       
         
       
+        
+      
     
     
     
@@ -1058,6 +1060,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
   
 
     
@@ -2096,9 +2126,12 @@ Regenerate the inventory with <code>uv run python scripts/gen_tool_inventory.py<
 <ul>
 <li><code>GET /v1/version</code> (no auth) → <code>{release_id, hub_version, worker_protocol}</code>.</li>
 <li>Evaluation jobs: <code>POST /v1/jobs</code> with <code>purpose: "evaluation"</code> needs an org_admin credential and a <code>release_id</code> the hub knows (staged or bundled), else 403 / 422 <code>release_not_staged</code>.</li>
-<li><code>POST /v1/evaluations</code> (org_admin; metrics, corpus hash, gate only — no text) → <code>GET /v1/evaluations/{id}</code> → <code>POST /v1/evaluations/{id}/promote</code> with <code>expected_baseline_revision</code> (409 <code>baseline_revision_mismatch</code>, 422 <code>gate_failed</code>). The first baseline needs passing absolute checks (no missing cells, order failures or silence insertions); later ones also no WER/CER regression above 0.02. <code>GET /v1/baselines?execution_profile=&amp;platform=</code> → current baseline or 404 <code>baseline_required</code>.</li>
-<li>Promotion approves <code>(execution_profile, platform, release_id)</code> for the organization. Production jobs are claimed only by workers whose reported release is approved for that tuple.</li>
-<li><strong>Bootstrap:</strong> the hub's own release (<code>RESONA_RELEASE_ID</code>, else the installed <code>resona-api</code> version) is the <em>bundled</em> release, recorded by migration 2 and at every startup and approved for every tuple, so workers on the hub's release keep working without an evaluation. Staging the bundled release's real manifest replaces its placeholder and keeps it bundled.</li>
+<li><code>POST /v1/evaluations</code> (org_admin; metrics, corpus hash, gate only — no text) → <code>GET /v1/evaluations/{id}</code> → <code>POST /v1/evaluations/{id}/promote</code> with <code>expected_baseline_revision</code> (409 <code>baseline_revision_mismatch</code>, 422 <code>gate_failed</code>). <code>GET /v1/baselines?execution_profile=&amp;platform=</code> → current baseline or 404 <code>baseline_required</code>.</li>
+<li>Complete metrics: every recorded evaluation carries <code>fixture_checks</code> (<code>{fixture_id: {kind, checks}}</code>, as the corpus manifest declares them; <code>resona eval --remote</code> sends it) and every fixture must have exactly the metrics its checks produce (<code>wer</code>→<code>wer</code>, <code>cer</code>→<code>cer</code>, <code>silence</code>→<code>silence_insertions</code>, <code>table_cells</code>→<code>missing_cells</code>, <code>reading_order</code>→<code>order_failures</code>), else 422 <code>incomplete_metrics</code>. An empty metrics object can therefore never pass the absolute checks.</li>
+<li>Gate: the first baseline needs passing absolute checks (no missing cells, order failures or silence insertions); later ones also have every baseline fixture and metric and no WER/CER regression above 0.02.</li>
+<li>Changed corpus: if the current baseline of the same (execution profile, platform) was measured on another <code>corpus_sha256</code>, promotion answers 409 <code>baseline_corpus_mismatch</code>, unless the admin sends <code>"rebaseline": true</code> (<code>resona eval promote &lt;id&gt; --rebaseline</code>). That promotion starts the new corpus's baseline on absolute checks only; later promotions compare against it.</li>
+<li>Promotion approves <code>(execution_profile, platform, release_id)</code> for the organization. Production jobs are claimed only by workers whose reported release is approved for that tuple; otherwise the job waits with <code>queue_reason: release_not_approved</code>.</li>
+<li><strong>Bootstrap:</strong> the hub's own release (<code>RESONA_RELEASE_ID</code>, else the installed <code>resona-api</code> version) is the <em>bundled</em> release, recorded by migration 2 and at every startup. It may run evaluation jobs without being staged, but like any release it runs production jobs only for tuples approved by a promoted evaluation. A new deployment therefore runs <code>resona eval --remote</code> and <code>resona eval promote</code> once per (execution profile, platform) before production jobs are claimed. Staging the bundled release's real manifest replaces its placeholder and keeps it bundled.</li>
 </ul>
 <h2 id="worker-protocol">Worker protocol<a class="headerlink" href="#worker-protocol" title="Permanent link">&para;</a></h2>
 <p>Workers send <code>X-Resona-Worker-Protocol: 1</code>. Every worker route (heartbeat, claim, input, postprocess, policy, result, fail) answers 426 <code>protocol_incompatible</code> for any other major before touching content.</p>

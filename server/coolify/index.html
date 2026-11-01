@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://ecsplico.github.io/resona/server/coolify/">
       
       
-        <link rel="prev" href="../mac-worker/">
+        <link rel="prev" href="../linux-worker/">
       
       
         <link rel="next" href="../releases/">
@@ -939,6 +939,8 @@
       
         
       
+        
+      
     
     
     
@@ -1075,6 +1077,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -1156,6 +1186,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#migrating-a-pre-identity-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating a pre-identity database
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2028,6 +2075,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#migrating-a-pre-identity-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating a pre-identity database
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2169,6 +2233,14 @@
 </tbody>
 </table>
 <p><code>RESONA_BOOTSTRAP_ORGANIZATION_ID</code> is needed only when an old pre-identity database with job rows is migrated. A fresh volume does not need it.</p>
+<h3 id="migrating-a-pre-identity-database">Migrating a pre-identity database<a class="headerlink" href="#migrating-a-pre-identity-database" title="Permanent link">&para;</a></h3>
+<p>The first start on an old (<code>/jobs</code>-era) database takes a SQLite backup, then runs the numbered migrations in one exclusive transaction. Every old job row is assigned to <code>RESONA_BOOTSTRAP_ORGANIZATION_ID</code>, keeps its integer ID and becomes <code>kind=audio</code>, <code>private=true</code>, with its old language or <code>de</code>:</p>
+<ul>
+<li><strong>Completed</strong> rows: transcript, segments and Markdown move out of the database into result artifacts with the normal 24-hour result lifetime; the old payload columns are dropped.</li>
+<li><strong>Failed/cancelled</strong> rows stay terminal; their input counts as deleted.</li>
+<li><strong>Non-terminal</strong> rows (<code>pending</code>, <code>processing</code>) are <strong>not</strong> revalidated or requeued. They have no approved execution snapshot and no input in the new storage layout, so the migration fails them with error code <code>legacy_unprocessed</code> ("queued before the upgrade; resubmit the input"). Submit those inputs again as new jobs. Old input files under <code>FILE_PATH</code> are deleted after the migration commits.</li>
+</ul>
+<p>After the converted results are verified, the pre-migration backup is deleted under the same retention rule as the content.</p>
 <h2 id="deploy">Deploy<a class="headerlink" href="#deploy" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>coolify<span class="w"> </span>app<span class="w"> </span>create<span class="w"> </span>public<span class="w"> </span>--server-uuid<span class="w"> </span>&lt;server&gt;<span class="w"> </span>--project-uuid<span class="w"> </span>&lt;project&gt;<span class="w"> </span>--environment-name<span class="w"> </span>production<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--git-repository<span class="w"> </span>https://github.com/ecsplico/resona<span class="w"> </span>--git-branch<span class="w"> </span>main<span class="w"> </span><span class="se">\</span>
@@ -2184,7 +2256,7 @@
 </code></pre></div>
 <p><code>/ready</code> turns <code>503</code> when the schema is behind, <code>/data</code> is not writable or the maintenance loop stalls. Offline workers only change <code>capacity</code> to <code>degraded</code>.</p>
 <h2 id="provision-credentials">Provision credentials<a class="headerlink" href="#provision-credentials" title="Permanent link">&para;</a></h2>
-<p><code>resona-admin</code> runs inside the <code>hub</code> container (Coolify terminal, a Coolify scheduled task on the <code>hub</code> service, or <code>docker exec</code> on the server). Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:</p>
+<p><code>resona-admin</code> runs inside the <code>hub</code> container. Root SSH to the Coolify host is not available, so use a Coolify scheduled task on the hub container (<code>&lt;app-uuid&gt;-hub-1</code>), execute it once, then delete it. The container's root filesystem is read-only; <code>/tmp</code> is a tmpfs. Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># on your machine</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;import secrets; print(secrets.token_urlsafe(32))&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>~/.resona/hub-client.token<span class="o">)</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>&lt;<span class="w"> </span>&lt;<span class="o">(</span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;\n&#39;</span><span class="w"> </span>&lt;<span class="w"> </span>~/.resona/hub-client.token<span class="o">)</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cut<span class="w"> </span>-d<span class="s1">&#39; &#39;</span><span class="w"> </span>-f1
@@ -2195,17 +2267,26 @@
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>enroll<span class="w"> </span>mac-studio<span class="w"> </span>--organization<span class="w"> </span>ecsplico<span class="w"> </span>--token-sha256<span class="w"> </span>&lt;hex&gt;
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>approve<span class="w"> </span>&lt;worker-id&gt;<span class="w"> </span>--private<span class="w"> </span>--capabilities-file<span class="w"> </span>caps.json
 </code></pre></div>
-<p>Without <code>--token-sha256</code>, <code>resona-admin</code> generates the token and prints it once.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">A</span><span class="o">=</span>&lt;app-uuid&gt;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>coolify<span class="w"> </span>app<span class="w"> </span>task<span class="w"> </span>create<span class="w"> </span><span class="nv">$A</span><span class="w"> </span>--name<span class="w"> </span>admin<span class="w"> </span>--container<span class="w"> </span><span class="nv">$A</span>-hub-1<span class="w"> </span>--frequency<span class="w"> </span><span class="s2">&quot;0 0 1 1 *&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--command<span class="w"> </span><span class="s2">&quot;resona-admin organization create ecsplico&quot;</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>coolify<span class="w"> </span>app<span class="w"> </span>task<span class="w"> </span>execute<span class="w"> </span><span class="nv">$A</span><span class="w"> </span>&lt;task-uuid&gt;
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>coolify<span class="w"> </span>app<span class="w"> </span>task<span class="w"> </span>executions<span class="w"> </span><span class="nv">$A</span><span class="w"> </span>&lt;task-uuid&gt;<span class="w"> </span>--format<span class="w"> </span>json<span class="w">   </span><span class="c1"># &quot;status&quot;: &quot;success&quot;</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>coolify<span class="w"> </span>app<span class="w"> </span>task<span class="w"> </span>update<span class="w"> </span><span class="nv">$A</span><span class="w"> </span>&lt;task-uuid&gt;<span class="w"> </span>--command<span class="w"> </span><span class="s2">&quot;&lt;next resona-admin command&gt;&quot;</span><span class="w">   </span><span class="c1"># repeat</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>coolify<span class="w"> </span>app<span class="w"> </span>task<span class="w"> </span>delete<span class="w"> </span><span class="nv">$A</span><span class="w"> </span>&lt;task-uuid&gt;
+</code></pre></div>
+<p>The task command is limited to about 250 characters. <code>worker approve</code> needs the capabilities file inside the container: write it to <code>/tmp</code> within the same command, for example <code>python -c "import base64,zlib;open('/tmp/c.json','wb').write(zlib.decompress(base64.b64decode('&lt;b64&gt;')))" &amp;&amp; resona-admin worker approve ...</code>, split over several executions if needed. Check the result from your machine: <code>GET /v1/settings</code> with the new client token returns <code>200</code>, and a worker heartbeat returns its <code>approved_capabilities</code>.</p>
+<p>Without <code>--token-sha256</code>, <code>resona-admin</code> generates the token and prints it once into the task output, so prefer the hash.</p>
 <h2 id="restore-a-backup">Restore a backup<a class="headerlink" href="#restore-a-backup" title="Permanent link">&para;</a></h2>
 <p>Back up the database with the SQLite backup API while the hub runs (never by copying the file), for example from the <code>hub</code> container:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import sqlite3; s=sqlite3.connect(&#39;/data/db/jjobs.sqlite&#39;); d=sqlite3.connect(&#39;/data/backup.sqlite&#39;); s.backup(d)&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import sqlite3; s=sqlite3.connect(&#39;/data/db/jjobs.sqlite&#39;); d=sqlite3.connect(&#39;/data/backup.sqlite&#39;); s.backup(d)&quot;</span>
 </code></pre></div>
 <p>Payload directories are transient and are not backed up.</p>
 <p>Restore only while the hub is stopped. <code>resona-admin restore</code> refuses to run while a hub holds the lock file next to the database:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>coolify<span class="w"> </span>app<span class="w"> </span>stop<span class="w"> </span>&lt;app-uuid&gt;
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># on the server: one-off container on the same volume</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>&lt;resona-data<span class="w"> </span>volume&gt;:/data<span class="w"> </span>&lt;hub<span class="w"> </span>image&gt;<span class="w"> </span>resona-admin<span class="w"> </span>restore<span class="w"> </span>/data/backup.sqlite
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>coolify<span class="w"> </span>app<span class="w"> </span>start<span class="w"> </span>&lt;app-uuid&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>coolify<span class="w"> </span>app<span class="w"> </span>stop<span class="w"> </span>&lt;app-uuid&gt;
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># on the server: one-off container on the same volume</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>&lt;resona-data<span class="w"> </span>volume&gt;:/data<span class="w"> </span>&lt;hub<span class="w"> </span>image&gt;<span class="w"> </span>resona-admin<span class="w"> </span>restore<span class="w"> </span>/data/backup.sqlite
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>coolify<span class="w"> </span>app<span class="w"> </span>start<span class="w"> </span>&lt;app-uuid&gt;
 </code></pre></div>
 <p>The restore:</p>
 <ol>
@@ -2217,7 +2298,7 @@
 </ol>
 <p>It prints counts only, never identifiers of content.</p>
 <h2 id="logs">Logs<a class="headerlink" href="#logs" title="Permanent link">&para;</a></h2>
-<p>The hub and MCP containers log request lines without query strings, plus counts from the maintenance loop. They never log transcripts, Markdown, original filenames or tokens.</p>
+<p>The hub and MCP containers log request lines without query strings, plus counts from the maintenance loop. They never log transcripts, Markdown, original filenames or tokens. Reading the container logs through the Coolify API or CLI (<code>coolify app logs</code>) needs a Coolify token with the <code>read:sensitive</code> ability.</p>
 <h2 id="cpu-fallback">CPU fallback<a class="headerlink" href="#cpu-fallback" title="Permanent link">&para;</a></h2>
 <p>The compose file has no CPU fallback worker. The Coolify host has 16 GB RAM and 6 cores, shared with other applications (measured 2026-11-01: 7.7 GB available, 8 GB of swap in use). A <code>faster-whisper large-v3</code> CPU worker would compete with those applications. Add one only after you measure it on this host and an operator approves it explicitly: enroll it as a separate worker, approve only the <code>cpu-private</code> candidates, and enable <code>cpu_fallback_enabled</code> in the organization settings.</p>
 
@@ -2255,7 +2336,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../mac-worker/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Mac Worker (Apple Silicon)">
+          <a href="../linux-worker/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Linux Worker (NVIDIA, Docker)">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2265,7 +2346,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Mac Worker (Apple Silicon)
+                Linux Worker (NVIDIA, Docker)
               </div>
             </div>
           </a>

@@ -1022,6 +1022,8 @@
       
         
       
+        
+      
     
     
     
@@ -1138,6 +1140,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
   
 
     
@@ -2070,8 +2100,8 @@
 <td>Status (<code>pending</code> with <code>queue_reason</code>, <code>processing</code>, <code>completed</code>, <code>failed</code>, <code>cancelled</code>).</td>
 </tr>
 <tr>
-<td><code>get_result(job_id, offset=0, limit=20000)</code></td>
-<td>One Markdown chunk plus <code>next_offset</code>, <code>total_chars</code>, language, warnings, provenance. Concatenating chunks from offset 0 until <code>next_offset</code> is <code>null</code> reproduces the REST <code>markdown</code> exactly. <code>limit</code> is capped at 20 000 characters.</td>
+<td><code>get_result(job_id, offset=0, limit=32768)</code></td>
+<td>One Markdown chunk plus <code>next_offset</code>, <code>total_chars</code>, language, warnings, provenance. Each call is one hub range read (<code>GET /v1/jobs/{id}/result/markdown</code>), so the full result never passes through the MCP server. Concatenating chunks from offset 0 until <code>next_offset</code> is <code>null</code> reproduces the REST <code>markdown</code> exactly. <code>limit</code> is capped at 32 768 characters.</td>
 </tr>
 <tr>
 <td><code>cancel_job(job_id)</code></td>
@@ -2079,7 +2109,7 @@
 </tr>
 <tr>
 <td><code>list_engines()</code></td>
-<td>The organization's execution profiles (approved engine/model/accelerator candidates) and the hub engine catalogue.</td>
+<td>The organization's execution profiles (approved engine/model/accelerator candidates) and the engines it can use now (<code>GET /v1/engines</code>: tuples that an approved worker of the organization has tested; cloud providers only when cloud processing is enabled).</td>
 </tr>
 <tr>
 <td><code>get_settings()</code></td>
@@ -2093,8 +2123,8 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>upload_content(&quot;memo.wav&quot;, &lt;base64&gt;)          → {upload_id}
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>transcribe_audio(upload_id=…)                  → {job_id: 12, status: &quot;pending&quot;, private: true}
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>get_job(12)                                    → … status: &quot;completed&quot;
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>get_result(12)                                 → {markdown: &quot;...&quot;, next_offset: 20000, total_chars: 51234}
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>get_result(12, offset=20000)                   → … until next_offset is null
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>get_result(12)                                 → {markdown: &quot;...&quot;, next_offset: 32768, total_chars: 51234}
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>get_result(12, offset=32768)                   → … until next_offset is null
 </code></pre></div>
 <h2 id="local-stdio">Local stdio<a class="headerlink" href="#local-stdio" title="Permanent link">&para;</a></h2>
 <p><code>RESONA_API_URL</code> and <code>RESONA_API_KEY</code> (an org client token from <code>resona-admin credential issue</code>) are required. <code>path</code> input is enabled only when <code>RESONA_MCP_ROOT</code> names an existing directory: the path (absolute or relative to the root) must resolve, after following symlinks, to a regular file inside the root. <code>..</code> escapes, symlinks pointing outside the root, directories and URLs are rejected. Without <code>RESONA_MCP_ROOT</code>, path input is disabled and only <code>upload_content</code> / <code>upload_id</code> work. There is no default root. Logs go to stderr; stdout carries only the protocol.</p>

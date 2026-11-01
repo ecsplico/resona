@@ -937,6 +937,8 @@
       
         
       
+        
+      
     
     
     
@@ -1053,6 +1055,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
   
 
     
@@ -2303,7 +2333,7 @@
 <p class="admonition-title">Deepgram voice selection</p>
 <p>For Deepgram, the voice is encoded in the model name (e.g. <code>aura-2-thalia-en</code>). Pass the desired voice model as the <code>model</code> parameter; the <code>voice</code> parameter is ignored.</p>
 </div>
-<p>Cloud TTS engines appear in <code>GET /v1/engines</code> with <code>"tts"</code> in <code>capabilities</code> when their API key env var is set.</p>
+<p>Cloud TTS engines appear in <code>GET /v1/engines</code> (<code>job_kind: "speech"</code>, <code>"tts"</code> in <code>capabilities</code>) only for organizations with <code>cloud_enabled=true</code>; <code>available</code> is true when their API key env var is set on the hub.</p>
 <h2 id="supported-output-formats">Supported output formats<a class="headerlink" href="#supported-output-formats" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
