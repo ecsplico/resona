@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -866,6 +926,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -959,6 +1023,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -2091,7 +2211,7 @@
 
 <h1 id="resona-cloud-stt">resona-cloud-stt<a class="headerlink" href="#resona-cloud-stt" title="Permanent link">&para;</a></h1>
 <p><code>resona-cloud-stt</code> provides a thin, uniform interface for calling third-party speech-to-text APIs. Each provider module exposes a single <code>transcribe()</code> function with a consistent signature and return type. The registry resolves provider names to their modules and maps them to the env var that holds their API key.</p>
-<p>resona-api uses this package internally for the <code>POST /v1/audio/transcriptions</code> route when a cloud engine is selected. You can also call it directly from Python.</p>
+<p>The hub never calls providers itself: <code>POST /v1/audio/transcriptions</code> creates a job like <code>POST /v1/jobs</code>. Cloud STT runs only on hub-approved non-private workers, for jobs that allow cloud in an organization with <code>cloud_enabled=true</code>. You can also call the package directly from Python.</p>
 <h2 id="providers">Providers<a class="headerlink" href="#providers" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2123,7 +2243,7 @@
 </tr>
 </tbody>
 </table>
-<p>Cloud STT engines appear automatically in <code>GET /v1/engines</code> when their API key env var is set — no other configuration required.</p>
+<p>A worker offers a cloud STT engine only when its API key env var is set; the key alone never enables cloud processing.</p>
 <h2 id="direct-usage">Direct usage<a class="headerlink" href="#direct-usage" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">resona_cloud_stt.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_provider</span><span class="p">,</span> <span class="n">PROVIDER_ENV_KEYS</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>

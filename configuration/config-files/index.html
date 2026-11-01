@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -866,6 +926,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -959,6 +1023,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -1171,32 +1291,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#engine-entry-fields-type-resona-api" class="md-nav__link">
+  <a href="#hub-entry-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Engine entry fields — type: "resona-api"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#engine-entry-fields-type-cloud" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Engine entry fields — type: "cloud"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#engine-resolution-order" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Engine resolution order
+        Hub entry fields
       
     </span>
   </a>
@@ -1205,6 +1303,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        settings-cache/
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1899,32 +2008,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#engine-entry-fields-type-resona-api" class="md-nav__link">
+  <a href="#hub-entry-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Engine entry fields — type: "resona-api"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#engine-entry-fields-type-cloud" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Engine entry fields — type: "cloud"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#engine-resolution-order" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Engine resolution order
+        Hub entry fields
       
     </span>
   </a>
@@ -1933,6 +2020,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        settings-cache/
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1971,40 +2069,34 @@
 <p>Resona reads optional config files from <code>~/.resona/</code>. None are required — sensible defaults apply
 when they are absent.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>~/.resona/
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── config.json          # engines, auto-start settings, default_engine, default_profile, default_private
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└── profiles/            # postprocessing profiles (JSON files)
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ├── default.json     # optional: override the bundled default profile
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    └── my-profile.json  # any named profile
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── config.json          # hub entries, auto-start settings, default_engine, default_profile
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── settings-cache/      # non-secret cached organization settings (resona settings pull)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>└── profiles/            # postprocessing profiles (JSON files)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    ├── default.json     # optional: override the bundled default profile
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── my-profile.json  # any named profile
 </code></pre></div>
 <h2 id="configjson">config.json<a class="headerlink" href="#configjson" title="Permanent link">&para;</a></h2>
-<p>Controls engine selection and the default profile for the <code>resona</code> CLI. Defines which resona-api
-servers and cloud providers are available, which one is the default, and whether private-only mode
-is active.</p>
+<p>Lists the hubs (resona-api servers) the <code>resona</code> CLI can use, plus the default local engine for
+<code>resona live</code> and the default profile.</p>
 <h3 id="annotated-example">Annotated example<a class="headerlink" href="#annotated-example" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;default_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;faster-whisper&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;default_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;default_profile&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;default_private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu-server&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resona-api&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://gpu-machine:7000&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu-server&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="nt">&quot;api_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://gpu-machine:7000&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="nt">&quot;api_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="nt">&quot;ssh_host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user@server.example.com&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">&quot;ssh_remote_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">7000</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="p">},</span>
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepgram&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cloud&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">      </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepgram&quot;</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepgram-nova&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cloud&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepgram&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nova-2&quot;</span>
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="p">}</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">      </span><span class="nt">&quot;api_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:7000&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">      </span><span class="nt">&quot;compose_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;~/resona&quot;</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="p">}</span>
 </code></pre></div>
 <h3 id="top-level-fields">Top-level fields<a class="headerlink" href="#top-level-fields" title="Permanent link">&para;</a></h3>
 <table>
@@ -2020,30 +2112,24 @@ is active.</p>
 <tr>
 <td><code>default_engine</code></td>
 <td>string</td>
-<td><code>"faster-whisper"</code></td>
-<td>Engine name used when <code>--engine</code> is not passed on the CLI</td>
+<td><code>"auto"</code></td>
+<td>Local in-process engine for <code>resona live</code>; <code>auto</code> picks the platform default</td>
 </tr>
 <tr>
 <td><code>default_profile</code></td>
 <td>string</td>
-<td><code>"default"</code></td>
-<td>Profile name used when <code>--profile</code> is not passed; the bundled <code>default</code> profile applies if absent</td>
-</tr>
-<tr>
-<td><code>default_private</code></td>
-<td>boolean</td>
-<td><code>false</code></td>
-<td>When <code>true</code>, <code>resona transcribe</code> refuses non-private engines by default — equivalent to always passing <code>--private</code></td>
+<td>—</td>
+<td>Default postprocessing profile name</td>
 </tr>
 <tr>
 <td><code>engines</code></td>
 <td>array</td>
 <td><code>[]</code></td>
-<td>Ordered list of engine entries</td>
+<td>Priority-ordered list of hub entries</td>
 </tr>
 </tbody>
 </table>
-<h3 id="engine-entry-fields-type-resona-api">Engine entry fields — <code>type: "resona-api"</code><a class="headerlink" href="#engine-entry-fields-type-resona-api" title="Permanent link">&para;</a></h3>
+<h3 id="hub-entry-fields">Hub entry fields<a class="headerlink" href="#hub-entry-fields" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2058,100 +2144,59 @@ is active.</p>
 <td><code>name</code></td>
 <td>string</td>
 <td>yes</td>
-<td>Identifier used with <code>--engine &lt;name&gt;</code></td>
+<td>Identifier of the entry</td>
 </tr>
 <tr>
-<td><code>type</code></td>
-<td>string</td>
-<td>yes</td>
-<td>Must be <code>"resona-api"</code></td>
-</tr>
-<tr>
-<td><code>url</code></td>
+<td><code>api_url</code></td>
 <td>string</td>
 <td>yes</td>
 <td>Base URL of the resona-api server</td>
 </tr>
 <tr>
-<td><code>private</code></td>
-<td>boolean</td>
-<td>no</td>
-<td>When <code>true</code>, this engine is included when <code>--private</code> is required</td>
-</tr>
-<tr>
-<td><code>ssh</code></td>
+<td><code>api_key</code></td>
 <td>string</td>
 <td>no</td>
-<td>SSH tunnel target, e.g. <code>"user@server.example.com"</code>. The CLI opens the tunnel before connecting.</td>
+<td>API key for the server</td>
+</tr>
+<tr>
+<td><code>compose_dir</code></td>
+<td>string</td>
+<td>no</td>
+<td>Docker Compose project directory; enables auto-start</td>
+</tr>
+<tr>
+<td><code>ssh_host</code></td>
+<td>string</td>
+<td>no</td>
+<td>SSH tunnel target, <code>"[user@]hostname[:port]"</code>. The CLI opens the tunnel before connecting.</td>
+</tr>
+<tr>
+<td><code>ssh_remote_port</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Remote port on the SSH host (defaults to the port in <code>api_url</code>)</td>
 </tr>
 </tbody>
 </table>
-<h3 id="engine-entry-fields-type-cloud">Engine entry fields — <code>type: "cloud"</code><a class="headerlink" href="#engine-entry-fields-type-cloud" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>name</code></td>
-<td>string</td>
-<td>yes</td>
-<td>Identifier used with <code>--engine &lt;name&gt;</code></td>
-</tr>
-<tr>
-<td><code>type</code></td>
-<td>string</td>
-<td>yes</td>
-<td>Must be <code>"cloud"</code></td>
-</tr>
-<tr>
-<td><code>provider</code></td>
-<td>string</td>
-<td>yes</td>
-<td>Cloud provider: <code>"deepgram"</code>, <code>"elevenlabs"</code>, or <code>"openai"</code></td>
-</tr>
-<tr>
-<td><code>model</code></td>
-<td>string</td>
-<td>no</td>
-<td>Override the provider default model</td>
-</tr>
-<tr>
-<td><code>options</code></td>
-<td>object</td>
-<td>no</td>
-<td>Extra provider-specific options passed at call time</td>
-</tr>
-</tbody>
-</table>
-<div class="admonition warning">
-<p class="admonition-title">API keys are never stored in config.json</p>
-<p>Cloud provider API keys are always read from environment variables at call time (<code>DEEPGRAM_API_KEY</code>, <code>ELEVENLABS_API_KEY</code>, <code>OPENAI_API_KEY</code>). Do not put keys in <code>config.json</code>.</p>
-</div>
-<h3 id="engine-resolution-order">Engine resolution order<a class="headerlink" href="#engine-resolution-order" title="Permanent link">&para;</a></h3>
-<p>When <code>resona transcribe</code> runs, it resolves the engine in this order:</p>
-<ol>
-<li><code>--engine NAME</code> CLI flag — matches a built-in local engine name (<code>faster-whisper</code>, <code>whisper</code>, <code>voxtral</code>), a <code>resona-api</code> entry, or a <code>cloud</code> entry (highest priority)</li>
-<li><code>--private</code> / <code>--no-private</code> — when private is required (via flag or <code>default_private: true</code>), non-private and cloud engines are skipped</li>
-<li><code>default_engine</code> in <code>config.json</code></li>
-<li>Hardcoded fallback: <code>"faster-whisper"</code></li>
-</ol>
+<p>Entries describe hubs only; legacy cloud provider entries are dropped with a warning on load.
+Processing is private by default, and cloud processing is controlled by the organization setting
+<code>cloud_enabled</code> plus <code>--allow-cloud</code>, never by local config or provider API keys.</p>
+<h2 id="settings-cache">settings-cache/<a class="headerlink" href="#settings-cache" title="Permanent link">&para;</a></h2>
+<p><code>resona settings get</code> and <code>resona settings pull</code> cache the organization's revisioned settings per
+hub URL and <code>organization_id</code> in <code>~/.resona/settings-cache/&lt;hash&gt;.json</code> (<code>hub_url</code>,
+<code>organization_id</code>, <code>credential</code> — a SHA-256 prefix of the token, never the token —, <code>revision</code>,
+<code>etag</code>, <code>settings</code>, <code>fetched_at</code>, <code>stale</code>). <code>--local</code> runs use this cache and set <code>stale: true</code>.</p>
 <h2 id="profiles">profiles/<a class="headerlink" href="#profiles" title="Permanent link">&para;</a></h2>
-<p>The <code>~/.resona/profiles/</code> directory holds postprocessing profile JSON files for local (no-server)
-use. Each file is named <code>&lt;profile-name&gt;.json</code>.</p>
+<p>The <code>~/.resona/profiles/</code> directory holds postprocessing profile JSON files for <code>--local</code> runs.
+Each file is named <code>&lt;profile-name&gt;.json</code>.</p>
 <p>To add a profile:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.resona/profiles/
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>cp<span class="w"> </span>my-profile.json<span class="w"> </span>~/.resona/profiles/
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span>my-profile
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--local<span class="w"> </span>--profile<span class="w"> </span>my-profile
 </code></pre></div>
-<p>When a resona-api server is running, profiles are stored server-side in <code>RESONA_PROFILES_DIR</code> and
-can be managed with <code>resona profiles push/pull/list/show/delete</code>. The CLI passes the profile name
-(or inline JSON) to the server with each job submission.</p>
+<p>Hub jobs use profiles stored server-side in <code>RESONA_PROFILES_DIR</code>, managed with
+<code>resona profiles push/pull/list/show/delete</code>. The CLI passes only the stored profile name to the
+hub; file paths and inline JSON are accepted only with <code>--local</code>.</p>
 <p>See <a href="../../guide/postprocessing/">Postprocessing Profiles</a> for the profile file format and a full
 example.</p>
 

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://ecsplico.github.io/resona/configuration/environment/">
       
       
-        <link rel="prev" href="../../server/full-stack/">
+        <link rel="prev" href="../../server/releases/">
       
       
         <link rel="next" href="../config-files/">
@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -866,6 +926,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -959,6 +1023,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -1959,7 +2079,7 @@
 <p>All configuration is read with <a href="https://github.com/HBNetwork/python-decouple"><code>python-decouple</code></a>: environment variables take precedence over values in a <code>.env</code> file. Copy <code>.env.example</code> to <code>.env</code> to get started.</p>
 <div class="admonition note">
 <p class="admonition-title">Exception: resona-client</p>
-<p><code>resona-client</code> uses <code>os.getenv()</code> for <code>RESONA_API_URL</code> and <code>RESONA_API_KEY</code> because it has no <code>python-decouple</code> dependency. All other packages use <code>config()</code> from <code>python-decouple</code>.</p>
+<p><code>resona-client</code> uses <code>os.getenv()</code> for <code>RESONA_API_URL</code> and <code>RESONA_API_KEY</code> (the org-bound bearer token) because it has no <code>python-decouple</code> dependency. All other packages use <code>config()</code> from <code>python-decouple</code>.</p>
 </div>
 <h2 id="resona-engine-server-7001">resona-engine-server (<code>:7001</code>)<a class="headerlink" href="#resona-engine-server-7001" title="Permanent link">&para;</a></h2>
 <table>
@@ -2014,19 +2134,29 @@
 <td>API key sent to engine-server in the <code>X-API-Key</code> header</td>
 </tr>
 <tr>
-<td><code>RESONA_API_KEY</code></td>
+<td><code>RESONA_BOOTSTRAP_ORGANIZATION_ID</code></td>
 <td><em>(unset)</em></td>
-<td>API key required from clients; auth is disabled when not set</td>
+<td>Organization that owns jobs already in an upgraded database. Required only when a pre-identity database with job rows is first migrated; startup refuses without it. Hub access uses org-scoped credentials issued by <code>resona-admin</code>, not a shared key</td>
 </tr>
 <tr>
 <td><code>DATA_PATH</code></td>
 <td><code>./data</code></td>
-<td>Root directory for all persistent data (audio files, SQLite DB, transcripts)</td>
+<td>Root directory for all persistent data (SQLite DB and expiring per-organization job files)</td>
+</tr>
+<tr>
+<td><code>RESONA_MAX_UPLOAD_BYTES</code></td>
+<td><code>209715200</code> (200 MiB)</td>
+<td>Maximum size of one upload or worker result; enforced while streaming, larger requests get <code>413</code></td>
 </tr>
 <tr>
 <td><code>RESONA_PROFILES_DIR</code></td>
 <td><code>&lt;DATA_PATH&gt;/profiles</code></td>
-<td>Directory where named profile JSON files are stored and served by <code>GET /profiles/</code></td>
+<td>Directory where the bundled and file-backed profile sources are resolved for CLI and postprocessing; hosted profile revisions are stored in the database per organization and served by <code>GET /profiles</code></td>
+</tr>
+<tr>
+<td><code>RESONA_SYNC_WAIT_SECONDS</code></td>
+<td><code>60</code></td>
+<td>Seconds <code>POST /v1/audio/transcriptions</code> waits for a worker to finish the job; on timeout it answers <code>504</code> with the <code>job_id</code> while the job keeps running</td>
 </tr>
 <tr>
 <td><code>LOGLEVEL</code></td>
@@ -2053,7 +2183,7 @@
 <tr>
 <td><code>RESONA_API_KEY</code></td>
 <td><em>(unset)</em></td>
-<td>API key sent to resona-api (<code>X-API-Key</code> header)</td>
+<td>Org-bound token issued by <code>resona-admin credential issue</code>; sent as <code>Authorization: Bearer &lt;token&gt;</code></td>
 </tr>
 </tbody>
 </table>
@@ -2069,30 +2199,32 @@
 <tbody>
 <tr>
 <td><code>RESONA_LLM_MODEL</code></td>
-<td><code>gpt-4o-mini</code></td>
-<td>Default LLM model for <code>llm</code> and <code>extract</code> pipeline steps that do not specify <code>model</code></td>
+<td><em>(unset)</em></td>
+<td>Explicit local CLI mode only: model for <code>llm</code>/<code>extract</code> steps that set no <code>model</code>. There is no default model; the hub never reads this variable</td>
 </tr>
 <tr>
 <td><code>RESONA_LLM_API_BASE</code></td>
 <td><em>(unset)</em></td>
-<td>Custom LLM endpoint, e.g. a local Ollama instance; passed to litellm</td>
+<td>Explicit local CLI mode only: API base for legacy LLM steps (for example a local Ollama instance). A non-loopback base makes the step cloud, which private runs deny</td>
 </tr>
 <tr>
 <td><code>RESONA_PROFILES_DIR</code></td>
 <td><code>~/.resona/profiles/</code></td>
-<td>Directory where the CLI looks for named profile files in local (no-server) mode</td>
+<td>Directory where the CLI looks for named profile files in <code>--local</code> runs</td>
 </tr>
 </tbody>
 </table>
 <h2 id="cloud-provider-keys">Cloud provider keys<a class="headerlink" href="#cloud-provider-keys" title="Permanent link">&para;</a></h2>
-<p>Cloud STT and TTS providers are activated <strong>automatically</strong> when their API key variable is present. No additional configuration is needed — set the key and the provider appears in <code>GET /v1/engines</code>.</p>
-<p>API keys are read from environment variables at call time and are never stored in <code>~/.resona/config.json</code>.</p>
+<p>Provider API keys are read from environment variables and are never stored in
+<code>~/.resona/config.json</code>. A key never enables cloud processing by itself: cloud stages also need the
+organization setting <code>cloud_enabled=true</code>, a job submitted with <code>--allow-cloud</code>, and a hub-approved
+non-private worker. The CLI never calls a provider directly.</p>
 <table>
 <thead>
 <tr>
 <th>Variable</th>
 <th>Provider</th>
-<th>Activates</th>
+<th>Used for</th>
 </tr>
 </thead>
 <tbody>
@@ -2148,16 +2280,16 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.resona.yml<span class="w"> </span>--profile<span class="w"> </span>faster-whisper<span class="w"> </span>up<span class="w"> </span>-d
 </code></pre></div>
 <div class="admonition tip">
-<p class="admonition-title">API key setup</p>
-<p>If you set <code>RESONA_API_KEY</code> in <code>.env</code>, all clients must send <code>X-API-Key: &lt;key&gt;</code> with every request. Export the same value as <code>RESONA_API_KEY</code> in your shell (or add it to <code>~/.bashrc</code>) so the <code>resona</code> CLI picks it up automatically.</p>
+<p class="admonition-title">Credentials</p>
+<p>Hub access uses org-scoped credentials. Issue one on the hub host with <code>resona-admin credential issue --organization &lt;id&gt; --role client</code>, then send <code>Authorization: Bearer &lt;token&gt;</code> with every request (REST also accepts the same token in <code>X-API-Key</code>). Tokens are shown once; the hub stores only their SHA-256 hash. There is no auth-disabled mode.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Custom LLM endpoint</p>
-<p>To use a local Ollama instance for postprocessing instead of OpenAI, set:
+<p>To run postprocessing on a local Ollama instance in local CLI mode, set:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">RESONA_LLM_MODEL</span><span class="o">=</span>ollama/llama3
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nv">RESONA_LLM_API_BASE</span><span class="o">=</span>http://localhost:11434
 </code></pre></div>
-Any model supported by <a href="https://docs.litellm.ai/docs/providers">litellm</a> works here.</p>
+The loopback endpoint keeps the step private. Any model supported by <a href="https://docs.litellm.ai/docs/providers">litellm</a> works, but cloud models are denied unless the run allows cloud (<code>--allow-cloud</code> with <code>cloud_enabled=true</code>).</p>
 </div>
 
 
@@ -2194,7 +2326,7 @@ Any model supported by <a href="https://docs.litellm.ai/docs/providers">litellm<
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../server/full-stack/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Full-Stack (uv)">
+          <a href="../../server/releases/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Releases &amp; Worker Updates">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2204,7 +2336,7 @@ Any model supported by <a href="https://docs.litellm.ai/docs/providers">litellm<
                 Previous
               </span>
               <div class="md-ellipsis">
-                Full-Stack (uv)
+                Releases & Worker Updates
               </div>
             </div>
           </a>

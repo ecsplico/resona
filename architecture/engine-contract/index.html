@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -866,6 +926,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -959,6 +1023,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -2098,7 +2218,7 @@ If it requires a database lookup or a postprocessing step — it belongs in <cod
 <h2 id="why-this-separation-matters">Why this separation matters<a class="headerlink" href="#why-this-separation-matters" title="Permanent link">&para;</a></h2>
 <p><strong>GPU machine vs API machine.</strong> The engine runs on a GPU host where inference is fast. The API runs on a lightweight host (or serverless container) with no GPU requirement. Keeping the engine stateless means you can scale, swap, or restart the GPU host without touching the API or any stored data.</p>
 <p><strong>Swappable engines.</strong> Because all engines expose the same HTTP interface, <code>resona-api</code> can switch between <code>faster-whisper</code>, <code>whisper</code>, <code>voxtral</code>, or a cloud provider without any code changes. The <code>RESONA_ENGINE</code> environment variable selects which plugin loads; the rest of the system is unaffected.</p>
-<p><strong>Testability.</strong> A stateless HTTP service is trivially mockable. Tests for <code>resona-api</code> mock <code>EngineClient.transcribe</code>; they never need a real GPU.</p>
+<p><strong>Testability.</strong> A stateless HTTP service is trivially mockable. Hub and worker tests never need a real GPU.</p>
 <h2 id="engine-entry-point-discovery">Engine entry-point discovery<a class="headerlink" href="#engine-entry-point-discovery" title="Permanent link">&para;</a></h2>
 <p>Engines register themselves in their <code>pyproject.toml</code> using the <code>resona.engines</code> entry-point group:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">[project.entry-points.</span><span class="s2">&quot;resona.engines&quot;</span><span class="k">]</span>

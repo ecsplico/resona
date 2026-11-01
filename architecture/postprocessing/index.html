@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -866,6 +926,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -959,6 +1023,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -1424,10 +1544,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#server-mode-transcribetask" class="md-nav__link">
+  <a href="#hub-mode-resona-worker" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Server mode (TranscribeTask)
+        Hub mode (resona-worker)
       
     </span>
   </a>
@@ -2021,10 +2141,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#server-mode-transcribetask" class="md-nav__link">
+  <a href="#hub-mode-resona-worker" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Server mode (TranscribeTask)
+        Hub mode (resona-worker)
       
     </span>
   </a>
@@ -2143,14 +2263,19 @@
 <td>System prompt sent to the model</td>
 </tr>
 <tr>
+<td><code>endpoint</code></td>
+<td>no</td>
+<td>Id of an entry in the execution policy registry. Preferred form; hub profiles must use it</td>
+</tr>
+<tr>
 <td><code>model</code></td>
 <td>no</td>
-<td>litellm model string; overrides <code>RESONA_LLM_MODEL</code></td>
+<td>Explicit local CLI mode only (legacy step). Falls back to <code>RESONA_LLM_MODEL</code>; no default model exists</td>
 </tr>
 <tr>
 <td><code>api_base</code></td>
 <td>no</td>
-<td>Custom API endpoint; overrides <code>RESONA_LLM_API_BASE</code></td>
+<td>Explicit local CLI mode only (legacy step). Overrides <code>RESONA_LLM_API_BASE</code></td>
 </tr>
 <tr>
 <td><code>temperature</code></td>
@@ -2174,7 +2299,7 @@
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">}</span>
 </code></pre></div>
 <h2 id="postprocessresult">PostprocessResult<a class="headerlink" href="#postprocessresult" title="Permanent link">&para;</a></h2>
-<p><code>build_pipeline(profile).run(text)</code> returns a <code>PostprocessResult</code>:</p>
+<p><code>build_pipeline(profile, policy=policy).run(text)</code> returns a <code>PostprocessResult</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@dataclass</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">PostprocessResult</span><span class="p">:</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>         <span class="c1"># final postprocessed text (all llm/replacements steps applied)</span>
@@ -2233,21 +2358,20 @@
 - A string ending with <code>.json</code> that exists on disk — loaded from that path
 - A plain name string — looked up as <code>&lt;profiles_dir&gt;/&lt;name&gt;.json</code>; falls back to the bundled <code>default</code> profile when <code>name == "default"</code></p>
 <h2 id="where-the-pipeline-runs">Where the pipeline runs<a class="headerlink" href="#where-the-pipeline-runs" title="Permanent link">&para;</a></h2>
-<h3 id="server-mode-transcribetask">Server mode (TranscribeTask)<a class="headerlink" href="#server-mode-transcribetask" title="Permanent link">&para;</a></h3>
+<h3 id="hub-mode-resona-worker">Hub mode (resona-worker)<a class="headerlink" href="#hub-mode-resona-worker" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>engine returns {text, language, segments}
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    ↓
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>TranscribeTask resolves profile (job.profile or &quot;default&quot;) from RESONA_PROFILES_DIR
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>worker takes the postprocess profile revision from the job&#39;s execution_snapshot
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    ↓
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>builds PostprocessPipeline from the profile
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>build_pipeline(profile, policy=&lt;job ExecutionPolicy&gt;) checks every stage first
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    ↓
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>result = pipeline.run(text)
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>result = pipeline.run(text)   (PolicyDenied is raised, never swallowed)
 <a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    ↓
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>stores result.text as job.md
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>stores result.data as job.structured (JSON)
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>writes .md file to MD_PATH/
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>sets job status = COMPLETED
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>raw transcript and polished Markdown go into the JobResult
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    ↓
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>worker uploads the result; the hub marks the job completed
 </code></pre></div>
-<p>The engine receives <code>profile.initial_prompt_string()</code> as its <code>initial_prompt</code>. It never receives replacement rules — postprocessing is entirely the API layer's responsibility.</p>
+<p>The engine receives <code>profile.initial_prompt_string()</code> as its <code>initial_prompt</code>. It never receives replacement rules — postprocessing is the worker's responsibility, not the engine's.</p>
 <h3 id="local-mode-cli-process">Local mode (CLI process)<a class="headerlink" href="#local-mode-cli-process" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>engine returns {text, language, segments}
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    ↓

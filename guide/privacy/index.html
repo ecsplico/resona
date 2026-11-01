@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://ecsplico.github.io/resona/guide/privacy/">
       
       
-        <link rel="prev" href="../tts/">
+        <link rel="prev" href="../mcp/">
       
       
-        <link rel="next" href="../../server/docker/">
+        <link rel="next" href="../evaluation/">
       
       
         
@@ -640,6 +640,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -832,6 +836,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -906,10 +938,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#which-engines-are-private" class="md-nav__link">
+  <a href="#private-by-default" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Which engines are private
+        Private by default
       
     </span>
   </a>
@@ -917,10 +949,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-private-flag" class="md-nav__link">
+  <a href="#allowing-cloud-processing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The --private flag
+        Allowing cloud processing
       
     </span>
   </a>
@@ -928,21 +960,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#making-private-the-default" class="md-nav__link">
+  <a href="#resona-api-hub-privacy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Making --private the default
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#resona-api-gateway-privacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        resona-api gateway privacy
+        resona-api hub privacy
       
     </span>
   </a>
@@ -980,6 +1001,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -995,6 +1044,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -1088,6 +1141,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -1870,10 +1979,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#which-engines-are-private" class="md-nav__link">
+  <a href="#private-by-default" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Which engines are private
+        Private by default
       
     </span>
   </a>
@@ -1881,10 +1990,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-private-flag" class="md-nav__link">
+  <a href="#allowing-cloud-processing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The --private flag
+        Allowing cloud processing
       
     </span>
   </a>
@@ -1892,21 +2001,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#making-private-the-default" class="md-nav__link">
+  <a href="#resona-api-hub-privacy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Making --private the default
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#resona-api-gateway-privacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        resona-api gateway privacy
+        resona-api hub privacy
       
     </span>
   </a>
@@ -1956,109 +2054,68 @@
 
 
 <h1 id="privacy">Privacy<a class="headerlink" href="#privacy" title="Permanent link">&para;</a></h1>
-<p>For sensitive audio — medical dictation, legal recordings, confidential meetings — it is important
-to ensure that audio never leaves the local machine. Resona provides explicit privacy controls
-through the <code>--private</code> flag and <code>config.json</code> settings.</p>
+<p>For sensitive audio and documents — medical dictation, legal recordings, confidential meetings —
+it is important to ensure that data never reaches a third-party provider. Resona makes private
+processing the default and enforces it on the hub.</p>
 <hr />
 <h2 id="what-private-means">What "private" means<a class="headerlink" href="#what-private-means" title="Permanent link">&para;</a></h2>
-<p>A <strong>private</strong> engine processes audio entirely on the local machine or within a trusted network
-boundary that you control. No audio bytes are transmitted to any third-party cloud service.</p>
-<p>A <strong>non-private</strong> engine (cloud engine) sends audio to an external provider's API servers
-(Deepgram, ElevenLabs, or OpenAI). Those requests are subject to the provider's data retention
-and privacy policies.</p>
+<p>A <strong>private</strong> job is processed entirely by engines on machines you control (your own hub workers,
+or this machine with <code>--local</code>). No audio or document bytes are transmitted to any third-party
+cloud service.</p>
+<p>A <strong>non-private</strong> job may use cloud stages that send data to an external provider's API
+(Deepgram, ElevenLabs, OpenAI, or a cloud LLM for postprocessing). Those requests are subject to
+the provider's data retention and privacy policies.</p>
 <hr />
-<h2 id="which-engines-are-private">Which engines are private<a class="headerlink" href="#which-engines-are-private" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Engine category</th>
-<th>Private?</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Built-in local (<code>faster-whisper</code>, <code>whisper</code>, <code>voxtral</code>)</td>
-<td>Always</td>
-</tr>
-<tr>
-<td>resona-api server entry marked <code>"private": true</code></td>
-<td>Yes</td>
-</tr>
-<tr>
-<td>resona-api server entry without <code>"private": true</code></td>
-<td>No</td>
-</tr>
-<tr>
-<td>Cloud entry (<code>deepgram</code>, <code>elevenlabs</code>, <code>openai</code>)</td>
-<td>Never</td>
-</tr>
-</tbody>
-</table>
-<p>Built-in local engines run in-process or in a subprocess on the same machine — no network
-traffic is generated for the audio data.</p>
-<p>A resona-api server entry is private when you own and control the server (e.g. a machine on your
-LAN, a home server reachable via SSH tunnel, or a Docker Compose stack on localhost) and you mark
-it explicitly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span><span class="nb">local</span><span class="w"> </span>http://localhost:7000<span class="w"> </span>--private
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>home<span class="w"> </span>http://localhost:7000<span class="w"> </span>--ssh<span class="w"> </span>user@homeserver.example.com<span class="w"> </span>--private
+<h2 id="private-by-default">Private by default<a class="headerlink" href="#private-by-default" title="Permanent link">&para;</a></h2>
+<p><code>resona transcribe</code>, <code>resona doc</code> and <code>resona watch</code> submit every job as private. <code>--private</code> is
+the default and only states it explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>patient-notes.mp3<span class="w"> </span>--private
+</code></pre></div>
+<p>The hub checks each job's policy before admission. A job whose execution profile, engine/model
+override or postprocess profile needs a cloud stage is rejected with <code>policy_denied</code>; the CLI
+exits with code 2. Nothing is ever retried on another engine, in the cloud or locally: an
+unreachable hub, a timeout or a failed job is reported as an error.</p>
+<p>Each job prints one policy summary line on stderr, so the decision is visible:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed
 </code></pre></div>
 <hr />
-<h2 id="the-private-flag">The <code>--private</code> flag<a class="headerlink" href="#the-private-flag" title="Permanent link">&para;</a></h2>
-<p>Pass <code>--private</code> to <code>resona transcribe</code> to restrict engine selection to private engines only.
-If the selected or default engine is not private, the command fails with an error rather than
-silently falling back to a cloud engine.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>patient-notes.mp3<span class="w"> </span>--private
+<h2 id="allowing-cloud-processing">Allowing cloud processing<a class="headerlink" href="#allowing-cloud-processing" title="Permanent link">&para;</a></h2>
+<p>Cloud processing needs <strong>both</strong>:</p>
+<ol>
+<li>the organization setting <code>cloud_enabled=true</code> (set by an <code>org_admin</code>, e.g.
+   <code>resona settings set cloud_enabled=true</code>), and</li>
+<li><code>--allow-cloud</code> on the command (mutually exclusive with <code>--private</code>).</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>interview.mp3<span class="w"> </span>--allow-cloud
 </code></pre></div>
-<p>If the gateway is unreachable, the CLI falls back to a built-in local engine automatically,
-which is always private — so <code>--private</code> is honoured in both server and local-only modes.</p>
-<p>Pass <code>--no-private</code> to explicitly allow non-private engines, even if <code>default_private</code> is set
-in <code>config.json</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>interview.mp3<span class="w"> </span>--no-private<span class="w"> </span>--engine<span class="w"> </span>deepgram
-</code></pre></div>
+<p>Provider API keys in the environment never enable cloud. Cloud stages run only on hub-approved
+non-private workers, never directly from the CLI.</p>
 <hr />
-<h2 id="making-private-the-default">Making <code>--private</code> the default<a class="headerlink" href="#making-private-the-default" title="Permanent link">&para;</a></h2>
-<p>Add <code>"default_private": true</code> to <code>~/.resona/config.json</code> to require a private engine for every
-invocation of <code>resona transcribe</code> without having to pass <code>--private</code> each time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;default_private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resona-api&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="nt">&quot;api_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:7000&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">}</span>
-</code></pre></div>
-<p>With this setting, running <code>resona transcribe recording.mp3</code> behaves as if you had passed
-<code>--private</code>. Override it for a single invocation with <code>--no-private</code>.</p>
-<hr />
-<h2 id="resona-api-gateway-privacy">resona-api gateway privacy<a class="headerlink" href="#resona-api-gateway-privacy" title="Permanent link">&para;</a></h2>
-<p>The gateway enforces privacy at the engine resolution layer. When a request includes
-<code>"private": true</code>, the registry skips all cloud engines and any server entries not marked
-private. If no private engine is available, the gateway returns <code>400 Bad Request</code> rather than
-routing the audio to a cloud provider.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># POST /v1/audio/transcriptions with private=true</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>curl<span class="w"> </span>http://localhost:7000/v1/audio/transcriptions<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>-F<span class="w"> </span><span class="nv">file</span><span class="o">=</span>@patient-notes.mp3<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>-F<span class="w"> </span><span class="nv">private</span><span class="o">=</span><span class="nb">true</span>
+<h2 id="resona-api-hub-privacy">resona-api hub privacy<a class="headerlink" href="#resona-api-hub-privacy" title="Permanent link">&para;</a></h2>
+<p>The hub enforces the same policy for every entry point — <code>POST /v1/jobs</code> and the
+OpenAI-compatible <code>POST /v1/audio/transcriptions</code> adapter. <code>private</code> defaults to <code>true</code>; a private
+job is only leased to private workers, and a job that would need a cloud stage is rejected with
+<code>403 policy_denied</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># POST /v1/audio/transcriptions (private=true is the default)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>curl<span class="w"> </span>http://localhost:7000/v1/audio/transcriptions<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$RESONA_API_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>-F<span class="w"> </span><span class="nv">file</span><span class="o">=</span>@patient-notes.mp3<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>-F<span class="w"> </span><span class="nv">model</span><span class="o">=</span>whisper-1
 </code></pre></div>
 <hr />
 <h2 id="practical-recommendations-for-medical-use">Practical recommendations for medical use<a class="headerlink" href="#practical-recommendations-for-medical-use" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Medical and legal audio</p>
 <p>Audio containing patient data, personal health information, or privileged communications
-should only be processed with private engines. Setting <code>"default_private": true</code> in
-<code>config.json</code> prevents accidental cloud submission.</p>
+should only be processed privately. Keep <code>cloud_enabled=false</code> for the organization so that
+even an accidental <code>--allow-cloud</code> is denied.</p>
 </div>
 <ol>
-<li>Set <code>"default_private": true</code> in <code>~/.resona/config.json</code>.</li>
-<li>Use the built-in <code>faster-whisper</code> engine (default) or a self-hosted resona-api with
-   <code>"private": true</code>.</li>
-<li>Run <code>resona engines list</code> to confirm no cloud engine is set as the default.</li>
-<li>If you need cloud quality for non-sensitive content, use <code>--no-private</code> explicitly so the
-   intent is visible in your command history.</li>
+<li>Leave <code>cloud_enabled</code> off in the organization settings (<code>resona settings get</code>).</li>
+<li>Use a private execution profile (<code>private-auto</code>, <code>mac-private</code>, <code>linux-cuda</code>, <code>cpu-private</code>).</li>
+<li>Check the stderr policy line (<code>private=true</code>) or the <code>private</code> field in each <code>&lt;stem&gt;.md</code>.</li>
+<li>If you need cloud quality for non-sensitive content, an <code>org_admin</code> enables <code>cloud_enabled</code>
+   and you pass <code>--allow-cloud</code> explicitly so the intent is visible in your command history.</li>
 </ol>
 <hr />
 <h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
@@ -2071,20 +2128,16 @@ should only be processed with private engines. Setting <code>"default_private": 
 </thead>
 <tbody>
 <tr>
-<td>Fully offline, no server</td>
-<td>Built-in <code>faster-whisper</code> (default, always private)</td>
+<td>Fully offline, no hub</td>
+<td><code>--local</code> with built-in private defaults or cached settings</td>
 </tr>
 <tr>
-<td>Self-hosted server on LAN</td>
-<td><code>resona engines add ... --private</code> + <code>"default_private": true</code></td>
+<td>Self-hosted hub</td>
+<td>Default (private) jobs; <code>cloud_enabled=false</code></td>
 </tr>
 <tr>
-<td>Mix: local for sensitive, cloud for other</td>
-<td><code>"default_private": true</code> in config; use <code>--no-private</code> for non-sensitive runs</td>
-</tr>
-<tr>
-<td>Cloud only</td>
-<td>No special config; <code>--no-private</code> or remove <code>default_private</code></td>
+<td>Mix: private for sensitive, cloud for other</td>
+<td><code>cloud_enabled=true</code>; pass <code>--allow-cloud</code> only for non-sensitive runs</td>
 </tr>
 </tbody>
 </table>
@@ -2123,7 +2176,7 @@ should only be processed with private engines. Setting <code>"default_private": 
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../tts/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Speech Synthesis">
+          <a href="../mcp/" class="md-footer__link md-footer__link--prev" aria-label="Previous: MCP Server">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2133,20 +2186,20 @@ should only be processed with private engines. Setting <code>"default_private": 
                 Previous
               </span>
               <div class="md-ellipsis">
-                Speech Synthesis
+                MCP Server
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../server/docker/" class="md-footer__link md-footer__link--next" aria-label="Next: Docker Deployment">
+          <a href="../evaluation/" class="md-footer__link md-footer__link--next" aria-label="Next: Evaluation &amp; Baselines">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Docker Deployment
+                Evaluation & Baselines
               </div>
             </div>
             <div class="md-footer__button md-icon">

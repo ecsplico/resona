@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://ecsplico.github.io/resona/server/docker/">
       
       
-        <link rel="prev" href="../../guide/privacy/">
+        <link rel="prev" href="../../guide/evaluation/">
       
       
         <link rel="next" href="../full-stack/">
@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -868,6 +928,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -1088,6 +1152,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -2018,9 +2138,9 @@
 <td>Host path for persistent data (transcripts, DB, audio files). Mount this as a volume.</td>
 </tr>
 <tr>
-<td><code>RESONA_API_KEY</code></td>
-<td><em>(unset)</em></td>
-<td>API auth key; clients must send <code>X-API-Key: &lt;key&gt;</code>. Auth is disabled when not set.</td>
+<td><code>RESONA_MAX_UPLOAD_BYTES</code></td>
+<td><code>209715200</code> (200 MiB)</td>
+<td>Upload and worker-result size limit; larger requests get <code>413</code>. Hub access always needs an org-bound token from <code>resona-admin</code> (run inside the container, e.g. <code>docker compose exec api resona-admin credential issue --organization &lt;id&gt; --role client</code>).</td>
 </tr>
 <tr>
 <td><code>RESONA_ENGINE_KEY</code></td>
@@ -2138,7 +2258,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../guide/privacy/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Privacy">
+          <a href="../../guide/evaluation/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Evaluation &amp; Baselines">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2148,7 +2268,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Privacy
+                Evaluation & Baselines
               </div>
             </div>
           </a>

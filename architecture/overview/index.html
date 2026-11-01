@@ -638,6 +638,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -830,6 +834,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/privacy/" class="md-nav__link">
         
   
@@ -838,6 +870,34 @@
     
   
     Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
   
 
     
@@ -866,6 +926,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -959,6 +1023,62 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
   
 
     
@@ -1294,6 +1414,17 @@
     <span class="md-ellipsis">
       
         resona-api (:7000)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resona-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resona-worker
       
     </span>
   </a>
@@ -1987,6 +2118,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#resona-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resona-worker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#resona-engine-server-engine-plugin-7001" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2176,9 +2318,9 @@
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>          │  resona-api   │   │ resona-engine-server  │
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>          │  :7000        │──▶│  + engine plugin      │
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>          │               │   │                       │
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>          │ POST /jobs    │   │ POST /transcribe      │
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>          │ GET  /jobs/   │   │ WS   /ws/transcribe   │
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>          │ GET  /job/id  │   │ WS   /ws/live         │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>          │ /v1/uploads   │   │ POST /transcribe      │
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>          │ /v1/jobs      │   │ WS   /ws/transcribe   │
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>          │ /v1/workers/* │   │ WS   /ws/live         │
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>          │ CRUD replace  │   │                       │
 <a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>          │ CRUD prompts  │   │ Stateless, no DB      │
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>          │               │   └───────────────────────┘
@@ -2188,17 +2330,19 @@
 </code></pre></div>
 <h2 id="layer-descriptions">Layer descriptions<a class="headerlink" href="#layer-descriptions" title="Permanent link">&para;</a></h2>
 <h3 id="resona-cli-appsresona-cli">resona-cli (apps/resona-cli)<a class="headerlink" href="#resona-cli-appsresona-cli" title="Permanent link">&para;</a></h3>
-<p>The user-facing entry point. Provides subcommands for transcription (<code>transcribe</code>, <code>watch</code>), recording TUIs (<code>rec</code>, <code>ui</code>), live transcription (<code>live</code>), speech synthesis (<code>speech</code>), and CRUD for engines, replacements, and prompts. Delegates all server operations to <code>resona-client</code>. In local-only mode it can run an engine in-process without any server.</p>
+<p>The user-facing entry point. Provides subcommands for hub jobs (<code>transcribe</code>, <code>doc</code>, <code>watch</code>, <code>jobs</code>), organization settings (<code>settings</code>), recording TUIs (<code>rec</code>, <code>ui</code>), live transcription (<code>live</code>), speech synthesis (<code>speech</code>), and management of hub entries and profiles. Delegates all hub operations to <code>resona-client</code>. Only with an explicit <code>--local</code> does it run a job on this machine, through <code>resona-worker</code>'s execution subprocess; it never falls back to local processing automatically.</p>
 <h3 id="resona-client">resona-client<a class="headerlink" href="#resona-client" title="Permanent link">&para;</a></h3>
-<p>A thin <code>httpx</code>-based client that wraps every resona-api REST operation. The CLI imports this for all HTTP work. Configuration is read from <code>RESONA_API_URL</code> / <code>RESONA_API_KEY</code> environment variables.</p>
+<p>A thin <code>httpx</code>-based client for the hub's <code>/v1/uploads</code> and <code>/v1/jobs</code> routes, with no ML dependencies. The CLI imports this for all HTTP work. Configuration is read from <code>RESONA_API_URL</code> / <code>RESONA_API_KEY</code> (the org-bound bearer token) or the <code>resona-api</code> entry in <code>~/.resona/config.json</code>.</p>
 <h3 id="resona-api-7000">resona-api (:7000)<a class="headerlink" href="#resona-api-7000" title="Permanent link">&para;</a></h3>
-<p>The coordination layer. Accepts audio uploads, persists jobs to SQLite, polls for pending work, calls the engine, applies postprocessing, and stores results. Also exposes an OpenAI-compatible audio API (<code>GET /v1/engines</code>, <code>POST /v1/audio/transcriptions</code>, <code>POST /v1/audio/speech</code>) that can route requests to local engines or cloud providers.</p>
+<p>The hub. Authenticates org-bound bearer tokens issued by <code>resona-admin</code>, accepts uploads (<code>POST /v1/uploads</code>, 200 MiB cap), persists organization-scoped jobs to SQLite (<code>/v1/jobs</code>), leases them to pull workers (<code>/v1/workers/*</code>) and applies retention. It runs no inference for queued jobs. Also exposes an OpenAI-compatible audio API (<code>GET /v1/engines</code>, <code>POST /v1/audio/speech</code>, and <code>POST /v1/audio/transcriptions</code>, an adapter that creates a job and waits for a worker).</p>
+<h3 id="resona-worker">resona-worker<a class="headerlink" href="#resona-worker" title="Permanent link">&para;</a></h3>
+<p>An outbound-only pull worker for a Mac or Linux GPU machine. <code>resona-worker prepare --profile &lt;name&gt;</code> verifies cached weights, runs synthetic jobs and writes a capabilities manifest of tested tuples. <code>resona-worker run --hub &lt;url&gt; --token-file &lt;path&gt; --capabilities-file &lt;manifest&gt; --work-dir &lt;dir&gt;</code> long-polls the hub for jobs, runs each job in an isolated engine subprocess, uploads the result and deletes its scratch data. It offers only tuples that it tested and that the hub approved. It opens no listening port. The worker token comes from <code>resona-admin worker enroll</code>; an admin must approve the worker (<code>resona-admin worker approve</code>) before it can claim jobs. On macOS, <code>resona-worker install</code> runs the worker as a launchd user agent (see <a href="../../server/mac-worker/">Mac Worker</a>).</p>
 <h3 id="resona-engine-server-engine-plugin-7001">resona-engine-server + engine plugin (:7001)<a class="headerlink" href="#resona-engine-server-engine-plugin-7001" title="Permanent link">&para;</a></h3>
 <p>A stateless FastAPI application that loads exactly one engine plugin at startup (selected by <code>RESONA_ENGINE</code>). Accepts audio, runs inference, returns raw <code>{text, language, segments}</code>. No database. No postprocessing. See <a href="../engine-contract/">Stateless Engine Contract</a> for the full design rationale.</p>
 <h3 id="resona-asr-core">resona-asr-core<a class="headerlink" href="#resona-asr-core" title="Permanent link">&para;</a></h3>
 <p>The shared vocabulary: <code>Transcriber</code> Protocol, <code>TranscriptionResult</code> TypedDict, the entry-point registry (<code>registry.py</code>), audio loading utilities (<code>audio.py</code>), and the VAD-based live transcriber (<code>live_transcriber.py</code>). Both the engine server and the CLI's <code>InProcessEngine</code> depend on this package.</p>
 <h3 id="resona-postprocess">resona-postprocess<a class="headerlink" href="#resona-postprocess" title="Permanent link">&para;</a></h3>
-<p>A composable <code>str → str</code> pipeline: regex replacement steps and LLM steps (via litellm). Runs in <code>TranscribeTask</code> on the API side and in the CLI process in local mode. See <a href="../postprocessing/">Postprocessing Pipeline</a>.</p>
+<p>A composable <code>str → str</code> pipeline: regex replacement steps and LLM steps (via litellm). Runs inside <code>resona-worker</code> for hub jobs and in the CLI process in local mode; every stage is checked against the job's <code>ExecutionPolicy</code> first. See <a href="../postprocessing/">Postprocessing Pipeline</a>.</p>
 <h3 id="resona-cloud-stt-resona-cloud-tts">resona-cloud-stt / resona-cloud-tts<a class="headerlink" href="#resona-cloud-stt-resona-cloud-tts" title="Permanent link">&para;</a></h3>
 <p>Provider adapters for cloud speech services. No persistent state; each call is self-contained. Activated automatically when the corresponding API key environment variable is present.</p>
 <h2 id="cross-package-import-rules">Cross-package import rules<a class="headerlink" href="#cross-package-import-rules" title="Permanent link">&para;</a></h2>
@@ -2216,11 +2360,10 @@ Import the package over HTTP, not as a Python module.</p>
 <h2 id="data-storage-layout">Data storage layout<a class="headerlink" href="#data-storage-layout" title="Permanent link">&para;</a></h2>
 <p>All server-side data lives under <code>DATA_PATH</code> (default <code>./data</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>DATA_PATH/
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── files/      ← uploaded audio files (never deleted by the engine)
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── db/         ← SQLite database (jobs, replacements, initial prompts)
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>└── md/         ← generated Markdown transcript files
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── db/                                   ← SQLite database (jobs, organizations, credentials, settings)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>└── organizations/&lt;storage_id&gt;/jobs/&lt;id&gt;/ ← job input and result files (expire per retention)
 </code></pre></div>
-<p><code>DATA_PATH</code>, <code>FILE_PATH</code>, <code>DB_PATH</code>, and <code>MD_PATH</code> are resolved in <code>resona_api/paths.py</code> and read via <code>python-decouple</code> so they can be overridden by environment variables or a <code>.env</code> file.</p>
+<p><code>DATA_PATH</code>, <code>FILE_PATH</code> and <code>DB_PATH</code> are resolved in <code>resona_api/paths.py</code> and read via <code>python-decouple</code> so they can be overridden by environment variables or a <code>.env</code> file. Content lives in expiring files, not in the database: inputs are deleted on terminal state, results after 24 hours, metadata after 7 days.</p>
 
 
 
