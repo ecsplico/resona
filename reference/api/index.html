@@ -935,6 +935,8 @@
       
         
       
+        
+      
     
     
     
@@ -1051,6 +1053,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
   
 
     
@@ -1592,10 +1622,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#health" class="md-nav__link">
+  <a href="#health-and-readiness-no-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Health
+        Health and readiness (no auth)
       
     </span>
   </a>
@@ -2186,10 +2216,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#health" class="md-nav__link">
+  <a href="#health-and-readiness-no-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Health
+        Health and readiness (no auth)
       
     </span>
   </a>
@@ -2460,15 +2490,18 @@
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>enroll<span class="w"> </span>mac-studio<span class="w"> </span>--organization<span class="w"> </span>acme<span class="w">           </span><span class="c1"># worker token, unapproved</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>approve<span class="w"> </span>&lt;worker-id&gt;<span class="w"> </span>--private<span class="w"> </span>--capabilities-file<span class="w"> </span>caps.json
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>revoke<span class="w"> </span>&lt;worker-id&gt;
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>resona-admin<span class="w"> </span>restore<span class="w"> </span>&lt;backup.sqlite&gt;<span class="w">                                </span><span class="c1"># hub stopped; see docs/server/coolify.md</span>
 </code></pre></div>
 <p>Roles: <code>client</code> (submit and read jobs, read settings), <code>org_admin</code> (also change settings and profiles), <code>worker</code> (worker routes only).</p>
 <p>Error bodies have the form <code>{"error": "&lt;code&gt;", "message": "&lt;safe text&gt;"}</code>.</p>
 <h2 id="endpoints">Endpoints<a class="headerlink" href="#endpoints" title="Permanent link">&para;</a></h2>
-<h3 id="health">Health<a class="headerlink" href="#health" title="Permanent link">&para;</a></h3>
+<h3 id="health-and-readiness-no-auth">Health and readiness (no auth)<a class="headerlink" href="#health-and-readiness-no-auth" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>GET /health
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>GET /ready
 </code></pre></div>
-<p>Returns liveness status.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ok&quot;</span><span class="p">}</span>
+<p><code>/health</code> is liveness only and always returns <code>{"status": "ok"}</code> while the process serves HTTP.</p>
+<p><code>/ready</code> returns <code>200</code> when the schema is at the target version, the data and database directories are writable and the maintenance loop finished a pass within the last 90 seconds; otherwise <code>503</code> with <code>status: not_ready</code>. <code>capacity</code> is <code>available</code> when an approved worker was seen recently and <code>degraded</code> otherwise. Offline workers never fail readiness: jobs wait in the queue.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ready&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;checks&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;schema&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;data_writable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;maintenance&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;capacity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;degraded&quot;</span><span class="p">}</span>
 </code></pre></div>
 <hr />
 <h3 id="uploads-and-jobs-roles-client-org_admin">Uploads and jobs (roles <code>client</code>, <code>org_admin</code>)<a class="headerlink" href="#uploads-and-jobs-roles-client-org_admin" title="Permanent link">&para;</a></h3>

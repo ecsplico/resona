@@ -1230,6 +1230,8 @@
       
         
       
+        
+      
     
     
     
@@ -1346,6 +1348,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
   
 
     
@@ -2539,7 +2569,10 @@ time.</p>
 </tbody>
 </table>
 <p><strong>Outputs</strong></p>
-<p>Each input produces two files, written atomically:</p>
+<p>Each input produces two files, written as a pair: both are staged first and a failure leaves
+neither new file (a file replaced under <code>--force</code> is restored). Inputs whose outputs would collide
+(same stem, e.g. <code>a.wav</code> and <code>a.mp3</code>, or same name from two directories with one <code>--output-dir</code>)
+stop the run with exit code 2 before any job is submitted.</p>
 <ul>
 <li><code>&lt;stem&gt;.md</code> — Markdown with YAML frontmatter (<code>source</code>, <code>kind</code>, <code>job_id</code>, <code>language</code>, <code>engine</code>,
   <code>model</code>, <code>accelerator</code>, <code>execution_profile</code>, <code>private</code>, <code>worker</code>, <code>settings_revision</code>, <code>created_at</code>).</li>
@@ -2548,7 +2581,7 @@ time.</p>
 </ul>
 <p>For every job one policy summary line goes to stderr, e.g.
 <code>job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed</code>.</p>
-<p><strong>Exit codes:</strong> <code>0</code> success, <code>1</code> error or timeout, <code>2</code> <code>policy_denied</code>.</p>
+<p><strong>Exit codes:</strong> <code>0</code> success, <code>1</code> error or timeout, <code>2</code> <code>policy_denied</code> or colliding output names.</p>
 <p><strong>Examples</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Transcribe a single file as a private hub job</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3
@@ -2723,13 +2756,14 @@ watching with exit code 2.</p>
 <p>Read and change the organization's revisioned settings on the hub (<code>GET /v1/settings</code>).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w">                     </span><span class="c1"># print current revision as JSON, refresh the cache</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>resona<span class="w"> </span>settings<span class="w"> </span>pull<span class="w">                    </span><span class="c1"># cache the current revision for --local runs</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">language</span><span class="o">=</span>en<span class="w"> </span><span class="nv">default_execution_profile</span><span class="o">=</span>cpu-private
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.settings<span class="w"> </span>&gt;<span class="w"> </span>settings.json<span class="w">   </span><span class="c1"># edit the complete settings object …</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json<span class="w">              </span><span class="c1"># … and replace it on the hub</span>
 </code></pre></div>
 <p>Settings are cached without secrets per hub URL and <code>organization_id</code> in
 <code>~/.resona/settings-cache/&lt;hash&gt;.json</code> (<code>hub_url</code>, <code>organization_id</code>, <code>credential</code> — a SHA-256
 prefix of the token, never the token —, <code>revision</code>, <code>etag</code>, <code>settings</code>, <code>fetched_at</code>, <code>stale</code>).</p>
-<p><code>set</code> needs the <code>org_admin</code> role, validates values against <code>OrganizationSettings</code> and sends
+<p><code>set</code> takes only <code>--file</code> with the complete settings object (no <code>key=value</code> edits); it needs the
+<code>org_admin</code> role, validates the document against <code>OrganizationSettings</code> and sends
 <code>If-Match</code> with the cached revision. A <code>409 revision_conflict</code> exits 1 with
 "run <code>resona settings pull</code> and retry". Changes apply to new jobs only; existing jobs keep their
 settings snapshot.</p>

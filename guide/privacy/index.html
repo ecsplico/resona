@@ -1053,6 +1053,8 @@
       
         
       
+        
+      
     
     
     
@@ -1169,6 +1171,34 @@
     
   
     Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
   
 
     
@@ -2082,8 +2112,8 @@ unreachable hub, a timeout or a failed job is reported as an error.</p>
 <h2 id="allowing-cloud-processing">Allowing cloud processing<a class="headerlink" href="#allowing-cloud-processing" title="Permanent link">&para;</a></h2>
 <p>Cloud processing needs <strong>both</strong>:</p>
 <ol>
-<li>the organization setting <code>cloud_enabled=true</code> (set by an <code>org_admin</code>, e.g.
-   <code>resona settings set cloud_enabled=true</code>), and</li>
+<li>the organization setting <code>cloud_enabled: true</code> (set by an <code>org_admin</code> in the settings file
+   passed to <code>resona settings set --file settings.json</code>), and</li>
 <li><code>--allow-cloud</code> on the command (mutually exclusive with <code>--private</code>).</li>
 </ol>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>interview.mp3<span class="w"> </span>--allow-cloud
