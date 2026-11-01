@@ -24,14 +24,16 @@ from typing import Any, Literal, Optional
 from decouple import config
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
 from resona_job_core import (
+    AudioOptions,
     Candidate,
+    DocumentOptions,
     Endpoint,
     EndpointKind,
     OrganizationSettings,
@@ -73,30 +75,6 @@ _SNIFF_BYTES = 16
 
 
 # ── Request models ────────────────────────────────────────────────────────
-
-class AudioOptions(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    translate: bool = False
-    word_timestamps: bool = False
-    vad_filter: bool = True
-
-
-class DocumentOptions(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    languages: Optional[list[Literal["de", "en"]]] = Field(default=None, min_length=1)
-    ocr: Optional[Literal["auto", "force", "off"]] = None
-    ocr_engine: Optional[Literal["ocrmac", "rapidocr", "tesseract"]] = None
-    page_start: Optional[int] = Field(default=None, ge=1)
-    page_end: Optional[int] = Field(default=None, ge=1)
-    pipeline: Optional[Literal["standard"]] = None
-
-    @model_validator(mode="after")
-    def _check_page_range(self) -> "DocumentOptions":
-        if self.page_start is not None and self.page_end is not None and self.page_start > self.page_end:
-            raise ValueError("page_start must be <= page_end")
-        return self
 
 
 class Provenance(BaseModel):
