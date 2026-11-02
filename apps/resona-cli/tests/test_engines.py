@@ -86,6 +86,17 @@ def test_add_engine_duplicate_fails(isolated_config):
     assert result.exit_code == 1
 
 
+def test_added_hub_is_used_without_env(isolated_config, monkeypatch):
+    monkeypatch.delenv("RESONA_API_URL", raising=False)
+    monkeypatch.delenv("RESONA_API_KEY", raising=False)
+    with patch("resona_cli.engines.is_reachable", return_value=True):
+        runner.invoke(app, ["engines", "add", "prod", "https://hub.example/", "--key", "k"])
+
+    from resona_cli.hub import hub_identity
+
+    assert hub_identity() == ("https://hub.example", "k")
+
+
 # ── engines remove ────────────────────────────────────────────────────────────
 
 def test_remove_engine(isolated_config):

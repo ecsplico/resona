@@ -1,7 +1,7 @@
 """Hub selection and error reporting shared by the hub-backed CLI commands.
 
-The hub is chosen by ``RESONA_API_URL``/``RESONA_API_KEY`` or the ``resona-api``
-entry in ``~/.resona/config.json``. Once chosen, every hub error is reported and
+The hub is chosen by ``RESONA_API_URL``/``RESONA_API_KEY`` or the first hub entry
+in ``~/.resona/config.json``. Once chosen, every hub error is reported and
 ends the command; nothing falls back to local or cloud processing.
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ def hub_identity(cfg: Optional[EngineConfig] = None) -> Optional[tuple[str, str]
         return url.rstrip("/"), os.getenv("RESONA_API_KEY", "")
     cfg = cfg or EngineConfig.load()
     for entry in cfg.engines:
-        if entry.type == "resona-api" and entry.api_url:
+        if entry.api_url:
             return entry.api_url.rstrip("/"), entry.api_key or ""
     return None
 
