@@ -2684,19 +2684,65 @@ Inputs, outputs, exit codes and the shared flags (<code>--recursive</code>, <cod
 <td><code>ocrmac</code>, <code>rapidocr</code> or <code>tesseract</code>; must be available in the execution profile</td>
 </tr>
 <tr>
-<td><code>--languages LIST</code></td>
+<td><code>--languages LIST</code> (alias <code>--language</code>)</td>
 <td>(organization setting)</td>
-<td>Comma-separated document languages: <code>de,en</code></td>
+<td>Comma-separated document languages: <code>de</code>, <code>en</code>, <code>fr</code>, <code>it</code>, <code>es</code>, <code>ko</code></td>
 </tr>
 <tr>
 <td><code>--pages RANGE</code></td>
 <td>(all)</td>
 <td>Inclusive 1-based page range: <code>a-b</code>, <code>a-</code>, <code>-b</code> or a single page</td>
 </tr>
+<tr>
+<td><code>--image-scale X</code></td>
+<td><code>1.0</code></td>
+<td><code>1.0</code>–<code>4.0</code>: multiplies the resolution OCR reads the page at (<code>1.0</code> = 216 dpi, <code>2.0</code> = 432 dpi). Requires OCR</td>
+</tr>
+<tr>
+<td><code>--ocr-min-confidence X</code></td>
+<td>(engine default)</td>
+<td><code>0</code>–<code>1</code>: drop OCR text below this recognizer confidence. <code>rapidocr</code> only (its default is <code>0.5</code>)</td>
+</tr>
 </tbody>
 </table>
+<p>Not every OCR engine serves every language or option. A combination no worker can run fails the job
+(<code>invalid_snapshot</code>); a gap of one host (a missing tesseract pack) hands the job to another worker.
+Nothing is silently ignored:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>ocrmac</code></th>
+<th><code>tesseract</code></th>
+<th><code>rapidocr</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>de</code>, <code>en</code>, <code>fr</code>, <code>it</code>, <code>es</code></td>
+<td>yes</td>
+<td>if the <code>deu</code>/<code>eng</code>/<code>fra</code>/<code>ita</code>/<code>spa</code> pack is installed</td>
+<td>yes, one shared PP-OCRv6 recognizer</td>
+</tr>
+<tr>
+<td><code>ko</code></td>
+<td>yes</td>
+<td>if the <code>kor</code> pack is installed</td>
+<td>no: Korean weights are not bundled with the pinned rapidocr and jobs never download models</td>
+</tr>
+<tr>
+<td><code>--ocr-min-confidence</code></td>
+<td>no</td>
+<td>no</td>
+<td>yes (<code>text_score</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><code>--image-scale</code> and <code>--ocr-min-confidence</code> require OCR (<code>--ocr auto</code> or <code>force</code>). Higher scales help
+small print and low-resolution scans; memory and OCR time grow with the square of the scale.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>resona<span class="w"> </span>doc<span class="w"> </span>scan.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="m">1</span>-3<span class="w"> </span>--languages<span class="w"> </span>de,en
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>resona<span class="w"> </span>doc<span class="w"> </span>./faxes/<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>tesseract
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>resona<span class="w"> </span>doc<span class="w"> </span>small-print.pdf<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>rapidocr<span class="w"> </span>--image-scale<span class="w"> </span><span class="m">2</span><span class="w"> </span>--ocr-min-confidence<span class="w"> </span><span class="m">0</span>.6
 </code></pre></div>
 <hr />
 <h2 id="watch">watch<a class="headerlink" href="#watch" title="Permanent link">&para;</a></h2>

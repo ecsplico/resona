@@ -2462,14 +2462,29 @@ Uses <a href="https://github.com/BerriAI/litellm">litellm</a> — any OpenAI-com
 <td>System prompt sent to the model</td>
 </tr>
 <tr>
+<td><code>endpoint</code></td>
+<td>no</td>
+<td>Id of an endpoint in the organization's settings registry; required in hub profiles</td>
+</tr>
+<tr>
 <td><code>model</code></td>
 <td>no</td>
-<td>litellm model string (overrides <code>RESONA_LLM_MODEL</code>)</td>
+<td>litellm model string (overrides <code>RESONA_LLM_MODEL</code>; explicit local CLI mode only)</td>
 </tr>
 <tr>
 <td><code>api_base</code></td>
 <td>no</td>
-<td>Custom API endpoint (overrides <code>RESONA_LLM_API_BASE</code>)</td>
+<td>Custom API endpoint (overrides <code>RESONA_LLM_API_BASE</code>; explicit local CLI mode only)</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>no</td>
+<td>Seconds per model call (default 120)</td>
+</tr>
+<tr>
+<td><code>chunk_chars</code></td>
+<td>no</td>
+<td>Process long Markdown in chunks of about this many characters (≥ 1000); never cuts a table. Enables <code>max_attempts</code>, <code>max_length_deviation</code>, <code>preserve_markup</code></td>
 </tr>
 </tbody>
 </table>
@@ -2482,6 +2497,7 @@ Uses <a href="https://github.com/BerriAI/litellm">litellm</a> — any OpenAI-com
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">}</span>
 </code></pre></div>
 <p>LLM steps add latency. Use them only when rule-based replacements are insufficient.</p>
+<p>For long documents, set <code>chunk_chars</code>. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a <code>polish_chunk_rejected:&lt;n&gt;:&lt;reason&gt;</code> warning. Details: <a href="../../architecture/postprocessing/#chunked-mode-long-markdown">Postprocessing Pipeline</a>. The bundled <code>document-polish-de</code> profile uses this mode for OCR correction of German documents; <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a> shows how to enable it with a local model.</p>
 <h3 id="extract">extract<a class="headerlink" href="#extract" title="Permanent link">&para;</a></h3>
 <p>Sends the current text to a language model and stores the model's <strong>structured JSON</strong> response
 alongside the transcript. The text is not modified.</p>
@@ -2589,7 +2605,7 @@ and common name corrections.</p>
 </code></pre></div>
 <p>Manage named profiles with <code>resona profiles</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile.json
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile

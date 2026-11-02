@@ -1540,6 +1540,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="llm">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#chunked-mode-long-markdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunked mode (long Markdown)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -1574,6 +1591,17 @@
     <span class="md-ellipsis">
       
         The bundled default profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-bundled-document-polish-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bundled document polish profile
       
     </span>
   </a>
@@ -2137,6 +2165,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="llm">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#chunked-mode-long-markdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunked mode (long Markdown)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -2171,6 +2216,17 @@
     <span class="md-ellipsis">
       
         The bundled default profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-bundled-document-polish-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bundled document polish profile
       
     </span>
   </a>
@@ -2347,8 +2403,41 @@
 <td>no</td>
 <td>Maximum tokens to generate</td>
 </tr>
+<tr>
+<td><code>timeout</code></td>
+<td>no</td>
+<td>Seconds per model call (default 120)</td>
+</tr>
+<tr>
+<td><code>chunk_chars</code></td>
+<td>no</td>
+<td>Chunked mode (integer ≥ 1000): the text is sent in chunks of about this many characters, see below</td>
+</tr>
+<tr>
+<td><code>max_attempts</code></td>
+<td>no</td>
+<td>Chunked mode only: calls per chunk before the step fails (1–10, default 3)</td>
+</tr>
+<tr>
+<td><code>max_length_deviation</code></td>
+<td>no</td>
+<td>Chunked mode only: reject a chunk reply whose length differs from the chunk by more than this fraction (e.g. <code>0.3</code>)</td>
+</tr>
+<tr>
+<td><code>preserve_markup</code></td>
+<td>no</td>
+<td>Chunked mode only: reject a chunk reply that changes HTML comments/placeholders, heading levels or the cell count of any table row</td>
+</tr>
 </tbody>
 </table>
+<h4 id="chunked-mode-long-markdown">Chunked mode (long Markdown)<a class="headerlink" href="#chunked-mode-long-markdown" title="Permanent link">&para;</a></h4>
+<p>A step with <code>chunk_chars</code> splits the Markdown with <code>chunking.split_markdown</code>: a chunk ends at the furthest blank-line (block) boundary that keeps it within <code>chunk_chars</code>; only a single block longer than that is cut at a line boundary. A pipe table or a fenced code block is never cut, even when it alone is longer than <code>chunk_chars</code>. The chunks concatenate to the input exactly; each chunk is sent without its surrounding whitespace, which is restored around the reply.</p>
+<ul>
+<li>A chunk call that fails is retried up to <code>max_attempts</code> calls in total. When a chunk still fails, the step raises <code>PostprocessStepFailed</code>. <code>run()</code> re-raises it like <code>PolicyDenied</code>, so the job fails (<code>postprocess_failed</code>, retryable) instead of silently skipping the polish.</li>
+<li>A reply that fails <code>max_length_deviation</code> or <code>preserve_markup</code> is not retried: the raw chunk is kept and the result gets the warning <code>polish_chunk_rejected:&lt;chunk number&gt;:&lt;length|markup&gt;</code>.</li>
+<li>A leading <code>&lt;think&gt;…&lt;/think&gt;</code> block and a code fence wrapped around the whole reply are removed before the checks.</li>
+</ul>
+<p>Without <code>chunk_chars</code> an <code>llm</code> step keeps its single-call behaviour: a failure is logged and the step is skipped (<code>postprocess_step_skipped:&lt;name&gt;</code>).</p>
 <h3 id="extract">extract<a class="headerlink" href="#extract" title="Permanent link">&para;</a></h3>
 <p>Sends the current text to a language model and returns <strong>structured JSON data</strong>. The text is not modified; instead the extracted data is stored alongside the transcript (in <code>job.structured</code> server-side).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
@@ -2362,9 +2451,11 @@
 <p><code>build_pipeline(profile, policy=policy).run(text)</code> returns a <code>PostprocessResult</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@dataclass</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">PostprocessResult</span><span class="p">:</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>         <span class="c1"># final postprocessed text (all llm/replacements steps applied)</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span>        <span class="c1"># accumulated output from all extract steps, keyed by step name</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>             <span class="c1"># final postprocessed text (all llm/replacements steps applied)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span>            <span class="c1"># accumulated output from all extract steps, keyed by step name</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">warnings</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>   <span class="c1"># content-free warnings, e.g. polish_chunk_rejected:&lt;n&gt;:&lt;reason&gt;</span>
 </code></pre></div>
+<p>A text step may return a <code>StepOutput(text, warnings)</code> instead of a string; chunked <code>llm</code> steps do.</p>
 <h2 id="the-bundled-default-profile">The bundled default profile<a class="headerlink" href="#the-bundled-default-profile" title="Permanent link">&para;</a></h2>
 <p><code>resona-postprocess</code> ships a <code>profiles/default.json</code> that covers German medical dictation out of the box. It is used automatically when no profile is specified.</p>
 <table>
@@ -2410,6 +2501,8 @@
 </tbody>
 </table>
 <p>Plus medical section headings (<code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code>, <code>Procedere</code>) and common name corrections.</p>
+<h2 id="the-bundled-document-polish-profile">The bundled document polish profile<a class="headerlink" href="#the-bundled-document-polish-profile" title="Permanent link">&para;</a></h2>
+<p><code>profiles/document-polish-de.json</code> (<code>document-polish-de</code>) is a single chunked <code>llm</code> step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay verbatim. Settings: endpoint <code>gpu-llama</code>, <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.3, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. It is not resolved by name from the package: upload it to the hub as an organization profile (see <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>).</p>
 <h2 id="profile-resolution">Profile resolution<a class="headerlink" href="#profile-resolution" title="Permanent link">&para;</a></h2>
 <p><code>resolve_profile(ref, profiles_dir)</code> accepts any of:
 - A <code>Profile</code> object — returned as-is
@@ -2431,6 +2524,7 @@
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    ↓
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>worker uploads the result; the hub marks the job completed
 </code></pre></div>
+<p>Before each <code>llm</code>/<code>extract</code> step the worker asks the hub for a fresh policy decision on that endpoint. After the job's last step on an endpoint that has an <code>unload_url</code>, the worker POSTs to that URL (best effort, 10 s timeout, logged by endpoint id only) so the model server frees the GPU for the next job.</p>
 <p>The engine receives <code>profile.initial_prompt_string()</code> as its <code>initial_prompt</code>. It never receives replacement rules — postprocessing is the worker's responsibility, not the engine's.</p>
 <h3 id="local-mode-cli-process">Local mode (CLI process)<a class="headerlink" href="#local-mode-cli-process" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>engine returns {text, language, segments}

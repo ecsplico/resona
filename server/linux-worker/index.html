@@ -1206,6 +1206,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#llm-polish-on-the-worker-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM polish on the worker host
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LLM polish on the worker host">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reaching-a-model-server-on-the-hosts-loopback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reaching a model server on the host's loopback
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gpu-sharing-with-llama-swap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU sharing with llama-swap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enable it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-cuda-is-not-available" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2138,6 +2199,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#llm-polish-on-the-worker-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM polish on the worker host
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LLM polish on the worker host">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reaching-a-model-server-on-the-hosts-loopback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reaching a model server on the host's loopback
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gpu-sharing-with-llama-swap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU sharing with llama-swap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enable it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-cuda-is-not-available" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2324,14 +2446,67 @@
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.worker.yml<span class="w"> </span>down<span class="w">        </span><span class="c1"># stop; keeps the models and state volumes</span>
 </code></pre></div>
 <p>Each job runs in its own subprocess. The model is loaded for that job and is released when the subprocess exits, so the GPU is free between jobs.</p>
+<h2 id="llm-polish-on-the-worker-host">LLM polish on the worker host<a class="headerlink" href="#llm-polish-on-the-worker-host" title="Permanent link">&para;</a></h2>
+<p>Document jobs can get an OCR-correction pass from a local model on the worker host. The bundled <code>document-polish-de</code> profile (in the <code>resona-postprocess</code> wheel, <code>resona_postprocess/profiles/document-polish-de.json</code>) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint <code>gpu-llama</code>. Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning <code>polish_chunk_rejected:&lt;n&gt;:&lt;length|markup&gt;</code>. A chunk that fails 3 calls fails the job (<code>postprocess_failed</code>, retryable); the polish is never skipped silently. The raw converter output stays in the result's <code>raw_text</code>; <code>markdown</code> is the polished text. See <a href="../../architecture/postprocessing/#chunked-mode-long-markdown">Postprocessing Pipeline</a>.</p>
+<h3 id="privacy">Privacy<a class="headerlink" href="#privacy" title="Permanent link">&para;</a></h3>
+<p>The endpoint is a <code>local_llm</code> endpoint. The execution policy admits it for private jobs only with a loopback <code>url</code>, and the hub hands the job only to the worker the endpoint is assigned to (<code>worker_id</code>). The text therefore goes from the worker process to a model server on the same host and nowhere else. A job whose profile uses a <code>local_llm</code> endpoint with a non-loopback <code>url</code> is refused at submission (<code>policy_denied</code>), and the policy is checked again before every chunk. A non-loopback <code>unload_url</code> is already refused when the settings are saved. Before each LLM stage the worker asks the hub for a fresh policy decision; when the hub is unreachable the stage does not start. Calls to <code>local_llm</code> endpoints carry a fixed placeholder API key, never an <code>OPENAI_API_KEY</code> from the environment, and litellm uses its bundled model price map instead of fetching it.</p>
+<h3 id="reaching-a-model-server-on-the-hosts-loopback">Reaching a model server on the host's loopback<a class="headerlink" href="#reaching-a-model-server-on-the-hosts-loopback" title="Permanent link">&para;</a></h3>
+<p>On <code>gpu-box</code>, llama-swap listens on the host's <code>127.0.0.1:9292</code> (OpenAI-compatible, <code>/v1</code>). A container on the default bridge network cannot reach the host's loopback, and a bridge address such as <code>172.17.0.1</code> is not loopback, so the policy would deny it. <code>docker-compose.worker.llm.yml</code> overrides the worker service with <code>network_mode: host</code>. In the host namespace <code>127.0.0.1</code> is the host's loopback, so the endpoint URL <code>http://127.0.0.1:9292/v1</code> reaches llama-swap and passes the loopback check.</p>
+<p>The worker still opens no port (it has no listener) and gets no Docker socket. <code>cap_drop: [ALL]</code>, <code>no-new-privileges</code>, UID 1000, the read-only token, the <code>tmpfs</code> job directory and the GPU reservation stay as in the base file. Host networking does give the container the host's network namespace, including every service bound to the host's loopback.</p>
+<p>Use both files for every command that starts the worker:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.worker.yml<span class="w"> </span>-f<span class="w"> </span>docker-compose.worker.llm.yml<span class="w"> </span>up<span class="w"> </span>-d
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.worker.yml<span class="w"> </span>-f<span class="w"> </span>docker-compose.worker.llm.yml<span class="w"> </span>logs<span class="w"> </span>-f
+</code></pre></div>
+<h3 id="gpu-sharing-with-llama-swap">GPU sharing with llama-swap<a class="headerlink" href="#gpu-sharing-with-llama-swap" title="Permanent link">&para;</a></h3>
+<p>llama-swap keeps a loaded model resident until its <code>ttl</code> expires (1800 s for <code>qwen3.6-27b</code> on gpu-box), using most of the 16 GB of VRAM. A whisper <code>large-v3</code> job (about 9 GB) started in that window would run out of memory. An endpoint can therefore name an <code>unload_url</code>: after the job's last LLM stage on that endpoint, and also when the job fails after calling it, the worker sends <code>POST &lt;unload_url&gt;</code> (no body, 10-second timeout). The request is best effort: a failure is logged with the endpoint id and the exception type only and never fails the job. <code>unload_url</code> must be a loopback <code>http(s)</code> URL and is allowed only on <code>local_llm</code> endpoints; anything else is rejected when the settings are validated.</p>
+<p>llama-swap's API (from its <code>docs/kb/guides/model-runtime/ttl-and-unloading.md</code>, not verified against the version installed on gpu-box): <code>POST /api/models/unload/&lt;model_id&gt;</code> unloads one model, <code>POST /api/models/unload</code> unloads all models. Older releases offer <code>GET /unload</code> instead, which the worker's <code>POST</code> does not reach. Check with <code>curl -X POST http://127.0.0.1:9292/api/models/unload/qwen3.6-27b</code> on the host.</p>
+<h3 id="enable-it">Enable it<a class="headerlink" href="#enable-it" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Deploy a release that contains this feature to the hub <strong>and</strong> to every worker first. An older hub rejects <code>unload_url</code> in the settings (<code>422</code>); an older worker fails postprocess jobs whose snapshot contains it (<code>invalid_snapshot</code>).</li>
+<li>Start the worker with the override (above).</li>
+<li>
+<p>As org admin, add the endpoint to the organization settings. <code>worker_id</code> is the id that <code>resona-admin worker enroll</code> printed for the Linux worker:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu-llama&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local_llm&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai/qwen3.6-27b&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:9292/v1&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">&quot;worker_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;linux worker id&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">&quot;unload_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:9292/api/models/unload/qwen3.6-27b&quot;</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p">}</span>
+</code></pre></div>
+<p>The <code>openai/</code> prefix makes litellm speak the OpenAI chat API to <code>url</code>; llama-swap receives the model name <code>qwen3.6-27b</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.settings | .endpoints = ([.endpoints[] | select(.id != &quot;gpu-llama&quot;)] + [input])&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span>-<span class="w"> </span>gpu-llama.json<span class="w"> </span>&gt;<span class="w"> </span>settings.json
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json
+</code></pre></div>
+</li>
+<li>
+<p>Upload the bundled profile as an organization profile (org admin):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from importlib import resources; print(resources.files(&#39;resona_postprocess&#39;).joinpath(&#39;profiles/document-polish-de.json&#39;).read_text())&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>document-polish-de.json
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>document-polish-de<span class="w"> </span>document-polish-de.json
+</code></pre></div>
+<p>(Or copy the file from <code>packages/postprocess/src/resona_postprocess/profiles/</code> in the repository.)</p>
+</li>
+<li>
+<p>Request it per document job:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>resona<span class="w"> </span>doc<span class="w"> </span>scan.pdf<span class="w"> </span>--execution-profile<span class="w"> </span>linux-cuda<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span>--output-dir<span class="w"> </span>out/
+</code></pre></div>
+<p>Leave the organization settings <code>polish: false</code>: with <code>polish: true</code> and <code>postprocess_profile: "document-polish-de"</code> every job, audio included, would get the document prompt. A job that names the profile is claimed only by the worker that the endpoint is assigned to.</p>
+</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Not measured yet</p>
+<p>The effect of <code>document-polish-de</code> on document CER and its run time on gpu-box have not been measured. Measure it with <code>resona eval --profile linux-cuda --remote --postprocess-profile document-polish-de --output-dir /tmp/resona-eval-polish</code> and compare the per-fixture CER with a plain run (see <a href="../../guide/evaluation/">Evaluation &amp; Baselines</a>). Until then, treat the polished <code>markdown</code> as unvalidated and keep <code>raw_text</code> as the reference.</p>
+</div>
 <h2 id="when-cuda-is-not-available">When CUDA is not available<a class="headerlink" href="#when-cuda-is-not-available" title="Permanent link">&para;</a></h2>
 <p>At start, the worker asks the execution environment whether each accelerator of its manifest works (<code>python -m resona_worker.execute --probe-accelerator cuda</code>). If CUDA does not work (no GPU reservation, driver failure, <code>CUDA_VISIBLE_DEVICES=""</code>), the worker logs <code>cuda is not available on this host; not offering 2 tuple(s)</code> and heartbeats with no CUDA tuples. It never claims a CUDA job that it cannot run. The hub reports such jobs as <code>queue_reason: no_capable_worker</code> (approved tuples that the worker does not offer do not count). <code>private-auto</code> jobs stay eligible for the Mac worker, which claims them when it is online. A <code>prepare</code> without a GPU fails with <code>unsupported_capability</code> and leaves the previous manifest unchanged.</p>
 <h2 id="result-provenance">Result provenance<a class="headerlink" href="#result-provenance" title="Permanent link">&para;</a></h2>
 <p>Every stage records its real device and, on CUDA/Metal stages, the peak device memory of the job's process (<code>peak_accelerator_bytes</code>). The Docling layout and table-structure stages run in one engine call and share the value:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>asr     whisper              large-v3@e5b1a55b…                              cuda  8962 MiB
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  cuda   575 MiB
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cuda   575 MiB
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>ocr     rapidocr             rapidocr-ppocr@3.9.2                            cpu
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>asr     whisper              large-v3@e5b1a55b…                              cuda  8962 MiB
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  cuda   575 MiB
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cuda   575 MiB
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>ocr     rapidocr             rapidocr-ppocr@3.9.2                            cpu
 </code></pre></div>
 <h2 id="silence">Silence<a class="headerlink" href="#silence" title="Permanent link">&para;</a></h2>
 <p>openai-whisper has no voice-activity filter of its own and turns noise into text such as "Vielen Dank.". The engine applies faster-whisper's bundled Silero VAD when the job's <code>vad_filter</code> option is set (the default): only detected speech is decoded, and audio without speech gives an empty transcript.</p>
