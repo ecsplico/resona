@@ -2676,7 +2676,7 @@ Inputs, outputs, exit codes and the shared flags (<code>--recursive</code>, <cod
 <tr>
 <td><code>--ocr MODE</code></td>
 <td><code>auto</code></td>
-<td><code>auto</code> (OCR bitmap regions only), <code>force</code> (full-page OCR) or <code>off</code></td>
+<td><code>auto</code> (OCR the layout regions that have no text layer; existing text is kept), <code>force</code> (full-page OCR, text layer ignored) or <code>off</code></td>
 </tr>
 <tr>
 <td><code>--ocr-engine NAME</code></td>
@@ -2738,11 +2738,62 @@ Nothing is silently ignored:</p>
 </tr>
 </tbody>
 </table>
-<p><code>--image-scale</code> and <code>--ocr-min-confidence</code> require OCR (<code>--ocr auto</code> or <code>force</code>). Higher scales help
-small print and low-resolution scans; memory and OCR time grow with the square of the scale.</p>
+<p><code>--image-scale</code> and <code>--ocr-min-confidence</code> require OCR (<code>--ocr auto</code> or <code>force</code>). Memory and OCR time
+grow with the square of the scale.</p>
+<p>Measured on the evaluation corpus (gpu-box, <code>rapidocr</code>, 2026-11-02; CER = character error rate):</p>
+<table>
+<thead>
+<tr>
+<th>Fixture</th>
+<th><code>auto</code></th>
+<th><code>--image-scale 2</code></th>
+<th><code>--ocr force</code></th>
+<th><code>force</code> + scale 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>small print scan (7 pt, 150 dpi)</td>
+<td>0.196</td>
+<td>0.391</td>
+<td><strong>0.000</strong></td>
+<td>0.202</td>
+</tr>
+<tr>
+<td>degraded scan</td>
+<td>0.002</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.000</td>
+</tr>
+<tr>
+<td>digital two-column page with table</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.263</td>
+<td>0.265</td>
+</tr>
+<tr>
+<td>digital three-column page</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.460</td>
+<td>0.460</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>For a pure scan read by <code>rapidocr</code>, <code>--ocr force</code> is the best setting: <code>auto</code> OCRs each layout
+  region as a separate crop, and the recognizer loses small print at crop edges.</li>
+<li>Never use <code>force</code> on documents with a usable text layer: full-page OCR merges neighbouring columns
+  and breaks reading order.</li>
+<li><code>--image-scale 2</code> made small print worse with <code>rapidocr</code>. Raise it only after checking the result.</li>
+<li><code>--ocr-min-confidence</code> 0.3 and 0.7 changed no score.</li>
+<li><code>ocrmac</code> (Apple Vision, Mac worker) read every corpus fixture at CER 0.000, in <code>auto</code> too.</li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>resona<span class="w"> </span>doc<span class="w"> </span>scan.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="m">1</span>-3<span class="w"> </span>--languages<span class="w"> </span>de,en
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>resona<span class="w"> </span>doc<span class="w"> </span>./faxes/<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>tesseract
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>resona<span class="w"> </span>doc<span class="w"> </span>small-print.pdf<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>rapidocr<span class="w"> </span>--image-scale<span class="w"> </span><span class="m">2</span><span class="w"> </span>--ocr-min-confidence<span class="w"> </span><span class="m">0</span>.6
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>resona<span class="w"> </span>doc<span class="w"> </span>small-print-scan.pdf<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>rapidocr
 </code></pre></div>
 <hr />
 <h2 id="watch">watch<a class="headerlink" href="#watch" title="Permanent link">&para;</a></h2>

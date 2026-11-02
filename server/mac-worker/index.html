@@ -1189,6 +1189,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#apple-vision-returns-no-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Apple Vision returns no text
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#result-provenance" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2127,6 +2138,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#apple-vision-returns-no-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Apple Vision returns no text
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#result-provenance" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2257,12 +2279,18 @@
 <li>fails the attempt as retryable <code>out_of_memory</code>. The hub requeues the job until its attempt limit is reached, and another worker can claim it.</li>
 <li>stops offering that tuple until the worker restarts. The hub records the withdrawal in the job's error message only and keeps the worker's approved capabilities unchanged, so after a restart (and <code>prepare</code>, if memory settings changed) the worker offers the tuple again without a new approval.</li>
 </ul>
+<h2 id="apple-vision-returns-no-text">Apple Vision returns no text<a class="headerlink" href="#apple-vision-returns-no-text" title="Permanent link">&para;</a></h2>
+<p>macOS caches compiled Vision models per process name, under <code>~/Library/Caches/&lt;name&gt;/com.apple.e5rt.e5bundlecache</code>. The worker, the CLI and <code>resona-worker prepare</code> all run as <code>python3</code>. A damaged <code>python3</code> cache makes <code>accurate</code> recognition return no text on some pages without an error: the job completes with empty Markdown, while <code>fast</code> recognition and other process names still work. Seen on 2026-11-02 (macOS build 26B123): a scanned page came back empty and <code>prepare</code> still passed, because its synthetic scan was not affected.</p>
+<p>Fix: stop the worker, move the cache aside (macOS rebuilds it on the next run), then start the worker and run <code>prepare</code> again:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>mv<span class="w"> </span>~/Library/Caches/python3<span class="w"> </span>~/Library/Caches/python3.broken
+</code></pre></div>
+<p>Check: <code>resona eval --profile mac-private --output-dir /tmp/eval</code> must report CER 0.0 on the scanned fixtures.</p>
 <h2 id="result-provenance">Result provenance<a class="headerlink" href="#result-provenance" title="Permanent link">&para;</a></h2>
 <p>Every result records the real device of each stage, for example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>asr     mlx-whisper          mlx-community/whisper-large-v3-mlx@49e6aa28…  metal
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  metal
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cpu
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>ocr     ocrmac               apple-vision                                    metal
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>asr     mlx-whisper          mlx-community/whisper-large-v3-mlx@49e6aa28…  metal
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  metal
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cpu
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>ocr     ocrmac               apple-vision                                    metal
 </code></pre></div>
 
 

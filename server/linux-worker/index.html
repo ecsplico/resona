@@ -2495,10 +2495,50 @@
 <p>Leave the organization settings <code>polish: false</code>: with <code>polish: true</code> and <code>postprocess_profile: "document-polish-de"</code> every job, audio included, would get the document prompt. A job that names the profile is claimed only by the worker that the endpoint is assigned to.</p>
 </li>
 </ol>
-<div class="admonition note">
-<p class="admonition-title">Not measured yet</p>
-<p>The effect of <code>document-polish-de</code> on document CER and its run time on gpu-box have not been measured. Measure it with <code>resona eval --profile linux-cuda --remote --postprocess-profile document-polish-de --output-dir /tmp/resona-eval-polish</code> and compare the per-fixture CER with a plain run (see <a href="../../guide/evaluation/">Evaluation &amp; Baselines</a>). Until then, treat the polished <code>markdown</code> as unvalidated and keep <code>raw_text</code> as the reference.</p>
-</div>
+<p>Measured on 2026-11-02 (evaluation corpus, gpu-box, <code>linux-cuda</code>, <code>qwen3.6-27b</code> via llama-swap; CER = character error rate):</p>
+<table>
+<thead>
+<tr>
+<th>Fixture</th>
+<th>Plain</th>
+<th><code>document-polish-de</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>degraded scan</td>
+<td>0.002</td>
+<td>0.000</td>
+</tr>
+<tr>
+<td>small print scan</td>
+<td>0.196</td>
+<td>0.191</td>
+</tr>
+<tr>
+<td>text layer replaced by OCR (<code>bad-text-layer-*</code>)</td>
+<td>0.004</td>
+<td>0.000</td>
+</tr>
+<tr>
+<td>dense table scan</td>
+<td>3 cells missing*</td>
+<td>0 cells missing</td>
+</tr>
+<tr>
+<td>all other fixtures</td>
+<td>0.000</td>
+<td>0.000</td>
+</tr>
+</tbody>
+</table>
+<p>* Before the <code>°℃</code> normalization (608e6e7); the plain run now also misses no cell.</p>
+<ul>
+<li>Polish fixes single misread characters. It cannot restore text that OCR dropped, as on the small print scan; <code>--ocr force</code> fixes that case (see <a href="../../guide/cli/#doc">CLI <code>doc</code></a>).</li>
+<li>It adds 36–77 s per one-page document, including reloading the model, because the worker unloads it after each job.</li>
+<li>No chunk was rejected by the length or markup guards.</li>
+<li>The polished <code>markdown</code> is still a model rewrite: keep <code>raw_text</code> as the reference.</li>
+</ul>
 <h2 id="when-cuda-is-not-available">When CUDA is not available<a class="headerlink" href="#when-cuda-is-not-available" title="Permanent link">&para;</a></h2>
 <p>At start, the worker asks the execution environment whether each accelerator of its manifest works (<code>python -m resona_worker.execute --probe-accelerator cuda</code>). If CUDA does not work (no GPU reservation, driver failure, <code>CUDA_VISIBLE_DEVICES=""</code>), the worker logs <code>cuda is not available on this host; not offering 2 tuple(s)</code> and heartbeats with no CUDA tuples. It never claims a CUDA job that it cannot run. The hub reports such jobs as <code>queue_reason: no_capable_worker</code> (approved tuples that the worker does not offer do not count). <code>private-auto</code> jobs stay eligible for the Mac worker, which claims them when it is online. A <code>prepare</code> without a GPU fails with <code>unsupported_capability</code> and leaves the previous manifest unchanged.</p>
 <h2 id="result-provenance">Result provenance<a class="headerlink" href="#result-provenance" title="Permanent link">&para;</a></h2>
