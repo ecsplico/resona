@@ -183,8 +183,22 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`, 
 
     Leave the organization settings `polish: false`: with `polish: true` and `postprocess_profile: "document-polish-de"` every job, audio included, would get the document prompt. A job that names the profile is claimed only by the worker that the endpoint is assigned to.
 
-!!! note "Not measured yet"
-    The effect of `document-polish-de` on document CER and its run time on gpu-box have not been measured. Measure it with `resona eval --profile linux-cuda --remote --postprocess-profile document-polish-de --output-dir /tmp/resona-eval-polish` and compare the per-fixture CER with a plain run (see [Evaluation & Baselines](../guide/evaluation.md)). Until then, treat the polished `markdown` as unvalidated and keep `raw_text` as the reference.
+Measured on 2026-11-02 (evaluation corpus, gpu-box, `linux-cuda`, `qwen3.6-27b` via llama-swap; CER = character error rate):
+
+| Fixture | Plain | `document-polish-de` |
+|---|---|---|
+| degraded scan | 0.002 | 0.000 |
+| small print scan | 0.196 | 0.191 |
+| text layer replaced by OCR (`bad-text-layer-*`) | 0.004 | 0.000 |
+| dense table scan | 3 cells missing\* | 0 cells missing |
+| all other fixtures | 0.000 | 0.000 |
+
+\* Before the `°℃` normalization (608e6e7); the plain run now also misses no cell.
+
+- Polish fixes single misread characters. It cannot restore text that OCR dropped, as on the small print scan; `--ocr force` fixes that case (see [CLI `doc`](../guide/cli.md#doc)).
+- It adds 36–77 s per one-page document, including reloading the model, because the worker unloads it after each job.
+- No chunk was rejected by the length or markup guards.
+- The polished `markdown` is still a model rewrite: keep `raw_text` as the reference.
 
 ## When CUDA is not available
 

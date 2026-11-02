@@ -126,6 +126,18 @@ The worker treats a job as out of memory if the engine subprocess is killed with
 - fails the attempt as retryable `out_of_memory`. The hub requeues the job until its attempt limit is reached, and another worker can claim it.
 - stops offering that tuple until the worker restarts. The hub records the withdrawal in the job's error message only and keeps the worker's approved capabilities unchanged, so after a restart (and `prepare`, if memory settings changed) the worker offers the tuple again without a new approval.
 
+## Apple Vision returns no text
+
+macOS caches compiled Vision models per process name, under `~/Library/Caches/<name>/com.apple.e5rt.e5bundlecache`. The worker, the CLI and `resona-worker prepare` all run as `python3`. A damaged `python3` cache makes `accurate` recognition return no text on some pages without an error: the job completes with empty Markdown, while `fast` recognition and other process names still work. Seen on 2026-11-02 (macOS build 26B123): a scanned page came back empty and `prepare` still passed, because its synthetic scan was not affected.
+
+Fix: stop the worker, move the cache aside (macOS rebuilds it on the next run), then start the worker and run `prepare` again:
+
+```bash
+mv ~/Library/Caches/python3 ~/Library/Caches/python3.broken
+```
+
+Check: `resona eval --profile mac-private --output-dir /tmp/eval` must report CER 0.0 on the scanned fixtures.
+
 ## Result provenance
 
 Every result records the real device of each stage, for example:

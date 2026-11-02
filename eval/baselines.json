@@ -5,9 +5,9 @@
       "execution_profile": "cpu-private",
       "platform": "cpu",
       "revision": 1,
-      "evaluation_id": 1,
-      "promoted_at": "2026-10-31T23:06:55+00:00",
-      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
+      "evaluation_id": 10,
+      "promoted_at": "2026-11-02T02:28:13+00:00",
+      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -68,16 +68,36 @@
           "cer": 0.0,
           "missing_cells": 0,
           "order_failures": 0
+        },
+        "degraded-scan-pdf": {
+          "cer": 0.0022
+        },
+        "small-print-scan-pdf": {
+          "cer": 0.1955
+        },
+        "dense-table-scan-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0
+        },
+        "three-column-pdf": {
+          "cer": 0.0,
+          "order_failures": 0
+        },
+        "bad-text-layer-auto": {
+          "cer": 0.0036
+        },
+        "bad-text-layer-force": {
+          "cer": 0.0036
         }
       }
     },
     "linux-cuda/linux-cuda": {
       "execution_profile": "linux-cuda",
       "platform": "linux-cuda",
-      "revision": 1,
-      "evaluation_id": 3,
-      "promoted_at": "2026-11-01T19:07:39+00:00",
-      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
+      "revision": 2,
+      "evaluation_id": 8,
+      "promoted_at": "2026-11-02T02:25:27+00:00",
+      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -138,156 +158,36 @@
           "cer": 0.0,
           "missing_cells": 0,
           "order_failures": 0
+        },
+        "degraded-scan-pdf": {
+          "cer": 0.0022
+        },
+        "small-print-scan-pdf": {
+          "cer": 0.1955
+        },
+        "dense-table-scan-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0
+        },
+        "three-column-pdf": {
+          "cer": 0.0,
+          "order_failures": 0
+        },
+        "bad-text-layer-auto": {
+          "cer": 0.0036
+        },
+        "bad-text-layer-force": {
+          "cer": 0.0036
         }
       }
     },
     "mac-private/mac-metal": {
       "execution_profile": "mac-private",
       "platform": "mac-metal",
-      "revision": 1,
-      "evaluation_id": 2,
-      "promoted_at": "2026-10-31T23:06:55+00:00",
-      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
-      "release_id": "0.1.0",
-      "runtime_versions": [
-        "0.1.0"
-      ],
-      "normalization": {
-        "audio": "text-v1",
-        "document": "markdown-v1"
-      },
-      "models": [
-        {
-          "stage": "asr",
-          "engine": "mlx-whisper",
-          "model": "mlx-community/whisper-large-v3-mlx",
-          "revision": "49e6aa286ad60c14352c404340ded53710378a11",
-          "accelerator": "metal"
-        },
-        {
-          "stage": "layout",
-          "engine": "docling-layout",
-          "model": "docling-project/docling-layout-heron",
-          "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
-          "accelerator": "metal"
-        },
-        {
-          "stage": "layout",
-          "engine": "docling-tableformer",
-          "model": "docling-project/docling-models",
-          "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
-          "accelerator": "cpu"
-        },
-        {
-          "stage": "ocr",
-          "engine": "ocrmac",
-          "model": "apple-vision",
-          "revision": null,
-          "accelerator": "metal"
-        }
-      ],
-      "fixtures": {
-        "de-speech": {
-          "wer": 0.0,
-          "cer": 0.0
-        },
-        "de-numbers": {
-          "wer": 0.0455,
-          "cer": 0.0381
-        },
-        "silence": {
-          "silence_insertions": 0
-        },
-        "digital-pdf": {
-          "cer": 0.0
-        },
-        "scan-pdf": {
-          "cer": 0.0
-        },
-        "table-columns-pdf": {
-          "cer": 0.0,
-          "missing_cells": 0,
-          "order_failures": 0
-        }
-      }
-    },
-    "private-auto/linux-cuda": {
-      "execution_profile": "private-auto",
-      "platform": "linux-cuda",
-      "revision": 1,
-      "evaluation_id": 5,
-      "promoted_at": "2026-11-02T00:44:20+00:00",
-      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
-      "release_id": "0.1.0",
-      "runtime_versions": [
-        "0.1.0"
-      ],
-      "normalization": {
-        "audio": "text-v1",
-        "document": "markdown-v1"
-      },
-      "models": [
-        {
-          "stage": "asr",
-          "engine": "whisper",
-          "model": "large-v3",
-          "revision": "e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb",
-          "accelerator": "cuda"
-        },
-        {
-          "stage": "layout",
-          "engine": "docling-layout",
-          "model": "docling-project/docling-layout-heron",
-          "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
-          "accelerator": "cuda"
-        },
-        {
-          "stage": "layout",
-          "engine": "docling-tableformer",
-          "model": "docling-project/docling-models",
-          "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
-          "accelerator": "cuda"
-        },
-        {
-          "stage": "ocr",
-          "engine": "rapidocr",
-          "model": "rapidocr-ppocr",
-          "revision": "3.9.2",
-          "accelerator": "cpu"
-        }
-      ],
-      "fixtures": {
-        "de-speech": {
-          "wer": 0.0,
-          "cer": 0.0
-        },
-        "de-numbers": {
-          "wer": 0.0455,
-          "cer": 0.0381
-        },
-        "silence": {
-          "silence_insertions": 0
-        },
-        "digital-pdf": {
-          "cer": 0.0
-        },
-        "scan-pdf": {
-          "cer": 0.0
-        },
-        "table-columns-pdf": {
-          "cer": 0.0,
-          "missing_cells": 0,
-          "order_failures": 0
-        }
-      }
-    },
-    "private-auto/mac-metal": {
-      "execution_profile": "private-auto",
-      "platform": "mac-metal",
-      "revision": 1,
-      "evaluation_id": 2,
-      "promoted_at": "2026-11-01T18:02:18+00:00",
-      "corpus_sha256": "274a3061fe3072577db6f31586145530644b3630f7f50c25ddd79826c3c4e4cf",
+      "revision": 2,
+      "evaluation_id": 6,
+      "promoted_at": "2026-11-02T02:22:55+00:00",
+      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -348,6 +248,206 @@
           "cer": 0.0,
           "missing_cells": 0,
           "order_failures": 0
+        },
+        "degraded-scan-pdf": {
+          "cer": 0.0
+        },
+        "small-print-scan-pdf": {
+          "cer": 0.0
+        },
+        "dense-table-scan-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0
+        },
+        "three-column-pdf": {
+          "cer": 0.0,
+          "order_failures": 0
+        },
+        "bad-text-layer-auto": {
+          "cer": 0.0
+        },
+        "bad-text-layer-force": {
+          "cer": 0.0
+        }
+      }
+    },
+    "private-auto/linux-cuda": {
+      "execution_profile": "private-auto",
+      "platform": "linux-cuda",
+      "revision": 2,
+      "evaluation_id": 9,
+      "promoted_at": "2026-11-02T02:25:44+00:00",
+      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "release_id": "0.1.0",
+      "runtime_versions": [
+        "0.1.0"
+      ],
+      "normalization": {
+        "audio": "text-v1",
+        "document": "markdown-v1"
+      },
+      "models": [
+        {
+          "stage": "asr",
+          "engine": "whisper",
+          "model": "large-v3",
+          "revision": "e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb",
+          "accelerator": "cuda"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-layout",
+          "model": "docling-project/docling-layout-heron",
+          "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+          "accelerator": "cuda"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-tableformer",
+          "model": "docling-project/docling-models",
+          "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
+          "accelerator": "cuda"
+        },
+        {
+          "stage": "ocr",
+          "engine": "rapidocr",
+          "model": "rapidocr-ppocr",
+          "revision": "3.9.2",
+          "accelerator": "cpu"
+        }
+      ],
+      "fixtures": {
+        "de-speech": {
+          "wer": 0.0,
+          "cer": 0.0
+        },
+        "de-numbers": {
+          "wer": 0.0455,
+          "cer": 0.0381
+        },
+        "silence": {
+          "silence_insertions": 0
+        },
+        "digital-pdf": {
+          "cer": 0.0
+        },
+        "scan-pdf": {
+          "cer": 0.0
+        },
+        "table-columns-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0,
+          "order_failures": 0
+        },
+        "degraded-scan-pdf": {
+          "cer": 0.0022
+        },
+        "small-print-scan-pdf": {
+          "cer": 0.1955
+        },
+        "dense-table-scan-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0
+        },
+        "three-column-pdf": {
+          "cer": 0.0,
+          "order_failures": 0
+        },
+        "bad-text-layer-auto": {
+          "cer": 0.0036
+        },
+        "bad-text-layer-force": {
+          "cer": 0.0036
+        }
+      }
+    },
+    "private-auto/mac-metal": {
+      "execution_profile": "private-auto",
+      "platform": "mac-metal",
+      "revision": 2,
+      "evaluation_id": 7,
+      "promoted_at": "2026-11-02T02:22:55+00:00",
+      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "release_id": "0.1.0",
+      "runtime_versions": [
+        "0.1.0"
+      ],
+      "normalization": {
+        "audio": "text-v1",
+        "document": "markdown-v1"
+      },
+      "models": [
+        {
+          "stage": "asr",
+          "engine": "mlx-whisper",
+          "model": "mlx-community/whisper-large-v3-mlx",
+          "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+          "accelerator": "metal"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-layout",
+          "model": "docling-project/docling-layout-heron",
+          "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+          "accelerator": "metal"
+        },
+        {
+          "stage": "layout",
+          "engine": "docling-tableformer",
+          "model": "docling-project/docling-models",
+          "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
+          "accelerator": "cpu"
+        },
+        {
+          "stage": "ocr",
+          "engine": "ocrmac",
+          "model": "apple-vision",
+          "revision": null,
+          "accelerator": "auto"
+        }
+      ],
+      "fixtures": {
+        "de-speech": {
+          "wer": 0.0,
+          "cer": 0.0
+        },
+        "de-numbers": {
+          "wer": 0.0455,
+          "cer": 0.0381
+        },
+        "silence": {
+          "silence_insertions": 0
+        },
+        "digital-pdf": {
+          "cer": 0.0
+        },
+        "scan-pdf": {
+          "cer": 0.0
+        },
+        "table-columns-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0,
+          "order_failures": 0
+        },
+        "degraded-scan-pdf": {
+          "cer": 0.0
+        },
+        "small-print-scan-pdf": {
+          "cer": 0.0
+        },
+        "dense-table-scan-pdf": {
+          "cer": 0.0,
+          "missing_cells": 0
+        },
+        "three-column-pdf": {
+          "cer": 0.0,
+          "order_failures": 0
+        },
+        "bad-text-layer-auto": {
+          "cer": 0.0
+        },
+        "bad-text-layer-force": {
+          "cer": 0.0
         }
       }
     }

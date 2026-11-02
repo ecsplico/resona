@@ -125,7 +125,7 @@ resona doc [INPUTS...] [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--ocr MODE` | `auto` | `auto` (OCR bitmap regions only), `force` (full-page OCR) or `off` |
+| `--ocr MODE` | `auto` | `auto` (OCR the layout regions that have no text layer; existing text is kept), `force` (full-page OCR, text layer ignored) or `off` |
 | `--ocr-engine NAME` | (profile) | `ocrmac`, `rapidocr` or `tesseract`; must be available in the execution profile |
 | `--languages LIST` (alias `--language`) | (organization setting) | Comma-separated document languages: `de`, `en`, `fr`, `it`, `es`, `ko` |
 | `--pages RANGE` | (all) | Inclusive 1-based page range: `a-b`, `a-`, `-b` or a single page |
@@ -142,13 +142,30 @@ Nothing is silently ignored:
 | `ko` | yes | if the `kor` pack is installed | no: Korean weights are not bundled with the pinned rapidocr and jobs never download models |
 | `--ocr-min-confidence` | no | no | yes (`text_score`) |
 
-`--image-scale` and `--ocr-min-confidence` require OCR (`--ocr auto` or `force`). Higher scales help
-small print and low-resolution scans; memory and OCR time grow with the square of the scale.
+`--image-scale` and `--ocr-min-confidence` require OCR (`--ocr auto` or `force`). Memory and OCR time
+grow with the square of the scale.
+
+Measured on the evaluation corpus (gpu-box, `rapidocr`, 2026-11-02; CER = character error rate):
+
+| Fixture | `auto` | `--image-scale 2` | `--ocr force` | `force` + scale 2 |
+|---|---|---|---|---|
+| small print scan (7 pt, 150 dpi) | 0.196 | 0.391 | **0.000** | 0.202 |
+| degraded scan | 0.002 | 0.000 | 0.000 | 0.000 |
+| digital two-column page with table | 0.000 | 0.000 | 0.263 | 0.265 |
+| digital three-column page | 0.000 | 0.000 | 0.460 | 0.460 |
+
+- For a pure scan read by `rapidocr`, `--ocr force` is the best setting: `auto` OCRs each layout
+  region as a separate crop, and the recognizer loses small print at crop edges.
+- Never use `force` on documents with a usable text layer: full-page OCR merges neighbouring columns
+  and breaks reading order.
+- `--image-scale 2` made small print worse with `rapidocr`. Raise it only after checking the result.
+- `--ocr-min-confidence` 0.3 and 0.7 changed no score.
+- `ocrmac` (Apple Vision, Mac worker) read every corpus fixture at CER 0.000, in `auto` too.
 
 ```bash
 resona doc scan.pdf --pages 1-3 --languages de,en
 resona doc ./faxes/ --ocr force --ocr-engine tesseract
-resona doc small-print.pdf --ocr force --ocr-engine rapidocr --image-scale 2 --ocr-min-confidence 0.6
+resona doc small-print-scan.pdf --ocr force --ocr-engine rapidocr
 ```
 
 ---
