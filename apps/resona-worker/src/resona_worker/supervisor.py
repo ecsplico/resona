@@ -26,9 +26,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import httpx
 from pydantic import ValidationError
 from resona_job_core import Candidate, Endpoint, ExecutionPolicy, JobResult, PolicyDenied, StageProvenance
-from resona_postprocess.llm import legacy_endpoint_id
+from resona_postprocess.llm import PostprocessStepFailed, legacy_endpoint_id
 from resona_postprocess.pipeline import PostprocessResult, build_pipeline
 from resona_postprocess.profile import Profile, ProfileError
 
@@ -70,6 +71,7 @@ _STAGE_LLM_TYPES = frozenset({"llm", "extract"})
 _OUT_OF_MEMORY_RC = frozenset({int(ExitCode.OUT_OF_MEMORY), -9})
 _STDERR_SCAN_BYTES = 64 * 1024
 _PROBE_TIMEOUT_SECONDS = 120.0
+_UNLOAD_TIMEOUT_SECONDS = 10.0
 
 
 class LeaseLost(Exception):
@@ -188,6 +190,7 @@ class Supervisor:
         wall: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
         probe: Callable[[str], bool] | None = None,
+        endpoint_transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._config = config
         self._hub = hub or HubClient(config.hub_url, config.token, sleep=sleep)
@@ -195,6 +198,7 @@ class Supervisor:
         self._wall = wall
         self._sleep = sleep
         self._probe = probe or self._probe_with_executor
+        self._endpoint_transport = endpoint_transport
         self._withdrawn: set[Candidate] = set()
         self._approved_private = False
         self._worker_id: str | None = None
@@ -483,44 +487,68 @@ class Supervisor:
         warnings = list(result.warnings)
         structured = dict(result.structured)
         stages = list(result.provenance.stages)
-        for step in steps:
-            if not isinstance(step, dict):
-                raise JobFailure("invalid_snapshot", retryable=False)
-            stage_name = str(step.get("name") or step.get("type") or "step")
-            try:
-                single = Profile.from_dict({**profile_dict, "steps": [step]})
-                pipeline = build_pipeline(single, policy=policy)
-            except PolicyDenied:
-                raise JobFailure("policy_denied", retryable=False) from None
-            except (ProfileError, ValueError, KeyError, TypeError):
-                raise JobFailure("invalid_snapshot", retryable=False) from None
+        # Index of the last step calling each endpoint: its model is unloaded after that step.
+        last_use: dict[str, int] = {}
+        for idx, step in enumerate(steps):
+            if isinstance(step, dict) and step.get("type") in _STAGE_LLM_TYPES:
+                try:
+                    last_use[step.get("endpoint") or legacy_endpoint_id(step)] = idx
+                except PolicyDenied:
+                    raise JobFailure("policy_denied", retryable=False) from None
+        # Endpoints called and not yet unloaded; a failing job unloads them on the way out.
+        loaded: set[str] = set()
+        try:
+            for idx, step in enumerate(steps):
+                if not isinstance(step, dict):
+                    raise JobFailure("invalid_snapshot", retryable=False)
+                stage_name = str(step.get("name") or step.get("type") or "step")
+                try:
+                    single = Profile.from_dict({**profile_dict, "steps": [step]})
+                    pipeline = build_pipeline(single, policy=policy)
+                except PolicyDenied:
+                    raise JobFailure("policy_denied", retryable=False) from None
+                except (ProfileError, ValueError, KeyError, TypeError):
+                    raise JobFailure("invalid_snapshot", retryable=False) from None
 
-            endpoint_id: str | None = None
-            if step.get("type") in _STAGE_LLM_TYPES:
-                endpoint_id = step.get("endpoint") or legacy_endpoint_id(step)
-                self._guard_stage(job, keeper, stage_name, endpoint_id)
+                endpoint_id: str | None = None
+                if step.get("type") in _STAGE_LLM_TYPES:
+                    endpoint_id = step.get("endpoint") or legacy_endpoint_id(step)
+                    self._guard_stage(job, keeper, stage_name, endpoint_id)
+                    loaded.add(endpoint_id)
 
-            started = time.perf_counter()
-            run: PostprocessResult = pipeline.run(text)
-            seconds = time.perf_counter() - started
-            text = run.text
-            skipped = run.data.get("_skipped", [])
-            warnings.extend(f"postprocess_step_skipped:{name}" for name in skipped)
-            structured.update({key: value for key, value in run.data.items() if key != "_skipped"})
-            if endpoint_id is not None and not skipped:
-                endpoint = policy.endpoint(endpoint_id)
-                if endpoint is None:
-                    raise JobFailure("policy_denied", retryable=False)
-                stages.append(
-                    StageProvenance(
-                        stage="llm",
-                        engine="litellm",
-                        model=endpoint.model,
-                        accelerator="external",
-                        endpoint_id=endpoint.id,
-                        seconds=seconds,
+                started = time.perf_counter()
+                try:
+                    run: PostprocessResult = pipeline.run(text)
+                except PolicyDenied:
+                    raise JobFailure("policy_denied", retryable=False) from None
+                except PostprocessStepFailed as exc:
+                    raise JobFailure("postprocess_failed", retryable=True, message=str(exc)) from None
+                seconds = time.perf_counter() - started
+                if endpoint_id is not None and last_use.get(endpoint_id) == idx:
+                    loaded.discard(endpoint_id)
+                    self._unload(policy.endpoint(endpoint_id))
+                text = run.text
+                warnings.extend(run.warnings)
+                skipped = run.data.get("_skipped", [])
+                warnings.extend(f"postprocess_step_skipped:{name}" for name in skipped)
+                structured.update({key: value for key, value in run.data.items() if key != "_skipped"})
+                if endpoint_id is not None and not skipped:
+                    endpoint = policy.endpoint(endpoint_id)
+                    if endpoint is None:
+                        raise JobFailure("policy_denied", retryable=False)
+                    stages.append(
+                        StageProvenance(
+                            stage="llm",
+                            engine="litellm",
+                            model=endpoint.model,
+                            accelerator="external",
+                            endpoint_id=endpoint.id,
+                            seconds=seconds,
+                        )
                     )
-                )
+        finally:
+            for endpoint_id in sorted(loaded):
+                self._unload(policy.endpoint(endpoint_id))
 
         return result.model_copy(
             update={
@@ -540,6 +568,23 @@ class Supervisor:
         except HubUnavailable:
             raise JobFailure("hub_unreachable", retryable=True) from None
         keeper.check()
+
+    def _unload(self, endpoint: Endpoint | None) -> None:
+        """Best effort: ask the endpoint's model server to free the GPU (``unload_url``).
+
+        ``Endpoint`` admits only loopback ``unload_url`` values. The request carries no
+        content; failures are logged by endpoint id and never fail the job.
+        """
+        if endpoint is None or endpoint.unload_url is None:
+            return
+        try:
+            with httpx.Client(
+                transport=self._endpoint_transport, timeout=_UNLOAD_TIMEOUT_SECONDS, trust_env=False
+            ) as client:
+                response = client.post(endpoint.unload_url)
+            log.info("endpoint %s: unload requested (HTTP %d)", endpoint.id, response.status_code)
+        except httpx.HTTPError as exc:
+            log.warning("endpoint %s: unload request failed (%s)", endpoint.id, type(exc).__name__)
 
     # -- reporting ----------------------------------------------------------
 

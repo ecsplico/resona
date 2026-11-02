@@ -17,7 +17,10 @@ def test_document_options_leave_unset_fields_to_the_execution_profile() -> None:
         {"page_start": 3, "page_end": 2},
         {"page_start": 0},
         {"languages": []},
-        {"languages": ["fr"]},
+        {"languages": ["nl"]},
+        {"image_scale": 0.5},
+        {"image_scale": 4.5},
+        {"ocr_min_confidence": 1.5},
         {"ocr": "sometimes"},
         {"ocr_engine": "mistral"},
         {"pipeline": "vlm"},
@@ -27,6 +30,15 @@ def test_document_options_leave_unset_fields_to_the_execution_profile() -> None:
 def test_document_options_reject_values_outside_the_contract(fields: dict) -> None:
     with pytest.raises(ValidationError):
         DocumentOptions(**fields)
+
+
+def test_document_options_accept_scale_confidence_and_languages_at_their_bounds() -> None:
+    options = DocumentOptions(languages=["fr", "it", "es", "ko"], image_scale=4.0, ocr_min_confidence=0.0)
+
+    assert options.model_dump(exclude_none=True) == {
+        "languages": ["fr", "it", "es", "ko"], "image_scale": 4.0, "ocr_min_confidence": 0.0,
+    }
+    assert DocumentOptions(image_scale=1.0, ocr_min_confidence=1.0).image_scale == 1.0
 
 
 def test_audio_options_forbid_engine_keyword_forwarding() -> None:

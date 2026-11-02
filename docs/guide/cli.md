@@ -127,12 +127,28 @@ resona doc [INPUTS...] [OPTIONS]
 |------|---------|-------------|
 | `--ocr MODE` | `auto` | `auto` (OCR bitmap regions only), `force` (full-page OCR) or `off` |
 | `--ocr-engine NAME` | (profile) | `ocrmac`, `rapidocr` or `tesseract`; must be available in the execution profile |
-| `--languages LIST` | (organization setting) | Comma-separated document languages: `de,en` |
+| `--languages LIST` (alias `--language`) | (organization setting) | Comma-separated document languages: `de`, `en`, `fr`, `it`, `es`, `ko` |
 | `--pages RANGE` | (all) | Inclusive 1-based page range: `a-b`, `a-`, `-b` or a single page |
+| `--image-scale X` | `1.0` | `1.0`–`4.0`: multiplies the resolution OCR reads the page at (`1.0` = 216 dpi, `2.0` = 432 dpi). Requires OCR |
+| `--ocr-min-confidence X` | (engine default) | `0`–`1`: drop OCR text below this recognizer confidence. `rapidocr` only (its default is `0.5`) |
+
+Not every OCR engine serves every language or option. A combination no worker can run fails the job
+(`invalid_snapshot`); a gap of one host (a missing tesseract pack) hands the job to another worker.
+Nothing is silently ignored:
+
+| | `ocrmac` | `tesseract` | `rapidocr` |
+|---|---|---|---|
+| `de`, `en`, `fr`, `it`, `es` | yes | if the `deu`/`eng`/`fra`/`ita`/`spa` pack is installed | yes, one shared PP-OCRv6 recognizer |
+| `ko` | yes | if the `kor` pack is installed | no: Korean weights are not bundled with the pinned rapidocr and jobs never download models |
+| `--ocr-min-confidence` | no | no | yes (`text_score`) |
+
+`--image-scale` and `--ocr-min-confidence` require OCR (`--ocr auto` or `force`). Higher scales help
+small print and low-resolution scans; memory and OCR time grow with the square of the scale.
 
 ```bash
 resona doc scan.pdf --pages 1-3 --languages de,en
 resona doc ./faxes/ --ocr force --ocr-engine tesseract
+resona doc small-print.pdf --ocr force --ocr-engine rapidocr --image-scale 2 --ocr-min-confidence 0.6
 ```
 
 ---

@@ -2,6 +2,10 @@
 
 The corpus hash is the SHA-256 of MANIFEST.json; the manifest pins every file's
 SHA-256, so the hash covers the references and the fixture bytes together.
+
+A document fixture may carry job ``options`` (e.g. ``{"ocr": "force"}``); they are
+merged over the default document options of every evaluation job of that fixture
+and validated as :class:`DocumentOptions` when the corpus is loaded.
 """
 
 from __future__ import annotations
@@ -9,9 +13,10 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
+from resona_job_core.options import DocumentOptions
 
 Check = Literal["wer", "cer", "silence", "table_cells", "reading_order"]
 
@@ -34,6 +39,11 @@ class Fixture(BaseModel):
     checks: list[Check]
     table_cells: list[str] = []
     reading_order: list[str] = []
+    options: dict[str, Any] = {}
+
+    def document_options(self) -> DocumentOptions:
+        """Default document job options (the fixture language) with the fixture's options merged over them."""
+        return DocumentOptions.model_validate({"languages": [self.language], **self.options})
 
 
 class Manifest(BaseModel):
@@ -75,6 +85,19 @@ def load_corpus(root: Path) -> Corpus:
         path = root / fixture.file
         if path.is_symlink() or not path.is_file():
             raise CorpusError(f"fixture {fixture.id!r}: {fixture.file} is missing")
+        _check_options(fixture)
         if hashlib.sha256(path.read_bytes()).hexdigest() != fixture.sha256:
             raise CorpusError(f"fixture {fixture.id!r}: {fixture.file} does not match its manifest SHA-256")
     return Corpus(root=root, sha256=hashlib.sha256(raw).hexdigest(), fixtures=tuple(manifest.fixtures))
+
+
+def _check_options(fixture: Fixture) -> None:
+    if fixture.kind != "document":
+        if fixture.options:
+            raise CorpusError(f"fixture {fixture.id!r}: options are only supported for document fixtures")
+        return
+    try:
+        fixture.document_options()
+    except ValidationError as exc:
+        fields = sorted({".".join(str(p) for p in err["loc"]) or "options" for err in exc.errors()})
+        raise CorpusError(f"fixture {fixture.id!r}: invalid document options ({', '.join(fields)})") from None

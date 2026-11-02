@@ -17,6 +17,8 @@ class DocumentOptions(WireDocumentOptions):
     ocr: OcrMode = "auto"
     ocr_engine: OcrEngine = "ocrmac"
     pipeline: DocumentPipeline = "standard"
+    # 1.0 keeps Docling's own OCR raster (216 dpi). ocr_min_confidence stays None: the engine's own threshold.
+    image_scale: float = Field(default=1.0, ge=1.0, le=4.0)
 
 
 __all__ = ["DocumentOptions", "Language", "OcrEngine", "OcrMode"]

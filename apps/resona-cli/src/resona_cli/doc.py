@@ -29,7 +29,8 @@ def _page_range(pages: Optional[str]) -> tuple[Optional[int], Optional[int]]:
 
 
 def document_options(ocr: Optional[str], ocr_engine: Optional[str], languages: Optional[str],
-                     pages: Optional[str]) -> DocumentOptions:
+                     pages: Optional[str], image_scale: Optional[float],
+                     ocr_min_confidence: Optional[float]) -> DocumentOptions:
     page_start, page_end = _page_range(pages)
     try:
         return DocumentOptions(
@@ -38,6 +39,8 @@ def document_options(ocr: Optional[str], ocr_engine: Optional[str], languages: O
             languages=[x.strip() for x in languages.split(",") if x.strip()] if languages else None,
             page_start=page_start,
             page_end=page_end,
+            image_scale=image_scale,
+            ocr_min_confidence=ocr_min_confidence,
         )
     except ValidationError as e:
         problems = "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
@@ -72,10 +75,14 @@ def doc_files(
         help="auto (OCR bitmap regions only), force (full-page OCR) or off."),
     ocr_engine: Optional[str] = typer.Option(None, "--ocr-engine",
         help="ocrmac, rapidocr or tesseract; must be available in the execution profile."),
-    languages: Optional[str] = typer.Option(None, "--languages",
-        help="Comma-separated document languages: de, en."),
+    languages: Optional[str] = typer.Option(None, "--languages", "--language",
+        help="Comma-separated document languages: de, en, fr, it, es, ko (engine support varies)."),
     pages: Optional[str] = typer.Option(None, "--pages",
         help="Inclusive 1-based page range: a-b, a-, -b or a."),
+    image_scale: Optional[float] = typer.Option(None, "--image-scale",
+        help="1.0-4.0: multiplies the OCR raster resolution (1.0 = 216 dpi). Requires OCR."),
+    ocr_min_confidence: Optional[float] = typer.Option(None, "--ocr-min-confidence",
+        help="0-1: drop OCR text below this recognizer confidence (rapidocr only)."),
     local: bool = typer.Option(False, "--local",
         help="Process on this machine with cached hub settings instead of the hub."),
 ):
@@ -85,7 +92,7 @@ def doc_files(
     falls back automatically.
     """
     want_private = check_privacy_flags(private, allow_cloud)
-    options = document_options(ocr, ocr_engine, languages, pages)
+    options = document_options(ocr, ocr_engine, languages, pages, image_scale, ocr_min_confidence)
     files = expand_inputs(inputs, recursive, EXTENSIONS)
     if not files:
         typer.echo("No documents found.", err=True)

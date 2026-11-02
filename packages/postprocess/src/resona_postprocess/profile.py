@@ -48,13 +48,43 @@ def _validate_step(step: dict, idx: int, extract_names: set[str]) -> None:
     elif stype == "llm":
         if not step.get("prompt"):
             raise ProfileError(f"Step {idx}: llm step needs a 'prompt'")
+        _validate_chunking(step, idx)
     elif stype == "extract":
         if not step.get("prompt"):
             raise ProfileError(f"Step {idx}: extract step needs a 'prompt'")
+    if stype in ("llm", "extract") and "timeout" in step and not _positive_number(step["timeout"]):
+        raise ProfileError(f"Step {idx}: 'timeout' must be a positive number of seconds")
+    if stype == "extract":
         name = step.get("name", "extract")
         if name in extract_names:
             raise ProfileError(f"Step {idx}: duplicate extract name {name!r}")
         extract_names.add(name)
+
+
+_CHUNK_ONLY_KEYS = ("max_attempts", "max_length_deviation", "preserve_markup")
+
+
+def _positive_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _validate_chunking(step: dict, idx: int) -> None:
+    """``chunk_chars`` switches an llm step to chunked mode; its guard keys need it."""
+    if "chunk_chars" not in step:
+        extra = [key for key in _CHUNK_ONLY_KEYS if key in step]
+        if extra:
+            raise ProfileError(f"Step {idx}: {', '.join(extra)} require 'chunk_chars'")
+        return
+    chunk_chars = step["chunk_chars"]
+    if not isinstance(chunk_chars, int) or isinstance(chunk_chars, bool) or chunk_chars < 1000:
+        raise ProfileError(f"Step {idx}: 'chunk_chars' must be an integer >= 1000")
+    attempts = step.get("max_attempts", 3)
+    if not isinstance(attempts, int) or isinstance(attempts, bool) or not 1 <= attempts <= 10:
+        raise ProfileError(f"Step {idx}: 'max_attempts' must be an integer from 1 to 10")
+    if "max_length_deviation" in step and not _positive_number(step["max_length_deviation"]):
+        raise ProfileError(f"Step {idx}: 'max_length_deviation' must be a positive number")
+    if not isinstance(step.get("preserve_markup", False), bool):
+        raise ProfileError(f"Step {idx}: 'preserve_markup' must be true or false")
 
 
 @dataclass

@@ -2,7 +2,10 @@
 
 Audio fixtures are scored on ``raw_text`` (the engine transcript before any
 postprocessing); documents on ``markdown`` because table structure and reading
-order only exist there. Only numbers leave this module, never text.
+order only exist there. Postprocessing (polish) rewrites ``markdown`` and leaves
+``raw_text`` as the engine produced it, so a plain run scores the engine's Markdown
+and a ``--postprocess-profile`` run scores the polished Markdown, both after
+``markdown-v1`` normalization. Only numbers leave this module, never text.
 """
 
 from __future__ import annotations

@@ -2,6 +2,10 @@
 
 Reports and hub records carry metrics and provenance only, never transcripts,
 Markdown or other result text.
+
+A run whose document jobs used a postprocess profile measures engine plus polish.
+It is measurement-only: it is never gated against a baseline (baselines measure the
+plain engines), its absolute checks still apply, and it cannot be promoted.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from .metrics import MARKDOWN_NORMALIZATION, TEXT_NORMALIZATION
 from .scoring import FixtureMetrics, score_fixture
 
 REPORT_SCHEMA_VERSION = 1
+MEASUREMENT_ONLY = "measurement_only"
 PLATFORM_BY_ACCELERATOR = {"metal": "mac-metal", "cuda": "linux-cuda", "cpu": "cpu"}
 _PRIMARY_STAGES = {"audio": ("asr",), "document": ("layout", "ocr")}
 
@@ -74,12 +79,23 @@ def build_report(
     release_id: str | None,
     baseline: Mapping[str, Any] | None,
     baseline_source: str | None,
+    postprocess_profile: str | None = None,
 ) -> tuple[dict[str, Any], Gate]:
-    """Score every run, apply the gate against ``baseline`` (already corpus-checked)."""
+    """Score every run, apply the gate against ``baseline`` (already corpus-checked).
+
+    With ``postprocess_profile`` the run is measurement-only: no baseline may be
+    given, only the absolute checks gate it and the outcome is ``measurement_only``.
+    """
     if {run.fixture.id for run in runs} != {f.id for f in corpus.fixtures}:
         raise EvaluationError("every corpus fixture must be evaluated exactly once")
+    if postprocess_profile is not None and baseline is not None:
+        raise EvaluationError("a postprocess run is not comparable with a plain baseline")
     metrics = score_runs(runs)
     gate = evaluate_gate(metrics, baseline["fixtures"] if baseline is not None else None)
+    outcome = gate.outcome
+    if postprocess_profile is not None:
+        gate = Gate(failures=gate.failures, baseline_required=False)
+        outcome = gate.outcome if gate.failures else MEASUREMENT_ONLY
     runtimes = sorted({v for run in runs if (v := run.result.provenance.runtime_version)})
     report = {
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -88,6 +104,7 @@ def build_report(
         "execution_profile": execution_profile,
         "platform": platform,
         "release_id": release_id,
+        "postprocess_profile": postprocess_profile,
         "corpus_sha256": corpus.sha256,
         "normalization": {"audio": TEXT_NORMALIZATION, "document": MARKDOWN_NORMALIZATION},
         "tolerance": TOLERANCE,
@@ -100,7 +117,7 @@ def build_report(
             "corpus_sha256": baseline.get("corpus_sha256"),
             "release_id": baseline.get("release_id"),
         },
-        "gate": {"outcome": gate.outcome, "passed": gate.passed, "failures": list(gate.failures),
+        "gate": {"outcome": outcome, "passed": gate.passed, "failures": list(gate.failures),
                  "baseline_required": gate.baseline_required},
         "evaluation_id": None,
         "fixtures": {
@@ -125,6 +142,8 @@ def build_report(
 
 def evaluation_record(report: Mapping[str, Any], gate: Gate) -> dict[str, Any]:
     """Body of ``POST /v1/evaluations``: identifiers, hashes and numbers only."""
+    if report.get("postprocess_profile") is not None:
+        raise EvaluationError("a postprocess run is measurement-only and is not recorded as an evaluation")
     baseline = report["baseline"]
     return {
         "profile": report["execution_profile"],

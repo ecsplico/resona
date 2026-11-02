@@ -76,6 +76,21 @@ Fields:
 | `api_base` | no | Explicit local CLI mode only (legacy step). Overrides `RESONA_LLM_API_BASE` |
 | `temperature` | no | Sampling temperature |
 | `max_tokens` | no | Maximum tokens to generate |
+| `timeout` | no | Seconds per model call (default 120) |
+| `chunk_chars` | no | Chunked mode (integer ≥ 1000): the text is sent in chunks of about this many characters, see below |
+| `max_attempts` | no | Chunked mode only: calls per chunk before the step fails (1–10, default 3) |
+| `max_length_deviation` | no | Chunked mode only: reject a chunk reply whose length differs from the chunk by more than this fraction (e.g. `0.3`) |
+| `preserve_markup` | no | Chunked mode only: reject a chunk reply that changes HTML comments/placeholders, heading levels or the cell count of any table row |
+
+#### Chunked mode (long Markdown)
+
+A step with `chunk_chars` splits the Markdown with `chunking.split_markdown`: a chunk ends at the furthest blank-line (block) boundary that keeps it within `chunk_chars`; only a single block longer than that is cut at a line boundary. A pipe table or a fenced code block is never cut, even when it alone is longer than `chunk_chars`. The chunks concatenate to the input exactly; each chunk is sent without its surrounding whitespace, which is restored around the reply.
+
+- A chunk call that fails is retried up to `max_attempts` calls in total. When a chunk still fails, the step raises `PostprocessStepFailed`. `run()` re-raises it like `PolicyDenied`, so the job fails (`postprocess_failed`, retryable) instead of silently skipping the polish.
+- A reply that fails `max_length_deviation` or `preserve_markup` is not retried: the raw chunk is kept and the result gets the warning `polish_chunk_rejected:<chunk number>:<length|markup>`.
+- A leading `<think>…</think>` block and a code fence wrapped around the whole reply are removed before the checks.
+
+Without `chunk_chars` an `llm` step keeps its single-call behaviour: a failure is logged and the step is skipped (`postprocess_step_skipped:<name>`).
 
 ### extract
 
@@ -97,9 +112,12 @@ Sends the current text to a language model and returns **structured JSON data**.
 ```python
 @dataclass
 class PostprocessResult:
-    text: str         # final postprocessed text (all llm/replacements steps applied)
-    data: dict        # accumulated output from all extract steps, keyed by step name
+    text: str             # final postprocessed text (all llm/replacements steps applied)
+    data: dict            # accumulated output from all extract steps, keyed by step name
+    warnings: list[str]   # content-free warnings, e.g. polish_chunk_rejected:<n>:<reason>
 ```
+
+A text step may return a `StepOutput(text, warnings)` instead of a string; chunked `llm` steps do.
 
 ## The bundled default profile
 
@@ -117,6 +135,10 @@ class PostprocessResult:
 | Klammer zu | `)` |
 
 Plus medical section headings (`Verlauf`, `Medikation`, `Psychopathologischer Befund`, `Procedere`) and common name corrections.
+
+## The bundled document polish profile
+
+`profiles/document-polish-de.json` (`document-polish-de`) is a single chunked `llm` step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay verbatim. Settings: endpoint `gpu-llama`, `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.3, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. It is not resolved by name from the package: upload it to the hub as an organization profile (see [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)).
 
 ## Profile resolution
 
@@ -144,6 +166,8 @@ raw transcript and polished Markdown go into the JobResult
     ↓
 worker uploads the result; the hub marks the job completed
 ```
+
+Before each `llm`/`extract` step the worker asks the hub for a fresh policy decision on that endpoint. After the job's last step on an endpoint that has an `unload_url`, the worker POSTs to that URL (best effort, 10 s timeout, logged by endpoint id only) so the model server frees the GPU for the next job.
 
 The engine receives `profile.initial_prompt_string()` as its `initial_prompt`. It never receives replacement rules — postprocessing is the worker's responsibility, not the engine's.
 

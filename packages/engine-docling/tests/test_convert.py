@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from docling.datamodel.base_models import InputFormat
 from pydantic import ValidationError
 from resona_engine_docling import (
     DocumentOptions,
@@ -126,7 +127,11 @@ def test_page_range_returns_only_selected_page() -> None:
         {"page_start": 3, "page_end": 2},
         {"page_start": 0},
         {"unknown_field": True},
-        {"languages": ["fr"]},
+        {"languages": ["nl"]},
+        {"image_scale": 0.99},
+        {"image_scale": 4.01},
+        {"ocr_min_confidence": -0.1},
+        {"ocr_min_confidence": 1.1},
         {"ocr": "sometimes"},
     ],
 )
@@ -214,10 +219,84 @@ def test_rapidocr_shared_recognizer_recovers_german_words_for_any_language_order
     assert (ocr_stage.engine, ocr_stage.accelerator) == ("rapidocr", "cpu")
 
 
-def test_rapidocr_rejects_languages_whose_recognizer_weights_differ(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(convert_module._RAPIDOCR_FAMILY, "en", "ppocrv5-latin")
+def test_rapidocr_rejects_korean_without_bundled_weights() -> None:
+    from rapidocr.utils.model_resolver import PP_OCRV6_LANGS
+
+    # Pinned rapidocr 3.9.2: Korean is outside the bundled PP-OCRv6 recognizer (PP-OCRv5 download on first use).
+    assert "korean" not in PP_OCRV6_LANGS
+    with pytest.raises(UnsupportedDocumentOptions, match="no bundled offline recognizer for ko"):
+        convert_document(
+            FIXTURES / "scan.pdf",
+            options=DocumentOptions(ocr="force", ocr_engine="rapidocr", languages=["de", "ko"]),
+        )
+
+
+def test_rapidocr_accepts_korean_once_its_weights_are_bundled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(convert_module._RAPIDOCR_BUNDLED_FAMILIES, "korean", "iso:ko")
+
+    korean = convert_module._ocr_options(DocumentOptions(ocr="force", ocr_engine="rapidocr", languages=["ko"]))
+
+    assert korean.lang[0].startswith("iso:ko")
     with pytest.raises(UnsupportedDocumentOptions, match="share one recognizer"):
-        convert_document(FIXTURES / "scan.pdf", options=DocumentOptions(ocr="force", ocr_engine="rapidocr"))
+        convert_document(
+            FIXTURES / "scan.pdf",
+            options=DocumentOptions(ocr="force", ocr_engine="rapidocr", languages=["de", "ko"]),
+        )
+
+
+def test_rapidocr_serves_all_latin_languages_with_the_one_bundled_recognizer() -> None:
+    latin = convert_module._ocr_options(
+        DocumentOptions(ocr="force", ocr_engine="rapidocr", languages=["fr", "it", "es", "de", "en"])
+    )
+    german = convert_module._ocr_options(DocumentOptions(ocr="force", ocr_engine="rapidocr", languages=["de"]))
+
+    assert latin.lang == german.lang and len(latin.lang) == 1
+
+
+@pytest.mark.parametrize(
+    "engine, expected",
+    [
+        ("ocrmac", ["de-DE", "en-US", "fr-FR", "it-IT", "es-ES", "ko-KR"]),
+        ("tesseract", ["deu", "eng", "fra", "ita", "spa", "kor"]),
+    ],
+)
+def test_languages_translate_to_engine_identifiers(engine: str, expected: list[str]) -> None:
+    options = DocumentOptions(ocr="force", ocr_engine=engine, languages=["de", "en", "fr", "it", "es", "ko"])
+
+    assert convert_module._ocr_options(options).lang == expected
+
+
+@pytest.mark.parametrize("engine", ["ocrmac", "tesseract"])
+def test_confidence_threshold_is_rejected_for_engines_without_one(engine: str) -> None:
+    with pytest.raises(UnsupportedDocumentOptions, match="no confidence threshold"):
+        convert_document(
+            FIXTURES / "scan.pdf",
+            options=DocumentOptions(ocr="force", ocr_engine=engine, ocr_min_confidence=0.6),
+        )
+
+
+@pytest.mark.parametrize("fields", [{"ocr_min_confidence": 0.6}, {"image_scale": 2.0}])
+def test_ocr_only_options_are_rejected_when_ocr_is_off(fields: dict[str, object]) -> None:
+    with pytest.raises(UnsupportedDocumentOptions, match="ocr is 'off'"):
+        convert_document(FIXTURES / "digital.pdf", options=DocumentOptions(ocr="off", **fields))
+
+
+def test_image_scale_bounds_are_inclusive() -> None:
+    assert DocumentOptions(image_scale=1.0).image_scale == 1.0
+    assert DocumentOptions(image_scale=4.0).image_scale == 4.0
+
+
+def test_image_scale_multiplies_the_ocr_raster_and_confidence_sets_rapidocr_threshold() -> None:
+    base = convert_module._converter("force", "rapidocr", ("de",), "cpu", 1.0, None)
+    scaled = convert_module._converter("force", "rapidocr", ("de",), "cpu", 2.0, None)
+    strict = convert_module._converter("force", "rapidocr", ("de",), "cpu", 1.0, 0.8)
+
+    def ocr(converter):  # type: ignore[no-untyped-def]
+        return converter.format_to_options[InputFormat.PDF].pipeline_options.ocr_options
+
+    assert len({id(base), id(scaled), id(strict)}) == 3
+    assert ocr(scaled).scale == 2 * ocr(base).scale
+    assert ocr(strict).text_score == 0.8 and ocr(base).text_score != 0.8
 
 
 def test_job_result_round_trips_through_json() -> None:

@@ -13,20 +13,32 @@ def corpus():
     return load_corpus(CORPUS_DIR)
 
 
+def _table_rows(cells: list[str], lines: list[str]) -> list[list[str]]:
+    """Rows of the table whose cells, space-joined row by row, are ``lines`` 1..n of the reference."""
+    for width in range(1, len(cells) + 1):
+        rows = [cells[i:i + width] for i in range(0, len(cells), width)]
+        if len(cells) % width == 0 and [" ".join(r) for r in rows] == lines[1:1 + len(rows)]:
+            return rows
+    raise AssertionError("table cells do not match the reference lines")
+
+
 def perfect_markdown(fixture: Fixture) -> str:
     """Markdown a flawless document conversion of ``fixture`` would produce."""
-    if not fixture.table_cells:
-        return "\n\n".join(fixture.reference.splitlines())
     lines = fixture.reference.splitlines()
-    rows = [fixture.table_cells[i:i + 4] for i in range(0, len(fixture.table_cells), 4)]
-    table = ["| " + " | ".join(rows[0]) + " |", "|" + "---|" * 4]
+    if not fixture.table_cells:
+        return "\n\n".join(lines)
+    rows = _table_rows(fixture.table_cells, lines)
+    table = ["| " + " | ".join(rows[0]) + " |", "|" + "---|" * len(rows[0])]
     table += ["| " + " | ".join(row) + " |" for row in rows[1:]]
     rest = lines[1 + len(rows):]
-    return "\n\n".join([f"## {lines[0]}", "\n".join(table), f"## {rest[0]}", *rest[1:]])
+    parts = [f"## {lines[0]}", "\n".join(table)]
+    if rest:
+        parts += [f"## {rest[0]}", *rest[1:]]
+    return "\n\n".join(parts)
 
 
 def make_result(fixture: Fixture, *, text: str | None = None, markdown: str | None = None,
-                accelerator: str = "cpu") -> JobResult:
+                raw_text: str | None = None, accelerator: str = "cpu") -> JobResult:
     if fixture.kind == "audio":
         stages = [StageProvenance(stage="asr", engine="faster-whisper", model="Systran/faster-whisper-large-v3",
                                   model_revision="rev-asr", accelerator=accelerator, seconds=1.0)]
@@ -36,7 +48,7 @@ def make_result(fixture: Fixture, *, text: str | None = None, markdown: str | No
     stages = [StageProvenance(stage="layout", engine="docling", model="docling-standard",
                               model_revision="rev-layout", accelerator=accelerator, seconds=1.0)]
     md = perfect_markdown(fixture) if markdown is None else markdown
-    return JobResult(kind="document", raw_text=md, markdown=md,
+    return JobResult(kind="document", raw_text=md if raw_text is None else raw_text, markdown=md,
                      provenance=Provenance(stages=stages, runtime_version="0.1.0", worker_id="w1"))
 
 

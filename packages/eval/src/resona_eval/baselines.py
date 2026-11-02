@@ -55,6 +55,8 @@ def promoted_entry(
     report: Mapping[str, Any], *, evaluation_id: int, revision: int, promoted_at: str
 ) -> dict[str, Any]:
     """Baseline entry pinned from an evaluation report the hub just promoted."""
+    if report.get("postprocess_profile") is not None:
+        raise BaselineFileError("a postprocess run is measurement-only and cannot become a baseline")
     return {
         "execution_profile": report["execution_profile"],
         "platform": report["platform"],

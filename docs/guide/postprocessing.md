@@ -74,8 +74,11 @@ Uses [litellm](https://github.com/BerriAI/litellm) — any OpenAI-compatible end
 | `type` | yes | `"llm"` |
 | `name` | no | Human-readable label for this step |
 | `prompt` | yes | System prompt sent to the model |
-| `model` | no | litellm model string (overrides `RESONA_LLM_MODEL`) |
-| `api_base` | no | Custom API endpoint (overrides `RESONA_LLM_API_BASE`) |
+| `endpoint` | no | Id of an endpoint in the organization's settings registry; required in hub profiles |
+| `model` | no | litellm model string (overrides `RESONA_LLM_MODEL`; explicit local CLI mode only) |
+| `api_base` | no | Custom API endpoint (overrides `RESONA_LLM_API_BASE`; explicit local CLI mode only) |
+| `timeout` | no | Seconds per model call (default 120) |
+| `chunk_chars` | no | Process long Markdown in chunks of about this many characters (≥ 1000); never cuts a table. Enables `max_attempts`, `max_length_deviation`, `preserve_markup` |
 
 ```json
 {
@@ -88,6 +91,8 @@ Uses [litellm](https://github.com/BerriAI/litellm) — any OpenAI-compatible end
 ```
 
 LLM steps add latency. Use them only when rule-based replacements are insufficient.
+
+For long documents, set `chunk_chars`. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a `polish_chunk_rejected:<n>:<reason>` warning. Details: [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown). The bundled `document-polish-de` profile uses this mode for OCR correction of German documents; [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host) shows how to enable it with a local model.
 
 ### extract
 
@@ -188,7 +193,7 @@ Manage named profiles with `resona profiles`:
 
 ```bash
 resona profiles list
-resona profiles push my-profile.json
+resona profiles push my-profile my-profile.json
 resona profiles show my-profile
 resona profiles pull my-profile my-profile.json
 resona profiles delete my-profile

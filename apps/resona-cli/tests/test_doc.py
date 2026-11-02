@@ -62,7 +62,9 @@ def test_doc_submits_document_job_and_writes_outputs(tmp_path):
 
 @pytest.mark.parametrize("args, message", [
     (["--ocr", "sometimes"], "invalid document options"),
-    (["--languages", "fr"], "invalid document options"),
+    (["--languages", "nl"], "invalid document options"),
+    (["--image-scale", "5"], "invalid document options"),
+    (["--ocr-min-confidence", "1.5"], "invalid document options"),
     (["--pages", "5-2"], "invalid document options"),
     (["--pages", "x"], "invalid --pages"),
 ])
@@ -88,6 +90,19 @@ def test_doc_single_page(tmp_path):
     assert result.exit_code == 0, result.output
     options = client.submit_job.call_args.kwargs["options"]
     assert (options.page_start, options.page_end) == (3, 3)
+
+
+def test_doc_passes_scale_confidence_and_languages_to_the_job(tmp_path):
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    client = _client()
+
+    result = _invoke(client, [str(pdf), "--ocr-engine", "rapidocr", "--language", "fr,it,es",
+                              "--image-scale", "2.5", "--ocr-min-confidence", "0.6"])
+
+    assert result.exit_code == 0, result.output
+    assert client.submit_job.call_args.kwargs["options"] == DocumentOptions(
+        ocr_engine="rapidocr", languages=["fr", "it", "es"], image_scale=2.5, ocr_min_confidence=0.6)
 
 
 def test_doc_directory_picks_documents_only(tmp_path):

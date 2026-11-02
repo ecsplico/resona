@@ -41,6 +41,46 @@ def test_fixture_path_must_stay_inside_corpus(corpus, tmp_path):
         load_corpus(copy)
 
 
+def _with_manifest_change(corpus, tmp_path, fixture_id, **changes):
+    copy = tmp_path / "corpus"
+    shutil.copytree(corpus.root, copy)
+    manifest = json.loads((copy / "MANIFEST.json").read_text(encoding="utf-8"))
+    entry = next(f for f in manifest["fixtures"] if f["id"] == fixture_id)
+    entry.update(changes)
+    (copy / "MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return copy
+
+
+@pytest.mark.parametrize("options", [{"ocr": "sometimes"}, {"images_scale_typo": 2}, {"page_start": 0},
+                                     {"languages": ["nl"]}])
+def test_invalid_document_fixture_option_is_refused(corpus, tmp_path, options):
+    copy = _with_manifest_change(corpus, tmp_path, "scan-pdf", options=options)
+    with pytest.raises(CorpusError, match="invalid document options"):
+        load_corpus(copy)
+
+
+def test_audio_fixture_options_are_refused(corpus, tmp_path):
+    copy = _with_manifest_change(corpus, tmp_path, "de-speech", options={"vad_filter": False})
+    with pytest.raises(CorpusError, match="only supported for document fixtures"):
+        load_corpus(copy)
+
+
+def test_fixture_options_override_defaults_and_keep_the_fixture_language(fixture_by_id):
+    forced = fixture_by_id["bad-text-layer-force"].document_options()
+    assert forced.ocr == "force" and forced.languages == ["de"]
+    default = fixture_by_id["bad-text-layer-auto"].document_options()
+    assert default.ocr is None and default.languages == ["de"]
+    assert fixture_by_id["bad-text-layer-force"].file == fixture_by_id["bad-text-layer-auto"].file
+
+
+def test_document_cer_scores_the_markdown_not_raw_text(fixture_by_id, result_for):
+    digital = fixture_by_id["digital-pdf"]
+    polished_markdown = result_for(digital, raw_text="völlig falscher Rohtext")
+    assert score_fixture(digital, polished_markdown)["cer"] == 0
+    perfect_raw = result_for(digital, markdown="völlig falsches Markdown", raw_text=digital.reference)
+    assert score_fixture(digital, perfect_raw)["cer"] > 0.5
+
+
 def test_normalization_keeps_umlauts_and_drops_markup():
     assert normalize("Die Straße, über die Brücke!") == "die straße über die brücke"
     assert score("Größere Schäden.", "größere schäden") == {"wer": 0.0, "cer": 0.0, "ref_words": 2, "hyp_words": 2}

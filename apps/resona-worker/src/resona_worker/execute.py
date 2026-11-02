@@ -24,10 +24,11 @@ from collections.abc import Mapping
 from enum import IntEnum
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from pydantic import ValidationError
 from resona_job_core import Candidate, JobResult, Provenance, Segment, StageProvenance
+from resona_job_core.options import Language
 
 from .weights import is_hub_repo, is_whisper_alias, local_snapshot, whisper_checkpoint, whisper_revision
 
@@ -284,6 +285,7 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
 def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
     try:
         from resona_engine_docling import (
+            ConflictingDocumentOptions,
             DocumentOptions,
             UnsupportedDocumentOptions,
             UnsupportedMediaType,
@@ -296,7 +298,7 @@ def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Pa
     options = dict(snapshot.get("options") or {})
     if "languages" not in options and snapshot.get("language") is not None:
         language = snapshot["language"]
-        if language not in ("de", "en"):
+        if language not in get_args(Language):
             raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "document language unsupported")
         options["languages"] = [language]
     if candidate.ocr_engine is not None:
@@ -314,6 +316,9 @@ def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Pa
         result = convert_document(input_path, options=document_options, accelerator=candidate.accelerator)
     except (UnsupportedMediaType, DocumentConversionFailed):
         raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "document not convertible") from None
+    except ConflictingDocumentOptions:
+        # No worker can run these options: fail the job instead of withdrawing this worker's capability.
+        raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "document options conflict") from None
     except UnsupportedDocumentOptions:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "document options unsupported") from None
     except Exception as exc:

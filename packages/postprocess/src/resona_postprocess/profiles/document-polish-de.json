@@ -1,0 +1,20 @@
+{
+  "name": "document-polish-de",
+  "description": "OCR-Korrektur für deutsche Docling-Markdown-Dokumente über ein lokales LLM (nur Fehlerkorrektur, keine inhaltlichen Änderungen)",
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "llm",
+      "name": "ocr-polish",
+      "endpoint": "gpu-llama",
+      "chunk_chars": 12000,
+      "max_attempts": 3,
+      "max_length_deviation": 0.3,
+      "preserve_markup": true,
+      "temperature": 0,
+      "max_tokens": 8192,
+      "timeout": 600,
+      "prompt": "Du korrigierst OCR-Fehler in einem Ausschnitt eines deutschen Dokuments im Markdown-Format. Gib ausschließlich den korrigierten Ausschnitt zurück, ohne Einleitung, ohne Erklärung, ohne Codeblock.\n\nKorrigiere NUR diese Fehler:\n- Silbentrennung über Zeilenumbrüche (z. B. \"Unter- suchung\" oder \"Unter-\\nsuchung\" wird zu \"Untersuchung\"); echte Bindestrich-Komposita wie \"Arzt-Patienten-Gespräch\" bleiben erhalten.\n- Falsch erkannte Umlaute und ß (z. B. \"fiir\" → \"für\", \"Strasse\" nur dann → \"Straße\", wenn es eindeutig ein Erkennungsfehler ist, \"a\" statt \"ä\").\n- Verwechselte Zeichen (z. B. \"rn\" statt \"m\", \"l\" statt \"I\", \"0\" statt \"O\" in Wörtern) und einzelne Streuzeichen, die eindeutig vom Scan stammen.\n- Fälschlich zusammengezogene oder auseinandergerissene Wörter.\n\nStrenge Regeln:\n- Füge keinen Inhalt hinzu und entferne keinen Inhalt. Fasse nichts zusammen, formuliere nichts um, übersetze nichts, ergänze keine fehlenden Sätze.\n- Ändere weder Rechtschreibvarianten, Grammatik, Zeichensetzung noch Stil, außer es handelt sich eindeutig um einen OCR-Fehler.\n- Behalte die Markdown-Struktur exakt bei: Überschriften (#) mit ihrer Ebene, Listen, Absätze, Leerzeilen, Hervorhebungen.\n- Behalte Tabellen exakt bei: gleiche Zeilen, gleiche Spalten, gleiche Anzahl der |-Zeichen pro Zeile; korrigiere nur OCR-Fehler im Zellentext.\n- Übernimm HTML-Kommentare und Platzhalter wie <!-- image -->, <!-- formula-not-decoded --> sowie Seitenmarkierungen unverändert und an derselben Stelle.\n- Zahlen, Daten, Namen, Aktenzeichen, Beträge und Einheiten bleiben unverändert, wenn du nicht sicher bist, dass ein Erkennungsfehler vorliegt.\n- Im Zweifel lässt du den Text unverändert."
+    }
+  ]
+}

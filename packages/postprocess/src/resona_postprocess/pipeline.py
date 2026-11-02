@@ -11,13 +11,29 @@ from typing import Callable
 
 from resona_job_core.policy import Endpoint, ExecutionPolicy, PolicyDenied, Stage, check_policy
 
-from .llm import legacy_endpoint_id, legacy_step_endpoint, llm_extract, llm_transform
+from .llm import (
+    PostprocessStepFailed,
+    legacy_endpoint_id,
+    legacy_step_endpoint,
+    llm_extract,
+    llm_transform,
+    llm_transform_chunked,
+)
 from .profile import Profile
 from .replacements import apply_replacements
 
 log = logging.getLogger(__name__)
 
-TextStep = Callable[[str], str]
+
+@dataclass(frozen=True)
+class StepOutput:
+    """Text step output that also carries content-free warnings."""
+
+    text: str
+    warnings: tuple[str, ...] = ()
+
+
+TextStep = Callable[[str], "str | StepOutput"]
 ExtractStep = Callable[[str], dict]
 
 _LLM_STEP_TYPES = ("llm", "extract")
@@ -29,6 +45,7 @@ class PostprocessResult:
 
     text: str
     data: dict = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
 
 class PostprocessPipeline:
@@ -46,15 +63,24 @@ class PostprocessPipeline:
         return self
 
     def run(self, text: str) -> PostprocessResult:
-        """Run every step. ``PolicyDenied`` propagates; other failing steps are logged and skipped."""
+        """Run every step.
+
+        ``PolicyDenied`` and ``PostprocessStepFailed`` propagate; other failing steps are
+        logged and skipped.
+        """
         result = PostprocessResult(text=text)
         for name, kind, step in self._steps:
             try:
                 if kind == "text":
-                    result.text = step(result.text)
+                    out = step(result.text)
+                    if isinstance(out, StepOutput):
+                        result.text = out.text
+                        result.warnings.extend(out.warnings)
+                    else:
+                        result.text = out
                 else:
                     result.data[name] = step(result.text)
-            except PolicyDenied:
+            except (PolicyDenied, PostprocessStepFailed):
                 raise
             except Exception as e:  # noqa: BLE001
                 log.warning("Postprocess step %r failed, skipping: %s", name, e)
@@ -154,14 +180,36 @@ def build_pipeline(profile: Profile, *, policy: ExecutionPolicy) -> PostprocessP
         if stype == "replacements":
             rules = _load_rules(step, profile.base_dir)
             pipe.add_text(name, lambda t, r=rules: apply_replacements(t, r))
+        elif stype == "llm" and "chunk_chars" in step:
+            pipe.add_text(name, lambda t, s=step, n=name, e=endpoints[idx]: _chunked(t, s, n, e, policy))
         elif stype == "llm":
             pipe.add_text(name, lambda t, s=step, e=endpoints[idx]: llm_transform(
                 t, prompt=s["prompt"], endpoint=e, policy=policy,
                 temperature=s.get("temperature"), max_tokens=s.get("max_tokens"),
+                timeout=s.get("timeout"),
             ))
         elif stype == "extract":
             pipe.add_extract(name, lambda t, s=step, e=endpoints[idx]: llm_extract(
                 t, prompt=s["prompt"], endpoint=e, policy=policy,
-                temperature=s.get("temperature"),
+                temperature=s.get("temperature"), timeout=s.get("timeout"),
             ))
     return pipe
+
+
+def _chunked(text: str, step: dict, name: str, endpoint: Endpoint, policy: ExecutionPolicy) -> StepOutput:
+    """Run a chunked llm step (``chunk_chars`` set): hard failure, guarded chunk output."""
+    polished, warnings = llm_transform_chunked(
+        text,
+        prompt=step["prompt"],
+        endpoint=endpoint,
+        policy=policy,
+        chunk_chars=step["chunk_chars"],
+        step_name=name,
+        max_attempts=step.get("max_attempts", 3),
+        max_length_deviation=step.get("max_length_deviation"),
+        preserve_markup=step.get("preserve_markup", False),
+        temperature=step.get("temperature"),
+        max_tokens=step.get("max_tokens"),
+        timeout=step.get("timeout"),
+    )
+    return StepOutput(text=polished, warnings=tuple(warnings))

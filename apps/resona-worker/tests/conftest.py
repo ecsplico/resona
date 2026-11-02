@@ -234,6 +234,7 @@ def build_supervisor(tmp_path: Path, executor_script: Path):
         *,
         capabilities: tuple[Candidate, ...],
         lease_heartbeat_seconds: float = 30.0,
+        endpoint_transport: httpx.BaseTransport | None = None,
     ) -> Supervisor:
         config = WorkerConfig(
             hub_url=HUB,
@@ -246,7 +247,9 @@ def build_supervisor(tmp_path: Path, executor_script: Path):
             poll_interval_seconds=0.01,
         )
         client = HubClient(HUB, TOKEN, transport=hub.transport(), sleep=lambda seconds: None)
-        return Supervisor(config, hub=client, sleep=lambda seconds: None)
+        return Supervisor(
+            config, hub=client, sleep=lambda seconds: None, endpoint_transport=endpoint_transport
+        )
 
     return build
 

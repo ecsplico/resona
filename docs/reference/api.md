@@ -76,11 +76,32 @@ Content-Type: application/json
 | `language` | string | no | Language code; defaults to the organization setting |
 | `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
 | `profile` | string | no | Name of a postprocess profile stored on the hub |
-| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`. Document: `languages`, `ocr`, `ocr_engine`, `page_start`, `page_end`, `pipeline` |
+| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`. Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
 
 Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header is required: the same key with the same request returns the same job; the same key with a different request returns `409 idempotency_conflict`.
+
+##### Document options
+
+All fields are optional; an unset field is resolved by the execution profile and engine. Unknown fields → `422`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `languages` | list | `["de", "en"]` | Non-empty; each of `de`, `en`, `fr`, `it`, `es`, `ko`. Translated per OCR engine (ocrmac `de-DE`…`ko-KR`, tesseract `deu`/`eng`/`fra`/`ita`/`spa`/`kor`) |
+| `ocr` | string | `auto` | `auto` (OCR bitmap regions only, digital text kept), `force` (full-page OCR), `off` |
+| `ocr_engine` | string | profile candidate | `ocrmac`, `rapidocr` or `tesseract` |
+| `page_start`, `page_end` | int ≥ 1 | all pages | Inclusive 1-based range; `page_start` ≤ `page_end` |
+| `pipeline` | string | `standard` | Only `standard` |
+| `image_scale` | float 1.0–4.0 | `1.0` | Multiplies Docling's OCR raster: OCR crops are rendered at `3.0 × image_scale` × 72 dpi (216 dpi at `1.0`). Also sets Docling's `images_scale` for rendered page images, which Resona does not export. Requires OCR |
+| `ocr_min_confidence` | float 0–1 | engine default | Recognizer confidence threshold. Only `rapidocr` (`text_score`, default `0.5`). Requires OCR |
+
+Combinations no worker can run fail the job with `invalid_snapshot` (not retried) instead of being ignored:
+`ocr_min_confidence` with `ocrmac`/`tesseract` (no threshold exists) or with `ocr: off`; `image_scale` other
+than `1.0` with `ocr: off`; `ko` with `rapidocr` (the pinned rapidocr bundles only the multilingual PP-OCRv6
+recognizer, which serves `de`/`en`/`fr`/`it`/`es`; Korean weights would be downloaded at job time, which jobs
+never do). A tesseract language whose pack is not installed on a worker is `unsupported_capability`: that worker
+stops offering the candidate and the job is requeued.
 
 #### List, get, cancel, delete
 

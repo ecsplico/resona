@@ -15,7 +15,7 @@ Two transports:
 |------|---------|
 | `upload_content(filename, content_base64)` | Upload a small file (at most 8 MiB decoded) → `{upload_id, sha256, size}`. Larger content is refused before anything is sent to the hub. |
 | `transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, options?, private=true, idempotency_key?)` | Submit an audio job → `{job_id, status, private}` immediately. `options`: `translate`, `word_timestamps`, `vad_filter`. |
-| `convert_document(upload_id \| path, …, options?)` | Submit a PDF/image → Markdown job → `{job_id, status, private}`. `options`: `languages`, `ocr`, `ocr_engine`, `page_start`, `page_end`, `pipeline`. |
+| `convert_document(upload_id \| path, …, options?)` | Submit a PDF/image → Markdown job → `{job_id, status, private}`. `options`: `languages` (`de`, `en`, `fr`, `it`, `es`, `ko`), `ocr`, `ocr_engine`, `page_start`, `page_end`, `pipeline`, `image_scale` (1.0–4.0, OCR raster multiplier), `ocr_min_confidence` (0–1, `rapidocr` only); see the [API reference](../reference/api.md#document-options). |
 | `get_job(job_id)` | Status (`pending` with `queue_reason`, `processing`, `completed`, `failed`, `cancelled`). |
 | `get_result(job_id, offset=0, limit=32768)` | One Markdown chunk plus `next_offset`, `total_chars`, language, warnings, provenance. Each call is one hub range read (`GET /v1/jobs/{id}/result/markdown`), so the full result never passes through the MCP server. Concatenating chunks from offset 0 until `next_offset` is `null` reproduces the REST `markdown` exactly. `limit` is capped at 32 768 characters. |
 | `cancel_job(job_id)` | Request cancellation; later worker output is rejected. |

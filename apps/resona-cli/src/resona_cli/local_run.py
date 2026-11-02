@@ -210,10 +210,15 @@ def run_local(plan: LocalPlan, path: Path) -> JobResult:
     result = result.model_copy(update={"provenance": provenance})
     if plan.pipeline is None:
         return result
-    run = plan.pipeline.run(result.markdown)
+    from resona_postprocess.llm import PostprocessStepFailed
+
+    try:
+        run = plan.pipeline.run(result.markdown)
+    except PostprocessStepFailed as e:
+        raise LocalRunError(f"postprocess_failed: {e}") from None
     skipped = run.data.get("_skipped", [])
     return result.model_copy(update={
         "markdown": run.text,
-        "warnings": [*result.warnings, *(f"postprocess_step_skipped:{n}" for n in skipped)],
+        "warnings": [*result.warnings, *run.warnings, *(f"postprocess_step_skipped:{n}" for n in skipped)],
         "structured": {**result.structured, **{k: v for k, v in run.data.items() if k != "_skipped"}},
     })

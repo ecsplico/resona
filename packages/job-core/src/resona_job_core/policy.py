@@ -14,7 +14,7 @@ from enum import StrEnum
 from typing import Iterable, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class EndpointKind(StrEnum):
@@ -31,6 +31,9 @@ class Endpoint(BaseModel):
 
     ``url`` is fixed by the registry entry (``None`` for provider SDK defaults of
     cloud ASR adapters); ``worker_id`` is the worker holding its secret file.
+    ``unload_url`` (``local_llm`` only, loopback http(s) only) is POSTed by the
+    worker after a job's last stage on this endpoint so the model server frees
+    the GPU for the next job; it carries no content.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -40,6 +43,17 @@ class Endpoint(BaseModel):
     model: str
     url: str | None = None
     worker_id: str | None = None
+    unload_url: str | None = None
+
+    @model_validator(mode="after")
+    def _unload_url_is_local(self) -> "Endpoint":
+        if self.unload_url is None:
+            return self
+        if self.kind is not EndpointKind.LOCAL_LLM:
+            raise ValueError("unload_url is only allowed on local_llm endpoints")
+        if urlsplit(self.unload_url).scheme not in ("http", "https") or not is_loopback_url(self.unload_url):
+            raise ValueError("unload_url must be a loopback http(s) URL")
+        return self
 
 
 StageKind = Literal["asr", "ocr", "llm"]

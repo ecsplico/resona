@@ -11,7 +11,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Language = Literal["de", "en"]
+# Document languages. Each OCR engine translates them to its own identifiers and rejects
+# languages it cannot serve offline (e.g. Korean on the bundled RapidOCR recognizer).
+Language = Literal["de", "en", "fr", "it", "es", "ko"]
 # auto: OCR only bitmap regions, digital text is kept. force: full-page OCR. off: no OCR.
 OcrMode = Literal["auto", "force", "off"]
 OcrEngine = Literal["ocrmac", "rapidocr", "tesseract"]
@@ -40,6 +42,14 @@ class DocumentOptions(BaseModel):
     page_start: int | None = Field(default=None, ge=1)
     page_end: int | None = Field(default=None, ge=1)
     pipeline: DocumentPipeline | None = None
+    image_scale: float | None = Field(
+        default=None, ge=1.0, le=4.0,
+        description="Multiplier on the OCR raster resolution (1.0 = 216 dpi, 4.0 = 864 dpi). Requires OCR.",
+    )
+    ocr_min_confidence: float | None = Field(
+        default=None, ge=0.0, le=1.0,
+        description="Drop OCR text below this recognizer confidence. Only engines with a threshold (rapidocr).",
+    )
 
     @model_validator(mode="after")
     def _check_page_range(self) -> DocumentOptions:

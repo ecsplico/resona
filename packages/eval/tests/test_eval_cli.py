@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from resona_cli import eval_cli
 from resona_cli.main import app
 from resona_client.config import EngineConfig
-from resona_eval import FixtureRun
+from resona_eval import BaselineFileError, EvaluationError, FixtureRun, build_report, promoted_entry
 
 HUB = "http://hub.test"
 runner = CliRunner()
@@ -207,3 +207,81 @@ def test_promote_refuses_a_report_of_another_evaluation(corpus, tmp_path, monkey
     result = runner.invoke(app, ["eval", "promote", "7", "--report", str(tmp_path / "out" / "report.json")])
     assert result.exit_code == 1
     assert "not the report of hub evaluation 7" in result.stderr
+
+
+def test_fixture_options_reach_the_submitted_jobs(corpus, tmp_path, result_for):
+    hub = _FakeHub(corpus, result_for)
+    with respx.mock(assert_all_called=False) as mock:
+        hub.install(mock)
+        assert runner.invoke(app, _args(corpus, tmp_path, "--remote")).exit_code == 4
+    by_fixture = {body["provenance"]["source"].rsplit(":", 1)[1]: body for body in hub.jobs.values()}
+    assert by_fixture["bad-text-layer-force"]["options"] == {"languages": ["de"], "ocr": "force"}
+    assert by_fixture["bad-text-layer-auto"]["options"] == {"languages": ["de"]}
+    assert by_fixture["de-speech"]["options"] == {"translate": False, "word_timestamps": False, "vad_filter": True}
+
+
+def test_postprocess_profile_applies_to_document_jobs_only_and_is_measurement_only(corpus, tmp_path, result_for):
+    hub = _FakeHub(corpus, result_for)
+    with respx.mock(assert_all_called=False) as mock:
+        hub.install(mock)
+        result = runner.invoke(app, _args(corpus, tmp_path, "--remote", "--postprocess-profile", "polish-de"))
+        baseline_calls = [c for c in mock.calls if c.request.url.path == "/v1/baselines"]
+    assert result.exit_code == 0, result.stderr
+    for body in hub.jobs.values():
+        if body["kind"] == "document":
+            assert body["profile"] == "polish-de"
+        else:
+            assert "profile" not in body
+    assert baseline_calls == [] and hub.evaluations == []  # never compared, never recorded as promotable
+    report = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert report["postprocess_profile"] == "polish-de"
+    assert report["baseline"] is None and report["evaluation_id"] is None
+    assert report["gate"]["outcome"] == "measurement_only"
+
+
+def test_postprocess_run_still_fails_absolute_checks(corpus, tmp_path, result_for):
+    def degraded(fixture):
+        if fixture.id == "table-columns-pdf":
+            return result_for(fixture, markdown=result_for(fixture).markdown.replace("| Fuß 9 |", "|  |"))
+        return result_for(fixture)
+
+    hub = _FakeHub(corpus, degraded)
+    with respx.mock(assert_all_called=False) as mock:
+        hub.install(mock)
+        result = runner.invoke(app, _args(corpus, tmp_path, "--remote", "--postprocess-profile", "polish-de"))
+    assert result.exit_code == 3
+    assert "missing_cells:table-columns-pdf" in result.stderr
+
+
+def test_postprocess_profile_is_rejected_in_local_mode(monkeypatch, corpus, perfect_runs, tmp_path):
+    ran = []
+    monkeypatch.setattr(eval_cli, "_run_local", lambda corpus, profile: ran.append(profile) or perfect_runs)
+    result = runner.invoke(app, _args(corpus, tmp_path, "--postprocess-profile", "polish-de"))
+    assert result.exit_code == 1
+    assert "--remote" in result.stderr
+    assert ran == [] and not (tmp_path / "out" / "report.json").exists()
+
+
+def test_postprocess_report_cannot_be_promoted(corpus, tmp_path, result_for):
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps({"mode": "remote", "evaluation_id": 7, "postprocess_profile": "polish-de",
+                                       "hub_baseline_revision": None}), encoding="utf-8")
+    hub = _FakeHub(corpus, result_for)
+    with respx.mock(assert_all_called=False) as mock:
+        hub.install(mock)
+        result = runner.invoke(app, ["eval", "promote", "7", "--report", str(report_path),
+                                     "--baselines", str(tmp_path / "baselines.json")])
+    assert result.exit_code == 1
+    assert hub.promotions == [] and not (tmp_path / "baselines.json").exists()
+
+
+def test_postprocess_report_is_never_gated_against_or_pinned_as_a_baseline(corpus, perfect_runs):
+    with pytest.raises(EvaluationError):
+        build_report(corpus=corpus, runs=perfect_runs, execution_profile="cpu-private", platform="cpu",
+                     mode="remote", release_id="0.1.0", baseline={"fixtures": {}}, baseline_source="hub",
+                     postprocess_profile="polish-de")
+    report, _ = build_report(corpus=corpus, runs=perfect_runs, execution_profile="cpu-private", platform="cpu",
+                             mode="remote", release_id="0.1.0", baseline=None, baseline_source=None,
+                             postprocess_profile="polish-de")
+    with pytest.raises(BaselineFileError):
+        promoted_entry(report, evaluation_id=7, revision=1, promoted_at="2026-11-02T00:00:00+00:00")

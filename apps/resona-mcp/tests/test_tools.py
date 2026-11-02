@@ -6,7 +6,7 @@ from pathlib import Path
 import anyio
 import pytest
 from mcp import Client
-from resona_client.client import AudioOptions, ResonaAPIError
+from resona_client.client import AudioOptions, DocumentOptions, ResonaAPIError
 from resona_job_core import JobResult, Provenance
 
 from resona_mcp.server import (
@@ -86,6 +86,24 @@ def test_submit_with_upload_id_returns_job_immediately(hub, payload):
     assert kwargs["kind"] == "audio" and kwargs["private"] is True
     assert kwargs["execution_profile"] == "cpu-private" and kwargs["language"] == "de"
     assert kwargs["options"] == AudioOptions(word_timestamps=True)
+
+
+def test_convert_document_passes_scale_confidence_and_languages(hub, payload):
+    payload(call(remote(hub), "convert_document", {
+        "upload_id": "upl_" + "c" * 24,
+        "options": {"ocr_engine": "rapidocr", "languages": ["fr", "ko"], "image_scale": 2.0,
+                    "ocr_min_confidence": 0.6},
+    }))
+    name, (_upload_id, kwargs) = hub.calls[0]
+    assert (name, kwargs["kind"]) == ("submit_upload", "document")
+    assert kwargs["options"] == DocumentOptions(ocr_engine="rapidocr", languages=["fr", "ko"],
+                                                image_scale=2.0, ocr_min_confidence=0.6)
+
+
+def test_convert_document_rejects_out_of_range_image_scale(hub, error_text):
+    error_text(call(remote(hub), "convert_document",
+                    {"upload_id": "upl_" + "c" * 24, "options": {"image_scale": 8}}))
+    assert hub.calls == []
 
 
 def test_convert_document_rejects_audio_only_options(hub, error_text):

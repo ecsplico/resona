@@ -114,6 +114,78 @@ docker compose -f docker-compose.worker.yml down        # stop; keeps the models
 
 Each job runs in its own subprocess. The model is loaded for that job and is released when the subprocess exits, so the GPU is free between jobs.
 
+## LLM polish on the worker host
+
+Document jobs can get an OCR-correction pass from a local model on the worker host. The bundled `document-polish-de` profile (in the `resona-postprocess` wheel, `resona_postprocess/profiles/document-polish-de.json`) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint `gpu-llama`. Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning `polish_chunk_rejected:<n>:<length|markup>`. A chunk that fails 3 calls fails the job (`postprocess_failed`, retryable); the polish is never skipped silently. The raw converter output stays in the result's `raw_text`; `markdown` is the polished text. See [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown).
+
+### Privacy
+
+The endpoint is a `local_llm` endpoint. The execution policy admits it for private jobs only with a loopback `url`, and the hub hands the job only to the worker the endpoint is assigned to (`worker_id`). The text therefore goes from the worker process to a model server on the same host and nowhere else. A job whose profile uses a `local_llm` endpoint with a non-loopback `url` is refused at submission (`policy_denied`), and the policy is checked again before every chunk. A non-loopback `unload_url` is already refused when the settings are saved. Before each LLM stage the worker asks the hub for a fresh policy decision; when the hub is unreachable the stage does not start. Calls to `local_llm` endpoints carry a fixed placeholder API key, never an `OPENAI_API_KEY` from the environment, and litellm uses its bundled model price map instead of fetching it.
+
+### Reaching a model server on the host's loopback
+
+On `gpu-box`, llama-swap listens on the host's `127.0.0.1:9292` (OpenAI-compatible, `/v1`). A container on the default bridge network cannot reach the host's loopback, and a bridge address such as `172.17.0.1` is not loopback, so the policy would deny it. `docker-compose.worker.llm.yml` overrides the worker service with `network_mode: host`. In the host namespace `127.0.0.1` is the host's loopback, so the endpoint URL `http://127.0.0.1:9292/v1` reaches llama-swap and passes the loopback check.
+
+The worker still opens no port (it has no listener) and gets no Docker socket. `cap_drop: [ALL]`, `no-new-privileges`, UID 1000, the read-only token, the `tmpfs` job directory and the GPU reservation stay as in the base file. Host networking does give the container the host's network namespace, including every service bound to the host's loopback.
+
+Use both files for every command that starts the worker:
+
+```bash
+docker compose -f docker-compose.worker.yml -f docker-compose.worker.llm.yml up -d
+docker compose -f docker-compose.worker.yml -f docker-compose.worker.llm.yml logs -f
+```
+
+### GPU sharing with llama-swap
+
+llama-swap keeps a loaded model resident until its `ttl` expires (1800 s for `qwen3.6-27b` on gpu-box), using most of the 16 GB of VRAM. A whisper `large-v3` job (about 9 GB) started in that window would run out of memory. An endpoint can therefore name an `unload_url`: after the job's last LLM stage on that endpoint, and also when the job fails after calling it, the worker sends `POST <unload_url>` (no body, 10-second timeout). The request is best effort: a failure is logged with the endpoint id and the exception type only and never fails the job. `unload_url` must be a loopback `http(s)` URL and is allowed only on `local_llm` endpoints; anything else is rejected when the settings are validated.
+
+llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`, not verified against the version installed on gpu-box): `POST /api/models/unload/<model_id>` unloads one model, `POST /api/models/unload` unloads all models. Older releases offer `GET /unload` instead, which the worker's `POST` does not reach. Check with `curl -X POST http://127.0.0.1:9292/api/models/unload/qwen3.6-27b` on the host.
+
+### Enable it
+
+1. Deploy a release that contains this feature to the hub **and** to every worker first. An older hub rejects `unload_url` in the settings (`422`); an older worker fails postprocess jobs whose snapshot contains it (`invalid_snapshot`).
+2. Start the worker with the override (above).
+3. As org admin, add the endpoint to the organization settings. `worker_id` is the id that `resona-admin worker enroll` printed for the Linux worker:
+
+    ```json
+    {
+      "id": "gpu-llama",
+      "kind": "local_llm",
+      "model": "openai/qwen3.6-27b",
+      "url": "http://127.0.0.1:9292/v1",
+      "worker_id": "<linux worker id>",
+      "unload_url": "http://127.0.0.1:9292/api/models/unload/qwen3.6-27b"
+    }
+    ```
+
+    The `openai/` prefix makes litellm speak the OpenAI chat API to `url`; llama-swap receives the model name `qwen3.6-27b`.
+
+    ```bash
+    resona settings get | jq '.settings | .endpoints = ([.endpoints[] | select(.id != "gpu-llama")] + [input])' \
+      - gpu-llama.json > settings.json
+    resona settings set --file settings.json
+    ```
+
+4. Upload the bundled profile as an organization profile (org admin):
+
+    ```bash
+    python -c "from importlib import resources; print(resources.files('resona_postprocess').joinpath('profiles/document-polish-de.json').read_text())" > document-polish-de.json
+    resona profiles push document-polish-de document-polish-de.json
+    ```
+
+    (Or copy the file from `packages/postprocess/src/resona_postprocess/profiles/` in the repository.)
+
+5. Request it per document job:
+
+    ```bash
+    resona doc scan.pdf --execution-profile linux-cuda --profile document-polish-de --output-dir out/
+    ```
+
+    Leave the organization settings `polish: false`: with `polish: true` and `postprocess_profile: "document-polish-de"` every job, audio included, would get the document prompt. A job that names the profile is claimed only by the worker that the endpoint is assigned to.
+
+!!! note "Not measured yet"
+    The effect of `document-polish-de` on document CER and its run time on gpu-box have not been measured. Measure it with `resona eval --profile linux-cuda --remote --postprocess-profile document-polish-de --output-dir /tmp/resona-eval-polish` and compare the per-fixture CER with a plain run (see [Evaluation & Baselines](../guide/evaluation.md)). Until then, treat the polished `markdown` as unvalidated and keep `raw_text` as the reference.
+
 ## When CUDA is not available
 
 At start, the worker asks the execution environment whether each accelerator of its manifest works (`python -m resona_worker.execute --probe-accelerator cuda`). If CUDA does not work (no GPU reservation, driver failure, `CUDA_VISIBLE_DEVICES=""`), the worker logs `cuda is not available on this host; not offering 2 tuple(s)` and heartbeats with no CUDA tuples. It never claims a CUDA job that it cannot run. The hub reports such jobs as `queue_reason: no_capable_worker` (approved tuples that the worker does not offer do not count). `private-auto` jobs stay eligible for the Mac worker, which claims them when it is online. A `prepare` without a GPU fails with `unsupported_capability` and leaves the previous manifest unchanged.

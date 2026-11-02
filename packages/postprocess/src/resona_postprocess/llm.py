@@ -7,6 +7,7 @@ Nothing here falls back to an ambient model or base URL; the endpoint fixes both
 
 import json as _json
 import logging
+import re
 
 from decouple import config
 from resona_job_core.policy import (
@@ -18,6 +19,8 @@ from resona_job_core.policy import (
     check_policy,
     is_loopback_url,
 )
+
+from .chunking import length_deviation, markup_signature, split_markdown
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +35,18 @@ litellm = _UNSET
 
 class LLMUnavailableError(RuntimeError):
     """Raised when an LLM step is requested but litellm is not installed."""
+
+
+class PostprocessStepFailed(RuntimeError):
+    """A step that must not be skipped failed; the pipeline re-raises it.
+
+    ``reason`` is content-free (chunk number, attempt count), safe to log and report.
+    """
+
+    def __init__(self, step: str, reason: str) -> None:
+        super().__init__(f"{step}: {reason}")
+        self.step = step
+        self.reason = reason
 
 
 # Convenience localhost defaults for OpenAI-compatible local LLM servers, keyed
@@ -67,6 +82,10 @@ def _resolve_litellm():
     """Import litellm on first use, caching the module (or None) at module scope."""
     global litellm
     if litellm is _UNSET:
+        import os
+        # litellm otherwise downloads its model price map from GitHub at import time;
+        # a private worker only talks to its approved endpoints.
+        os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
         try:
             import litellm as _litellm
             litellm = _litellm
@@ -80,9 +99,20 @@ def _resolve_litellm():
     return litellm
 
 
+# Sent as the API key to ``local_llm`` endpoints. OpenAI-compatible local servers
+# (llama-swap, llama.cpp, LM Studio) ignore it, but litellm's ``openai/`` provider
+# refuses to call without a key and would otherwise pick up an ambient
+# OPENAI_API_KEY and send that cloud credential to the local server.
+_LOCAL_API_KEY = "resona-local"
+
+
+def _api_key_for(endpoint: Endpoint) -> str | None:
+    return _LOCAL_API_KEY if endpoint.kind == EndpointKind.LOCAL_LLM else None
+
+
 def _completion(*, model, api_base, messages, temperature, max_tokens,
-                response_format=None):
-    """Call litellm.completion with one retry on transient failure."""
+                response_format=None, timeout=None, attempts=2, api_key=None):
+    """Call litellm.completion, retrying a transient failure up to ``attempts`` calls in total."""
     import os
     os.environ.setdefault("LITELLM_LOG", "ERROR")
     litellm = _resolve_litellm()
@@ -90,8 +120,10 @@ def _completion(*, model, api_base, messages, temperature, max_tokens,
         "model": model,
         "api_base": api_base,
         "messages": messages,
-        "timeout": _DEFAULT_TIMEOUT,
+        "timeout": timeout or _DEFAULT_TIMEOUT,
     }
+    if api_key is not None:
+        kwargs["api_key"] = api_key
     if temperature is not None:
         kwargs["temperature"] = temperature
     if max_tokens is not None:
@@ -100,7 +132,7 @@ def _completion(*, model, api_base, messages, temperature, max_tokens,
         kwargs["response_format"] = response_format
 
     last_exc = None
-    for attempt in (1, 2):
+    for attempt in range(1, attempts + 1):
         try:
             resp = litellm.completion(**kwargs)
             usage = getattr(resp, "usage", None)
@@ -122,6 +154,8 @@ def llm_transform(
     policy: ExecutionPolicy,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    timeout: float | None = None,
+    attempts: int = 2,
 ) -> str:
     """Send transcript text to an approved LLM endpoint and return the result.
 
@@ -138,7 +172,95 @@ def llm_transform(
         ],
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout,
+        attempts=attempts,
+        api_key=_api_key_for(endpoint),
     )
+
+
+_THINK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
+_FENCES = ("```", "~~~")
+
+
+def _clean_reply(reply: str | None, source: str) -> str:
+    """Strip a leading reasoning block and a code fence wrapped around the whole reply."""
+    text = reply or ""
+    if not source.startswith("<think>"):
+        text = _THINK.sub("", text, count=1)
+    text = text.strip()
+    if text.startswith(_FENCES) and not source.startswith(_FENCES):
+        lines = text.splitlines()
+        if len(lines) >= 2 and lines[-1].strip() in _FENCES:
+            text = "\n".join(lines[1:-1]).strip()
+    return text
+
+
+def llm_transform_chunked(
+    text: str,
+    *,
+    prompt: str,
+    endpoint: Endpoint,
+    policy: ExecutionPolicy,
+    chunk_chars: int,
+    step_name: str = "llm",
+    max_attempts: int = 3,
+    max_length_deviation: float | None = None,
+    preserve_markup: bool = False,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+) -> tuple[str, list[str]]:
+    """Transform long Markdown chunk by chunk (see :func:`split_markdown`).
+
+    Each chunk gets at most ``max_attempts`` calls; a chunk that keeps failing raises
+    :class:`PostprocessStepFailed` (never a silent skip). A reply whose length deviates
+    from its chunk by more than ``max_length_deviation`` (relative), or that changes the
+    chunk's placeholders/headings/table shape when ``preserve_markup`` is set, is
+    rejected without retry: the raw chunk is kept and
+    ``polish_chunk_rejected:<n>:<length|markup>`` is returned as a warning.
+    ``PolicyDenied`` propagates unchanged.
+    """
+    chunks = split_markdown(text, chunk_chars)
+    out: list[str] = []
+    warnings: list[str] = []
+    for number, chunk in enumerate(chunks, start=1):
+        core = chunk.strip()
+        if not core:
+            out.append(chunk)
+            continue
+        reply = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                reply = llm_transform(
+                    core, prompt=prompt, endpoint=endpoint, policy=policy,
+                    temperature=temperature, max_tokens=max_tokens, timeout=timeout, attempts=1,
+                )
+                break
+            except PolicyDenied:
+                raise
+            except LLMUnavailableError:
+                raise PostprocessStepFailed(step_name, "litellm is not installed") from None
+            except Exception as e:  # noqa: BLE001 — litellm raises many error types
+                log.warning("Step %r chunk %d/%d attempt %d/%d failed: %s",
+                            step_name, number, len(chunks), attempt, max_attempts, type(e).__name__)
+        else:
+            raise PostprocessStepFailed(step_name, f"chunk {number} failed after {max_attempts} attempts")
+
+        polished = _clean_reply(reply, core)
+        reason = None
+        if max_length_deviation is not None and length_deviation(core, polished) > max_length_deviation:
+            reason = "length"
+        elif preserve_markup and markup_signature(polished) != markup_signature(core):
+            reason = "markup"
+        if reason is not None:
+            log.warning("Step %r chunk %d/%d rejected (%s); raw chunk kept", step_name, number, len(chunks), reason)
+            warnings.append(f"polish_chunk_rejected:{number}:{reason}")
+            out.append(chunk)
+            continue
+        lead = chunk[: len(chunk) - len(chunk.lstrip())]
+        trail = chunk[len(chunk.rstrip()):]
+        out.append(f"{lead}{polished}{trail}")
+    return "".join(out), warnings
 
 
 def llm_extract(
@@ -148,6 +270,7 @@ def llm_extract(
     endpoint: Endpoint,
     policy: ExecutionPolicy,
     temperature: float | None = None,
+    timeout: float | None = None,
 ) -> dict:
     """Extract structured data from text. Returns a parsed JSON object.
 
@@ -165,6 +288,8 @@ def llm_extract(
         temperature=temperature,
         max_tokens=None,
         response_format={"type": "json_object"},
+        timeout=timeout,
+        api_key=_api_key_for(endpoint),
     )
     try:
         parsed = _json.loads(raw)

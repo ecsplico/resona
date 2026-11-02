@@ -11,6 +11,12 @@ credential, staged release), the evaluation summary is recorded on the hub
 ``resona eval promote <id> --report <dir>/report.json`` promotes a recorded
 evaluation on the hub and pins it in ``eval/baselines.json``.
 
+Fixture ``options`` from the manifest are merged into each document job's default
+options. ``--postprocess-profile <name>`` (``--remote`` only) runs the document jobs
+with that hub postprocess profile; such a run is measurement-only: it is never
+compared with a baseline, not recorded on the hub and cannot be promoted, because
+baselines measure the plain engines.
+
 Exit codes: 0 gate passed, 1 error, 2 policy denied, 3 gate failed,
 4 ``baseline_required`` (no comparable baseline; promotable when absolute checks pass).
 """
@@ -27,7 +33,6 @@ from typing import Any, Optional
 import typer
 from resona_client.client import (
     AudioOptions,
-    DocumentOptions,
     PolicyDeniedError,
     ResonaAPIError,
     ResonaClient,
@@ -60,10 +65,13 @@ eval_app = typer.Typer(help="Evaluate an execution profile against the corpus an
 
 
 def _fixture_options(fixture: Fixture) -> dict[str, Any]:
-    """The options a normal job gets by default (``vad_filter`` on), so eval measures production."""
+    """The options a normal job gets by default (``vad_filter`` on), so eval measures production.
+
+    Document fixtures merge their manifest ``options`` (e.g. ``ocr=force``) over the defaults.
+    """
     if fixture.kind == "audio":
         return AudioOptions().model_dump()
-    return DocumentOptions(languages=[fixture.language]).model_dump(exclude_none=True)
+    return fixture.document_options().model_dump(exclude_none=True)
 
 
 def _run_local(corpus: Corpus, profile: str) -> list[FixtureRun]:
@@ -89,12 +97,13 @@ def _run_local(corpus: Corpus, profile: str) -> list[FixtureRun]:
 
 
 def _run_remote(client: ResonaClient, corpus: Corpus, profile: str, release_id: str,
-                timeout: float) -> list[FixtureRun]:
+                timeout: float, postprocess_profile: Optional[str] = None) -> list[FixtureRun]:
     submitted = []
     for fixture in corpus.fixtures:
         ref = client.submit_job(
             corpus.path(fixture), kind=fixture.kind, execution_profile=profile,
             language=fixture.language, options=_fixture_options(fixture), private=True,
+            profile=postprocess_profile if fixture.kind == "document" else None,
             purpose="evaluation", release_id=release_id,
             provenance={"source": f"resona-eval:{corpus.sha256[:12]}:{fixture.id}"},
         )
@@ -126,6 +135,9 @@ def _write_json(path: Path, data: Any) -> None:
 def _summary(report: dict[str, Any]) -> None:
     typer.echo(f"eval: {report['execution_profile']} on {report['platform']} "
                f"corpus {report['corpus_sha256'][:12]} ({report['mode']})", err=True)
+    if report["postprocess_profile"] is not None:
+        typer.echo(f"postprocess profile {report['postprocess_profile']} on document fixtures: measurement only, "
+                   "not compared with or promotable as a baseline", err=True)
     for fid, entry in report["fixtures"].items():
         metrics = " ".join(f"{k}={v}" for k, v in entry["metrics"].items())
         typer.echo(f"  {fid}: {metrics}", err=True)
@@ -151,6 +163,10 @@ def evaluate(
     corpus_dir: Path = typer.Option(Path("eval/corpus"), "--corpus", help="Corpus directory with MANIFEST.json."),
     baselines: Path = typer.Option(Path("eval/baselines.json"), "--baselines", help="Pinned baselines file (local mode)."),
     timeout: float = typer.Option(1800.0, "--timeout", help="Seconds to wait for each hub job."),
+    postprocess_profile: Optional[str] = typer.Option(
+        None, "--postprocess-profile",
+        help="Hub postprocess profile for the document jobs (--remote; measurement only, never a baseline).",
+    ),
 ):
     """Evaluate an execution profile; exit 0 pass, 3 gate failed, 4 baseline_required."""
     if ctx.invoked_subcommand is not None:
@@ -159,6 +175,8 @@ def evaluate(
         fail("--profile and --output-dir are required")
     if platform is not None and platform not in PLATFORMS:
         fail(f"--platform must be one of {', '.join(PLATFORMS)}")
+    if postprocess_profile is not None and not remote:
+        fail("--postprocess-profile needs --remote: local mode cannot resolve hub postprocess profiles")
     try:
         corpus = load_corpus(corpus_dir)
     except CorpusError as e:
@@ -170,7 +188,7 @@ def evaluate(
         if remote:
             client = connect_hub()
             release_id = release_id or str(client.get_version()["release_id"])
-            runs = _run_remote(client, corpus, profile, release_id, timeout)
+            runs = _run_remote(client, corpus, profile, release_id, timeout, postprocess_profile)
         else:
             if release_id is not None:
                 fail("--release-id needs --remote")
@@ -178,7 +196,9 @@ def evaluate(
         detected = detect_platform(runs)
         if platform is not None and platform != detected:
             fail(f"fixtures ran on {detected}, not {platform}")
-        if client is not None:
+        if postprocess_profile is not None:
+            baseline, source = None, None  # baselines measure the plain engines
+        elif client is not None:
             hub_baseline = client.get_baseline(execution_profile=profile, platform=detected)
             hub_baseline_revision = hub_baseline["revision"] if hub_baseline else None
             baseline, source = comparable(hub_baseline, corpus.sha256), "hub"
@@ -188,8 +208,9 @@ def evaluate(
             corpus=corpus, runs=runs, execution_profile=profile, platform=detected,
             mode="remote" if remote else "local", release_id=release_id,
             baseline=baseline, baseline_source=source if baseline is not None else None,
+            postprocess_profile=postprocess_profile,
         )
-        if client is not None:
+        if client is not None and postprocess_profile is None:
             report["hub_baseline_revision"] = hub_baseline_revision
             record = client.create_evaluation(evaluation_record(report, gate))
             report["evaluation_id"] = record["evaluation_id"]
@@ -231,6 +252,9 @@ def promote(
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         fail(f"cannot read report {report_path}: {e}")
+    if report.get("postprocess_profile") is not None:
+        fail(f"{report_path} measured postprocess profile {report['postprocess_profile']!r}; "
+             "postprocess runs cannot become a baseline")
     if report.get("mode") != "remote" or report.get("evaluation_id") != evaluation_id:
         fail(f"{report_path} is not the report of hub evaluation {evaluation_id}")
     client = connect_hub()

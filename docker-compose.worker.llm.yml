@@ -1,0 +1,15 @@
+# Override for docker-compose.worker.yml: lets the worker reach a model server that listens
+# on the host's loopback interface (e.g. llama-swap on 127.0.0.1:9292), so a `local_llm`
+# endpoint with a loopback URL passes the execution policy. Setup: docs/server/linux-worker.md
+# ("LLM polish on the worker host").
+#
+#   docker compose -f docker-compose.worker.yml -f docker-compose.worker.llm.yml up -d
+#
+# Only the network namespace changes: the container shares the host's network stack, so
+# 127.0.0.1 is the host's loopback. Still no published ports (host mode cannot publish any;
+# the worker opens no listening socket), no Docker socket; cap_drop ALL, no-new-privileges,
+# the read-only token, tmpfs /work and the GPU reservation stay as in the base file.
+
+services:
+  worker:
+    network_mode: host

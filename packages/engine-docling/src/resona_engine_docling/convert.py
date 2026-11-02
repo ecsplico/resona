@@ -22,6 +22,7 @@ from docling.datamodel.base_models import ConversionStatus, InputFormat
 from docling.datamodel.settings import settings
 from docling.datamodel.pipeline_options import (
     OcrMacOptions,
+    OcrOptions,
     OcrMode,
     PdfPipelineOptions,
     RapidOcrOptions,
@@ -44,14 +45,22 @@ IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".tif", ".tiff"})
 FORMULA_PLACEHOLDER = "<!-- formula-not-decoded -->"
 IMAGE_PLACEHOLDER = "<!-- image -->"
 
-# Docling language identifiers differ per OCR backend; Resona exposes de/en only.
-_OCRMAC_LANG = {"de": "de-DE", "en": "en-US"}
-_TESSERACT_LANG = {"de": "deu", "en": "eng"}
-# RapidOCR recognizer family per language (rapidocr's PP-OCRv6 route). Languages in one family resolve to
-# the same weights and embedded character set, so one RapidOCR pass with the family's code loses nothing.
-# A language with different weights needs its own family and is rejected when combined with others.
-_RAPIDOCR_FAMILY = {"de": "ppocrv6-multi", "en": "ppocrv6-multi"}
-_RAPIDOCR_FAMILY_LANG = {"ppocrv6-multi": "iso:de"}
+# Docling language identifiers differ per OCR backend; each map covers every Resona ``Language``.
+_OCRMAC_LANG = {"de": "de-DE", "en": "en-US", "fr": "fr-FR", "it": "it-IT", "es": "es-ES", "ko": "ko-KR"}
+_TESSERACT_LANG = {"de": "deu", "en": "eng", "fr": "fra", "it": "ita", "es": "spa", "ko": "kor"}
+# Resona language -> PP-OCR recognizer code in rapidocr's vocabulary.
+_RAPIDOCR_CODE = {"de": "de", "en": "en", "fr": "fr", "it": "it", "es": "es", "ko": "korean"}
+# Every PP-OCRv6 code resolves to the same multilingual recognizer (same weights, embedded character set),
+# so one RapidOCR pass with the family's code loses nothing. Codes outside PP-OCRv6 need their own
+# PP-OCRv4/v5 recognizer and form their own family; mixed families are rejected, never truncated.
+_RAPIDOCR_V6_FAMILY = "ppocrv6-multi"
+# Families whose weights ship inside the pinned rapidocr wheel, with the Docling language code selecting
+# them. Any other family would be downloaded on first use, which a job never does.
+_RAPIDOCR_BUNDLED_FAMILIES = {_RAPIDOCR_V6_FAMILY: "iso:de"}
+# Only RapidOCR exposes a recognition-confidence threshold (``RapidOcrOptions.text_score``).
+_CONFIDENCE_ENGINES = frozenset({"rapidocr"})
+# Docling renders OCR crops at ``OcrOptions.scale`` x 72 dpi (3.0 = 216 dpi); ``image_scale`` multiplies it.
+_OCR_BASE_SCALE = float(OcrOptions.model_fields["scale"].default)
 
 _DOCLING_LOGGERS = ("docling", "docling_core", "docling_ibm_models", "docling_parse")
 
@@ -62,6 +71,13 @@ class UnsupportedMediaType(ValueError):
 
 class UnsupportedDocumentOptions(ValueError):
     """The requested option combination cannot run on this host or with this engine."""
+
+
+class ConflictingDocumentOptions(UnsupportedDocumentOptions):
+    """The options contradict each other or the pinned engines, so no host can run them.
+
+    Unlike its base class (e.g. a missing tesseract language pack), retrying on another worker cannot help.
+    """
 
 
 class DocumentConversionFailed(RuntimeError):
@@ -96,7 +112,17 @@ def _validate_options(options: DocumentOptions, accelerator: str) -> None:
     if accelerator == "cuda" and _host_platform() == "darwin":
         raise UnsupportedDocumentOptions("accelerator 'cuda' is not available on macOS")
     if options.ocr == "off":
+        # Both fields only act on OCR input/output; with OCR off they would be silently ignored.
+        if options.ocr_min_confidence is not None:
+            raise ConflictingDocumentOptions("ocr_min_confidence requires OCR; ocr is 'off'")
+        if options.image_scale != 1.0:
+            raise ConflictingDocumentOptions("image_scale changes only the OCR raster; ocr is 'off'")
         return
+    if options.ocr_min_confidence is not None and options.ocr_engine not in _CONFIDENCE_ENGINES:
+        raise ConflictingDocumentOptions(
+            f"ocr_engine {options.ocr_engine!r} has no confidence threshold; ocr_min_confidence needs "
+            f"{', '.join(sorted(_CONFIDENCE_ENGINES))}"
+        )
     if options.ocr_engine == "ocrmac" and _host_platform() != "darwin":
         raise UnsupportedDocumentOptions("ocr_engine 'ocrmac' requires macOS (Apple Vision)")
     if options.ocr_engine == "tesseract":
@@ -115,27 +141,45 @@ def _validate_options(options: DocumentOptions, accelerator: str) -> None:
         _rapidocr_lang(options.languages)
 
 
+def _rapidocr_family(language: str) -> str:
+    from rapidocr.utils.model_resolver import PP_OCRV6_LANGS
+
+    code = _RAPIDOCR_CODE[language]
+    return _RAPIDOCR_V6_FAMILY if code in PP_OCRV6_LANGS else code
+
+
 def _rapidocr_lang(languages: list[str]) -> str:
-    """Return the one RapidOCR language code that serves ``languages``.
+    """Return the one RapidOCR language code that serves ``languages`` from bundled weights.
 
     Languages in one recognizer family share weights, so a single pass with the family's code is lossless.
-    Mixed families are rejected rather than silently truncated.
+    Languages without bundled weights are rejected (no download at job time); mixed families are rejected
+    rather than silently truncated.
     """
-    families = {_RAPIDOCR_FAMILY[lang] for lang in languages}
-    if len(families) != 1:
-        raise UnsupportedDocumentOptions(
+    families = {lang: _rapidocr_family(lang) for lang in languages}
+    unbundled = [lang for lang, family in families.items() if family not in _RAPIDOCR_BUNDLED_FAMILIES]
+    if unbundled:
+        raise ConflictingDocumentOptions(
+            f"ocr_engine 'rapidocr' has no bundled offline recognizer for {', '.join(unbundled)}"
+        )
+    distinct = set(families.values())
+    if len(distinct) != 1:
+        raise ConflictingDocumentOptions(
             f"ocr_engine 'rapidocr' needs languages that share one recognizer; got {', '.join(languages)}"
         )
-    return _RAPIDOCR_FAMILY_LANG[families.pop()]
+    return _RAPIDOCR_BUNDLED_FAMILIES[distinct.pop()]
 
 
 def _ocr_options(options: DocumentOptions):  # type: ignore[no-untyped-def]
     mode = OcrMode.FULL_PAGE if options.ocr == "force" else OcrMode.DEFAULT
+    scale = _OCR_BASE_SCALE * options.image_scale
     if options.ocr_engine == "ocrmac":
-        return OcrMacOptions(lang=[_OCRMAC_LANG[lang] for lang in options.languages], mode=mode)
+        return OcrMacOptions(lang=[_OCRMAC_LANG[lang] for lang in options.languages], mode=mode, scale=scale)
     if options.ocr_engine == "rapidocr":
-        return RapidOcrOptions(lang=[_rapidocr_lang(options.languages)], mode=mode)
-    return TesseractCliOcrOptions(lang=[_TESSERACT_LANG[lang] for lang in options.languages], mode=mode)
+        threshold = {} if options.ocr_min_confidence is None else {"text_score": options.ocr_min_confidence}
+        return RapidOcrOptions(lang=[_rapidocr_lang(options.languages)], mode=mode, scale=scale, **threshold)
+    return TesseractCliOcrOptions(
+        lang=[_TESSERACT_LANG[lang] for lang in options.languages], mode=mode, scale=scale
+    )
 
 
 def _pipeline_options(options: DocumentOptions, accelerator: str) -> PdfPipelineOptions:
@@ -147,6 +191,8 @@ def _pipeline_options(options: DocumentOptions, accelerator: str) -> PdfPipeline
     pipeline = PdfPipelineOptions(
         do_ocr=options.ocr != "off",
         accelerator_options=AcceleratorOptions(device=device),
+        # Only rendered page/picture images use this scale; Resona exports none, OCR uses ocr_options.scale.
+        images_scale=options.image_scale,
     )
     if options.ocr != "off":
         pipeline.ocr_options = _ocr_options(options)
@@ -154,9 +200,22 @@ def _pipeline_options(options: DocumentOptions, accelerator: str) -> PdfPipeline
 
 
 @lru_cache(maxsize=4)
-def _converter(ocr: str, ocr_engine: str, languages: tuple[str, ...], accelerator: str) -> DocumentConverter:
-    # Converters load layout/table/OCR models; cache them per pipeline shape.
-    options = DocumentOptions(ocr=ocr, ocr_engine=ocr_engine, languages=list(languages))
+def _converter(
+    ocr: str,
+    ocr_engine: str,
+    languages: tuple[str, ...],
+    accelerator: str,
+    image_scale: float,
+    ocr_min_confidence: float | None,
+) -> DocumentConverter:
+    # Converters load layout/table/OCR models; cache them per pipeline shape (every option they bake in).
+    options = DocumentOptions(
+        ocr=ocr,
+        ocr_engine=ocr_engine,
+        languages=list(languages),
+        image_scale=image_scale,
+        ocr_min_confidence=ocr_min_confidence,
+    )
     pipeline = _pipeline_options(options, accelerator)
     return DocumentConverter(
         format_options={
@@ -292,7 +351,14 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
     _check_media(path)
     _validate_options(options, accelerator)
 
-    converter = _converter(options.ocr, options.ocr_engine, tuple(options.languages), accelerator)
+    converter = _converter(
+        options.ocr,
+        options.ocr_engine,
+        tuple(options.languages),
+        accelerator,
+        options.image_scale,
+        options.ocr_min_confidence,
+    )
     page_range = (options.page_start or 1, options.page_end or sys.maxsize)
 
     collector = _WarningCollector()
@@ -371,6 +437,7 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
 
 
 __all__ = [
+    "ConflictingDocumentOptions",
     "DocumentConversionFailed",
     "UnsupportedDocumentOptions",
     "UnsupportedMediaType",
