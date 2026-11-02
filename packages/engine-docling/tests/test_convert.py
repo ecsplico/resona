@@ -24,6 +24,8 @@ from resona_job_core import JobResult
 from resona_job_core.options import DocumentOptions as WireDocumentOptions
 
 FIXTURES = Path(__file__).parent / "fixtures"
+# Repository eval corpus: scanned fixtures with known RapidOCR failure modes.
+EVAL_CORPUS = Path(__file__).resolve().parents[3] / "eval" / "corpus"
 DARWIN_ONLY = pytest.mark.skipif(sys.platform != "darwin", reason="ocrmac is Apple Vision (macOS only)")
 
 TABLE_CELLS = [
@@ -217,6 +219,19 @@ def test_rapidocr_shared_recognizer_recovers_german_words_for_any_language_order
         assert word in result.markdown, word
     ocr_stage = next(stage for stage in result.provenance.stages if stage.stage == "ocr")
     assert (ocr_stage.engine, ocr_stage.accelerator) == ("rapidocr", "cpu")
+
+
+def test_rapidocr_celsius_sign_is_written_as_latin_degree_c_in_every_text() -> None:
+    # PP-OCR reads "°C" in this scanned table as "°℃" (U+2103 after a degree sign).
+    result = convert_document(
+        EVAL_CORPUS / "dense_table_scan.pdf",
+        options=DocumentOptions(ocr="auto", ocr_engine="rapidocr", languages=["de"]),
+    )
+
+    texts = [result.markdown, result.raw_text, *(block.text for page in result.pages for block in page.blocks)]
+    assert not any("℃" in text for text in texts)
+    for cell in ("| 21,4 °C", "| 19,8 °C", "| 22,7 °C"):
+        assert cell in result.markdown, cell
 
 
 def test_rapidocr_rejects_korean_without_bundled_weights() -> None:

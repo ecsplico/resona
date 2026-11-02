@@ -61,6 +61,9 @@ _RAPIDOCR_BUNDLED_FAMILIES = {_RAPIDOCR_V6_FAMILY: "iso:de"}
 _CONFIDENCE_ENGINES = frozenset({"rapidocr"})
 # Docling renders OCR crops at ``OcrOptions.scale`` x 72 dpi (3.0 = 216 dpi); ``image_scale`` multiplies it.
 _OCR_BASE_SCALE = float(OcrOptions.model_fields["scale"].default)
+# RapidOCR's PP-OCR recognizer emits the CJK compatibility sign U+2103 for "°C", usually
+# after its own degree sign ("21,4 °℃"). Rewritten to the Latin form in every exported text.
+_RAPIDOCR_GLYPHS = (("°℃", "°C"), ("℃", "°C"))
 
 _DOCLING_LOGGERS = ("docling", "docling_core", "docling_ibm_models", "docling_parse")
 
@@ -265,6 +268,20 @@ def _block_text(item: object, document: DoclingDocument) -> str:
     return ""
 
 
+def _normalize_rapidocr_glyphs(document: DoclingDocument) -> None:
+    def fix(text: str) -> str:
+        for wrong, right in _RAPIDOCR_GLYPHS:
+            text = text.replace(wrong, right)
+        return text
+
+    for item, _level in document.iterate_items(with_groups=False, traverse_pictures=True):
+        if isinstance(item, TableItem):
+            for cell in item.data.table_cells:
+                cell.text = fix(cell.text)
+        elif isinstance(item, TextItem):
+            item.text = fix(item.text)
+
+
 def _pages(document: DoclingDocument) -> list[Page]:
     by_page: dict[int, list[PageBlock]] = {}
     for item, _level in document.iterate_items(with_groups=False, traverse_pictures=False):
@@ -375,6 +392,8 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
         raise DocumentConversionFailed("docling could not convert the document")
 
     document = result.document
+    if options.ocr != "off" and options.ocr_engine == "rapidocr":
+        _normalize_rapidocr_glyphs(document)
     warnings: list[str] = list(collector.messages)
     warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
 
