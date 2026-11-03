@@ -2084,8 +2084,12 @@
 </thead>
 <tbody>
 <tr>
-<td><code>upload_content(filename, content_base64)</code></td>
-<td>Upload a small file (at most 8 MiB decoded) → <code>{upload_id, sha256, size}</code>. Larger content is refused before anything is sent to the hub.</td>
+<td><code>create_upload_url()</code></td>
+<td>Single-use upload link, valid 10 minutes, for one file up to the hub limit (200 MiB) → <code>{upload_url, token_header, token, expires_at, max_bytes, curl}</code>. The agent runs <code>curl</code> in its shell with the file path filled in and gets <code>{upload_id, sha256, size}</code>. The file's bytes go straight to the hub and never pass through the model.</td>
+</tr>
+<tr>
+<td><code>upload_content(filename, content_base64, sha256)</code></td>
+<td>Upload a tiny file inline (at most 8 MiB decoded) → <code>{upload_id, sha256, size}</code>. <code>sha256</code> is the hex digest of the original file; if the decoded content does not match it, nothing is uploaded. Models copy long base64 strings unreliably, so prefer <code>create_upload_url</code> for anything but a few KB.</td>
 </tr>
 <tr>
 <td><code>transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, options?, private=true, idempotency_key?)</code></td>
@@ -2120,14 +2124,15 @@
 <p>There are no tools that change settings or profiles, issue or revoke credentials, or enroll workers. Use <code>resona settings</code> and <code>resona-admin</code> for those.</p>
 <p>Jobs are private by default. <code>private=false</code> only works when the organization has enabled cloud processing; otherwise the hub answers <code>policy_denied</code>. There is no fallback to another provider or to local processing.</p>
 <p>A typical agent flow:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>upload_content(&quot;memo.wav&quot;, &lt;base64&gt;)          → {upload_id}
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>transcribe_audio(upload_id=…)                  → {job_id: 12, status: &quot;pending&quot;, private: true}
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>get_job(12)                                    → … status: &quot;completed&quot;
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>get_result(12)                                 → {markdown: &quot;...&quot;, next_offset: 32768, total_chars: 51234}
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>get_result(12, offset=32768)                   → … until next_offset is null
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>create_upload_url()                            → {curl: &quot;curl … -F &#39;file=@&lt;PATH&gt;&#39; …&quot;}
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>$ curl … -F &#39;file=@memo.wav&#39; …                 → {upload_id}
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>transcribe_audio(upload_id=…)                  → {job_id: 12, status: &quot;pending&quot;, private: true}
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>get_job(12)                                    → … status: &quot;completed&quot;
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>get_result(12)                                 → {markdown: &quot;...&quot;, next_offset: 32768, total_chars: 51234}
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>get_result(12, offset=32768)                   → … until next_offset is null
 </code></pre></div>
 <h2 id="local-stdio">Local stdio<a class="headerlink" href="#local-stdio" title="Permanent link">&para;</a></h2>
-<p><code>RESONA_API_URL</code> and <code>RESONA_API_KEY</code> (an org client token from <code>resona-admin credential issue</code>) are required. <code>path</code> input is enabled only when <code>RESONA_MCP_ROOT</code> names an existing directory: the path (absolute or relative to the root) must resolve, after following symlinks, to a regular file inside the root. <code>..</code> escapes, symlinks pointing outside the root, directories and URLs are rejected. Without <code>RESONA_MCP_ROOT</code>, path input is disabled and only <code>upload_content</code> / <code>upload_id</code> work. There is no default root. Logs go to stderr; stdout carries only the protocol.</p>
+<p><code>RESONA_API_URL</code> and <code>RESONA_API_KEY</code> (an org client token from <code>resona-admin credential issue</code>) are required. <code>path</code> input is enabled only when <code>RESONA_MCP_ROOT</code> names an existing directory: the path (absolute or relative to the root) must resolve, after following symlinks, to a regular file inside the root. <code>..</code> escapes, symlinks pointing outside the root, directories and URLs are rejected. Without <code>RESONA_MCP_ROOT</code>, path input is disabled and only <code>create_upload_url</code>, <code>upload_content</code> and <code>upload_id</code> work. There is no default root. Logs go to stderr; stdout carries only the protocol.</p>
 <p>omp (<code>~/.omp/agent/mcp.json</code>) or Claude (<code>~/.claude.json</code>, <code>mcpServers</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -2155,7 +2160,7 @@
 <ul>
 <li><strong>Authentication.</strong> Every request needs <code>Authorization: Bearer &lt;org token&gt;</code>; missing or unknown tokens get 401. The server verifies the token against the hub (<code>GET /v1/settings</code>, so client and org-admin tokens work, worker tokens do not) and caches an accepted token for 30 seconds. Each tool call then uses that request's own token against the hub; the server has no key of its own. A token from another organization gets the hub's 404 for jobs it does not own.</li>
 <li><strong>Sessions.</strong> A protocol session is bound to the token that opened it. A session id presented with a different token is answered as if the session did not exist (404).</li>
-<li><strong>Input.</strong> Remote callers cannot pass <code>path</code> or URLs; use <code>upload_content</code> (request bodies up to 12 MiB, enough for 8 MiB of decoded content).</li>
+<li><strong>Input.</strong> Remote callers cannot pass <code>path</code> or URLs; use <code>create_upload_url</code> and send the file with <code>curl</code>, or <code>upload_content</code> for tiny files (request bodies up to 12 MiB, enough for 8 MiB of decoded content).</li>
 <li><strong>Host/Origin.</strong> <code>Host</code> must match <code>RESONA_MCP_ALLOWED_HOSTS</code> (421 otherwise) and a supplied <code>Origin</code> must match <code>RESONA_MCP_ALLOWED_ORIGINS</code> (403 otherwise). Both are comma-separated; <code>host:*</code> / <code>scheme://host:*</code> allow any port. Defaults allow loopback only.</li>
 </ul>
 <p>Client configuration for a hosted server:</p>
