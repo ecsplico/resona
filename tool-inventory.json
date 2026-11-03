@@ -8,6 +8,10 @@
     "deferred": false
   },
   {
+    "name": "create_upload_url",
+    "deferred": false
+  },
+  {
     "name": "get_job",
     "deferred": false
   },

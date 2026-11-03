@@ -217,6 +217,54 @@ def test_upload_is_consumed_by_exactly_one_job(http, fresh_org, client_headers, 
     assert error_code(second) == "upload_not_found"
 
 
+def _link_upload(http, link, data, *, name="a.wav", ctype="audio/wav"):
+    return http.post("/v1/upload-links/upload", files={"file": (name, data, ctype)},
+                     headers={link["token_header"]: link["token"]})
+
+
+def test_upload_link_delivers_one_file_into_the_minting_org(http, fresh_org, org_b, client_headers, wav_bytes):
+    headers = client_headers(fresh_org)
+    link = http.post("/v1/upload-links", headers=headers).json()
+    up = _link_upload(http, link, wav_bytes)
+    assert up.status_code == 201
+    assert up.json()["sha256"] == hashlib.sha256(wav_bytes).hexdigest()
+
+    again = _link_upload(http, link, wav_bytes)
+    assert again.status_code == 401 and error_code(again) == "invalid_upload_link"
+
+    other = submit(http, client_headers(org_b), {"kind": "audio", "upload_id": up.json()["upload_id"]})
+    assert other.status_code == 404
+    assert submit(http, headers, {"kind": "audio", "upload_id": up.json()["upload_id"]}).status_code == 202
+
+
+def test_upload_link_is_spent_by_a_rejected_attempt(http, fresh_org, client_headers, wav_bytes):
+    link = http.post("/v1/upload-links", headers=client_headers(fresh_org)).json()
+    assert _link_upload(http, link, b"not media", name="a.txt", ctype="text/plain").status_code == 415
+    assert _link_upload(http, link, wav_bytes).status_code == 401
+
+
+def test_upload_link_refused_after_expiry_or_credential_revocation(http, fresh_org, client_headers,
+                                                                  wav_bytes, monkeypatch):
+    headers = client_headers(fresh_org)
+    expiring = http.post("/v1/upload-links", headers=headers).json()
+    revoked = http.post("/v1/upload-links", headers=headers).json()
+    with Session(engine) as session:
+        cred = session.exec(select(Credential).where(Credential.organization_id == fresh_org)).one()
+        revoke_credential(session, cred.id)
+        session.commit()
+    assert _link_upload(http, revoked, wav_bytes).status_code == 401
+
+    later = clock.now() + jobs_routes.UPLOAD_LINK_TTL + timedelta(seconds=1)
+    monkeypatch.setattr(clock, "now", lambda: later)
+    assert _link_upload(http, expiring, wav_bytes).status_code == 401
+
+
+def test_upload_link_minting_needs_a_client_credential(http, fresh_org, worker_headers, wav_bytes):
+    assert http.post("/v1/upload-links").status_code == 401
+    assert http.post("/v1/upload-links", headers=worker_headers(fresh_org)).status_code == 403
+    assert http.post("/v1/upload-links/upload", files={"file": ("a.wav", wav_bytes, "audio/wav")}).status_code == 401
+
+
 def test_upload_kind_must_match_job_kind(http, fresh_org, client_headers, wav_bytes):
     headers = client_headers(fresh_org)
     upload_id = upload(http, headers, wav_bytes).json()["upload_id"]

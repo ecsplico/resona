@@ -175,10 +175,31 @@ def test_v1_database_upgrades_to_releases_and_records_the_bundled_release(legacy
     release = raw.execute("SELECT release_id, status FROM release").fetchall()
     jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
     raw.close()
-    assert versions == [1, 2]
-    assert {"release", "evaluation", "baseline", "approvedreleasetuple"} <= tables
+    assert versions == list(range(1, schema.TARGET_VERSION + 1))
+    assert {"release", "evaluation", "baseline", "approvedreleasetuple", "uploadlink"} <= tables
     assert release == [(hub_release_id(), STATUS_BUNDLED)]
     assert jobs == 2
+
+
+def test_v2_database_gains_upload_links_and_keeps_jobs(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:2])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 2)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    raw = sqlite3.connect(legacy_db)  # a v2 hub's models had no upload links
+    raw.execute("DROP TABLE uploadlink")
+    raw.commit()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    tables = {r[0] for r in raw.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    version = raw.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
+    raw.close()
+    assert "uploadlink" in tables and version == 3 and jobs == 2
 
 
 

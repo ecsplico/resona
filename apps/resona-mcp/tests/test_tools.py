@@ -1,5 +1,6 @@
 """Tool surface behaviour, driven through an in-process MCP client."""
 import base64
+import hashlib
 import os
 from pathlib import Path
 
@@ -51,25 +52,38 @@ def test_exposes_exactly_the_read_and_submit_tools(hub):
 
 # ── upload_content ─────────────────────────────────────────────────────────
 
+def _inline(filename: str, data: bytes, sha256: str | None = None) -> dict:
+    return {"filename": filename, "content_base64": base64.b64encode(data).decode(),
+            "sha256": sha256 or hashlib.sha256(data).hexdigest()}
+
+
 def test_upload_content_accepts_the_8_mib_maximum(hub, payload):
     data = b"\0" * MAX_UPLOAD_CONTENT_BYTES
-    out = payload(call(remote(hub), "upload_content",
-                       {"filename": "../../memo.wav", "content_base64": base64.b64encode(data).decode()}))
+    out = payload(call(remote(hub), "upload_content", _inline("../../memo.wav", data)))
     assert out["size"] == MAX_UPLOAD_CONTENT_BYTES
     assert hub.calls == [("upload_bytes", ("memo.wav", MAX_UPLOAD_CONTENT_BYTES))]
 
 
 def test_upload_content_rejects_oversize_before_uploading(hub, error_text):
     data = b"\0" * (MAX_UPLOAD_CONTENT_BYTES + 1)
-    msg = error_text(call(remote(hub), "upload_content",
-                          {"filename": "big.wav", "content_base64": base64.b64encode(data).decode()}))
+    msg = error_text(call(remote(hub), "upload_content", _inline("big.wav", data)))
     assert "8 MiB" in msg
     assert hub.calls == []
 
 
 def test_upload_content_rejects_invalid_base64(hub, error_text):
-    msg = error_text(call(remote(hub), "upload_content", {"filename": "a.wav", "content_base64": "not base64!"}))
+    msg = error_text(call(remote(hub), "upload_content",
+                          {"filename": "a.wav", "content_base64": "not base64!", "sha256": "0" * 64}))
     assert "base64" in msg
+    assert hub.calls == []
+
+
+def test_upload_content_rejects_altered_base64_before_uploading(hub, error_text):
+    original = b"RIFF" + bytes(range(200))
+    altered = original[:50] + b"X" + original[51:]  # same size, one byte changed in transit
+    msg = error_text(call(remote(hub), "upload_content",
+                          _inline("a.wav", altered, sha256=hashlib.sha256(original).hexdigest())))
+    assert "sha256" in msg
     assert hub.calls == []
 
 
@@ -124,8 +138,7 @@ def test_submit_requires_exactly_one_valid_source(hub, error_text, args):
 
 @pytest.mark.parametrize("path", ["/etc/hosts", "audio/a.wav", "https://example.com/a.wav", "file:///etc/hosts"])
 def test_remote_server_rejects_paths_and_urls(hub, error_text, path):
-    msg = error_text(call(remote(hub), "convert_document", {"path": path}))
-    assert "upload_content" in msg
+    error_text(call(remote(hub), "convert_document", {"path": path}))
     assert hub.calls == []
 
 

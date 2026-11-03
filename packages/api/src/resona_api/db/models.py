@@ -165,6 +165,26 @@ class Upload(SQLModel, table=True):
     consumed_by_job_id: Optional[int] = Field(default=None)
 
 
+class UploadLink(SQLModel, table=True):
+    """A single-use capability to create one upload without the client credential.
+
+    Minted by a client credential, valid ten minutes, consumed by the first upload
+    attempt. Only the token's SHA-256 is stored; revoking the minting credential
+    invalidates its unused links.
+    """
+
+    token_hash: str = Field(primary_key=True)
+    organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
+    credential_id: str = Field(foreign_key="credential.id", nullable=False)
+    created_at: datetime = Field(
+        default_factory=lambda: clock.now(),
+        sa_column=Column(DateTime, nullable=False),
+    )
+    expires_at: datetime = Field(sa_column=Column(DateTime, nullable=False))
+    used_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+
+
+
 class IdempotencyRecord(SQLModel, table=True):
     """Maps an org-scoped ``Idempotency-Key`` to the job it created. Kept seven days."""
 

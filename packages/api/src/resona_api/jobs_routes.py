@@ -47,10 +47,20 @@ from resona_postprocess.profile import ProfileError
 
 from . import clock, releases, storage
 from . import engine_registry as reg
-from .auth import ROLE_ORG_ADMIN, Principal, client_principal
+from .auth import ROLE_ORG_ADMIN, Principal, client_principal, hash_token
 from .broker import JOB_DELETED, _finish_terminal, _immediate, _remove_input, endpoints_assigned
 from .db.engine import engine
-from .db.models import IdempotencyRecord, Job, JobStatus, Organization, ProfileRevision, Upload, Worker
+from .db.models import (
+    Credential,
+    IdempotencyRecord,
+    Job,
+    JobStatus,
+    Organization,
+    ProfileRevision,
+    Upload,
+    UploadLink,
+    Worker,
+)
 from .deps import get_db_session
 from .errors import api_error, validation_message
 from .privacy import ProfileNotFound, is_profile_name, load_org_profile
@@ -64,6 +74,10 @@ MAX_UPLOAD_BYTES: int = config("RESONA_MAX_UPLOAD_BYTES", default=200 * 1024 * 1
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
 MAX_JOB_REQUEST_BYTES = 64 * 1024
 UPLOAD_TTL = timedelta(hours=1)
+UPLOAD_LINK_TTL = timedelta(minutes=10)
+UPLOAD_LINK_HEADER = "X-Resona-Upload-Token"
+# Origin that upload links point at; behind a proxy the request's own base URL is internal.
+PUBLIC_URL: str = config("RESONA_PUBLIC_URL", default="")
 JOB_DEADLINE = timedelta(hours=24)
 WORKER_ONLINE_WINDOW = timedelta(seconds=90)
 MAX_MARKDOWN_CHUNK_CHARS = 32768
@@ -465,6 +479,78 @@ async def create_upload(
 ) -> dict[str, Any]:
     """Stream multipart field ``file`` to staging, hash it, sniff its media family, promote."""
     stored, _ = await receive_upload(request, session, principal.organization_id)
+    return stored
+
+
+def _consume_upload_link(session: Session, token: Optional[str]) -> str:
+    """Mark the link used and return its organization; 401 for any unusable link.
+
+    The link is spent by the first attempt, even one that later fails validation,
+    so a leaked token can never deliver a second file.
+    """
+    if not token:
+        raise api_error(401, "invalid_upload_link", f"missing {UPLOAD_LINK_HEADER} header")
+    with _immediate(session):
+        link = session.get(UploadLink, hash_token(token.strip()))
+        now = clock.now()
+        usable = (
+            link is not None
+            and link.used_at is None
+            and clock.as_utc(link.expires_at) > clock.as_utc(now)
+        )
+        if usable:
+            credential = session.get(Credential, link.credential_id)
+            usable = credential is not None and credential.revoked_at is None
+        if not usable:
+            raise api_error(401, "invalid_upload_link", "upload link is unknown, used, expired or revoked")
+        link.used_at = now
+        session.add(link)
+        organization_id = link.organization_id
+    return organization_id
+
+
+@router.post("/v1/upload-links", status_code=201)
+def create_upload_link(
+    request: Request,
+    principal: Principal = Depends(client_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Mint a single-use link for one upload, valid ten minutes.
+
+    For callers that cannot hold the client credential, such as an agent sandbox
+    behind an MCP server: the file is sent with ``curl`` and its bytes never pass
+    through a model. Only the token's hash is stored.
+    """
+    token = "upt_" + secrets.token_urlsafe(32)
+    now = clock.now()
+    expires_at = now + UPLOAD_LINK_TTL
+    session.add(UploadLink(
+        token_hash=hash_token(token),
+        organization_id=principal.organization_id,
+        credential_id=principal.credential_id,
+        created_at=now,
+        expires_at=expires_at,
+    ))
+    session.commit()
+    base = (PUBLIC_URL or str(request.base_url)).rstrip("/")
+    return {
+        "upload_url": f"{base}/v1/upload-links/upload",
+        "token_header": UPLOAD_LINK_HEADER,
+        "token": token,
+        "expires_at": _iso(expires_at),
+        "max_bytes": MAX_UPLOAD_BYTES,
+    }
+
+
+@router.post("/v1/upload-links/upload", status_code=201)
+async def upload_with_link(
+    request: Request,
+    upload_token: Optional[str] = Header(default=None, alias=UPLOAD_LINK_HEADER),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Spend an upload link: same multipart ``file`` contract as ``POST /v1/uploads``."""
+    organization_id = _consume_upload_link(session, upload_token)
+    stored, _ = await receive_upload(request, session, organization_id)
     return stored
 
 

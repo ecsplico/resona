@@ -321,6 +321,15 @@ class ResonaClient:
             size=int(body["size"]),
         )
 
+    def create_upload_link(self) -> dict[str, Any]:
+        """Mint a single-use, ten-minute upload link. POST /v1/upload-links
+
+        Returns ``{upload_url, token_header, token, expires_at, max_bytes}``; whoever
+        holds the token can upload one file into this organization without the client
+        credential.
+        """
+        return self._send("POST", "/v1/upload-links").json()
+
     def submit_job(
         self,
         filepath: Path | str,

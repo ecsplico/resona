@@ -41,6 +41,7 @@ services:
       DATA_PATH: /data
       RESONA_MAX_UPLOAD_BYTES: ${RESONA_MAX_UPLOAD_BYTES:-209715200}
       CORS_ORIGINS: ${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
+      RESONA_PUBLIC_URL: ${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
       LOGLEVEL: ${LOGLEVEL:-info}
     healthcheck:
       test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/health', timeout=3)"]

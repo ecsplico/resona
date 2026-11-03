@@ -60,6 +60,24 @@ Content-Type: multipart/form-data   (field: file)
 
 Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
 
+#### Upload through a single-use link
+
+For a caller that must not hold the client credential, for example an agent sandbox behind the MCP server. The file goes to the hub with `curl`, so its bytes never pass through a model.
+
+```
+POST /v1/upload-links
+```
+
+Returns `201 {"upload_url", "token_header", "token", "expires_at", "max_bytes"}`. The hub stores only the token's SHA-256. `upload_url` uses `RESONA_PUBLIC_URL` when it is set; behind a proxy, set it to the public origin.
+
+```
+POST /v1/upload-links/upload
+X-Resona-Upload-Token: <token>
+Content-Type: multipart/form-data   (field: file)
+```
+
+Same response and errors as `POST /v1/uploads`; the upload belongs to the organization that minted the link. The link is valid for ten minutes and is spent by the first attempt, even one that fails validation. An unknown, used or expired link, or one whose minting credential was revoked, gets `401 invalid_upload_link`. Maintenance deletes expired links.
+
 #### Create a job
 
 ```

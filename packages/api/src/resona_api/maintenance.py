@@ -29,7 +29,7 @@ from sqlmodel import Session, select
 
 from . import broker, clock, storage
 from .db import engine as db_engine
-from .db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload
+from .db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload, UploadLink
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +62,17 @@ def _expire_uploads(session: Session, storage_ids: dict[str, str], now: datetime
     for path in expired:
         storage.remove_file(path)
     return len(expired)
+
+
+def _expire_upload_links(session: Session, now: datetime) -> int:
+    """Delete links past their expiry, used or not; a used link is already spent."""
+    removed = 0
+    with broker._immediate(session):
+        for link in session.exec(select(UploadLink)).all():
+            if _expired(link.expires_at, now):
+                session.delete(link)
+                removed += 1
+    return removed
 
 
 def _expire_results(session: Session, storage_ids: dict[str, str], now: datetime) -> int:
@@ -177,12 +188,14 @@ def run_once() -> dict[str, int]:
         storage_ids = _storage_ids(session)
         session.commit()
         uploads = _expire_uploads(session, storage_ids, now)
+        links = _expire_upload_links(session, now)
         results = _expire_results(session, storage_ids, now)
         metadata = _delete_metadata(session, storage_ids, now)
         staging, reconciled = _sweep_files(session, storage_ids, now)
     return {
         "leases_swept": leases,
         "uploads_expired": uploads,
+        "upload_links_expired": links,
         "results_expired": results,
         "metadata_deleted": metadata,
         "staging_swept": staging,

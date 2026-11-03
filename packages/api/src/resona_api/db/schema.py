@@ -329,10 +329,21 @@ def _v2_releases_evaluations(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 3: single-use upload links ────────────────────────────────
+
+def _v3_upload_links(conn: sqlite3.Connection) -> AfterCommit | None:
+    _create_missing_tables(conn)
+    if "uploadlink" not in _table_names(conn):
+        raise SchemaError("migration 3 did not create table uploadlink")
+    return None
+
+
+
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (1, _v1_identity_settings_jobs),
     (2, _v2_releases_evaluations),
+    (3, _v3_upload_links),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]

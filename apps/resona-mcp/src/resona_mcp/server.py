@@ -7,6 +7,7 @@ No tool mutates settings or profiles, and none touches credentials or worker enr
 """
 import base64
 import binascii
+import hashlib
 import logging
 import re
 from collections.abc import Callable
@@ -46,15 +47,18 @@ TOOL_NAMES = (
     "list_engines",
     "get_settings",
     "upload_content",
+    "create_upload_url",
 )
 
 INSTRUCTIONS = (
     "Resona runs private audio transcription and document OCR→Markdown jobs on the "
-    "organization's approved workers. Flow: upload_content (or, on a local stdio server, "
-    "pass a path under RESONA_MCP_ROOT) → transcribe_audio / convert_document (returns a "
-    "job_id immediately) → poll get_job until status is completed/failed/cancelled → page "
-    "through get_result with next_offset until it is null. Jobs are private by default; "
-    "the hub refuses anything its policy does not allow."
+    "organization's approved workers. Flow: get an upload_id (create_upload_url and send "
+    "the file with curl from your shell; upload_content only for tiny files you can pass "
+    "verbatim with their sha256; on a local stdio server, a path under RESONA_MCP_ROOT) → "
+    "transcribe_audio / convert_document (returns a job_id immediately) → poll get_job "
+    "until status is completed/failed/cancelled → page through get_result with "
+    "next_offset until it is null. Jobs are private by default; the hub refuses anything "
+    "its policy does not allow."
 )
 
 ClientFactory = Callable[[Context], ResonaClient]
@@ -87,7 +91,7 @@ Private = Annotated[
 ]
 UploadId = Annotated[
     Optional[str],
-    Field(default=None, description="upload_id from upload_content."),
+    Field(default=None, description="upload_id from create_upload_url or upload_content."),
 ]
 LocalPath = Annotated[
     Optional[str],
@@ -131,12 +135,12 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
             raise ToolError("pass exactly one of upload_id or path")
         if upload_id is not None:
             if not _UPLOAD_ID.match(upload_id):
-                raise ToolError("upload_id must be an id returned by upload_content")
+                raise ToolError("upload_id must be an id returned by create_upload_url or upload_content")
             return upload_id, None
         assert path is not None
         if not inputs.allow_paths:
             what = "URLs" if looks_like_url(path) else "local paths"
-            raise ToolError(f"this remote server does not accept {what}; use upload_content")
+            raise ToolError(f"this remote server does not accept {what}; use create_upload_url")
         try:
             return None, resolve_input_path(path, inputs.root)
         except PathRejected as exc:
@@ -299,8 +303,12 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         ctx: Context,
         filename: Annotated[str, Field(min_length=1, max_length=255, description="Name hint, e.g. 'memo.wav' or 'scan.pdf'.")],
         content_base64: Annotated[str, Field(description="Base64 file content, at most 8 MiB decoded.")],
+        sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", description="Lowercase SHA-256 hex of the original file bytes (e.g. from `sha256sum`). Content that does not match is rejected.")],
     ) -> dict[str, Any]:
-        """Upload a small file (≤ 8 MiB decoded); returns {upload_id, sha256, size} for one job."""
+        """Upload a small file inline (≤ 8 MiB decoded); returns {upload_id, sha256, size} for one job.
+
+        Base64 that a model copies by hand is easily altered, so only use this for
+        tiny files. If you can run shell commands, use create_upload_url instead."""
         if len(content_base64) > _MAX_BASE64_CHARS:
             raise ToolError("content exceeds the 8 MiB upload_content limit")
         try:
@@ -311,6 +319,11 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
             raise ToolError("content exceeds the 8 MiB upload_content limit")
         if not data:
             raise ToolError("content is empty")
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise ToolError(
+                "decoded content does not match sha256: the base64 was altered on the way; "
+                "use create_upload_url and send the file with curl"
+            )
         name = Path(filename).name or "upload"
         client = client_for(ctx)
 
@@ -318,6 +331,31 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
             with client:
                 up = client.upload_bytes(name, data)
             return {"upload_id": up.upload_id, "sha256": up.sha256, "size": up.size}
+
+        return await _run(call)
+
+    @server.tool()
+    async def create_upload_url(ctx: Context) -> dict[str, Any]:
+        """Get a single-use upload link (valid 10 minutes) for one file of any supported size.
+
+        Run the returned `curl` command in your shell with the file path filled in; it
+        prints {upload_id, sha256, size}. The file's bytes go straight to the hub, not
+        through this conversation. Use the upload_id with transcribe_audio or
+        convert_document."""
+        client = client_for(ctx)
+
+        def call() -> dict[str, Any]:
+            with client:
+                link = client.create_upload_link()
+            header = f"{link['token_header']}: {link['token']}"
+            return {
+                "upload_url": link["upload_url"],
+                "token_header": link["token_header"],
+                "token": link["token"],
+                "expires_at": link["expires_at"],
+                "max_bytes": link["max_bytes"],
+                "curl": f"curl -sS -X POST -H '{header}' -F 'file=@<PATH>' {link['upload_url']}",
+            }
 
         return await _run(call)
 
