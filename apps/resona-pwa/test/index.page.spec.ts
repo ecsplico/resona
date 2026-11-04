@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref } from "vue";
+import { flushPromises } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import IndexPage from "~/pages/index.vue";
 import type { Recording } from "~/types/directus";
@@ -80,6 +81,22 @@ describe("index (recordings list) page", () => {
 	it("renders the record FAB", async () => {
 		const w = await mountSuspended(IndexPage);
 		expect(w.find("[data-testid=\"record-fab\"]").exists()).toBe(true);
+	});
+
+	it("closes the recording sheet and shows the error when the mic cannot start", async () => {
+		const original = Object.getOwnPropertyDescriptor(globalThis.navigator, "mediaDevices");
+		Object.defineProperty(globalThis.navigator, "mediaDevices", { value: undefined, configurable: true });
+		try {
+			const w = await mountSuspended(IndexPage);
+			await w.find("[data-testid=\"record-fab\"]").trigger("click");
+			await flushPromises();
+			expect(w.findComponent({ name: "HRecordingSheet" }).exists()).toBe(false);
+			expect(w.find("[data-testid=\"record-error\"]").text()).toBe("Mikrofon nicht verfügbar – die App muss über HTTPS oder localhost geöffnet sein.");
+		}
+		finally {
+			if (original) Object.defineProperty(globalThis.navigator, "mediaDevices", original);
+			else Reflect.deleteProperty(globalThis.navigator, "mediaDevices");
+		}
 	});
 
 	it("navigates to the recording detail when a row is opened", async () => {

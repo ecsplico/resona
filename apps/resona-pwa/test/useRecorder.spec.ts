@@ -174,4 +174,23 @@ describe("useRecorder", () => {
 		scope.stop();
 		expect(track.stop).toHaveBeenCalled();
 	});
+
+	it("start() rejects with the secure-context hint when mediaDevices is missing", async () => {
+		Object.defineProperty(globalThis.navigator, "mediaDevices", { value: undefined, configurable: true });
+		const r = useRecorder();
+
+		await expect(r.start()).rejects.toThrow("Mikrofon nicht verfügbar – die App muss über HTTPS oder localhost geöffnet sein.");
+		expect(r.recording.value).toBe(false);
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
+	});
+
+	it("start() rejects with a permission message when the mic is denied", async () => {
+		getUserMedia.mockImplementation(async () => {
+			throw new DOMException("denied", "NotAllowedError");
+		});
+		const r = useRecorder();
+
+		await expect(r.start()).rejects.toThrow("Mikrofonzugriff wurde verweigert.");
+		expect(r.recording.value).toBe(false);
+	});
 });

@@ -142,7 +142,24 @@ export function useRecorder() {
 			ownsStream = false;
 		}
 		else {
-			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			// Browsers hide mediaDevices outside a secure context (HTTPS or localhost),
+			// e.g. on http://<hostname>:7730 from another device.
+			// lib.dom types mediaDevices as always present; at runtime it can be undefined.
+			const media: MediaDevices | undefined = navigator.mediaDevices;
+			if (!media?.getUserMedia) {
+				throw new Error("Mikrofon nicht verfügbar – die App muss über HTTPS oder localhost geöffnet sein.");
+			}
+			try {
+				stream = await media.getUserMedia({ audio: true });
+			}
+			catch (err) {
+				throw new Error(
+					err instanceof DOMException && err.name === "NotAllowedError"
+						? "Mikrofonzugriff wurde verweigert."
+						: "Mikrofon konnte nicht gestartet werden.",
+					{ cause: err },
+				);
+			}
 			ownsStream = true;
 		}
 

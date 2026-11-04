@@ -22,6 +22,7 @@ const hubSettings = useHubSettings();
 
 // Record flow state: FAB -> HRecordingSheet (recording) -> SaveSheet (review).
 const showRecorder = ref(false);
+const recordError = ref<string | null>(null);
 const showSave = ref(false);
 const pendingBlob = ref<Blob | null>(null);
 const pendingDuration = ref(0);
@@ -74,8 +75,17 @@ async function copyRecording(recording: Recording): Promise<void> {
 }
 
 async function startRecording(): Promise<void> {
+	recordError.value = null;
 	showRecorder.value = true;
-	await recorder.start();
+	try {
+		await recorder.start();
+	}
+	catch (err) {
+		// Without this the sheet stays open on a dead recorder and "Speichern"
+		// uploads an empty file.
+		showRecorder.value = false;
+		recordError.value = err instanceof Error ? err.message : String(err);
+	}
 }
 
 async function stopRecording(): Promise<void> {
@@ -261,6 +271,14 @@ onMounted(() => {
 		</div>
 
 		<div class="home__list">
+			<p
+				v-if="recordError"
+				class="home__error"
+				data-testid="record-error"
+			>
+				{{ recordError }}
+			</p>
+
 			<p
 				v-if="error"
 				class="home__error"
