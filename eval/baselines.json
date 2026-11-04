@@ -4,10 +4,10 @@
     "cpu-private/cpu": {
       "execution_profile": "cpu-private",
       "platform": "cpu",
-      "revision": 1,
-      "evaluation_id": 10,
-      "promoted_at": "2026-11-02T02:28:13+00:00",
-      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "revision": 2,
+      "evaluation_id": 13,
+      "promoted_at": "2026-11-04T01:32:12+00:00",
+      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -83,11 +83,17 @@
           "cer": 0.0,
           "order_failures": 0
         },
-        "bad-text-layer-auto": {
+        "bad-text-layer": {
           "cer": 0.0036
         },
-        "bad-text-layer-force": {
-          "cer": 0.0036
+        "fr-scan-pdf": {
+          "cer": 0.2
+        },
+        "it-scan-pdf": {
+          "cer": 0.0
+        },
+        "es-scan-pdf": {
+          "cer": 0.0
         }
       }
     },
@@ -184,10 +190,10 @@
     "mac-private/mac-metal": {
       "execution_profile": "mac-private",
       "platform": "mac-metal",
-      "revision": 2,
-      "evaluation_id": 6,
-      "promoted_at": "2026-11-02T02:22:55+00:00",
-      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "revision": 3,
+      "evaluation_id": 11,
+      "promoted_at": "2026-11-04T01:27:02+00:00",
+      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -263,10 +269,16 @@
           "cer": 0.0,
           "order_failures": 0
         },
-        "bad-text-layer-auto": {
+        "bad-text-layer": {
           "cer": 0.0
         },
-        "bad-text-layer-force": {
+        "fr-scan-pdf": {
+          "cer": 0.0
+        },
+        "it-scan-pdf": {
+          "cer": 0.0
+        },
+        "es-scan-pdf": {
           "cer": 0.0
         }
       }
@@ -364,10 +376,10 @@
     "private-auto/mac-metal": {
       "execution_profile": "private-auto",
       "platform": "mac-metal",
-      "revision": 2,
-      "evaluation_id": 7,
-      "promoted_at": "2026-11-02T02:22:55+00:00",
-      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "revision": 3,
+      "evaluation_id": 12,
+      "promoted_at": "2026-11-04T01:28:38+00:00",
+      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -443,10 +455,16 @@
           "cer": 0.0,
           "order_failures": 0
         },
-        "bad-text-layer-auto": {
+        "bad-text-layer": {
           "cer": 0.0
         },
-        "bad-text-layer-force": {
+        "fr-scan-pdf": {
+          "cer": 0.0
+        },
+        "it-scan-pdf": {
+          "cer": 0.0
+        },
+        "es-scan-pdf": {
           "cer": 0.0
         }
       }
