@@ -191,6 +191,7 @@ Measured on 2026-11-02 (evaluation corpus, gpu-box, `linux-cuda`, `qwen3.6-27b` 
 | small print scan | 0.196 | 0.191 |
 | invisible text layer re-OCRed in `auto` (`bad-text-layer`) | 0.004 | 0.000 |
 | dense table scan | 3 cells missing\* | 0 cells missing |
+| French scan, `auto` (`fr-scan-pdf`, 2026-11-04, endpoint `local-llm`) | 0.200 | 0.200 |
 | all other fixtures | 0.000 | 0.000 |
 
 \* Before the `°℃` normalization (608e6e7); the plain run now also misses no cell.

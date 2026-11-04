@@ -100,10 +100,10 @@
     "linux-cuda/linux-cuda": {
       "execution_profile": "linux-cuda",
       "platform": "linux-cuda",
-      "revision": 2,
-      "evaluation_id": 8,
-      "promoted_at": "2026-11-02T02:25:27+00:00",
-      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "revision": 3,
+      "evaluation_id": 14,
+      "promoted_at": "2026-11-04T10:21:57+00:00",
+      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -179,11 +179,17 @@
           "cer": 0.0,
           "order_failures": 0
         },
-        "bad-text-layer-auto": {
+        "bad-text-layer": {
           "cer": 0.0036
         },
-        "bad-text-layer-force": {
-          "cer": 0.0036
+        "fr-scan-pdf": {
+          "cer": 0.2
+        },
+        "it-scan-pdf": {
+          "cer": 0.0
+        },
+        "es-scan-pdf": {
+          "cer": 0.0
         }
       }
     },
@@ -286,10 +292,10 @@
     "private-auto/linux-cuda": {
       "execution_profile": "private-auto",
       "platform": "linux-cuda",
-      "revision": 2,
-      "evaluation_id": 9,
-      "promoted_at": "2026-11-02T02:25:44+00:00",
-      "corpus_sha256": "06322aa7d331f4aea83d695663e1d45f612e0e1830d5842fa5b6f62b04aff5ba",
+      "revision": 3,
+      "evaluation_id": 15,
+      "promoted_at": "2026-11-04T10:23:28+00:00",
+      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
       "release_id": "0.1.0",
       "runtime_versions": [
         "0.1.0"
@@ -365,11 +371,17 @@
           "cer": 0.0,
           "order_failures": 0
         },
-        "bad-text-layer-auto": {
+        "bad-text-layer": {
           "cer": 0.0036
         },
-        "bad-text-layer-force": {
-          "cer": 0.0036
+        "fr-scan-pdf": {
+          "cer": 0.2
+        },
+        "it-scan-pdf": {
+          "cer": 0.0
+        },
+        "es-scan-pdf": {
+          "cer": 0.0
         }
       }
     },
