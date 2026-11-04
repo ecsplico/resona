@@ -67,8 +67,30 @@ export default defineNuxtConfig({
 				{ src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
 				{ src: "/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
 			],
+			// Web Share Target: let the OS share sheet hand audio (and plain
+			// text/URLs) to Resona. Must be POST + multipart so shared *files*
+			// come through; text-only shares arrive as the title/text/url form
+			// fields. The share-target-handler.js service-worker script (below)
+			// intercepts the POST and routes it into the app.
+			share_target: {
+				action: "/share-target",
+				method: "POST",
+				enctype: "multipart/form-data",
+				params: {
+					title: "title",
+					text: "text",
+					url: "url",
+					files: [
+						{ name: "audio", accept: ["audio/*", "video/webm", ".webm", ".m4a", ".mp3", ".wav", ".ogg"] },
+					],
+				},
+			},
 		},
 		workbox: {
+			// Imported at the top of the generated service worker, so its fetch
+			// listener is registered before workbox's routing — it wins the race
+			// to respondWith() for the share-target POST.
+			importScripts: ["/share-target-handler.js"],
 			runtimeCaching: [
 				{ urlPattern: /\/assets\//, handler: "CacheFirst" },
 			],
