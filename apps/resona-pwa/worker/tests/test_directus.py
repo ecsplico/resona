@@ -45,7 +45,7 @@ async def test_list_by_status_job_filters(base_url):
 
 @respx.mock
 @pytest.mark.anyio
-async def test_claim_patches_active_status(base_url):
+async def test_claim_patches_active_status_and_clears_job(base_url):
     route = respx.patch(f"{base_url}/items/documents/doc-1").mock(
         return_value=httpx.Response(200, json={"data": {"id": "doc-1", "status": "processing"}})
     )
@@ -53,7 +53,9 @@ async def test_claim_patches_active_status(base_url):
     ok = await client.claim("documents", "doc-1", "processing")
     await client.aclose()
     assert ok is True
-    assert json.loads(route.calls.last.request.content) == {"status": "processing"}
+    assert json.loads(route.calls.last.request.content) == {
+        "status": "processing", "hub_job_id": None,
+    }
 
 
 @respx.mock
@@ -150,7 +152,7 @@ async def test_mark_done_and_error(base_url):
     await client.aclose()
     assert json.loads(route.calls[0].request.content) == {"status": "done", "hub_job_id": None}
     assert json.loads(route.calls[1].request.content) == {
-        "status": "error", "error_message": "boom",
+        "status": "error", "error_message": "boom", "hub_job_id": None,
     }
 
 

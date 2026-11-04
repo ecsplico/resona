@@ -15,6 +15,8 @@ export function useRecording(id: string) {
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let starting = false;
+	// Set on scope dispose so an in-flight first refresh never arms the interval.
+	let disposed = false;
 
 	async function refresh(): Promise<void> {
 		loading.value = true;
@@ -58,8 +60,8 @@ export function useRecording(id: string) {
 
 		void refresh().then(() => {
 			starting = false;
-			// Already terminal on first load -> never arm the interval.
-			if (isTerminal(recording.value?.status)) {
+			// Already terminal on first load (or disposed meanwhile) -> never arm the interval.
+			if (disposed || isTerminal(recording.value?.status)) {
 				return;
 			}
 			timer = setInterval(() => {
@@ -73,6 +75,7 @@ export function useRecording(id: string) {
 	}
 
 	onScopeDispose(() => {
+		disposed = true;
 		stopPolling();
 	});
 

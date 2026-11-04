@@ -78,7 +78,7 @@ async def test_pending_audio_is_uploaded_and_submitted(base_url, tmp_path, recor
         "language": "de", "profile": "default",
     }
     assert bodies(patch) == [
-        {"status": "transcribing"},
+        {"status": "transcribing", "hub_job_id": None},
         {"hub_job_id": 7, "error_message": None},
     ]
     assert list(tmp_path.iterdir()) == []
@@ -150,7 +150,10 @@ async def test_failed_job_marks_error_with_message(base_url, tmp_path, recording
     assert await cycle(base_url, tmp_path) == 1
 
     assert bodies(patch) == [
-        {"status": "error", "error_message": "Verarbeitung fehlgeschlagen: kaputt"},
+        {
+            "status": "error", "error_message": "Verarbeitung fehlgeschlagen: kaputt",
+            "hub_job_id": None,
+        },
     ]
 
 
@@ -166,7 +169,9 @@ async def test_missing_job_marks_error(base_url, tmp_path, recording):
 
     await cycle(base_url, tmp_path)
 
-    assert bodies(patch) == [{"status": "error", "error_message": "Hub-Job nicht gefunden"}]
+    assert bodies(patch) == [
+        {"status": "error", "error_message": "Hub-Job nicht gefunden", "hub_job_id": None},
+    ]
 
 
 @respx.mock
@@ -183,7 +188,10 @@ async def test_expired_result_marks_error(base_url, tmp_path, recording):
     await cycle(base_url, tmp_path)
 
     assert bodies(patch) == [
-        {"status": "error", "error_message": "Ergebnis auf dem Hub abgelaufen"},
+        {
+            "status": "error", "error_message": "Ergebnis auf dem Hub abgelaufen",
+            "hub_job_id": None,
+        },
     ]
 
 
@@ -203,10 +211,18 @@ async def test_pending_job_is_left_alone(base_url, tmp_path, recording):
 
 @respx.mock
 @pytest.mark.anyio
-async def test_connect_error_during_poll_leaves_row_untouched(base_url, tmp_path, recording):
+@pytest.mark.parametrize("hub_reply", [
+    {"side_effect": httpx.ConnectError("refused")},
+    {"side_effect": httpx.ReadError("connection reset")},
+    {"return_value": httpx.Response(502)},
+    {"return_value": httpx.Response(503, json={"error": "unavailable"})},
+], ids=["connect-error", "read-error", "http-502", "http-503"])
+async def test_transient_hub_failure_during_poll_leaves_row_untouched(
+    base_url, tmp_path, recording, hub_reply,
+):
     row = {**recording, "status": "transcribing", "hub_job_id": 7}
     mock_lists(active={"recordings": [row]})
-    respx.get(f"{HUB}/v1/jobs/7").mock(side_effect=httpx.ConnectError("refused"))
+    respx.get(f"{HUB}/v1/jobs/7").mock(**hub_reply)
     patch = mock_patch(base_url, "recordings", "rec-1")
 
     assert await cycle(base_url, tmp_path) == 0
@@ -231,7 +247,10 @@ async def test_one_failing_row_does_not_stop_others(base_url, tmp_path, recordin
     assert bodies(rec_patch)[0]["status"] == "error"
     assert "HTTP 500" in bodies(rec_patch)[0]["error_message"]
     assert bodies(doc_patch) == [
-        {"status": "error", "error_message": "Verarbeitung fehlgeschlagen: cancelled"},
+        {
+            "status": "error", "error_message": "Verarbeitung fehlgeschlagen: cancelled",
+            "hub_job_id": None,
+        },
     ]
 
 
@@ -254,7 +273,7 @@ async def test_pending_document_submits_without_audio_fields(base_url, tmp_path,
     assert req.headers["Idempotency-Key"].startswith("documents:doc-1:")
     assert json.loads(req.content) == {"kind": "document", "upload_id": "up-2", "private": True}
     assert bodies(patch) == [
-        {"status": "processing"},
+        {"status": "processing", "hub_job_id": None},
         {"hub_job_id": 9, "error_message": None},
     ]
 

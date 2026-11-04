@@ -12,11 +12,28 @@ const { recording, transcript, loading, error, startPolling, stopPolling } = use
 const store = useDataStore();
 
 // Player source resolves asynchronously through the data store (Directus asset
-// URL or a local object URL); refresh it whenever the recording's audio changes.
+// URL or a local object URL); refresh it only when the recording's audio
+// actually changes (multi-source watch compares the primitives, so a poll
+// returning the same audio_file does not re-resolve). Local `blob:` URLs are
+// revoked when replaced and on unmount.
 const audioSrc = ref<string | null>(null);
-watch(() => [recording.value?.id, recording.value?.audio_file] as const, async () => {
+let audioDisposed = false;
+
+function revokeAudio(url: string | null): void {
+	if (url?.startsWith("blob:")) {
+		URL.revokeObjectURL(url);
+	}
+}
+
+watch([() => recording.value?.id, () => recording.value?.audio_file], async () => {
 	const current = recording.value;
-	audioSrc.value = current ? await store.audioUrl(current) : null;
+	const next = current ? await store.audioUrl(current) : null;
+	if (audioDisposed) {
+		revokeAudio(next);
+		return;
+	}
+	revokeAudio(audioSrc.value);
+	audioSrc.value = next;
 }, { immediate: true });
 
 // Distinguish a transient "service unreachable" failure (offline styling +
@@ -317,6 +334,9 @@ onMounted(() => {
 
 onUnmounted(() => {
 	stopPolling();
+	audioDisposed = true;
+	revokeAudio(audioSrc.value);
+	audioSrc.value = null;
 	window.removeEventListener("keydown", onKeyDown);
 	window.removeEventListener("keyup", onKeyUp);
 });

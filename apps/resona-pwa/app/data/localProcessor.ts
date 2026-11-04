@@ -22,7 +22,7 @@ const MAX_SUBMIT_PER_CYCLE = 5;
 interface Spec {
 	collection: Collection;
 	kind: "audio" | "document";
-	active: string;
+	active: Recording["status"] | ResonaDocument["status"];
 	fileOf: (row: Row) => string | undefined;
 	fallbackName: (id: string) => string;
 	patch: (id: string, patch: Record<string, unknown>) => Promise<unknown>;
@@ -47,8 +47,11 @@ const SPECS: Spec[] = [
 	},
 ];
 
-function isOffline(err: unknown): boolean {
-	return err instanceof HubError && err.status === 0;
+// Same transient set as the Python worker: offline, rate-limited, gateway errors.
+const TRANSIENT_STATUSES = new Set([0, 429, 502, 503, 504]);
+
+function isTransient(err: unknown): boolean {
+	return err instanceof HubError && TRANSIENT_STATUSES.has(err.status);
 }
 
 async function fail(spec: Spec, id: string, message: string): Promise<void> {
@@ -72,8 +75,8 @@ async function submit(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Pro
 		await spec.patch(row.id, { status: spec.active, hub_job_id: jobId, error_message: null });
 	}
 	catch (err) {
-		if (isOffline(err)) return;
-		await fail(spec, row.id, `Verarbeitung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+		if (isTransient(err)) return;
+		await fail(spec, row.id, err instanceof Error ? err.message : String(err));
 	}
 }
 
@@ -84,9 +87,13 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 		job = await hub.getJob(jobId);
 	}
 	catch (err) {
-		if (isOffline(err)) return;
+		if (isTransient(err)) return;
 		if (err instanceof HubError && err.status === 404) {
 			await fail(spec, row.id, "Hub-Job nicht gefunden");
+			return;
+		}
+		if (err instanceof HubError) {
+			await fail(spec, row.id, err.message);
 			return;
 		}
 		throw err;
@@ -101,13 +108,17 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 		result = await hub.getResult(jobId);
 	}
 	catch (err) {
-		if (isOffline(err)) return;
+		if (isTransient(err)) return;
 		if (err instanceof HubError && err.status === 410) {
 			await fail(spec, row.id, "Ergebnis auf dem Hub abgelaufen");
 			return;
 		}
 		if (err instanceof HubError && err.status === 404) {
 			await fail(spec, row.id, "Hub-Job nicht gefunden");
+			return;
+		}
+		if (err instanceof HubError) {
+			await fail(spec, row.id, err.message);
 			return;
 		}
 		throw err;

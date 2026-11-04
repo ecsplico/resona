@@ -42,6 +42,8 @@ async function refresh(): Promise<void> {
 // the document reaches done/error.
 let timer: ReturnType<typeof setInterval> | null = null;
 let starting = false;
+// Set on unmount so an in-flight first refresh never arms the interval.
+let disposed = false;
 
 function stopPolling(): void {
 	if (timer !== null) {
@@ -57,7 +59,7 @@ function startPolling(intervalMs = 4000): void {
 	starting = true;
 	void refresh().then(() => {
 		starting = false;
-		if (isTerminal(doc.value?.status)) {
+		if (disposed || isTerminal(doc.value?.status)) {
 			return;
 		}
 		timer = setInterval(() => {
@@ -123,6 +125,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+	disposed = true;
 	stopPolling();
 });
 </script>
@@ -258,7 +261,7 @@ onUnmounted(() => {
 .doc__confirm { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 20px; background:var(--butter-soft); }
 .doc__confirm-actions { display:flex; gap:8px; }
 .doc__body { display:flex; flex-direction:column; gap:12px; padding:16px 20px; }
-.doc__banner { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:12px; background:var(--danger-soft, #fde8e8); color:var(--danger); font-size:14px; }
+.doc__banner { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:12px; background:var(--tomato-soft); color:var(--danger); font-size:14px; }
 .doc__actions { display:flex; flex-wrap:wrap; gap:8px; }
 .doc__markdown { white-space:pre-wrap; word-break:break-word; margin:0; padding:16px; border-radius:12px; background:var(--white); color:var(--fg1); font-family:var(--font-mono, monospace); font-size:14px; line-height:1.55; }
 .doc__error { color:var(--danger); font-size:14px; margin:0; }

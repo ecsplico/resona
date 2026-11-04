@@ -232,6 +232,43 @@ describe("runLocalCycle", () => {
 		expect(db.recordings.get("2")).toMatchObject({ status: "pending", hub_job_id: null });
 	});
 
+	it("leaves rows unchanged on transient hub errors (429/502/503/504)", async () => {
+		for (const status of [429, 502, 503, 504]) {
+			db.recordings.clear();
+			recording("1", { status: "transcribing", hub_job_id: 7 });
+			recording("2");
+			db.files.set("f-2", new Blob(["a"]));
+			hub.getJob.mockRejectedValue(new HubError(status, `http_${status}`, "busy"));
+			hub.upload.mockRejectedValue(new HubError(status, `http_${status}`, "busy"));
+			await runLocalCycle();
+			expect(db.recordings.get("1")).toMatchObject({ status: "transcribing", hub_job_id: 7 });
+			expect(db.recordings.get("2")).toMatchObject({ status: "pending", hub_job_id: null });
+		}
+	});
+
+	it("marks a row error with the message on a non-transient getJob error", async () => {
+		recording("1", { status: "transcribing", hub_job_id: 7 });
+		hub.getJob.mockRejectedValue(new HubError(500, "http_500", "boom"));
+		await runLocalCycle();
+		expect(db.recordings.get("1")).toMatchObject({ status: "error", error_message: "boom", hub_job_id: null });
+	});
+
+	it("marks a row error with the message on a non-transient getResult error", async () => {
+		recording("1", { status: "transcribing", hub_job_id: 7 });
+		hub.getJob.mockResolvedValue(job("completed"));
+		hub.getResult.mockRejectedValue(new HubError(500, "http_500", "boom"));
+		await runLocalCycle();
+		expect(db.recordings.get("1")).toMatchObject({ status: "error", error_message: "boom", hub_job_id: null });
+	});
+
+	it("stores a non-transient submit error message without prefix", async () => {
+		recording("1");
+		db.files.set("f-1", new Blob(["a"]));
+		hub.upload.mockRejectedValue(new HubError(413, "too_large", "Datei zu groß"));
+		await runLocalCycle();
+		expect(db.recordings.get("1")).toMatchObject({ status: "error", error_message: "Datei zu groß" });
+	});
+
 	it("keeps pending/processing jobs unchanged", async () => {
 		recording("1", { status: "transcribing", hub_job_id: 7 });
 		hub.getJob.mockResolvedValue(job("processing"));
@@ -253,7 +290,7 @@ describe("runLocalCycle", () => {
 		recording("1", { status: "transcribing", hub_job_id: 7 });
 		recording("2", { status: "transcribing", hub_job_id: 8 });
 		hub.getJob.mockImplementation(async (id: number) => {
-			if (id === 7) throw new HubError(500, "http_500", "boom");
+			if (id === 7) throw new Error("boom");
 			return job("failed", { error: { code: "x", message: "kaputt" } });
 		});
 		await runLocalCycle();

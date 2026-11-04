@@ -54,7 +54,7 @@ This brings up the data layer:
 | `project-worker` | — | sends pending recordings + documents through the hub as durable jobs and writes results back |
 
 The worker reaches the external Resona hub over the network via `RESONA_API_URL`
-(default `http://host.docker.internal:7000`) and authenticates with
+(default `http://host.docker.internal:7710`) and authenticates with
 `RESONA_API_KEY`, a **required** org-bound hub client token. Optional:
 `WORKER_ENGINE` (empty = hub default), `WORKER_POLL_INTERVAL`, `WORKER_BATCH`,
 `WORKER_STALE_MINUTES` (see `worker/README.md`). **Set `DIRECTUS_TOKEN` in `.env`

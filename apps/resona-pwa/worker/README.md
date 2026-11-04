@@ -20,8 +20,10 @@ and `documents` (kind `document`, active status `processing`):
    `Verarbeitung fehlgeschlagen: …`; a missing job → `Hub-Job nicht gefunden`;
    an expired result → `Ergebnis auf dem Hub abgelaufen`.
 
-An unreachable hub leaves rows untouched; other per-row failures mark only that
-row as `error`. The state machine matches the PWA's standalone processor
+A temporarily unavailable hub (unreachable, timeout, HTTP 429/502/503/504) leaves
+rows untouched; other per-row failures mark only that row as `error` and clear its
+`hub_job_id`, so a retried row gets a fresh job. The state machine matches the PWA's
+standalone processor
 (`app/data/localProcessor.ts`).
 
 ## Configuration

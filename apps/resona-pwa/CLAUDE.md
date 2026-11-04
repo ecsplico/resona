@@ -74,7 +74,7 @@ it via `docker compose` (the `project-worker` service).
 ## Backends
 
 - **Directus** (`:7700`) — auth, data, file storage via `@directus/sdk`. Holds the
-  `recordings` and `transcripts` collections.
+  `recordings`, `transcripts` and `documents` collections.
 - **Resona hub** (`NUXT_PUBLIC_RESONA_API_URL`) — external, org-scoped transcription hub.
   The PWA calls it only via `useHub()`: `/profiles`, `/v1/engines`, sync
   `/v1/audio/transcriptions` (push-to-talk) and the Deepgram-compatible live
@@ -156,6 +156,19 @@ app/
 │   │                                #   useRecorder, useUpload, useProfiles, useLive,
 │   │                                #   useCalendar, useTranscriptEdit, useExport,
 │   │                                #   useOfflineQueue
+│   │                                # useHub: the only hub HTTP client (token, engines, jobs)
+│   │                                # useHubSettings: per-device hub token (localStorage)
+│   │                                # useDataStore: picks directusStore | localStore by data mode
+│   │                                # useLiveSettings: live source/engine/correction settings
+│   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
+│   │                                # useDeviceSpeech: on-device Web Speech live source
+│   │                                # useLiveCorrection: re-transcribes live blocks via the hub
+├── data/
+│   ├── types.ts                     # DataStore interface shared by both backends
+│   ├── directusStore.ts             # DataStore over Directus (directus mode)
+│   ├── localStore.ts                # DataStore over IndexedDB (standalone mode)
+│   └── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
+├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
 │   ├── hearth/                      # HButton, HCard, HChip, HField, ... (design system)
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip
@@ -198,16 +211,24 @@ cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
   field**. `review_status` is the user's review workflow, independent of `status`.
 - **transcripts**: `id, recording, text, structured, segments, engine, date_created,
   date_updated` — the `engine` field lives **HERE**, not on recordings.
+- **recordings** also has `hub_job_id` (integer, the in-flight hub job).
+- **documents**: `id, user_created, date_created, date_updated, title, file (→
+  directus_files), status (pending|processing|done|error), error_message, markdown,
+  pages (json), hub_job_id`.
 
-The PWA's live and manual-save paths write the transcripts row without `engine`; the
-recordings payload must NOT include `engine`.
+The live path stamps the transcripts row's `engine` (`web-speech` / hub engine /
+`hub-live`, `+<correction engine>` when corrected); the manual-save path writes it
+without `engine`. The recordings payload must NOT include `engine`.
+
+The Directus worker user is still named `transcribe-worker` (`transcribe-worker@resona.app`)
+for existing installs, although it now processes documents too.
 
 ## Configuration
 
 All public config flows through `runtimeConfig.public` (set via `NUXT_PUBLIC_*` env vars,
 defaults in `nuxt.config.ts`). Read it with `useRuntimeConfig().public` — never hardcode
 URLs. No token or engine is configured at build time — the hub token is per device
-(Einstellungen → Verbindung). The 5 keys:
+(Einstellungen → Verbindung). The 6 keys:
 
 | Var | Default | Meaning |
 |-----|---------|---------|

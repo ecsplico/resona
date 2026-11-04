@@ -41,17 +41,27 @@ describe("useHub", () => {
 		fetchMock.mockResolvedValue(jsonResponse({ engines: [], default: null }));
 		const hub = useHub();
 		expect(hub.hasToken()).toBe(true);
-		expect(hub.headers()).toEqual({ Authorization: "Bearer tok" });
 		await hub.listEngines();
 		expect(fetchMock).toHaveBeenCalledWith("http://localhost:7710/v1/engines", expect.anything());
 		expect(lastInit().headers).toEqual(expect.objectContaining({ Authorization: "Bearer tok" }));
 	});
 
-	it("sends no Authorization header without a token", () => {
+	it("sends no Authorization header without a token", async () => {
 		useHubSettings().token = "";
+		fetchMock.mockResolvedValue(jsonResponse({}));
 		const hub = useHub();
 		expect(hub.hasToken()).toBe(false);
-		expect(hub.headers()).toEqual({});
+		await hub.probe("/health");
+		expect(lastInit().headers).toEqual({});
+	});
+
+	it("probe prefixes the base URL, adds auth and returns non-2xx responses unmapped", async () => {
+		fetchMock.mockResolvedValue(jsonResponse({ error: "bad" }, 400));
+		const resp = await useHub().probe("/v1/audio/transcriptions", { method: "POST", headers: { "X-Test": "1" } });
+		expect(resp.status).toBe(400);
+		expect(fetchMock).toHaveBeenCalledWith("http://localhost:7710/v1/audio/transcriptions", expect.anything());
+		expect(lastInit().method).toBe("POST");
+		expect(lastInit().headers).toEqual({ "Authorization": "Bearer tok", "X-Test": "1" });
 	});
 
 	it("maps the error body to code and message", async () => {

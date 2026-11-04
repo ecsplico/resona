@@ -11,10 +11,10 @@ const route = useRoute();
 const presetTitle = typeof route.query.title === "string" ? route.query.title : "";
 
 const capture = usePcmCapture();
-const hub = useLive();
+const hubLive = useLive();
 const device = useDeviceSpeech();
 const settings = useLiveSettings();
-const source = computed(() => (settings.source === "device" ? device : hub));
+const source = computed(() => (settings.source === "device" ? device : hubLive));
 
 const listenEngines = ref<ListenEngine[]>([]);
 const listenDefault = ref<string | null>(null);
@@ -122,7 +122,7 @@ async function startSource(language: string): Promise<void> {
 		}
 		return;
 	}
-	await hub.start({
+	await hubLive.start({
 		language,
 		engine: settings.hubEngine || undefined,
 		private: selectedListenEngine.value?.private === false ? false : undefined,
@@ -186,6 +186,11 @@ async function stopLive(): Promise<void> {
 	if (correctionActive.value) {
 		// Close the open block and drain the queue before the capture stops.
 		const engineLabel = `${liveLabel}+${settings.correctionEngine || correctionDefault.value || "hub"}`;
+		// The unfinished partial never becomes a final; feed it in so it isn't dropped.
+		const pendingPartial = source.value.partial.value.trim();
+		if (pendingPartial) {
+			correction.addFinal(pendingPartial);
+		}
 		correctionDone = correction.finish().then(() => {
 			capturedText.value = correction.text.value;
 			if (correction.blocks.value.some(b => b.state === "corrected")) {

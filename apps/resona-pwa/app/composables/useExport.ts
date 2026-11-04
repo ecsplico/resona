@@ -69,12 +69,8 @@ export function useExport() {
 		download(`${slugify(recording.title)}.md`, toMarkdown(recording, transcript), "text/markdown");
 	}
 
-	function documentToMarkdown(doc: ResonaDocument): string {
-		return `# ${doc.title}\n\n${doc.markdown ?? ""}`;
-	}
-
 	function downloadDocumentMarkdown(doc: ResonaDocument): void {
-		download(`${slugify(doc.title)}.md`, documentToMarkdown(doc), "text/markdown");
+		download(`${slugify(doc.title)}.md`, `# ${doc.title}\n\n${doc.markdown ?? ""}`, "text/markdown");
 	}
 
 	return {
@@ -84,7 +80,6 @@ export function useExport() {
 		download,
 		downloadText,
 		downloadMarkdown,
-		documentToMarkdown,
 		downloadDocumentMarkdown,
 	};
 }

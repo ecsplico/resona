@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { h, ref } from "vue";
+import { h, nextTick, ref, type Ref } from "vue";
 import { mountSuspended, mockNuxtImport, mockComponent } from "@nuxt/test-utils/runtime";
 import RecordingPage from "~/pages/recording/[id].vue";
 import type { Recording, Transcript } from "~/types/directus";
@@ -47,8 +47,11 @@ const refresh = vi.hoisted(() => vi.fn(async () => {}));
 const startPolling = vi.hoisted(() => vi.fn());
 const stopPolling = vi.hoisted(() => vi.fn());
 
+// The page's live recording ref, so specs can simulate a polling update.
+const live = vi.hoisted(() => ({ recording: null as Ref<Recording | null> | null }));
+
 mockNuxtImport("useRecording", () => () => ({
-	recording: ref(recording.value),
+	recording: (live.recording = ref(recording.value)),
 	transcript: ref(transcript.value),
 	loading: ref(loading.value),
 	error: ref(error.value),
@@ -124,6 +127,25 @@ describe("recording detail page", () => {
 		const dock = w.findComponent({ name: "HPlayerDock" });
 		expect(dock.props("src")).toBe("http://directus/assets/file-1");
 		expect(store.audioUrl).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1", audio_file: "file-1" }));
+	});
+
+	it("does not re-resolve the audio URL when a poll returns the same audio_file", async () => {
+		const w = await mountSuspended(RecordingPage);
+		await vi.waitFor(() => expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(true));
+		live.recording!.value = baseRecording({ review_status: "ready" });
+		await nextTick();
+		await nextTick();
+		expect(store.audioUrl).toHaveBeenCalledTimes(1);
+	});
+
+	it("revokes a local blob: audio URL on unmount", async () => {
+		store.audioUrl.mockResolvedValueOnce("blob:local-1");
+		const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+		const w = await mountSuspended(RecordingPage);
+		await vi.waitFor(() => expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(true));
+		w.unmount();
+		expect(revoke).toHaveBeenCalledWith("blob:local-1");
+		revoke.mockRestore();
 	});
 
 	it("does not render the player dock when audio_file is missing", async () => {

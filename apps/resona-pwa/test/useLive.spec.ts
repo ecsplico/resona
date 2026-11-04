@@ -42,7 +42,6 @@ describe("useLive", () => {
 		vi.clearAllMocks();
 		ws.data!.value = null;
 		ws.status!.value = "CONNECTING";
-		// no AudioContext / mediaDevices in happy-dom — the audio path must be skipped
 		delete (globalThis as Record<string, unknown>).AudioContext;
 		delete (globalThis as Record<string, unknown>).webkitAudioContext;
 	});

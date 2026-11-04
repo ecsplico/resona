@@ -478,6 +478,15 @@ describe("live transcription page", () => {
 			expect(corr.finish.mock.invocationCallOrder[0]!).toBeLessThan(capture.stop.mock.invocationCallOrder[0]!);
 		});
 
+		it("feeds the unfinished partial into correction before finishing on stop", async () => {
+			const w = await mountLive();
+			partial.value = "  letzte Worte ";
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(corr.addFinal).toHaveBeenCalledWith("letzte Worte");
+			expect(corr.addFinal.mock.invocationCallOrder.at(-1)!).toBeLessThan(corr.finish.mock.invocationCallOrder[0]!);
+		});
+
 		it("renders blocks with corrected/pending classes followed by the partial", async () => {
 			const w = await mountLive();
 			setBlocks([

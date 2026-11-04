@@ -46,12 +46,16 @@ class DirectusClient:
     async def claim(self, collection: str, item_id: str, active_status: str) -> bool:
         """Optimistically mark a row as `active_status`. Returns True on success.
 
+        Also clears `hub_job_id`, so a retried row never polls its previous job.
+
         This is an unconditional PATCH, not a compare-and-swap — Directus has no
         native CAS. Two workers racing on the same page could both "claim" the
         same row. The stale-claim recovery (reclaim_stale) plus a single-worker
         deployment are the agreed mitigations.
         """
-        data = await self._patch(collection, item_id, {"status": active_status})
+        data = await self._patch(
+            collection, item_id, {"status": active_status, "hub_job_id": None},
+        )
         return data["status"] == active_status
 
     async def set_job(self, collection: str, item_id: str, job_id: int) -> None:
@@ -126,5 +130,6 @@ class DirectusClient:
 
     async def mark_error(self, collection: str, item_id: str, message: str) -> None:
         await self._patch(
-            collection, item_id, {"status": "error", "error_message": message[:1000]},
+            collection, item_id,
+            {"status": "error", "error_message": message[:1000], "hub_job_id": None},
         )

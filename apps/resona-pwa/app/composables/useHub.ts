@@ -85,6 +85,14 @@ export function useHub() {
 		return t ? { Authorization: `Bearer ${t}` } : {};
 	}
 
+	/** Raw authenticated hub call for diagnostics (`/debug`): no error mapping. */
+	function probe(path: string, init: RequestInit = {}): Promise<Response> {
+		return fetch(`${base}${path}`, {
+			...init,
+			headers: { ...headers(), ...(init.headers as Record<string, string> | undefined) },
+		});
+	}
+
 	async function request(path: string, init: RequestInit = {}): Promise<Response> {
 		let resp: Response;
 		try {
@@ -204,7 +212,7 @@ export function useHub() {
 	return {
 		token,
 		hasToken,
-		headers,
+		probe,
 		listProfiles,
 		listEngines,
 		listListenEngines,

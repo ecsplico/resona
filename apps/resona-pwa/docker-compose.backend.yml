@@ -56,7 +56,7 @@ services:
     environment:
       DIRECTUS_URL: http://directus:8055
       DIRECTUS_TOKEN: ${DIRECTUS_TOKEN}
-      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7000}
+      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7710}
       RESONA_API_KEY: ${RESONA_API_KEY:-}
       WORKER_ENGINE: ${WORKER_ENGINE:-}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-5}

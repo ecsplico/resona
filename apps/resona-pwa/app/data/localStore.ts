@@ -103,10 +103,10 @@ async function transcriptsOf(recordingId: string): Promise<Transcript[]> {
 }
 
 /** Rows of a collection with the given status, oldest first (processor queue order). */
-export function listByStatus(collection: "recordings", status: string): Promise<Recording[]>;
-export function listByStatus(collection: "documents", status: string): Promise<ResonaDocument[]>;
-export function listByStatus(collection: "recordings" | "documents", status: string): Promise<(Recording | ResonaDocument)[]>;
-export async function listByStatus(collection: "recordings" | "documents", status: string): Promise<(Recording | ResonaDocument)[]> {
+export function listByStatus(collection: "recordings", status: Recording["status"]): Promise<Recording[]>;
+export function listByStatus(collection: "documents", status: ResonaDocument["status"]): Promise<ResonaDocument[]>;
+export function listByStatus(collection: "recordings" | "documents", status: Recording["status"] | ResonaDocument["status"]): Promise<(Recording | ResonaDocument)[]>;
+export async function listByStatus(collection: "recordings" | "documents", status: Recording["status"] | ResonaDocument["status"]): Promise<(Recording | ResonaDocument)[]> {
 	const rows = await values<Recording | ResonaDocument>(db()[collection]);
 	return rows.filter(r => r.status === status).sort(byCreatedAsc);
 }

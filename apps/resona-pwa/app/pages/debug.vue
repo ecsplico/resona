@@ -105,12 +105,7 @@ async function probePttEndpoint(): Promise<CheckResult> {
 		form.append("file", new Blob([new Uint8Array(4)], { type: "audio/webm" }), "probe.webm");
 		form.append("language", cfg.defaultLanguage);
 		form.append("response_format", "json");
-		const headers = hub.headers();
-		const resp = await fetch(`${trimUrl(cfg.resonaApiUrl)}/v1/audio/transcriptions`, {
-			method: "POST",
-			headers,
-			body: form,
-		});
+		const resp = await hub.probe("/v1/audio/transcriptions", { method: "POST", body: form });
 		const bodyText = await resp.text().catch(() => "");
 		// Any HTTP response — even a 4xx rejecting the fake 4-byte "audio" —
 		// means the request reached the server and wasn't blocked by CORS.
@@ -168,12 +163,7 @@ async function finishTestDictation(): Promise<void> {
 		form.append("file", blob, "test-dictation.webm");
 		form.append("language", cfg.defaultLanguage);
 		form.append("response_format", "json");
-		const headers = hub.headers();
-		const resp = await fetch(`${trimUrl(cfg.resonaApiUrl)}/v1/audio/transcriptions`, {
-			method: "POST",
-			headers,
-			body: form,
-		});
+		const resp = await hub.probe("/v1/audio/transcriptions", { method: "POST", body: form });
 		const bodyText = await resp.text();
 		if (!resp.ok) {
 			testResult.value = { state: "fail", detail: `HTTP ${resp.status} ${resp.statusText} — ${bodyText.slice(0, 300)}` };

@@ -10,9 +10,9 @@ class HubError(Exception):
     """A hub failure carrying a user-facing (German) message.
 
     `status` is the HTTP status, or 0 when the hub was unreachable / timed out
-    (the worker leaves rows untouched in that case and retries next cycle).
-    `code` is the hub's `error` code, else `http_<status>` (or `unreachable` /
-    `timeout` for status 0).
+    (any `httpx.TransportError`; the worker leaves rows untouched on 0 and on
+    other transient statuses and retries next cycle). `code` is the hub's
+    `error` code, else `http_<status>` (or `unreachable` / `timeout` for status 0).
     """
 
     def __init__(self, message: str, *, status: int, code: str):
@@ -21,29 +21,24 @@ class HubError(Exception):
         self.code = code
 
 
-def _detail_from_response(resp: httpx.Response) -> str:
-    """Best-effort human-readable detail from an error response body."""
+def _error_fields(resp: httpx.Response) -> tuple[str | None, str]:
+    """Best-effort `(detail, code)` from an error response: a human-readable
+    detail (None when the body has none) and the hub's `error` code, else
+    `http_<status>`."""
     try:
         body = resp.json()
     except Exception:
         body = None
+    code = f"http_{resp.status_code}"
     if isinstance(body, dict):
+        if isinstance(body.get("error"), str):
+            code = body["error"]
         for key in ("message", "detail", "error"):
             val = body.get(key)
             if isinstance(val, str) and val.strip():
-                return val.strip()
-    text = (resp.text or "").strip()
-    return text[:200]
-
-
-def _code_from_response(resp: httpx.Response) -> str:
-    try:
-        body = resp.json()
-    except Exception:
-        body = None
-    if isinstance(body, dict) and isinstance(body.get("error"), str):
-        return body["error"]
-    return f"http_{resp.status_code}"
+                return val.strip(), code
+    text = (resp.text or "").strip()[:200]
+    return text or None, code
 
 
 class HubClient:
@@ -59,22 +54,21 @@ class HubClient:
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         try:
             resp = await self._client.request(method, f"{self.base_url}{path}", **kwargs)
-        except httpx.ConnectError as exc:
-            raise HubError(
-                f"Resona-Hub nicht erreichbar ({self.base_url}). Läuft der Hub?",
-                status=0, code="unreachable",
-            ) from exc
         except httpx.TimeoutException as exc:
             raise HubError(
                 f"Zeitüberschreitung beim Resona-Hub ({self.base_url}).",
                 status=0, code="timeout",
             ) from exc
+        except httpx.TransportError as exc:
+            raise HubError(
+                f"Resona-Hub nicht erreichbar ({self.base_url}). Läuft der Hub?",
+                status=0, code="unreachable",
+            ) from exc
         if resp.status_code >= 400:
-            detail = _detail_from_response(resp)
+            detail, code = _error_fields(resp)
             msg = f"Hub-Anfrage fehlgeschlagen (HTTP {resp.status_code})"
             raise HubError(
-                f"{msg}: {detail}" if detail else msg,
-                status=resp.status_code, code=_code_from_response(resp),
+                f"{msg}: {detail}" if detail else msg, status=resp.status_code, code=code,
             )
         return resp
 

@@ -85,7 +85,7 @@ services:
       DIRECTUS_URL: http://directus:8055
       DIRECTUS_TOKEN: ${DIRECTUS_TOKEN}
       # The Resona hub runs externally — point this at its reachable URL.
-      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7000}
+      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7710}
       # Hub client token (org-bound); required.
       RESONA_API_KEY: ${RESONA_API_KEY:-}
       # Audio engine requested per job; empty = hub default.
