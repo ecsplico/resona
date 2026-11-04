@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { floatTo16kPCM } from "~/utils/pcm";
+import { floatTo16kPCM, pcmToWav } from "~/utils/pcm";
 
 describe("floatTo16kPCM", () => {
 	it("returns an Int16Array", () => {
@@ -41,5 +41,47 @@ describe("floatTo16kPCM", () => {
 	it("encodes zero to zero", () => {
 		const out = floatTo16kPCM(new Float32Array([0]), 16000);
 		expect(out[0]).toBe(0);
+	});
+});
+
+describe("pcmToWav", () => {
+	async function bytes(blob: Blob): Promise<DataView> {
+		return new DataView(await blob.arrayBuffer());
+	}
+	function tag(view: DataView, offset: number): string {
+		return String.fromCharCode(...[0, 1, 2, 3].map(i => view.getUint8(offset + i)));
+	}
+
+	it("returns an audio/wav blob of 44 header bytes plus 2 bytes per sample", () => {
+		const blob = pcmToWav(new Int16Array(10), 16000);
+		expect(blob.type).toBe("audio/wav");
+		expect(blob.size).toBe(44 + 20);
+	});
+
+	it("writes RIFF/WAVE/fmt /data tags", async () => {
+		const view = await bytes(pcmToWav(new Int16Array(4), 16000));
+		expect(tag(view, 0)).toBe("RIFF");
+		expect(tag(view, 8)).toBe("WAVE");
+		expect(tag(view, 12)).toBe("fmt ");
+		expect(tag(view, 36)).toBe("data");
+	});
+
+	it("writes mono 16-bit PCM format fields and the sample rate", async () => {
+		const view = await bytes(pcmToWav(new Int16Array(4), 22050));
+		expect(view.getUint16(20, true)).toBe(1);
+		expect(view.getUint16(22, true)).toBe(1);
+		expect(view.getUint32(24, true)).toBe(22050);
+		expect(view.getUint32(28, true)).toBe(44100);
+		expect(view.getUint16(32, true)).toBe(2);
+		expect(view.getUint16(34, true)).toBe(16);
+	});
+
+	it("writes data length and RIFF size, then little-endian samples", async () => {
+		const view = await bytes(pcmToWav(new Int16Array([1, -2, 32767]), 16000));
+		expect(view.getUint32(40, true)).toBe(6);
+		expect(view.getUint32(4, true)).toBe(36 + 6);
+		expect(view.getInt16(44, true)).toBe(1);
+		expect(view.getInt16(46, true)).toBe(-2);
+		expect(view.getInt16(48, true)).toBe(32767);
 	});
 });

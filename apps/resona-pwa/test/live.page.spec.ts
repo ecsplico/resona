@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ref, computed, reactive } from "vue";
+import { ref, computed, reactive, type Ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import LivePage from "~/pages/live.vue";
 
@@ -11,6 +11,13 @@ const live = vi.hoisted(() => ({
 }));
 const liveStart = vi.hoisted(() => vi.fn(async () => {}));
 const liveStop = vi.hoisted(() => vi.fn());
+const finalListeners = vi.hoisted(() => new Set<(t: string) => void>());
+const liveOnFinal = vi.hoisted(() => vi.fn((cb: (t: string) => void) => {
+	finalListeners.add(cb);
+	return () => {
+		finalListeners.delete(cb);
+	};
+}));
 
 mockNuxtImport("useLive", () => () => {
 	live.partial ??= ref("");
@@ -30,7 +37,7 @@ mockNuxtImport("useLive", () => () => {
 		error: live.error,
 		start: liveStart,
 		stop: liveStop,
-		onFinal: vi.fn(() => () => {}),
+		onFinal: liveOnFinal,
 	};
 });
 
@@ -81,6 +88,7 @@ mockNuxtImport("useLiveSettings", () => () => {
 	return settings.value;
 });
 
+const hubListEngines = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => ({
 	result: {
 		engines: [] as { name: string; kind: string; private: boolean; models: string[] }[],
@@ -90,7 +98,37 @@ const listen = vi.hoisted(() => ({
 mockNuxtImport("useHub", () => () => ({
 	token: () => "tok",
 	listListenEngines: vi.fn(async () => listen.result),
+	listEngines: hubListEngines,
 }));
+
+type TestBlock = {
+	id: number;
+	liveText: string;
+	correctedText: string | null;
+	state: "open" | "queued" | "correcting" | "corrected" | "failed";
+	samples: Int16Array | null;
+};
+const corr = vi.hoisted(() => ({
+	blocks: null as null | { value: TestBlock[] },
+	finishResolve: null as null | (() => void),
+	start: vi.fn(),
+	addFinal: vi.fn(),
+	reset: vi.fn(),
+	finish: vi.fn(),
+}));
+mockNuxtImport("useLiveCorrection", () => () => {
+	corr.blocks ??= ref<TestBlock[]>([]);
+	const blocks = corr.blocks as Ref<TestBlock[]>;
+	return {
+		blocks,
+		text: computed(() => blocks.value.map(b => b.correctedText ?? b.liveText).join(" ").trim()),
+		pending: computed(() => blocks.value.filter(b => b.state === "queued" || b.state === "correcting").length),
+		start: corr.start,
+		addFinal: corr.addFinal,
+		finish: corr.finish,
+		reset: corr.reset,
+	};
+});
 
 const capture = vi.hoisted(() => ({
 	sampleRate: 16000,
@@ -189,6 +227,17 @@ describe("live transcription page", () => {
 		});
 		settings.value.source = "hub";
 		settings.value.hubEngine = "";
+		settings.value.correction = false;
+		settings.value.correctionEngine = "";
+		settings.value.chunkSeconds = 15;
+		finalListeners.clear();
+		corr.blocks ??= ref<TestBlock[]>([]);
+		corr.blocks.value = [];
+		corr.finishResolve = null;
+		corr.finish.mockImplementation(() => new Promise<void>((resolve) => {
+			corr.finishResolve = resolve;
+		}));
+		hubListEngines.mockResolvedValue({ engines: [], default: "whisper-large" });
 		listen.result = {
 			engines: [{ name: "whisper-live", kind: "local", private: true, models: [] }],
 			default: "whisper-live",
@@ -393,5 +442,136 @@ describe("live transcription page", () => {
 		expect(banner.exists()).toBe(true);
 		expect(banner.text()).toContain("engine down");
 		expect(w.find("[data-testid=\"reconnect-banner\"]").exists()).toBe(false);
+	});
+
+	describe("with live correction", () => {
+		beforeEach(() => {
+			settings.value!.correction = true;
+			settings.value!.correctionEngine = "";
+			settings.value!.chunkSeconds = 20;
+		});
+
+		function setBlocks(blocks: Partial<TestBlock>[]): void {
+			corr.blocks!.value = blocks.map((b, i) => ({
+				id: i + 1,
+				liveText: "",
+				correctedText: null,
+				state: "open",
+				samples: null,
+				...b,
+			}));
+		}
+
+		it("starts correction with the capture and feeds source finals into it; unsubscribes on stop", async () => {
+			settings.value!.correctionEngine = "whisper-large";
+			const w = await mountLive();
+			expect(corr.start).toHaveBeenCalledWith({ capture, language: "de", engine: "whisper-large", chunkSeconds: 20 });
+			expect(liveOnFinal).toHaveBeenCalledTimes(1);
+			for (const cb of finalListeners) {
+				cb("Hallo Welt");
+			}
+			expect(corr.addFinal).toHaveBeenCalledWith("Hallo Welt");
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(finalListeners.size).toBe(0);
+			expect(corr.finish.mock.invocationCallOrder[0]!).toBeLessThan(capture.stop.mock.invocationCallOrder[0]!);
+		});
+
+		it("renders blocks with corrected/pending classes followed by the partial", async () => {
+			const w = await mountLive();
+			setBlocks([
+				{ liveText: "eins roh", correctedText: "Eins.", state: "corrected" },
+				{ liveText: "zwei", state: "correcting" },
+				{ liveText: "drei", state: "queued" },
+				{ liveText: "vier", state: "failed" },
+				{ liveText: "fünf", state: "open" },
+			]);
+			partial.value = "sechs";
+			await w.vm.$nextTick();
+
+			const blocks = w.findAll("[data-testid=\"live-block\"]");
+			expect(blocks.map(b => b.text())).toEqual(["Eins.", "zwei", "drei", "vier", "fünf"]);
+			expect(blocks[0]!.classes()).toContain("live__block--corrected");
+			expect(blocks[0]!.classes()).not.toContain("live__block--pending");
+			expect(blocks[1]!.classes()).toContain("live__block--pending");
+			expect(blocks[2]!.classes()).toContain("live__block--pending");
+			for (const b of [blocks[3]!, blocks[4]!]) {
+				expect(b.classes()).not.toContain("live__block--pending");
+				expect(b.classes()).not.toContain("live__block--corrected");
+			}
+			const text = w.find("[data-testid=\"transcript\"]").text();
+			expect(text).not.toContain("eins roh");
+			expect(text.endsWith("sechs")).toBe(true);
+		});
+
+		it("save waits for finish, then saves the correction text with the combined engine stamp", async () => {
+			final.value = "eins roh zwei";
+			const w = await mountLive();
+			setBlocks([
+				{ liveText: "eins roh", correctedText: "Eins.", state: "corrected" },
+				{ liveText: "zwei", state: "queued" },
+			]);
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+
+			const notice = w.find("[data-testid=\"live-correction-pending\"]");
+			expect(notice.exists()).toBe(true);
+			expect(notice.text()).toBe("Korrektur läuft… (1 Abschnitte)");
+
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording).not.toHaveBeenCalled();
+			expect(store.createTranscript).not.toHaveBeenCalled();
+
+			setBlocks([
+				{ liveText: "eins roh", correctedText: "Eins.", state: "corrected" },
+				{ liveText: "zwei", correctedText: "Zwei.", state: "corrected" },
+			]);
+			corr.finishResolve!();
+			await flush();
+
+			expect(w.find("[data-testid=\"live-correction-pending\"]").exists()).toBe(false);
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Eins. Zwei.", engine: "whisper-live+whisper-large" });
+			expect(navigateTo).toHaveBeenCalledWith("/");
+		});
+
+		it("stamps the configured correction engine, and falls back to hub when engines fail to load", async () => {
+			settings.value!.correctionEngine = "openai";
+			let w = await mountLive();
+			setBlocks([{ liveText: "a", correctedText: "A.", state: "corrected" }]);
+			corr.finish.mockResolvedValueOnce(undefined);
+			await stopAndSave(w);
+			expect(store.createTranscript).toHaveBeenLastCalledWith("rec-1", { text: "A.", engine: "whisper-live+openai" });
+			w.unmount();
+
+			settings.value!.correctionEngine = "";
+			hubListEngines.mockRejectedValueOnce(new Error("down"));
+			w = await mountLive();
+			setBlocks([{ liveText: "a", correctedText: "A.", state: "corrected" }]);
+			corr.finish.mockResolvedValueOnce(undefined);
+			await stopAndSave(w);
+			expect(store.createTranscript).toHaveBeenLastCalledWith("rec-1", { text: "A.", engine: "whisper-live+hub" });
+		});
+
+		it("keeps the plain live stamp when no block got corrected", async () => {
+			const w = await mountLive();
+			setBlocks([{ liveText: "nur live", state: "failed" }]);
+			corr.finish.mockResolvedValueOnce(undefined);
+			await stopAndSave(w);
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "nur live", engine: "whisper-live" });
+		});
+	});
+
+	it("without correction it neither starts correction nor loads hub engines", async () => {
+		final.value = "plain";
+		const w = await mountLive();
+		expect(corr.start).not.toHaveBeenCalled();
+		expect(liveOnFinal).not.toHaveBeenCalled();
+		expect(hubListEngines).not.toHaveBeenCalled();
+		expect(w.find("[data-testid=\"live-block\"]").exists()).toBe(false);
+		await stopAndSave(w);
+		expect(corr.finish).not.toHaveBeenCalled();
+		expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "plain", engine: "whisper-live" });
 	});
 });

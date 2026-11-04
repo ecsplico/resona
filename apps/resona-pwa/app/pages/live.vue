@@ -41,8 +41,16 @@ const capturedDuration = ref(0);
 const capturedText = ref("");
 const capturedEngine = ref("");
 
+// Chunked correction by a better hub model (Settings → Live).
+const correction = useLiveCorrection();
+const correctionActive = ref(false);
+let correctionDone: Promise<void> | null = null;
+let unsubscribeFinal: (() => void) | null = null;
+const correctionDefault = ref<string | null>(null);
+const correctionPending = computed(() => (correctionActive.value ? correction.pending.value : 0));
+
 const rollingText = computed(() => {
-	const f = source.value.final.value;
+	const f = correctionActive.value ? correction.text.value : source.value.final.value;
 	const p = source.value.partial.value;
 	if (f && p) {
 		return `${f} ${p}`;
@@ -76,6 +84,32 @@ async function loadListenEngines(): Promise<void> {
 		listenDefault.value = null;
 	}
 	listenLoaded.value = true;
+}
+
+async function loadCorrectionEngines(): Promise<void> {
+	try {
+		correctionDefault.value = (await useHub().listEngines()).default;
+	}
+	catch {
+		// unreachable hub: fall back to the generic "hub" stamp
+		correctionDefault.value = null;
+	}
+}
+
+function startCorrection(language: string): void {
+	correctionActive.value = settings.correction;
+	if (!settings.correction) {
+		return;
+	}
+	correction.reset();
+	correction.start({
+		capture,
+		language,
+		engine: settings.correctionEngine,
+		chunkSeconds: settings.chunkSeconds,
+	});
+	unsubscribeFinal?.();
+	unsubscribeFinal = source.value.onFinal(t => correction.addFinal(t));
 }
 
 async function startSource(language: string): Promise<void> {
@@ -117,6 +151,7 @@ async function startLive(): Promise<void> {
 		}
 		if (stream) {
 			await capture.start(stream);
+			startCorrection(language);
 			await startSource(language);
 			try {
 				await recorder.start(stream);
@@ -130,6 +165,7 @@ async function startLive(): Promise<void> {
 	}
 
 	// No mic (tests / SSR / permission denied): start transcript path without audio.
+	startCorrection(language);
 	await startSource(language);
 }
 
@@ -142,10 +178,24 @@ async function stopLive(): Promise<void> {
 	// the last partial that arrived just before the user pressed stop).
 	// Snapshot BEFORE source.stop(), which removes the data watcher immediately.
 	capturedText.value = source.value.fullText.value.trim();
-	capturedEngine.value = settings.source === "device"
+	const liveLabel = settings.source === "device"
 		? "web-speech"
 		: settings.hubEngine || listenDefault.value || "hub-live";
+	capturedEngine.value = liveLabel;
+	correctionDone = null;
+	if (correctionActive.value) {
+		// Close the open block and drain the queue before the capture stops.
+		const engineLabel = `${liveLabel}+${settings.correctionEngine || correctionDefault.value || "hub"}`;
+		correctionDone = correction.finish().then(() => {
+			capturedText.value = correction.text.value;
+			if (correction.blocks.value.some(b => b.state === "corrected")) {
+				capturedEngine.value = engineLabel;
+			}
+		});
+	}
 	source.value.stop();
+	unsubscribeFinal?.();
+	unsubscribeFinal = null;
 	capture.stop();
 	title.value = presetTitle;
 	showTitlePrompt.value = true;
@@ -158,6 +208,9 @@ async function confirmSave(): Promise<void> {
 	saving.value = true;
 	saveError.value = null;
 	try {
+		if (correctionDone) {
+			await correctionDone;
+		}
 		const blob = capturedBlob.value && capturedBlob.value.size > 0 ? capturedBlob.value : null;
 		const input: NewRecording = {
 			title: title.value,
@@ -188,7 +241,12 @@ function cancelSave(): void {
 }
 
 onMounted(async () => {
-	await loadListenEngines();
+	if (settings.correction) {
+		await Promise.all([loadListenEngines(), loadCorrectionEngines()]);
+	}
+	else {
+		await loadListenEngines();
+	}
 	await startLive();
 });
 </script>
@@ -253,11 +311,26 @@ onMounted(async () => {
 				class="live__transcript"
 				data-testid="transcript"
 			>
-				<span class="live__final">{{ source.final.value }}</span>
+				<template v-if="correctionActive">
+					<span
+						v-for="(block, i) in correction.blocks.value"
+						:key="block.id"
+						class="live__final live__block"
+						:class="{
+							'live__block--corrected': block.state === 'corrected',
+							'live__block--pending': block.state === 'correcting' || block.state === 'queued',
+						}"
+						data-testid="live-block"
+					>{{ i > 0 ? " " : "" }}{{ block.correctedText ?? block.liveText }}</span>
+				</template>
+				<span
+					v-else
+					class="live__final"
+				>{{ source.final.value }}</span>
 				<span
 					v-if="source.partial.value"
 					class="live__partial"
-				>{{ source.final.value ? " " : "" }}{{ source.partial.value }}</span>
+				>{{ (correctionActive ? correction.text.value : source.final.value) ? " " : "" }}{{ source.partial.value }}</span>
 				<span
 					v-if="!rollingText"
 					class="live__hint"
@@ -342,6 +415,13 @@ onMounted(async () => {
 				data-testid="title-input"
 			/>
 			<p
+				v-if="correctionPending > 0"
+				class="live__pending"
+				data-testid="live-correction-pending"
+			>
+				Korrektur läuft… ({{ correctionPending }} Abschnitte)
+			</p>
+			<p
 				v-if="saveError"
 				class="live__error"
 				data-testid="live-save-error"
@@ -377,6 +457,9 @@ onMounted(async () => {
 .live__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:20px; line-height:1.6; margin:0; }
 .live__final { color:var(--white, #fff); }
 .live__partial { color:var(--fg3, #9a8f86); }
+.live__block--corrected { color:var(--white, #fff); }
+.live__block--pending { color:var(--fg2, #c9bfb6); }
+.live__pending { color:var(--fg3, #9a8f86); font-family:var(--font-body); font-size:14px; margin:0; }
 .live__hint { color:var(--fg3, #9a8f86); font-style:italic; }
 .live__controls { display:flex; justify-content:center; padding:28px 0 40px; }
 .live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent, #e0563a); color:var(--white, #fff); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }

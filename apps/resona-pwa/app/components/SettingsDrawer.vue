@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { CalendarOption } from "#shared/calendar";
-import { HubError, type ListenEngine } from "~/composables/useHub";
+import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHub";
+import { CHUNK_SECONDS_MAX, CHUNK_SECONDS_MIN, clampChunkSeconds } from "~/composables/useLiveSettings";
 import type { DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 
 const emit = defineEmits<{ close: [] }>();
@@ -102,6 +103,25 @@ async function installDevice(): Promise<void> {
 	await checkDevice();
 }
 
+// ── Live correction: better hub model re-transcribes chunks ────────────────
+const correctionEngines = ref<HubEngine[]>([]);
+
+async function loadCorrectionEngines(): Promise<void> {
+	try {
+		const { engines } = await useHub().listEngines();
+		correctionEngines.value = engines.filter(e => e.job_kind === "audio" && e.available);
+	}
+	catch {
+		// Unreachable hub: only "Hub-Standard" stays selectable.
+		correctionEngines.value = [];
+	}
+}
+
+// Clamp on change (not input) so typing "20" doesn't clamp the interim "2".
+function setChunkSeconds(value: string): void {
+	liveSettings.chunkSeconds = clampChunkSeconds(Number(value));
+}
+
 const cal = useCalendar("google");
 const settings = cal.settings;
 
@@ -151,6 +171,7 @@ watch(tab, (value) => {
 		liveRequested = true;
 		void loadListenEngines();
 		void checkDevice();
+		void loadCorrectionEngines();
 	}
 });
 </script>
@@ -445,7 +466,49 @@ watch(tab, (value) => {
 					Die Tastatur-Diktierfunktion des Telefons funktioniert unabhängig davon im Texteditor.
 				</p>
 
-				<!-- Correction controls (chunked re-transcription) belong below this line. -->
+				<div class="drawer__field drawer__field--row">
+					<span class="drawer__label">Mit besserem Modell korrigieren</span>
+					<HToggle
+						v-model="liveSettings.correction"
+						aria-label="Mit besserem Modell korrigieren"
+						data-testid="settings-live-correction"
+					/>
+				</div>
+
+				<template v-if="liveSettings.correction">
+					<label class="drawer__field">
+						<span class="drawer__label">Korrektur-Engine</span>
+						<select
+							v-model="liveSettings.correctionEngine"
+							class="drawer__input"
+							data-testid="settings-live-correction-engine"
+						>
+							<option value="">
+								Hub-Standard
+							</option>
+							<option
+								v-for="e in correctionEngines"
+								:key="e.name"
+								:value="e.name"
+							>
+								{{ e.name }}{{ e.private ? "" : " (Cloud)" }}
+							</option>
+						</select>
+					</label>
+					<label class="drawer__field">
+						<span class="drawer__label">Abschnittslänge (Sekunden)</span>
+						<input
+							:value="liveSettings.chunkSeconds"
+							class="drawer__input"
+							type="number"
+							:min="CHUNK_SECONDS_MIN"
+							:max="CHUNK_SECONDS_MAX"
+							inputmode="numeric"
+							data-testid="settings-live-chunk"
+							@change="setChunkSeconds(($event.target as HTMLInputElement).value)"
+						>
+					</label>
+				</template>
 			</section>
 
 			<footer class="drawer__foot">
@@ -485,6 +548,7 @@ watch(tab, (value) => {
 .drawer__hint { margin:0; font-size:15px; line-height:1.6; color:var(--fg1); }
 .drawer__connect-btn { display:inline-block; background:var(--accent); color:var(--fg-on-accent); font-weight:600; font-size:15px; padding:12px 16px; border-radius:10px; text-decoration:none; }
 .drawer__field { display:flex; flex-direction:column; flex:1; }
+.drawer__field--row { flex-direction:row; align-items:center; justify-content:space-between; gap:12px; }
 .drawer__label { font-size:13px; font-weight:600; color:var(--crust-deep); margin-bottom:7px; }
 .drawer__input { border:1.5px solid var(--border-strong); border-radius:8px; padding:12px 14px; background:var(--white); font-family:var(--font-body); font-size:15px; color:var(--fg1); }
 .drawer__row { display:flex; gap:12px; }

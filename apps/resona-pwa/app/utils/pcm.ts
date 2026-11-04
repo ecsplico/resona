@@ -44,3 +44,32 @@ function encodeSample(sample: number): number {
 	const scaled = s < 0 ? s * 32768 : s * 32767;
 	return Math.max(-32768, Math.min(32767, Math.round(scaled)));
 }
+
+/**
+ * Wrap mono 16-bit PCM samples in a 44-byte RIFF/WAVE header (little-endian).
+ */
+export function pcmToWav(samples: Int16Array, sampleRate: number): Blob {
+	const dataLength = samples.length * 2;
+	const buffer = new ArrayBuffer(44 + dataLength);
+	const view = new DataView(buffer);
+	const writeTag = (offset: number, tag: string) => {
+		for (let i = 0; i < 4; i += 1) view.setUint8(offset + i, tag.charCodeAt(i));
+	};
+	writeTag(0, "RIFF");
+	view.setUint32(4, 36 + dataLength, true);
+	writeTag(8, "WAVE");
+	writeTag(12, "fmt ");
+	view.setUint32(16, 16, true); // fmt chunk size
+	view.setUint16(20, 1, true); // PCM
+	view.setUint16(22, 1, true); // mono
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true); // byte rate
+	view.setUint16(32, 2, true); // block align
+	view.setUint16(34, 16, true); // bits per sample
+	writeTag(36, "data");
+	view.setUint32(40, dataLength, true);
+	for (let i = 0; i < samples.length; i += 1) {
+		view.setInt16(44 + i * 2, samples[i] ?? 0, true);
+	}
+	return new Blob([buffer], { type: "audio/wav" });
+}
