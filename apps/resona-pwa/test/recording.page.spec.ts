@@ -3,6 +3,8 @@ import { h, ref } from "vue";
 import { mountSuspended, mockNuxtImport, mockComponent } from "@nuxt/test-utils/runtime";
 import RecordingPage from "~/pages/recording/[id].vue";
 import type { Recording, Transcript } from "~/types/directus";
+import { useHubSettings } from "~/composables/useHubSettings";
+import { usePttDiagnostics } from "~/composables/usePttDiagnostics";
 
 // ProseMirror/TipTap doesn't render meaningfully under happy-dom, so the page's
 // editor is stubbed with a plain textarea that honours the same v-model +
@@ -211,10 +213,11 @@ describe("recording detail page", () => {
 	});
 
 	it("push-to-talk: inserts placeholder on press, records, transcribes via REST, replaces placeholder", async () => {
-		globalThis.fetch = vi.fn(async () => ({
-			ok: true,
-			json: async () => ({ text: "diktierter satz" }),
-		})) as unknown as typeof fetch;
+		useHubSettings().token = "tok";
+		globalThis.fetch = vi.fn(async () => new Response(
+			JSON.stringify({ text: "diktierter satz" }),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		)) as unknown as typeof fetch;
 
 		const w = await mountSuspended(RecordingPage);
 
@@ -235,12 +238,34 @@ describe("recording detail page", () => {
 		expect(recorderStop).toHaveBeenCalled();
 		expect(globalThis.fetch).toHaveBeenCalledWith(
 			expect.stringContaining("/v1/audio/transcriptions"),
-			expect.objectContaining({ method: "POST" }),
+			expect.objectContaining({
+				method: "POST",
+				headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+			}),
 		);
 		// Placeholder replaced with transcribed text
+		await vi.waitFor(() => {
+			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+			expect(area.value).toContain("diktierter satz");
+		});
 		const areaFinal = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
-		expect(areaFinal.value).toContain("diktierter satz");
 		expect(areaFinal.value).toContain("Hallo Welt");
 		expect(areaFinal.value).not.toContain("[…]");
+	});
+
+	it("push-to-talk without a hub token records the diagnostic and never calls the hub", async () => {
+		useHubSettings().token = "";
+		globalThis.fetch = vi.fn() as unknown as typeof fetch;
+		const w = await mountSuspended(RecordingPage);
+		const ptt = w.find("[data-testid=\"push-to-talk\"]");
+		await ptt.trigger("pointerdown", { pointerId: 1 });
+		await w.vm.$nextTick();
+		await ptt.trigger("pointerup", { pointerId: 1 });
+		await w.vm.$nextTick();
+		await new Promise(r => setTimeout(r, 0));
+		await w.vm.$nextTick();
+		expect(globalThis.fetch).not.toHaveBeenCalled();
+		const fail = usePttDiagnostics().entries.value.find(e => !e.ok);
+		expect(fail?.detail).toBe("Kein Hub-Token – in Einstellungen → Verbindung eintragen");
 	});
 });

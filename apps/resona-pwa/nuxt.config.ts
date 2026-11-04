@@ -30,10 +30,8 @@ export default defineNuxtConfig({
 		public: {
 			directusUrl: "http://localhost:7700",
 			resonaApiUrl: "http://localhost:7710",
-			resonaApiKey: "",
 			defaultLanguage: "de",
 			defaultProfile: "default",
-			defaultEngine: "faster-whisper",
 			calendarEnabled: true,
 		},
 	},

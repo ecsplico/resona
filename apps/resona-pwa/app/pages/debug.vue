@@ -7,6 +7,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 // Use this to find why PTT isn't transcribing without guessing.
 
 const cfg = useRuntimeConfig().public;
+const hub = useHub();
 const pttDiag = usePttDiagnostics();
 
 function describeError(err: unknown): string {
@@ -24,10 +25,9 @@ const pttKeyLabel = isMac ? "ctrl (links)" : "Strg (links)";
 const configRows = computed(() => [
 	{ label: "Directus URL", value: cfg.directusUrl },
 	{ label: "resona-api URL", value: cfg.resonaApiUrl },
-	{ label: "resona-api Key gesetzt", value: cfg.resonaApiKey ? "ja" : "nein — Anfragen ohne X-API-Key Header" },
+	{ label: "Hub-Token gesetzt", value: hub.hasToken() ? "ja" : "nein" },
 	{ label: "Standardsprache", value: cfg.defaultLanguage },
 	{ label: "Standardprofil (nicht bei PTT gesendet)", value: cfg.defaultProfile },
-	{ label: "Standard-Engine (nicht bei PTT gesendet)", value: cfg.defaultEngine },
 	{ label: "PTT-Taste", value: `${pttKeyLabel} (code: ControlLeft)` },
 	{ label: "Plattform", value: typeof navigator !== "undefined" ? navigator.platform : "unbekannt" },
 ]);
@@ -67,10 +67,6 @@ const directusCheck = ref<CheckResult>({ state: "checking", detail: "" });
 const resonaHealthCheck = ref<CheckResult>({ state: "checking", detail: "" });
 const pttEndpointCheck = ref<CheckResult>({ state: "checking", detail: "" });
 
-function trimUrl(url: string): string {
-	return url.replace(/\/+$/, "");
-}
-
 async function pingWithStatus(url: string): Promise<CheckResult> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), 5000);
@@ -87,8 +83,8 @@ async function pingWithStatus(url: string): Promise<CheckResult> {
 }
 
 // A GET/health ping only proves the host answers. PTT posts multipart form
-// data with a custom X-API-Key header straight from the browser to
-// resona-api — a cross-origin request that needs its own CORS allowance.
+// data with an Authorization header straight from the browser to the hub —
+// a cross-origin request that needs its own CORS allowance.
 // This probes that exact endpoint so a CORS misconfiguration shows up here
 // instead of as PTT's generic "Transkription fehlgeschlagen".
 async function probePttEndpoint(): Promise<CheckResult> {
@@ -96,9 +92,8 @@ async function probePttEndpoint(): Promise<CheckResult> {
 		const form = new FormData();
 		form.append("file", new Blob([new Uint8Array(4)], { type: "audio/webm" }), "probe.webm");
 		form.append("language", cfg.defaultLanguage);
-		form.append("response_format", "verbose_json");
-		const headers: Record<string, string> = {};
-		if (cfg.resonaApiKey) headers["X-API-Key"] = cfg.resonaApiKey;
+		form.append("response_format", "json");
+		const headers = hub.headers();
 		const resp = await fetch(`${trimUrl(cfg.resonaApiUrl)}/v1/audio/transcriptions`, {
 			method: "POST",
 			headers,
@@ -160,9 +155,8 @@ async function finishTestDictation(): Promise<void> {
 		const form = new FormData();
 		form.append("file", blob, "test-dictation.webm");
 		form.append("language", cfg.defaultLanguage);
-		form.append("response_format", "verbose_json");
-		const headers: Record<string, string> = {};
-		if (cfg.resonaApiKey) headers["X-API-Key"] = cfg.resonaApiKey;
+		form.append("response_format", "json");
+		const headers = hub.headers();
 		const resp = await fetch(`${trimUrl(cfg.resonaApiUrl)}/v1/audio/transcriptions`, {
 			method: "POST",
 			headers,

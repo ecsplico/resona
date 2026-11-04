@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref, nextTick } from "vue";
 import type { Ref } from "vue";
 import { useLive } from "~/composables/useLive";
+import { useHubSettings } from "~/composables/useHubSettings";
 
 // Controllable useWebSocket spy. The mutable refs are populated by the mock
 // factory (which runs once @vueuse/core is first imported, by which point the
@@ -47,6 +48,7 @@ describe("useLive", () => {
 	});
 
 	it("start() opens the WS at /v1/listen with all required query params", () => {
+		useHubSettings().token = "tok";
 		const live = useLive();
 		void live.start({ language: "en", engine: "deepgram" });
 
@@ -58,16 +60,16 @@ describe("useLive", () => {
 		expect(url.searchParams.get("interim_results")).toBe("true");
 		expect(url.searchParams.get("language")).toBe("en");
 		expect(url.searchParams.get("engine")).toBe("deepgram");
-		expect(url.searchParams.has("token")).toBe(true);
+		expect(url.searchParams.get("token")).toBe("tok");
 	});
 
-	it("defaults language/engine from runtime config when not provided", () => {
+	it("defaults language from runtime config and omits engine when not provided", () => {
 		const live = useLive();
 		void live.start();
 
 		const url = new URL(ws.lastUrl);
 		expect(url.searchParams.get("language")).toBe("de");
-		expect(url.searchParams.get("engine")).toBe("faster-whisper");
+		expect(url.searchParams.has("engine")).toBe(false);
 	});
 
 	it("enables autoReconnect", () => {

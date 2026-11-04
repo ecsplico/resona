@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import IndexPage from "~/pages/index.vue";
 import type { Recording } from "~/types/directus";
+import { useHubSettings } from "~/composables/useHubSettings";
 
 const recA: Recording = {
 	id: "rec-a",
@@ -175,5 +176,15 @@ describe("index (recordings list) page", () => {
 		const w = await mountSuspended(IndexPage);
 		expect(w.text()).toContain("Lädt…");
 		expect(w.text()).not.toContain("Noch keine Aufnahmen");
+	});
+
+	it("shows the no-token notice only while the hub token is empty", async () => {
+		useHubSettings().token = "";
+		const w = await mountSuspended(IndexPage);
+		expect(w.find("[data-testid=\"hub-token-missing\"]").text()).toBe("Kein Hub-Token – Transkription, Diktat und Live brauchen einen Token (Einstellungen → Verbindung).");
+		useHubSettings().token = "tok";
+		const w2 = await mountSuspended(IndexPage);
+		expect(w2.find("[data-testid=\"hub-token-missing\"]").exists()).toBe(false);
+		useHubSettings().token = "";
 	});
 });

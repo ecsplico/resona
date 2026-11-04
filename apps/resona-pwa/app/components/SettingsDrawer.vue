@@ -1,13 +1,47 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { CalendarOption } from "#shared/calendar";
+import { HubError } from "~/composables/useHub";
 
 const emit = defineEmits<{ close: [] }>();
 
-// Tabs are a list so further settings groups slot in later; only "Kalender" now.
-const TABS = [{ key: "calendar", label: "Kalender" }] as const;
+const TABS = [
+	{ key: "hub", label: "Verbindung" },
+	{ key: "live", label: "Live" },
+	{ key: "calendar", label: "Kalender" },
+] as const;
 type TabKey = (typeof TABS)[number]["key"];
-const tab = ref<TabKey>("calendar");
+const tab = ref<TabKey>("hub");
+
+// ── Verbindung: per-device hub token ───────────────────────────────────────
+const cfg = useRuntimeConfig().public;
+const hubSettings = useHubSettings();
+const hubUrl = trimUrl(cfg.resonaApiUrl);
+const hubTesting = ref(false);
+const hubStatus = ref<string | null>(null);
+
+async function testHub(): Promise<void> {
+	hubTesting.value = true;
+	hubStatus.value = null;
+	try {
+		const { engines } = await useHub().listEngines();
+		hubStatus.value = `Verbunden – ${engines.length} Engines`;
+	}
+	catch (err) {
+		if (err instanceof HubError && err.status === 401) {
+			hubStatus.value = "Token ungültig";
+		}
+		else if (err instanceof HubError && err.status === 0) {
+			hubStatus.value = "Hub nicht erreichbar";
+		}
+		else {
+			hubStatus.value = `Fehler: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+	finally {
+		hubTesting.value = false;
+	}
+}
 
 const cal = useCalendar("google");
 const settings = cal.settings;
@@ -46,7 +80,14 @@ function done(): void {
 	}
 }
 
-onMounted(loadCalendars);
+// Calendars load only once the Kalender tab is first opened.
+let calendarsRequested = false;
+watch(tab, (value) => {
+	if (value === "calendar" && !calendarsRequested) {
+		calendarsRequested = true;
+		void loadCalendars();
+	}
+});
 </script>
 
 <template>
@@ -88,9 +129,54 @@ onMounted(loadCalendars);
 					{{ t.label }}
 				</button>
 			</nav>
+			<section
+				v-if="tab === 'hub'"
+				class="drawer__body"
+			>
+				<label class="drawer__field">
+					<span class="drawer__label">Hub-Token</span>
+					<input
+						v-model="hubSettings.token"
+						class="drawer__input"
+						type="password"
+						autocomplete="off"
+						placeholder="Token dieses Geräts"
+						data-testid="settings-hub-token"
+					>
+				</label>
+
+				<div class="drawer__field">
+					<span class="drawer__label">Hub-URL</span>
+					<span
+						class="drawer__readonly"
+						data-testid="settings-hub-url"
+					>{{ hubUrl }}</span>
+				</div>
+
+				<p class="drawer__sub">
+					Der Token wird nur auf diesem Gerät gespeichert.
+				</p>
+
+				<HButton
+					variant="secondary"
+					:disabled="hubTesting"
+					data-testid="settings-hub-test"
+					@click="testHub"
+				>
+					Verbindung testen
+				</HButton>
+
+				<p
+					v-if="hubStatus"
+					class="drawer__hint"
+					data-testid="settings-hub-status"
+				>
+					{{ hubStatus }}
+				</p>
+			</section>
 
 			<section
-				v-if="tab === 'calendar'"
+				v-else-if="tab === 'calendar'"
 				class="drawer__body"
 			>
 				<!-- Server has no OAuth client configured -->
@@ -208,6 +294,12 @@ onMounted(loadCalendars);
 				</p>
 			</section>
 
+			<!-- Live settings arrive with the live-sources step. -->
+			<section
+				v-else
+				class="drawer__body"
+			/>
+
 			<footer class="drawer__foot">
 				<NuxtLink
 					class="drawer__link drawer__diag-link"
@@ -249,6 +341,7 @@ onMounted(loadCalendars);
 .drawer__input { border:1.5px solid var(--border-strong); border-radius:8px; padding:12px 14px; background:var(--white); font-family:var(--font-body); font-size:15px; color:var(--fg1); }
 .drawer__row { display:flex; gap:12px; }
 .drawer__sub { font-size:13px; color:var(--fg3); margin:0; }
+.drawer__readonly { font-size:15px; color:var(--fg2); word-break:break-all; }
 .drawer__link { color:var(--accent); font-weight:600; font-size:15px; text-decoration:none; margin-top:4px; }
 .drawer__foot { padding:14px 22px 22px; border-top:1.5px solid var(--border-strong); display:flex; flex-direction:column; gap:10px; }
 .drawer__foot > * { width:100%; }

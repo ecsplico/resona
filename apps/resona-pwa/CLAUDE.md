@@ -26,22 +26,26 @@ Two stacks are involved. See **README.md → Quick start** for the canonical ste
 short:
 
 ```bash
-# Transcription backend — from the resona monorepo root (resona-api + engine only):
-docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
-#   resona-api :7710 · engine :7720
+# Transcription: an EXTERNAL Resona hub (resona monorepo or Coolify
+# https://resona.ecsplico.de). This repo runs no engines.
 
 # Data layer — from this repo (Directus + worker, no PWA container):
 cp .env.stack.example .env  # Directus + worker secrets (NOT the frontend .env)
 docker compose -f docker-compose.backend.yml up -d   #   directus :7700 · worker
 
-# Or bring up the full stack (PWA + data layer + resona) in one command:
-# bun run setup   # generates secrets, auto-picks engine, runs docker-compose.yml + docker-compose.resona.yml
+# Or bring up the full stack (PWA + data layer) in one command:
+# bun run setup   # generates secrets, runs docker-compose.yml
 
 # Frontend — from this repo:
 bun install
 cp .env.example .env        # frontend NUXT_PUBLIC_* vars (NOT the stack .env)
 bun run dev                 # → http://localhost:3000
 ```
+
+The hub token is **per device**: enter it once in the app under Einstellungen →
+Verbindung (stored in localStorage `resona.hub.settings`, never baked into the bundle).
+All hub calls go through `useHub()` (`app/composables/useHub.ts`), which sends
+`Authorization: Bearer <token>`.
 
 Two `.env` consumers, both named `.env`: the **compose stack** is seeded from
 `.env.stack.example` (`DIRECTUS_*` / `RESONA_API_URL`), the **Nuxt frontend** from
@@ -52,39 +56,47 @@ The data layer self-bootstraps: `docker compose up` runs the one-shot
 which idempotently provisions collections, the `user` role/policy, and the
 `transcribe-worker` user with its static token pinned to `DIRECTUS_TOKEN` (so set
 that in `.env` first, e.g. `openssl rand -hex 24`). See `directus/bootstrap.md`.
-CORS on Directus and resona-api must allow the PWA origin.
+CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 
 ### Worker
 
-The `directus-transcribe` worker lives in `worker/` — a standalone Python service
-(`httpx` + `python-decouple`, no monorepo coupling). It bridges **this repo's** Directus
-→ the remote resona-api: polls for `pending` recordings, transcribes them via
-`RESONA_API_URL`, and writes the `transcripts` row. Build/run it via `docker compose`
-(the `directus-transcribe` service in this repo's `docker-compose.yml`).
+The `resona-project-worker` lives in `worker/` (package `resona_project_worker`) — a
+standalone Python service (`httpx` + `python-decouple`, no monorepo coupling). It bridges
+**this repo's** Directus → the external Resona hub: `pending` recordings and documents are
+uploaded and submitted as durable hub jobs (`POST /v1/uploads` + `POST /v1/jobs`, job id
+stored in `hub_job_id`), polled, and written back (recordings → `transcripts` row from the
+result `markdown`; documents → `markdown` + `pages`), then the hub job is deleted. Same
+state machine and German error messages as the standalone `localProcessor.ts`. Env:
+`RESONA_API_URL`, `RESONA_API_KEY` (required hub client token), `WORKER_ENGINE` (empty =
+hub default), `WORKER_POLL_INTERVAL`, `WORKER_BATCH`, `WORKER_STALE_MINUTES`. Build/run
+it via `docker compose` (the `project-worker` service).
 
 ## Backends
 
 - **Directus** (`:7700`) — auth, data, file storage via `@directus/sdk`. Holds the
   `recordings` and `transcripts` collections.
-- **resona-api** (`:7710`) — transcription API. The PWA uses its Deepgram-compatible
-  live WebSocket `/v1/listen` for real-time dictation.
+- **Resona hub** (`NUXT_PUBLIC_RESONA_API_URL`) — external, org-scoped transcription hub.
+  The PWA calls it only via `useHub()`: `/profiles`, `/v1/engines`, sync
+  `/v1/audio/transcriptions` (push-to-talk) and the Deepgram-compatible live
+  WebSocket `/v1/listen`.
 
 ### Two transcription paths
 
 - **Batch** (record-then-save, or upload a file): PWA uploads audio to Directus + inserts
-  a `recordings` row `status=pending, source=batch`. This repo's **directus-transcribe**
-  worker (in its compose stack) polls Directus, transcribes via the remote resona-api,
-  writes the `transcripts` row, flips the recording to `done`. The PWA polls until
+  a `recordings` row `status=pending, source=batch`. This repo's **project-worker**
+  (in its compose stack) submits it as a durable hub job (`transcribing` + `hub_job_id`),
+  writes the `transcripts` row when the job completes, flips the recording to `done`. The PWA polls until
   terminal (`done`/`error`). Without the worker running, batch rows stay `pending`
   forever.
-- **Live**: PWA opens a WebSocket to resona-api `/v1/listen`, streams 16 kHz PCM16 from
+- **Live**: PWA opens a WebSocket to the hub `/v1/listen`, streams 16 kHz PCM16 from
   the mic, renders rolling partial/final text. On stop the PWA itself writes the
   `recordings` (`source=live, status=done`) and `transcripts` rows.
 
-### Live WebSocket contract (resona-api `/v1/listen`)
+### Live WebSocket contract (hub `/v1/listen`)
 
-`ws://<host>/v1/listen?encoding=linear16&sample_rate=16000&interim_results=true&language=&engine=&token=<RESONA_API_KEY>`
-- Browser WebSockets can't set headers → auth goes in `?token=`.
+`ws://<host>/v1/listen?encoding=linear16&sample_rate=16000&interim_results=true&language=&engine=&token=<device token>`
+- Browser WebSockets can't set headers → auth goes in `?token=` (the device token from
+  `useHub().token()`). `engine` is only sent when one is chosen.
 - Up: binary PCM16 LE, 16 kHz mono. Down: Deepgram JSON
   `{type:"Results",channel:{alternatives:[{transcript}]},is_final}` + `{type:"Metadata"}`.
 - Finish: send `{"type":"CloseStream"}`, then close.
@@ -160,23 +172,22 @@ cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
 - **transcripts**: `id, recording, text, structured, segments, engine, date_created,
   date_updated` — the `engine` field lives **HERE**, not on recordings.
 
-When writing the live path, set `engine` on the transcripts row only; the recordings
-payload must NOT include `engine`.
+The PWA's live and manual-save paths write the transcripts row without `engine`; the
+recordings payload must NOT include `engine`.
 
 ## Configuration
 
 All public config flows through `runtimeConfig.public` (set via `NUXT_PUBLIC_*` env vars,
 defaults in `nuxt.config.ts`). Read it with `useRuntimeConfig().public` — never hardcode
-URLs. The 6 keys:
+URLs. No token or engine is configured at build time — the hub token is per device
+(Einstellungen → Verbindung). The 5 keys:
 
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `NUXT_PUBLIC_DIRECTUS_URL` | `http://localhost:7700` | Directus base URL |
-| `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | resona-api base URL |
-| `NUXT_PUBLIC_RESONA_API_KEY` | (empty) | optional resona-api key for live streaming |
+| `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Resona hub base URL |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
-| `NUXT_PUBLIC_DEFAULT_ENGINE` | `faster-whisper` | default live engine |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | show the calendar entry point |
 
 The Google Calendar OAuth layer adds **server-only** (non-`public`) keys, read on

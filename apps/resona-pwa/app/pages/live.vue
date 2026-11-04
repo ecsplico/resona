@@ -52,7 +52,6 @@ async function startLive(): Promise<void> {
 	sessionActive.value = true;
 
 	const language = cfg.defaultLanguage;
-	const engine = cfg.defaultEngine;
 
 	// Acquire the mic ONCE and share the single stream with both the live
 	// transcriber and the parallel recorder so we don't open the mic twice.
@@ -66,7 +65,7 @@ async function startLive(): Promise<void> {
 			// no mic permission — fall through to transcript-only mode
 		}
 		if (stream) {
-			await live.start({ stream, language, engine });
+			await live.start({ stream, language });
 			try {
 				await recorder.start(stream);
 			}
@@ -79,7 +78,7 @@ async function startLive(): Promise<void> {
 	}
 
 	// No mic (tests / SSR / permission denied): start transcript path without audio.
-	await live.start({ language, engine });
+	await live.start({ language });
 }
 
 async function stopLive(): Promise<void> {
@@ -121,7 +120,6 @@ async function confirmSave(): Promise<void> {
 		await client.request(createItem("transcripts", {
 			recording: recording.id,
 			text: capturedText.value,
-			engine: cfg.defaultEngine,
 		} as Partial<Transcript>));
 
 		void navigateTo("/");

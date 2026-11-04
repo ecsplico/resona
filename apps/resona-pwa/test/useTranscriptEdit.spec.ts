@@ -65,12 +65,11 @@ describe("useTranscriptEdit", () => {
 		state.request.mockResolvedValueOnce(created);
 
 		const edit = useTranscriptEdit("");
-		const row = await edit.createTranscript("rec-1", "frisch", "faster-whisper");
+		const row = await edit.createTranscript("rec-1", "frisch");
 
 		expect(state.createItem).toHaveBeenCalledWith("transcripts", {
 			recording: "rec-1",
 			text: "frisch",
-			engine: "faster-whisper",
 		});
 		expect(row).toEqual(created);
 		expect(edit.text.value).toBe("frisch");

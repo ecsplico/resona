@@ -11,39 +11,31 @@ logic of its own.
 
 The platform is split across **two stacks**:
 
-1. **Transcription backend** — lives in the **resona monorepo**: resona-api + a
-   transcription engine. (Directus is no longer part of it.)
-2. **PWA data layer** — lives in **this repo**: Directus + the `directus-transcribe`
-   worker, plus the Nuxt frontend.
+1. **Resona hub** — **external**, from the resona monorepo (local) or Coolify
+   (`https://resona.ecsplico.de`). This repo runs no transcription engines.
+2. **PWA data layer** — lives in **this repo**: Directus + the `project-worker`
+   (`resona-project-worker`), plus the Nuxt frontend.
 
-For **local development** you can skip the manual split below and bring up
-everything with one command — see [Full local stack](#full-local-stack-one-command).
-The split steps (1–3) remain the canonical **production** model.
+For **local development** you can bring up the data layer and the PWA container with
+one command — see [Full local stack](#full-local-stack-one-command).
 
-### 1. Transcription backend (resona monorepo)
+### 1. Resona hub (external)
 
-From the monorepo root (the directory containing `docker-compose.resona.yml`):
+Run the hub from the resona monorepo (see its README) or use the Coolify deployment.
+Issue a client token for your organization there
+(`resona-admin credential issue --organization <org> --role client`). The hub's
+`CORS_ORIGINS` must allow the PWA origin (e.g. `http://localhost:3000`).
 
-```bash
-docker compose -f docker-compose.resona.yml --profile faster-whisper up -d
-```
-
-This brings up the transcription-only stack:
-
-| Service | Host port | Role |
-|---------|-----------|------|
-| `api` (resona-api) | `:7710` | transcription API + live `/v1/listen` WebSocket |
-| `engine-faster-whisper` | `:7720` | the ASR engine resona-api calls |
-
-`api` is always-on; the **engine** is selected by a `--profile` flag (`faster-whisper`,
-`whisper`, `voxtral`, `parakeet`). CORS on resona-api must allow the PWA origin
-(e.g. `http://localhost:3000`).
+The token is entered **per device** in the PWA under **Einstellungen → Verbindung**
+(stored in the browser's localStorage, never baked into the bundle). "Verbindung
+testen" checks it against the hub. Without a token the home screen shows a notice;
+push-to-talk and live dictation need it.
 
 ### 2. PWA data layer (this repo)
 
 ```bash
 cp .env.stack.example .env  # then fill in secrets (Directus + worker)
-docker compose up -d        # → directus :7700 + directus-transcribe worker
+docker compose up -d        # → directus :7700 + project-worker
 ```
 
 > **Note on `.env`:** the **docker compose stack** reads `.env` seeded from
@@ -59,26 +51,17 @@ This brings up the data layer:
 |---------|-----------|------|
 | `directus` | `:7700` | auth, data, file storage |
 | `directus-bootstrap` | — | one-shot: provisions collections, roles, and the worker token, then exits |
-| `directus-transcribe` | — | worker that polls Directus and fills batch transcripts via resona-api |
+| `project-worker` | — | sends pending recordings + documents through the hub as durable jobs and writes results back |
 
-The worker reaches the remote resona-api over the network via `RESONA_API_URL`
-(default `http://host.docker.internal:7710`). **Set `DIRECTUS_TOKEN` in `.env`
+The worker reaches the external Resona hub over the network via `RESONA_API_URL`
+(default `http://host.docker.internal:7000`) and authenticates with
+`RESONA_API_KEY`, a **required** org-bound hub client token. Optional:
+`WORKER_ENGINE` (empty = hub default), `WORKER_POLL_INTERVAL`, `WORKER_BATCH`,
+`WORKER_STALE_MINUTES` (see `worker/README.md`). **Set `DIRECTUS_TOKEN` in `.env`
 before `up`** (e.g. `openssl rand -hex 24`) — `directus-bootstrap` pins it as the
 worker's static token and the worker won't start without it. Bootstrapping
 (collections + user role + worker token) is automatic and idempotent; see
 `directus/bootstrap.md`. CORS on Directus must allow the PWA origin.
-
-> **All-in-one for testing.** To run the resona transcription stack
-> (`resona-api` + the faster-whisper engine) *inside this compose* — so batch
-> jobs complete without starting the separate resona stack by hand — merge the
-> resona overlay (it builds the images from the sibling `../resona` checkout;
-> set `RESONA_REPO` if it lives elsewhere):
->
-> ```bash
-> docker compose -f docker-compose.backend.yml -f docker-compose.resona.yml up -d --build
-> ```
->
-> Testing only — production keeps the two stacks split.
 
 ### 3. Frontend (this repo)
 
@@ -92,70 +75,43 @@ Open `http://localhost:3000`, log in with a Directus user, and record/upload/dic
 
 ## Full local stack (one command)
 
-For local development, merging `docker-compose.yml` with the resona overlay
-`docker-compose.resona.yml` brings up **everything** — the PWA, the Directus
-data layer, the worker, **and** the transcription backend — in a single compose
-project, driven entirely from this repo. It's a convenience for local/dev use:
-it builds the resona-api (and CPU engine) images from the sibling resona monorepo
-checkout (default `../resona`, override with `RESONA_REPO`). Production still
-keeps the two stacks split (steps 1–3 above).
+For local development, `docker-compose.yml` brings up the PWA, the Directus data
+layer and the worker in a single compose project, driven from this repo.
+Transcription runs on the external hub (`RESONA_API_URL` / `RESONA_API_KEY` in `.env`).
 
 ```bash
 bun run setup          # generate secrets → start the whole stack
 ```
 
-`bun run setup` (a thin wrapper around the two compose files) does three things:
+`bun run setup` (a thin wrapper around `docker-compose.yml`) does two things:
 
 1. Creates `.env` from `.env.stack.example` if missing, then **generates and
    persists** `DIRECTUS_TOKEN` + `DIRECTUS_SECRET` into it (idempotent — existing
    values are kept). The token is interpolated into both `directus-bootstrap`
    (which pins it as the worker's static token) and the worker, so there's no
    copy-paste.
-2. **Auto-detects** a native MLX engine on `:7720` and starts the CPU docker
-   engine fallback (compose profile `cpu-engine`) **only** when none is live.
-3. Runs `docker compose -f docker-compose.yml -f docker-compose.resona.yml up -d --build`.
+2. Runs `docker compose -f docker-compose.yml up -d --build`.
 
 | Service | Host port | Role |
 |---------|-----------|------|
-| `pwa` | `:7701` | Nuxt SPA served by its Nitro server |
+| `pwa` | `:7730` | Nuxt SPA served by its Nitro server |
 | `directus` | `:7700` | auth, data, file storage |
 | `directus-bootstrap` | — | one-shot: provisions collections, roles, worker token, then exits |
-| `directus-transcribe` | — | batch worker (Directus → resona-api → transcripts) |
-| `resona-api` | `:7710` | transcription API (built from `../resona`) |
-| `engine-faster-whisper` | — | CPU ASR fallback — **off by default** (profile `cpu-engine`) |
-
-### Engine: native MLX preferred, CPU fallback
-
-The native MLX engine (Apple GPU) is **preferred** over the dockerized CPU
-engine — Docker on macOS is CPU-only, so the fast engine runs on the host.
-resona-api always probes the native host engine (`host.docker.internal:7720`)
-first and the CPU container second, picking the first available. To use it:
-
-```bash
-bun run engine         # terminal 1 — native MLX engine on :7720 (Apple GPU)
-bun run setup          # terminal 2 — detects MLX → CPU docker engine stays off
-```
-
-With no native engine running, `bun run setup` starts the CPU docker engine
-automatically. Leave `TRANSCRIBE_ENGINE` **empty** in `.env` so the worker
-doesn't pin an engine and resona-api auto-selects (native → CPU); set a name
-only to force one.
+| `project-worker` | — | durable hub jobs: recordings + documents (Directus → hub → Directus) |
 
 ### `bun run setup` flags
 
 | Command | Effect |
 |---------|--------|
-| `bun run setup` | Write secrets, auto-pick engine, start the stack. |
+| `bun run setup` | Write secrets, start the stack. |
 | `bun run setup --setup-only` | Only write `.env` (don't start anything). |
-| `bun run setup --cpu` | Force-start the CPU docker engine (ignore native). |
-| `bun run setup --no-cpu` | Never start the CPU docker engine (native only). |
 | `bun run setup --down` | Stop the stack (append `--volumes` to wipe data). |
 | `PWA_PORT=7702 bun run setup` | Publish the PWA on a different host port. |
 
-Extra args pass through to `docker compose`. Prerequisites: Docker, a `../resona`
-checkout, and (for `bun run engine`) host-side `uv`. Because the PWA has server
-routes (the Google Calendar OAuth layer), its image runs the **Nitro server**
-(`nuxt build` → `node .output/server`), not static `nuxt generate`.
+Extra args pass through to `docker compose`. Prerequisites: Docker and a reachable
+Resona hub. Because the PWA has server routes (the Google Calendar OAuth layer), its
+image runs the **Nitro server** (`nuxt build` → `node .output/server`), not static
+`nuxt generate`.
 
 ## Architecture
 
@@ -166,18 +122,22 @@ communicates with two backend services over HTTP only:
   `recordings` and `transcripts` collections and the user role. The PWA authenticates
   the end user, uploads audio files, creates `recordings` rows, and reads back
   transcripts.
-- **resona-api** (`:7710`) — the transcription API. The PWA uses its live streaming
-  WebSocket endpoint (`/v1/listen`, Deepgram-compatible) for real-time dictation.
+- **Resona hub** (`NUXT_PUBLIC_RESONA_API_URL`) — the external transcription hub. The
+  PWA reaches it only through `useHub()` with the per-device token (`Authorization:
+  Bearer`): profiles, push-to-talk via sync `/v1/audio/transcriptions`, and the live
+  streaming WebSocket `/v1/listen` (Deepgram-compatible, token as `?token=`).
 
 There are **two transcription paths**:
 
 - **Batch** (record-then-save, or upload an existing file): the PWA uploads the audio
   to Directus and inserts a `recordings` row with `status=pending`, `source=batch`. The
-  **directus-transcribe** worker (running in this repo's compose stack) polls Directus,
-  claims the row, transcribes it via the remote resona-api, writes the `transcripts`
-  row, and flips the recording to `done`. The PWA polls the recording until it reaches a
+  **project-worker** (running in this repo's compose stack) claims the row, uploads the
+  audio to the hub and submits a durable job (job id kept in `hub_job_id`, so restarts
+  never submit twice), writes the `transcripts` row from the result, flips the
+  recording to `done`, and deletes the hub job. Uploaded **documents** (PDF/images)
+  take the same path into `documents.markdown`/`pages`. The PWA polls the recording until it reaches a
   terminal state (`done`/`error`).
-- **Live**: the PWA opens a WebSocket to resona-api `/v1/listen`, streams 16 kHz PCM
+- **Live**: the PWA opens a WebSocket to the hub `/v1/listen`, streams 16 kHz PCM
   from the microphone, and renders rolling partial/final text. On stop it writes the
   `recordings` (`source=live`, `status=done`) and `transcripts` rows itself.
 
@@ -197,16 +157,16 @@ There are **two transcription paths**:
 
 The PWA requires both stacks running:
 
-1. **Directus** (this repo's compose stack) with the `recordings` and `transcripts`
-   collections and the end-user role provisioned. See `directus/bootstrap.md` and the
+1. **Directus** (this repo's compose stack) with the `recordings`, `transcripts` and
+   `documents` collections and the end-user role provisioned. See `directus/bootstrap.md` and the
    platform design spec
    `docs/superpowers/specs/2026-06-17-pwa-directus-platform-design.md`.
-2. **resona-api** (the resona monorepo stack) — for live transcription (and as the API
-   the worker calls).
-3. **directus-transcribe** worker (this repo's compose stack) — required for the
-   **batch** path; without it, uploaded/recorded files stay `pending` forever.
+2. **Resona hub** (external) — for push-to-talk and live transcription (and as the API
+   the worker calls). Enter the device token under Einstellungen → Verbindung.
+3. **project-worker** (this repo's compose stack) — required for the **batch** and
+   **document** paths; without it, uploaded/recorded files stay `pending` forever.
 
-In development, **CORS on both Directus and resona-api must allow the PWA origin**
+In development, **CORS on both Directus and the hub must allow the PWA origin**
 (e.g. `http://localhost:3000`).
 
 ## Setup
@@ -220,16 +180,17 @@ cp .env.example .env
 ## Environment variables
 
 All public runtime config is provided via `NUXT_PUBLIC_*` env vars (see `.env.example`).
-Defaults are defined in `nuxt.config.ts` under `runtimeConfig.public`.
+Defaults are defined in `nuxt.config.ts` under `runtimeConfig.public`. No hub token or
+engine is configured at build time — the token is per device (Einstellungen →
+Verbindung).
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `NUXT_PUBLIC_DIRECTUS_URL` | `http://localhost:7700` | Base URL of the Directus instance (auth, data, file storage). |
-| `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Base URL of resona-api (live transcription WebSocket `/v1/listen`). |
-| `NUXT_PUBLIC_RESONA_API_KEY` | `` (empty) | Optional resona-api key, sent for live streaming when set. |
+| `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Base URL of the Resona hub. |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | Default transcription language. |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | Default postprocessing profile name. |
-| `NUXT_PUBLIC_DEFAULT_ENGINE` | `faster-whisper` | Default engine for live transcription. |
+| `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | Show the calendar entry point. |
 
 ## Commands
 
@@ -282,7 +243,7 @@ app/
 - **Recordings history** — list with text search and date filtering.
 - **Record** — `MediaRecorder` capture with live level metering → save → batch upload.
 - **Upload existing file** — same batch path as a recording.
-- **Live transcription** — streams mic audio over WebSocket to resona-api `/v1/listen`,
+- **Live transcription** — streams mic audio over WebSocket to the hub `/v1/listen`,
   rolling partial/final text; saves `source=live`, `status=done` on stop.
 - **Transcript editing** — optimistic edit that persists to Directus.
 - **Export** — download as TXT or Markdown, plus Copy to clipboard.
@@ -293,16 +254,15 @@ app/
 
 ## Manual E2E checklist
 
-Bring up both stacks:
+Start the external hub and bring up the data layer:
 
 ```bash
-# Transcription backend — from the resona monorepo root:
-docker compose -f docker-compose.resona.yml --profile faster-whisper up
-# Data layer — from this repo (Directus :7700 + directus-transcribe worker):
+# Data layer — from this repo (Directus :7700 + project-worker):
 docker compose up
 ```
 
-Then verify against the running PWA (`bun run dev`):
+Enter the device token under Einstellungen → Verbindung, then verify against the
+running PWA (`bun run dev`):
 
 - [ ] **1. Auth** — register/seed a Directus user; log in via the PWA.
 - [ ] **2. Record (batch)** — Record → save with transcribe on → row appears `pending` →

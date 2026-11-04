@@ -60,10 +60,8 @@ services:
         # host URLs (not compose service names). Override in .env for external access.
         NUXT_PUBLIC_DIRECTUS_URL: ${NUXT_PUBLIC_DIRECTUS_URL:-http://localhost:7700}
         NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL:-http://localhost:7710}
-        NUXT_PUBLIC_RESONA_API_KEY: ${NUXT_PUBLIC_RESONA_API_KEY:-}
         NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
         NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}
-        NUXT_PUBLIC_DEFAULT_ENGINE: ${NUXT_PUBLIC_DEFAULT_ENGINE:-faster-whisper}
         NUXT_PUBLIC_CALENDAR_ENABLED: ${NUXT_PUBLIC_CALENDAR_ENABLED:-true}
     ports:
       - "${PWA_PORT:-7730}:3000"

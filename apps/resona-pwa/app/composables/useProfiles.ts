@@ -1,23 +1,17 @@
 import { ref } from "vue";
 import type { Ref } from "vue";
 
-type RawProfile = string | { name?: string };
-
 export function useProfiles() {
 	const profiles: Ref<string[]> = ref([]);
 
 	async function list(): Promise<string[]> {
-		const cfg = useRuntimeConfig().public;
 		try {
-			const raw = await $fetch(`${cfg.resonaApiUrl}/profiles/`) as RawProfile[];
-			const names = (Array.isArray(raw) ? raw : [])
-				.map(p => (typeof p === "string" ? p : p?.name))
-				.filter((n): n is string => typeof n === "string" && n.length > 0);
+			const names = await useHub().listProfiles();
 			profiles.value = names;
 			return names;
 		}
 		catch {
-			const fallback = [cfg.defaultProfile];
+			const fallback = [useRuntimeConfig().public.defaultProfile];
 			profiles.value = fallback;
 			return fallback;
 		}

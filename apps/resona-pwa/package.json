@@ -7,7 +7,6 @@
   "scripts": {
     "dev": "nuxt dev",
     "setup": "bun run scripts/setup.ts",
-    "engine": "bun run scripts/run-engine.ts",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

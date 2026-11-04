@@ -19,6 +19,7 @@ async function refreshQueued(): Promise<void> {
 const search = ref("");
 const since = ref("");
 const showSettings = ref(false);
+const hubSettings = useHubSettings();
 
 // Record flow state: FAB -> HRecordingSheet (recording) -> SaveSheet (review).
 const showRecorder = ref(false);
@@ -219,6 +220,14 @@ onMounted(() => {
 			</template>
 		</HAppBar>
 
+		<p
+			v-if="!hubSettings.token"
+			class="home__notice"
+			data-testid="hub-token-missing"
+		>
+			Kein Hub-Token – Transkription, Diktat und Live brauchen einen Token (Einstellungen → Verbindung).
+		</p>
+
 		<div class="home__filters">
 			<HField
 				v-model="search"
@@ -383,6 +392,7 @@ onMounted(() => {
 .home__live { color:var(--accent); font-weight:600; font-size:15px; text-decoration:none; }
 .home__cog { border:none; background:none; color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; padding:2px; }
 .home__filters { display:flex; gap:12px; align-items:flex-end; padding:16px 20px 8px; }
+.home__notice { margin:12px 20px 0; padding:12px 14px; border-radius:12px; background:var(--butter-soft); color:#8B6200; font-size:14px; line-height:1.5; }
 .home__search { flex:1; }
 .home__since { display:flex; flex-direction:column; }
 .home__since-label { font-size:13px; font-weight:600; color:var(--crust-deep); margin-bottom:7px; }

@@ -156,7 +156,7 @@ export function useLive() {
 	async function start(opts: StartOptions = {}): Promise<void> {
 		const cfg = useRuntimeConfig().public;
 		const language = opts.language ?? cfg.defaultLanguage;
-		const engine = opts.engine ?? cfg.defaultEngine;
+		const engine = opts.engine ?? "";
 
 		// Concatenate rather than `new URL("/v1/listen", base)`: a root-absolute
 		// path would discard a base-path prefix, breaking deployments that serve
@@ -167,8 +167,10 @@ export function useLive() {
 		url.searchParams.set("sample_rate", "16000");
 		url.searchParams.set("interim_results", "true");
 		url.searchParams.set("language", language);
-		url.searchParams.set("engine", engine);
-		url.searchParams.set("token", cfg.resonaApiKey);
+		if (engine) {
+			url.searchParams.set("engine", engine);
+		}
+		url.searchParams.set("token", useHub().token());
 
 		stopped = false;
 		final.value = "";

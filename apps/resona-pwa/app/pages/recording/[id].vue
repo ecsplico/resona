@@ -2,6 +2,7 @@
 import { deleteItem, updateItem } from "@directus/sdk";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { isServiceUnreachable } from "#shared/errors";
+import { HubError } from "~/composables/useHub";
 import type { Recording, Transcript } from "~/types/directus";
 
 const route = useRoute();
@@ -69,7 +70,7 @@ async function saveTranscript(): Promise<void> {
 		return;
 	}
 	// No transcript row yet -> create one for this recording.
-	const created = await edit.createTranscript(id, target, cfg.defaultEngine);
+	const created = await edit.createTranscript(id, target);
 	if (created) {
 		transcript.value = created;
 		savedText.value = target;
@@ -153,28 +154,36 @@ async function stopDictation(): Promise<void> {
 		pttState.value = "idle";
 		return;
 	}
+	const hub = useHub();
+	if (!hub.hasToken()) {
+		pttDiag.record("upload", false, "Kein Hub-Token – in Einstellungen → Verbindung eintragen");
+		pttError.value = "Transkription fehlgeschlagen.";
+		if (pttRange) {
+			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
+			pttRange = null;
+		}
+		pttState.value = "idle";
+		return;
+	}
 	let recordedFailure = false;
 	try {
-		const form = new FormData();
-		form.append("file", blob, "dictation.webm");
-		form.append("language", recording.value?.language ?? cfg.defaultLanguage);
-		form.append("response_format", "verbose_json");
-		const fetchHeaders: Record<string, string> = {};
-		if (cfg.resonaApiKey) fetchHeaders["X-API-Key"] = cfg.resonaApiKey;
-		const resp = await fetch(`${cfg.resonaApiUrl}/v1/audio/transcriptions`, {
-			method: "POST",
-			headers: fetchHeaders,
-			body: form,
-		});
-		if (!resp.ok) {
-			const bodyText = await resp.text().catch(() => "");
-			recordedFailure = true;
-			pttDiag.record("upload", false, `HTTP ${resp.status} ${resp.statusText}${bodyText ? ` — ${bodyText.slice(0, 300)}` : ""}`);
-			throw new Error(`HTTP ${resp.status}`);
+		let rawText: string;
+		try {
+			rawText = await hub.transcribeSync(blob, "dictation.webm", {
+				language: recording.value?.language ?? cfg.defaultLanguage,
+			});
 		}
-		const result = await resp.json() as { text?: string };
-		pttDiag.record("upload", true, `HTTP ${resp.status}, ${blob.size}B Audio → ${(result.text ?? "").length} Zeichen`);
-		const text = (result.text ?? "").trim();
+		catch (err) {
+			if (err instanceof HubError) {
+				recordedFailure = true;
+				pttDiag.record("upload", false, err.code === "timeout"
+					? "Hub-Zeitüberschreitung (Job läuft weiter)"
+					: `HTTP ${err.status} ${err.code} — ${err.message}`);
+			}
+			throw err;
+		}
+		pttDiag.record("upload", true, `${blob.size}B Audio → ${rawText.length} Zeichen`);
+		const text = rawText.trim();
 		if (pttRange) {
 			// Trailing space so the next dictation/typing doesn't butt against it.
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text ? `${text} ` : "");

@@ -45,12 +45,11 @@ export function useTranscriptEdit(initialText = "") {
 	// Create the transcript row for a recording that has none yet — a manual note
 	// or dictation into an untranscribed recording. Returns the new row on
 	// success, null on failure.
-	async function createTranscript(recordingId: string, newText: string, engine?: string): Promise<Transcript | null> {
+	async function createTranscript(recordingId: string, newText: string): Promise<Transcript | null> {
 		const { client } = useDirectus();
 		return persist(newText, () => client.request(createItem("transcripts", {
 			recording: recordingId,
 			text: newText,
-			...(engine ? { engine } : {}),
 		} as Partial<Transcript>)) as Promise<Transcript>);
 	}
 

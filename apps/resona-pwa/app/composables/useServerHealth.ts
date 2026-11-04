@@ -44,10 +44,6 @@ async function ping(url: string): Promise<boolean> {
 	}
 }
 
-function trimUrl(url: string): string {
-	return url.replace(/\/+$/, "");
-}
-
 let singleton: ServerHealth | null = null;
 
 function create(): ServerHealth {
