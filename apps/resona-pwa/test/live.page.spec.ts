@@ -63,25 +63,14 @@ mockNuxtImport("useRecorder", () => () => ({
 	resume: vi.fn(),
 }));
 
-const uploadBlob = vi.hoisted(() => vi.fn(async () => "file-1"));
-mockNuxtImport("useUpload", () => () => ({
-	uploading: ref(false),
-	error: ref(null),
-	uploadBlob,
+const store = vi.hoisted(() => ({
+	createRecording: vi.fn(),
+	createTranscript: vi.fn(),
 }));
-
-const request = vi.hoisted(() => vi.fn());
-mockNuxtImport("useDirectus", () => () => ({ client: { request } }));
+mockNuxtImport("useDataStore", () => () => store);
 
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
-
-const createItem = vi.hoisted(() =>
-	vi.fn((collection: string, payload: unknown) => ({ kind: "create", collection, payload })),
-);
-vi.mock("@directus/sdk", () => ({
-	createItem: (collection: string, payload: unknown) => createItem(collection, payload),
-}));
 
 describe("live transcription page", () => {
 	beforeEach(() => {
@@ -92,10 +81,10 @@ describe("live transcription page", () => {
 		partial.value = "";
 		final.value = "";
 		status.value = "OPEN";
-		request.mockReset();
-		request
-			.mockResolvedValueOnce({ id: "rec-1" })
-			.mockResolvedValueOnce({ id: "t-1" });
+		store.createRecording.mockReset();
+		store.createTranscript.mockReset();
+		store.createRecording.mockResolvedValue({ id: "rec-1" });
+		store.createTranscript.mockResolvedValue({ id: "t-1" });
 	});
 
 	it("auto-starts the live session on mount", async () => {
@@ -154,7 +143,7 @@ describe("live transcription page", () => {
 		expect(w.find("[data-testid=\"title-input\"]").exists()).toBe(true);
 	});
 
-	it("confirming uploads the blob, creates the recordings then transcripts rows, and navigates home", async () => {
+	it("confirming creates the recording then its transcript through the data store, and navigates home", async () => {
 		final.value = "Der Befund ist unauffällig.";
 		const w = await mountSuspended(LivePage);
 		await w.find("[data-testid=\"stop-live\"]").trigger("click");
@@ -167,38 +156,29 @@ describe("live transcription page", () => {
 		await new Promise(r => setTimeout(r, 0));
 		await w.vm.$nextTick();
 
-		// audio uploaded (happy-dom has no MediaRecorder so blob is null → uploadBlob may be skipped)
-		// recordings row created first, with live source + done status
-		expect(createItem).toHaveBeenCalledWith(
-			"recordings",
+		// The recorder mock yields a non-empty blob, which is passed through as the audio.
+		expect(store.createRecording).toHaveBeenCalledWith(
 			expect.objectContaining({
 				title: "Visite Station 3",
 				source: "live",
 				status: "done",
 			}),
+			expect.any(Blob),
+			"Visite Station 3.webm",
 		);
 
-		// transcripts row created with the final text and the created recording id
-		expect(createItem).toHaveBeenCalledWith(
-			"transcripts",
-			expect.objectContaining({
-				recording: "rec-1",
-				text: "Der Befund ist unauffällig.",
-			}),
-		);
+		expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Der Befund ist unauffällig." });
 
-		// recordings created before transcripts
-		const recCall = createItem.mock.calls.findIndex(c => c[0] === "recordings");
-		const txCall = createItem.mock.calls.findIndex(c => c[0] === "transcripts");
-		expect(recCall).toBeGreaterThanOrEqual(0);
-		expect(txCall).toBeGreaterThan(recCall);
+		// recording created before transcript
+		expect(store.createRecording.mock.invocationCallOrder[0]!)
+			.toBeLessThan(store.createTranscript.mock.invocationCallOrder[0]!);
 
 		expect(navigateTo).toHaveBeenCalledWith("/");
 	});
 
 	it("surfaces an error and does not navigate when saving fails", async () => {
-		request.mockReset();
-		request.mockRejectedValueOnce(new Error("network down"));
+		store.createRecording.mockReset();
+		store.createRecording.mockRejectedValueOnce(new Error("network down"));
 
 		final.value = "Der Befund ist unauffällig.";
 		const w = await mountSuspended(LivePage);

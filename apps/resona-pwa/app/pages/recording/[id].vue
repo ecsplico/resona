@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { deleteItem, updateItem } from "@directus/sdk";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
@@ -10,7 +9,15 @@ const id = String(route.params.id);
 const cfg = useRuntimeConfig().public;
 
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
-const { client, assetUrl } = useDirectus();
+const store = useDataStore();
+
+// Player source resolves asynchronously through the data store (Directus asset
+// URL or a local object URL); refresh it whenever the recording's audio changes.
+const audioSrc = ref<string | null>(null);
+watch(() => [recording.value?.id, recording.value?.audio_file] as const, async () => {
+	const current = recording.value;
+	audioSrc.value = current ? await store.audioUrl(current) : null;
+}, { immediate: true });
 
 // Distinguish a transient "service unreachable" failure (offline styling +
 // retry hint) from a genuine transcription error (red banner).
@@ -88,7 +95,7 @@ async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
 	}
 	settingStatus.value = true;
 	try {
-		await client.request(updateItem("recordings", id, { review_status: value }));
+		await store.updateRecording(id, { review_status: value });
 		recording.value.review_status = value;
 	}
 	finally {
@@ -246,7 +253,7 @@ async function restartTranscription(): Promise<void> {
 	try {
 		// Allow the editor to re-seed from the freshly produced transcript.
 		seeded.value = false;
-		await client.request(updateItem("recordings", id, { status: "pending", error_message: null }));
+		await store.updateRecording(id, { status: "pending", error_message: null });
 		startPolling();
 	}
 	finally {
@@ -293,7 +300,7 @@ function cancelDelete(): void {
 async function confirmDelete(): Promise<void> {
 	deleting.value = true;
 	try {
-		await client.request(deleteItem("recordings", id));
+		await store.deleteRecording(id);
 		void navigateTo("/");
 	}
 	finally {
@@ -676,8 +683,8 @@ onUnmounted(() => {
 		</div>
 
 		<HPlayerDock
-			v-if="recording?.audio_file"
-			:src="assetUrl(recording.audio_file)"
+			v-if="recording?.audio_file && audioSrc"
+			:src="audioSrc"
 			:fallback-duration="recording.duration_seconds ?? undefined"
 		/>
 	</div>

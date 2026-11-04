@@ -33,6 +33,7 @@ export default defineNuxtConfig({
 			defaultLanguage: "de",
 			defaultProfile: "default",
 			calendarEnabled: true,
+			dataMode: "directus",
 		},
 	},
 	devServer: { port: 7730 },

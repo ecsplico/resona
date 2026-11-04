@@ -190,6 +190,7 @@ Verbindung).
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Base URL of the Resona hub. |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | Default transcription language. |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | Default postprocessing profile name. |
+| `NUXT_PUBLIC_DATA_MODE` | `directus` | Data backend: `directus` \| `standalone`. |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | Show the calendar entry point. |
 
 ## Commands

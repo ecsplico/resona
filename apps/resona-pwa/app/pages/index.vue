@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { readItems } from "@directus/sdk";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
@@ -8,7 +7,7 @@ const { items, pending, error, list, refresh } = useRecordings();
 const recorder = useRecorder();
 const { saveRecording } = useUpload();
 const { copy, toText } = useExport();
-const { client } = useDirectus();
+const store = useDataStore();
 const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
 
@@ -65,11 +64,7 @@ async function copyRecording(recording: Recording): Promise<void> {
 	let transcript: Transcript | null = null;
 	if (recording.status === "done") {
 		try {
-			const rows = await client.request(readItems("transcripts", {
-				filter: { recording: { _eq: recording.id } },
-				limit: 1,
-			})) as Transcript[];
-			transcript = rows[0] ?? null;
+			transcript = await store.getTranscript(recording.id);
 		}
 		catch {
 			// fall through: copy title-only below

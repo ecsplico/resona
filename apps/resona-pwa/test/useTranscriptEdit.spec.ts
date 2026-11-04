@@ -3,39 +3,34 @@ import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { useTranscriptEdit } from "~/composables/useTranscriptEdit";
 
 const state = vi.hoisted(() => ({
-	request: vi.fn(),
-	updateItem: vi.fn((collection: string, id: string, payload: unknown) => ({ kind: "update", collection, id, payload })),
-	createItem: vi.fn((collection: string, payload: unknown) => ({ kind: "create", collection, payload })),
+	updateTranscript: vi.fn(),
+	createTranscript: vi.fn(),
 }));
 
-mockNuxtImport("useDirectus", () => () => ({ client: { request: state.request } }));
-
-vi.mock("@directus/sdk", () => ({
-	updateItem: (collection: string, id: string, payload: unknown) => state.updateItem(collection, id, payload),
-	createItem: (collection: string, payload: unknown) => state.createItem(collection, payload),
+mockNuxtImport("useDataStore", () => () => ({
+	updateTranscript: state.updateTranscript,
+	createTranscript: state.createTranscript,
 }));
 
 describe("useTranscriptEdit", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		state.updateItem.mockImplementation((collection: string, id: string, payload: unknown) => ({ kind: "update", collection, id, payload }));
 	});
 
-	it("optimistically applies the new text and persists via updateItem", async () => {
-		state.request.mockResolvedValueOnce(undefined);
+	it("optimistically applies the new text and persists via the store", async () => {
+		state.updateTranscript.mockResolvedValueOnce(undefined);
 
 		const edit = useTranscriptEdit("alt");
 		await edit.saveEdit("t-1", "neu");
 
 		expect(edit.text.value).toBe("neu");
-		expect(state.updateItem).toHaveBeenCalledWith("transcripts", "t-1", { text: "neu" });
-		expect(state.request).toHaveBeenCalledTimes(1);
+		expect(state.updateTranscript).toHaveBeenCalledWith("t-1", { text: "neu" });
 		expect(edit.error.value).toBeNull();
 		expect(edit.saving.value).toBe(false);
 	});
 
 	it("rolls back to the previous text and surfaces an error on failure", async () => {
-		state.request.mockRejectedValueOnce(new Error("boom"));
+		state.updateTranscript.mockRejectedValueOnce(new Error("boom"));
 
 		const edit = useTranscriptEdit("alt");
 		await edit.saveEdit("t-1", "neu");
@@ -47,7 +42,7 @@ describe("useTranscriptEdit", () => {
 	});
 
 	it("rolls back to the last committed value, not the initial value", async () => {
-		state.request
+		state.updateTranscript
 			.mockResolvedValueOnce(undefined)
 			.mockRejectedValueOnce(new Error("boom"));
 
@@ -62,22 +57,19 @@ describe("useTranscriptEdit", () => {
 
 	it("createTranscript creates a row and returns it, applying the text", async () => {
 		const created = { id: "t-new", recording: "rec-1", text: "frisch" };
-		state.request.mockResolvedValueOnce(created);
+		state.createTranscript.mockResolvedValueOnce(created);
 
 		const edit = useTranscriptEdit("");
 		const row = await edit.createTranscript("rec-1", "frisch");
 
-		expect(state.createItem).toHaveBeenCalledWith("transcripts", {
-			recording: "rec-1",
-			text: "frisch",
-		});
+		expect(state.createTranscript).toHaveBeenCalledWith("rec-1", { text: "frisch" });
 		expect(row).toEqual(created);
 		expect(edit.text.value).toBe("frisch");
 		expect(edit.error.value).toBeNull();
 	});
 
 	it("createTranscript rolls back the text and reports an error on failure", async () => {
-		state.request.mockRejectedValueOnce(new Error("nope"));
+		state.createTranscript.mockRejectedValueOnce(new Error("nope"));
 
 		const edit = useTranscriptEdit("alt");
 		const row = await edit.createTranscript("rec-1", "neu");

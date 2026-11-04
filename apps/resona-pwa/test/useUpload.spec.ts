@@ -3,29 +3,18 @@ import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { useUpload } from "~/composables/useUpload";
 
 const state = vi.hoisted(() => ({
-	request: vi.fn(),
-	uploadFiles: vi.fn((data: unknown) => ({ kind: "upload", data })),
-	createItem: vi.fn((collection: string, payload: unknown) => ({ kind: "create", collection, payload })),
+	createRecording: vi.fn(),
 }));
 
-mockNuxtImport("useDirectus", () => () => ({ client: { request: state.request } }));
-
-vi.mock("@directus/sdk", () => ({
-	uploadFiles: (data: unknown) => state.uploadFiles(data),
-	createItem: (collection: string, payload: unknown) => state.createItem(collection, payload),
-}));
+mockNuxtImport("useDataStore", () => () => ({ createRecording: state.createRecording }));
 
 describe("useUpload", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		state.uploadFiles.mockImplementation((data: unknown) => ({ kind: "upload", data }));
-		state.createItem.mockImplementation((collection: string, payload: unknown) => ({ kind: "create", collection, payload }));
 	});
 
-	it("uploads the blob then creates a recording with the chosen profile/language", async () => {
-		state.request
-			.mockResolvedValueOnce({ id: "file-1" })
-			.mockResolvedValueOnce({ id: "rec-1" });
+	it("creates a recording with the blob and the chosen profile/language", async () => {
+		state.createRecording.mockResolvedValueOnce({ id: "rec-1" });
 
 		const u = useUpload();
 		const blob = new Blob(["audio"], { type: "audio/webm" });
@@ -38,52 +27,43 @@ describe("useUpload", () => {
 			duration_seconds: 42,
 		});
 
-		// upload happened with FormData carrying a "file" part
-		expect(state.uploadFiles).toHaveBeenCalledTimes(1);
-		const fd = state.uploadFiles.mock.calls[0]![0] as FormData;
-		expect(fd).toBeInstanceOf(FormData);
-		expect(fd.get("file")).toBeTruthy();
-
-		// createItem payload carries the chosen language/profile (not hardcoded)
-		expect(state.createItem).toHaveBeenCalledTimes(1);
-		const [collection, payload] = state.createItem.mock.calls[0]!;
-		expect(collection).toBe("recordings");
-		expect(payload).toMatchObject({
+		expect(state.createRecording).toHaveBeenCalledTimes(1);
+		const [input, audio, filename] = state.createRecording.mock.calls[0]!;
+		expect(input).toEqual({
 			title: "Visite",
-			audio_file: "file-1",
 			language: "en",
 			profile: "medical",
 			source: "batch",
 			status: "pending",
 			duration_seconds: 42,
 		});
-
-		// upload must run before create
-		expect(state.request).toHaveBeenCalledTimes(2);
+		expect(audio).toBe(blob);
+		expect(filename).toBe("Visite.webm");
 		expect(created).toEqual({ id: "rec-1" });
+		expect(u.uploading.value).toBe(false);
+		expect(u.error.value).toBeNull();
 	});
 
-	it("uses status done when transcribe is false", async () => {
-		state.request
-			.mockResolvedValueOnce({ id: "file-2" })
-			.mockResolvedValueOnce({ id: "rec-2" });
+	it("uses status done when transcribe is false and falls back to recording.webm without a title", async () => {
+		state.createRecording.mockResolvedValueOnce({ id: "rec-2" });
 
 		const u = useUpload();
 		await u.saveRecording({
 			blob: new Blob(["x"], { type: "audio/webm" }),
-			title: "Memo",
+			title: "",
 			language: "de",
 			profile: "default",
 			transcribe: false,
 			duration_seconds: 5,
 		});
 
-		const [, payload] = state.createItem.mock.calls[0]!;
-		expect(payload).toMatchObject({ status: "done" });
+		const [input, , filename] = state.createRecording.mock.calls[0]!;
+		expect(input).toMatchObject({ status: "done" });
+		expect(filename).toBe("recording.webm");
 	});
 
 	it("sets error and rethrows when the upload fails", async () => {
-		state.request.mockRejectedValueOnce(new Error("boom"));
+		state.createRecording.mockRejectedValueOnce(new Error("boom"));
 		const u = useUpload();
 		await expect(u.saveRecording({
 			blob: new Blob(["x"], { type: "audio/webm" }),

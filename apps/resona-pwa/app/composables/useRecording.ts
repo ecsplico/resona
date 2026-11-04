@@ -1,4 +1,3 @@
-import { readItem, readItems } from "@directus/sdk";
 import { ref, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
@@ -21,21 +20,18 @@ export function useRecording(id: string) {
 		loading.value = true;
 		error.value = null;
 		try {
-			const { client } = useDirectus();
+			const store = useDataStore();
 			// Fetch both in parallel and assign synchronously (no await between the
 			// two ref writes). Assigning `recording` first, then awaiting the
 			// transcript fetch, lets Vue flush the seeding watcher while `transcript`
 			// is still null — for a terminal recording that seeds the editor empty and
 			// latches `seeded`, so the real text never lands. See recording/[id].vue.
-			const [rec, rows] = await Promise.all([
-				client.request(readItem("recordings", id)) as Promise<Recording>,
-				client.request(readItems("transcripts", {
-					filter: { recording: { _eq: id } },
-					limit: 1,
-				})) as Promise<Transcript[]>,
+			const [rec, tx] = await Promise.all([
+				store.getRecording(id),
+				store.getTranscript(id),
 			]);
 			recording.value = rec;
-			transcript.value = rows[0] ?? null;
+			transcript.value = tx;
 		}
 		catch (err) {
 			error.value = humanizeError(err, "Aufnahme konnte nicht geladen werden.");

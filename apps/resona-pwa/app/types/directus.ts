@@ -13,6 +13,7 @@ export interface Recording {
 	// Review workflow status, distinct from the transcription `status` above:
 	// whether the user is still editing the text or has marked it ready.
 	review_status?: "editing" | "ready";
+	hub_job_id?: number | null;
 }
 export interface Transcript {
 	id: string;
@@ -24,7 +25,21 @@ export interface Transcript {
 	date_created?: string;
 	date_updated?: string;
 }
+export interface ResonaDocument {
+	id: string;
+	user_created?: string;
+	date_created?: string;
+	date_updated?: string;
+	title: string;
+	file?: string;
+	status: "pending" | "processing" | "done" | "error";
+	error_message?: string | null;
+	markdown?: string | null;
+	pages?: unknown[] | null;
+	hub_job_id?: number | null;
+}
 export interface Schema {
 	recordings: Recording[];
 	transcripts: Transcript[];
+	documents: ResonaDocument[];
 }

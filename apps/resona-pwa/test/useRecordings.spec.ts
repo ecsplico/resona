@@ -4,15 +4,10 @@ import { useRecordings } from "~/composables/useRecordings";
 import type { Recording } from "~/types/directus";
 
 const state = vi.hoisted(() => ({
-	request: vi.fn(),
-	readItems: vi.fn((collection: string, query: unknown) => ({ collection, query })),
+	listRecordings: vi.fn(),
 }));
 
-mockNuxtImport("useDirectus", () => () => ({ client: { request: state.request } }));
-
-vi.mock("@directus/sdk", () => ({
-	readItems: (collection: string, query: unknown) => state.readItems(collection, query),
-}));
+mockNuxtImport("useDataStore", () => () => ({ listRecordings: state.listRecordings }));
 
 function row(id: string): Recording {
 	return {
@@ -38,67 +33,32 @@ function deferred<T>() {
 describe("useRecordings", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		state.readItems.mockImplementation((collection: string, query: unknown) => ({ collection, query }));
 	});
 
-	it("list() queries recordings with default sort/limit and no filter, storing rows", async () => {
+	it("list() loads recordings from the store and stores the rows", async () => {
 		const rows = [row("1"), row("2")];
-		state.request.mockResolvedValue(rows);
+		state.listRecordings.mockResolvedValue(rows);
 		const r = useRecordings();
 		expect(r.items.value).toEqual([]);
 
 		const out = await r.list();
 
-		expect(state.readItems).toHaveBeenCalledTimes(1);
-		const [collection, query] = state.readItems.mock.calls[0];
-		expect(collection).toBe("recordings");
-		expect(query.sort).toEqual(["-date_created"]);
-		expect(query.limit).toBe(100);
-		expect(query.filter ?? {}).toEqual({});
-		expect(state.request).toHaveBeenCalledTimes(1);
+		expect(state.listRecordings).toHaveBeenCalledTimes(1);
 		expect(r.items.value).toEqual(rows);
 		expect(out).toEqual(rows);
 		expect(r.pending.value).toBe(false);
 		expect(r.error.value).toBeNull();
 	});
 
-	it("list({ search }) adds a title _icontains filter", async () => {
-		state.request.mockResolvedValue([]);
-		const r = useRecordings();
-		await r.list({ search: "befund" });
-		const [, query] = state.readItems.mock.calls[0];
-		expect(query.filter.title._icontains).toBe("befund");
-		expect(query.filter.date_created).toBeUndefined();
-	});
-
-	it("list({ since }) adds a date_created _gte filter", async () => {
-		state.request.mockResolvedValue([]);
-		const r = useRecordings();
-		await r.list({ since: "2026-06-01" });
-		const [, query] = state.readItems.mock.calls[0];
-		expect(query.filter.date_created._gte).toBe("2026-06-01");
-		expect(query.filter.title).toBeUndefined();
-	});
-
-	it("list({ search, since }) includes both filter keys", async () => {
-		state.request.mockResolvedValue([]);
+	it("list({ search, since }) passes both filters to the store", async () => {
+		state.listRecordings.mockResolvedValue([]);
 		const r = useRecordings();
 		await r.list({ search: "x", since: "2026-06-01" });
-		const [, query] = state.readItems.mock.calls[0];
-		expect(query.filter.title._icontains).toBe("x");
-		expect(query.filter.date_created._gte).toBe("2026-06-01");
+		expect(state.listRecordings).toHaveBeenCalledWith({ search: "x", since: "2026-06-01" });
 	});
 
-	it("empty search string is ignored", async () => {
-		state.request.mockResolvedValue([]);
-		const r = useRecordings();
-		await r.list({ search: "" });
-		const [, query] = state.readItems.mock.calls[0];
-		expect(query.filter ?? {}).toEqual({});
-	});
-
-	it("on request rejection sets error string, leaves items, ends pending false", async () => {
-		state.request.mockRejectedValue(new Error("boom"));
+	it("on store rejection sets error string, leaves items, ends pending false", async () => {
+		state.listRecordings.mockRejectedValue(new Error("boom"));
 		const r = useRecordings();
 		const out = await r.list();
 		expect(r.error.value).toBeTypeOf("string");
@@ -109,30 +69,29 @@ describe("useRecordings", () => {
 	});
 
 	it("refresh() re-issues the most recent list() filters", async () => {
-		state.request.mockResolvedValue([]);
+		state.listRecordings.mockResolvedValue([]);
 		const r = useRecordings();
 		await r.list({ search: "x", since: "2026-06-01" });
 		await r.refresh();
-		expect(state.readItems).toHaveBeenCalledTimes(2);
-		const [, query] = state.readItems.mock.calls[1];
-		expect(query.filter.title._icontains).toBe("x");
-		expect(query.filter.date_created._gte).toBe("2026-06-01");
+		expect(state.listRecordings).toHaveBeenCalledTimes(2);
+		expect(state.listRecordings.mock.calls[1]![0]).toEqual({ search: "x", since: "2026-06-01" });
 	});
 
 	it("refresh() before any list() loads without a filter", async () => {
 		const rows = [row("1")];
-		state.request.mockResolvedValue(rows);
+		state.listRecordings.mockResolvedValue(rows);
 		const r = useRecordings();
 		await r.refresh();
-		const [, query] = state.readItems.mock.calls[0];
-		expect(query.filter ?? {}).toEqual({});
+		const [opts] = state.listRecordings.mock.calls[0]!;
+		expect(opts.search).toBeUndefined();
+		expect(opts.since).toBeUndefined();
 		expect(r.items.value).toEqual(rows);
 	});
 
 	it("a late response from an older list() does not overwrite the newer one", async () => {
 		const a = deferred<Recording[]>();
 		const b = deferred<Recording[]>();
-		state.request
+		state.listRecordings
 			.mockImplementationOnce(() => a.promise)
 			.mockImplementationOnce(() => b.promise);
 		const r = useRecordings();
@@ -152,7 +111,7 @@ describe("useRecordings", () => {
 	it("a late error from an older list() does not set error", async () => {
 		const a = deferred<Recording[]>();
 		const b = deferred<Recording[]>();
-		state.request
+		state.listRecordings
 			.mockImplementationOnce(() => a.promise)
 			.mockImplementationOnce(() => b.promise);
 		const r = useRecordings();
@@ -172,7 +131,7 @@ describe("useRecordings", () => {
 	it("stays pending while the newest list() is in flight after an older one settles", async () => {
 		const a = deferred<Recording[]>();
 		const b = deferred<Recording[]>();
-		state.request
+		state.listRecordings
 			.mockImplementationOnce(() => a.promise)
 			.mockImplementationOnce(() => b.promise);
 		const r = useRecordings();

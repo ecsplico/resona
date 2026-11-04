@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { createItem } from "@directus/sdk";
 import { computed, onMounted, ref } from "vue";
-import type { Recording, Transcript } from "~/types/directus";
+import type { NewRecording } from "~/data/types";
 
 const cfg = useRuntimeConfig().public;
 
@@ -12,8 +11,7 @@ const presetTitle = typeof route.query.title === "string" ? route.query.title : 
 
 const live = useLive();
 const recorder = useRecorder();
-const { uploadBlob } = useUpload();
-const { client } = useDirectus();
+const store = useDataStore();
 const { copy } = useExport();
 
 const sessionActive = ref(false);
@@ -102,25 +100,18 @@ async function confirmSave(): Promise<void> {
 	saving.value = true;
 	saveError.value = null;
 	try {
-		let fileId: string | null = null;
-		if (capturedBlob.value && capturedBlob.value.size > 0) {
-			fileId = await uploadBlob(capturedBlob.value, title.value);
-		}
-
-		const recording = await client.request(createItem("recordings", {
+		const blob = capturedBlob.value && capturedBlob.value.size > 0 ? capturedBlob.value : null;
+		const input: NewRecording = {
 			title: title.value,
-			audio_file: fileId ?? undefined,
 			language: cfg.defaultLanguage,
 			profile: cfg.defaultProfile,
 			source: "live",
 			status: "done",
 			duration_seconds: capturedDuration.value,
-		})) as Recording;
+		};
+		const recording = await store.createRecording(input, blob, `${title.value}.webm`);
 
-		await client.request(createItem("transcripts", {
-			recording: recording.id,
-			text: capturedText.value,
-		} as Partial<Transcript>));
+		await store.createTranscript(recording.id, { text: capturedText.value });
 
 		void navigateTo("/");
 	}

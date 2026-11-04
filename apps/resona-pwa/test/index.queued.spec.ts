@@ -29,6 +29,7 @@ mockNuxtImport("useRecordings", () => () => ({
 }));
 
 mockNuxtImport("navigateTo", () => vi.fn());
+mockNuxtImport("useDataStore", () => () => ({ getTranscript: vi.fn() }));
 
 const queuedItem: QueuedItem = {
 	id: "q-1",

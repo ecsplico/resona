@@ -1,4 +1,3 @@
-import { createItem, updateItem } from "@directus/sdk";
 import { ref } from "vue";
 import type { Ref } from "vue";
 import type { Transcript } from "~/types/directus";
@@ -38,19 +37,14 @@ export function useTranscriptEdit(initialText = "") {
 	}
 
 	async function saveEdit(transcriptId: string, newText: string): Promise<void> {
-		const { client } = useDirectus();
-		await persist(newText, () => client.request(updateItem("transcripts", transcriptId, { text: newText })));
+		await persist(newText, () => useDataStore().updateTranscript(transcriptId, { text: newText }));
 	}
 
 	// Create the transcript row for a recording that has none yet — a manual note
 	// or dictation into an untranscribed recording. Returns the new row on
 	// success, null on failure.
 	async function createTranscript(recordingId: string, newText: string): Promise<Transcript | null> {
-		const { client } = useDirectus();
-		return persist(newText, () => client.request(createItem("transcripts", {
-			recording: recordingId,
-			text: newText,
-		} as Partial<Transcript>)) as Promise<Transcript>);
+		return persist(newText, () => useDataStore().createTranscript(recordingId, { text: newText }));
 	}
 
 	return {

@@ -5,16 +5,13 @@ import { useRecording } from "~/composables/useRecording";
 import type { Recording, Transcript } from "~/types/directus";
 
 const state = vi.hoisted(() => ({
-	request: vi.fn(),
-	readItem: vi.fn((collection: string, id: string) => ({ kind: "readItem", collection, id })),
-	readItems: vi.fn((collection: string, query: unknown) => ({ kind: "readItems", collection, query })),
+	getRecording: vi.fn(),
+	getTranscript: vi.fn(),
 }));
 
-mockNuxtImport("useDirectus", () => () => ({ client: { request: state.request } }));
-
-vi.mock("@directus/sdk", () => ({
-	readItem: (collection: string, id: string) => state.readItem(collection, id),
-	readItems: (collection: string, query: unknown) => state.readItems(collection, query),
+mockNuxtImport("useDataStore", () => () => ({
+	getRecording: state.getRecording,
+	getTranscript: state.getTranscript,
 }));
 
 function rec(id: string, status: Recording["status"]): Recording {
@@ -32,23 +29,15 @@ function tx(id: string, recording: string): Transcript {
 	return { id, recording, text: `text-${id}` };
 }
 
-// request() is called as request(readItem(...)) then request(readItems(...)).
-// Distinguish by the descriptor's kind.
-function wireFetch(recording: Recording | null, transcripts: Transcript[]): void {
-	state.request.mockImplementation((descriptor: { kind: string }) => {
-		if (descriptor.kind === "readItem") {
-			return Promise.resolve(recording);
-		}
-		return Promise.resolve(transcripts);
-	});
+function wireFetch(recording: Recording | null, transcript: Transcript | null): void {
+	state.getRecording.mockResolvedValue(recording);
+	state.getTranscript.mockResolvedValue(transcript);
 }
 
 describe("useRecording", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.useFakeTimers();
-		state.readItem.mockImplementation((collection: string, id: string) => ({ kind: "readItem", collection, id }));
-		state.readItems.mockImplementation((collection: string, query: unknown) => ({ kind: "readItems", collection, query }));
 	});
 
 	afterEach(() => {
@@ -56,14 +45,13 @@ describe("useRecording", () => {
 	});
 
 	it("refresh() fetches recording + transcript, populating both refs", async () => {
-		wireFetch(rec("1", "done"), [tx("t1", "1")]);
+		wireFetch(rec("1", "done"), tx("t1", "1"));
 		const r = useRecording("1");
 
 		await r.refresh();
 
-		expect(state.readItem).toHaveBeenCalledWith("recordings", "1");
-		const [, query] = state.readItems.mock.calls[0];
-		expect(query).toEqual({ filter: { recording: { _eq: "1" } }, limit: 1 });
+		expect(state.getRecording).toHaveBeenCalledWith("1");
+		expect(state.getTranscript).toHaveBeenCalledWith("1");
 		expect(r.recording.value).toEqual(rec("1", "done"));
 		expect(r.transcript.value).toEqual(tx("t1", "1"));
 		expect(r.loading.value).toBe(false);
@@ -72,7 +60,7 @@ describe("useRecording", () => {
 	});
 
 	it("transcript is null when none returned", async () => {
-		wireFetch(rec("1", "done"), []);
+		wireFetch(rec("1", "done"), null);
 		const r = useRecording("1");
 
 		await r.refresh();
@@ -82,7 +70,8 @@ describe("useRecording", () => {
 	});
 
 	it("captures error and ends loading false on rejection", async () => {
-		state.request.mockRejectedValue(new Error("boom"));
+		state.getRecording.mockRejectedValue(new Error("boom"));
+		state.getTranscript.mockResolvedValue(null);
 		const r = useRecording("1");
 
 		await r.refresh();
@@ -96,82 +85,80 @@ describe("useRecording", () => {
 	it("polls until status becomes done, then stops the interval", async () => {
 		// pending for first two fetches, then done.
 		let calls = 0;
-		state.request.mockImplementation((descriptor: { kind: string }) => {
-			if (descriptor.kind === "readItem") {
-				calls += 1;
-				return Promise.resolve(rec("1", calls >= 3 ? "done" : "pending"));
-			}
-			return Promise.resolve([tx("t1", "1")]);
+		state.getRecording.mockImplementation(() => {
+			calls += 1;
+			return Promise.resolve(rec("1", calls >= 3 ? "done" : "pending"));
 		});
+		state.getTranscript.mockResolvedValue(tx("t1", "1"));
 
 		const r = useRecording("1");
 		r.startPolling(1000);
 
-		// initial refresh (1 readItem), still pending
+		// initial refresh (1 getRecording), still pending
 		await vi.advanceTimersByTimeAsync(0);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 		expect(r.recording.value?.status).toBe("pending");
 
 		// tick 1 -> 2nd fetch, still pending
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(state.readItem).toHaveBeenCalledTimes(2);
+		expect(state.getRecording).toHaveBeenCalledTimes(2);
 		expect(r.recording.value?.status).toBe("pending");
 
 		// tick 2 -> 3rd fetch, becomes done -> interval cleared
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(state.readItem).toHaveBeenCalledTimes(3);
+		expect(state.getRecording).toHaveBeenCalledTimes(3);
 		expect(r.recording.value?.status).toBe("done");
 
 		// further time must not trigger more fetches
 		await vi.advanceTimersByTimeAsync(5000);
-		expect(state.readItem).toHaveBeenCalledTimes(3);
+		expect(state.getRecording).toHaveBeenCalledTimes(3);
 		r.stopPolling();
 	});
 
 	it("does not keep an interval when already terminal on first refresh", async () => {
-		wireFetch(rec("1", "done"), [tx("t1", "1")]);
+		wireFetch(rec("1", "done"), tx("t1", "1"));
 		const r = useRecording("1");
 
 		r.startPolling(1000);
 		await vi.advanceTimersByTimeAsync(0);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 
 		await vi.advanceTimersByTimeAsync(10000);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 		r.stopPolling();
 	});
 
 	it("guards against multiple concurrent intervals", async () => {
-		wireFetch(rec("1", "pending"), []);
+		wireFetch(rec("1", "pending"), null);
 		const r = useRecording("1");
 
 		r.startPolling(1000);
 		r.startPolling(1000);
 		await vi.advanceTimersByTimeAsync(0);
 		// two initial refreshes would be 2; guarded second start must be a no-op
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 
 		await vi.advanceTimersByTimeAsync(1000);
 		// single interval -> one more fetch
-		expect(state.readItem).toHaveBeenCalledTimes(2);
+		expect(state.getRecording).toHaveBeenCalledTimes(2);
 		r.stopPolling();
 	});
 
 	it("stopPolling clears the interval", async () => {
-		wireFetch(rec("1", "pending"), []);
+		wireFetch(rec("1", "pending"), null);
 		const r = useRecording("1");
 
 		r.startPolling(1000);
 		await vi.advanceTimersByTimeAsync(0);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 
 		r.stopPolling();
 		await vi.advanceTimersByTimeAsync(10000);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 	});
 
 	it("onScopeDispose stops polling when the scope is disposed", async () => {
-		wireFetch(rec("1", "pending"), []);
+		wireFetch(rec("1", "pending"), null);
 		const scope = effectScope();
 		let r!: ReturnType<typeof useRecording>;
 		scope.run(() => {
@@ -180,10 +167,10 @@ describe("useRecording", () => {
 		});
 
 		await vi.advanceTimersByTimeAsync(0);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 
 		scope.stop();
 		await vi.advanceTimersByTimeAsync(10000);
-		expect(state.readItem).toHaveBeenCalledTimes(1);
+		expect(state.getRecording).toHaveBeenCalledTimes(1);
 	});
 });

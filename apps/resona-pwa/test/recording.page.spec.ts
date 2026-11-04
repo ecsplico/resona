@@ -57,23 +57,19 @@ mockNuxtImport("useRecording", () => () => ({
 	stopPolling,
 }));
 
-const assetUrl = vi.hoisted(() => vi.fn((id: string) => `http://directus/assets/${id}`));
-const request = vi.hoisted(() => vi.fn(async () => {}));
-
-mockNuxtImport("useDirectus", () => () => ({
-	client: { request },
-	assetUrl,
+const store = vi.hoisted(() => ({
+	audioUrl: vi.fn(async (r: { audio_file?: string | null }) => (r.audio_file ? `http://directus/assets/${r.audio_file}` : null)),
+	updateRecording: vi.fn(async () => {}),
+	deleteRecording: vi.fn(async () => {}),
+	createTranscript: vi.fn(async () => ({ id: "t-new", recording: "rec-1", text: "" })),
+	updateTranscript: vi.fn(async () => {}),
 }));
+mockNuxtImport("useDataStore", () => () => store);
 
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
 
 mockNuxtImport("useRoute", () => () => ({ params: { id: "rec-1" } }));
-
-const deleteItem = vi.hoisted(() => vi.fn((collection: string, id: string) => ({ collection, id })));
-const updateItem = vi.hoisted(() => vi.fn((collection: string, id: string, payload: unknown) => ({ kind: "update", collection, id, payload })));
-const createItem = vi.hoisted(() => vi.fn((collection: string, payload: unknown) => ({ kind: "create", collection, payload })));
-vi.mock("@directus/sdk", () => ({ deleteItem, updateItem, createItem }));
 
 const recorderStart = vi.hoisted(() => vi.fn(async () => {}));
 const recorderStop = vi.hoisted(() => vi.fn(async () => new Blob(["audio"], { type: "audio/webm;codecs=opus" })));
@@ -122,12 +118,12 @@ describe("recording detail page", () => {
 		expect(startPolling).toHaveBeenCalled();
 	});
 
-	it("renders the player dock with the asset URL when audio_file is set", async () => {
+	it("renders the player dock with the store's audio URL when audio_file is set", async () => {
 		const w = await mountSuspended(RecordingPage);
+		await vi.waitFor(() => expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(true));
 		const dock = w.findComponent({ name: "HPlayerDock" });
-		expect(dock.exists()).toBe(true);
 		expect(dock.props("src")).toBe("http://directus/assets/file-1");
-		expect(assetUrl).toHaveBeenCalledWith("file-1");
+		expect(store.audioUrl).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1", audio_file: "file-1" }));
 	});
 
 	it("does not render the player dock when audio_file is missing", async () => {
@@ -155,12 +151,11 @@ describe("recording detail page", () => {
 		const w = await mountSuspended(RecordingPage);
 		await w.find("[data-testid=\"delete\"]").trigger("click");
 		expect(w.find("[data-testid=\"confirm-delete\"]").exists()).toBe(true);
-		expect(request).not.toHaveBeenCalled();
+		expect(store.deleteRecording).not.toHaveBeenCalled();
 
 		await w.find("[data-testid=\"confirm-delete\"]").trigger("click");
 		await w.vm.$nextTick();
-		expect(deleteItem).toHaveBeenCalledWith("recordings", "rec-1");
-		expect(request).toHaveBeenCalled();
+		expect(store.deleteRecording).toHaveBeenCalledWith("rec-1");
 		expect(navigateTo).toHaveBeenCalledWith("/");
 	});
 
@@ -169,7 +164,7 @@ describe("recording detail page", () => {
 		await w.find("[data-testid=\"delete\"]").trigger("click");
 		await w.find("[data-testid=\"cancel-delete\"]").trigger("click");
 		expect(w.find("[data-testid=\"confirm-delete\"]").exists()).toBe(false);
-		expect(request).not.toHaveBeenCalled();
+		expect(store.deleteRecording).not.toHaveBeenCalled();
 	});
 
 	it("shows an empty editor for a done recording without a transcript", async () => {
@@ -184,18 +179,14 @@ describe("recording detail page", () => {
 	it("creates a transcript row when saving a recording that has none", async () => {
 		recording.value = baseRecording({ audio_file: undefined });
 		transcript.value = null;
-		request.mockResolvedValueOnce({ id: "t-new", recording: "rec-1", text: "Manuell getippt" });
+		store.createTranscript.mockResolvedValueOnce({ id: "t-new", recording: "rec-1", text: "Manuell getippt" });
 		const w = await mountSuspended(RecordingPage);
 
 		await w.find("[data-testid=\"transcript-edit\"]").setValue("Manuell getippt");
 		await w.find("[data-testid=\"save-transcript\"]").trigger("click");
 		await w.vm.$nextTick();
 
-		expect(createItem).toHaveBeenCalledWith("transcripts", expect.objectContaining({
-			recording: "rec-1",
-			text: "Manuell getippt",
-		}));
-		expect(request).toHaveBeenCalled();
+		expect(store.createTranscript).toHaveBeenCalledWith("rec-1", expect.objectContaining({ text: "Manuell getippt" }));
 	});
 
 	it("still shows the editor on error so the user can write manually", async () => {
@@ -205,11 +196,11 @@ describe("recording detail page", () => {
 		expect(w.find("[data-testid=\"transcript-edit\"]").exists()).toBe(true);
 	});
 
-	it("marks the review status ready via updateItem on recordings", async () => {
+	it("marks the review status ready via the data store", async () => {
 		const w = await mountSuspended(RecordingPage);
 		await w.find("[data-testid=\"review-ready\"]").trigger("click");
 		await w.vm.$nextTick();
-		expect(updateItem).toHaveBeenCalledWith("recordings", "rec-1", { review_status: "ready" });
+		expect(store.updateRecording).toHaveBeenCalledWith("rec-1", { review_status: "ready" });
 	});
 
 	it("push-to-talk: inserts placeholder on press, records, transcribes via REST, replaces placeholder", async () => {

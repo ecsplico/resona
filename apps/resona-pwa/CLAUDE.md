@@ -188,6 +188,7 @@ URLs. No token or engine is configured at build time — the hub token is per de
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Resona hub base URL |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
+| `NUXT_PUBLIC_DATA_MODE` | `directus` | data backend: `directus` \| `standalone` |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | show the calendar entry point |
 
 The Google Calendar OAuth layer adds **server-only** (non-`public`) keys, read on
