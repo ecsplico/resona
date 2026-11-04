@@ -614,6 +614,14 @@ class ResonaClient:
         """List every engine the gateway exposes, with capabilities and status. GET /v1/engines"""
         return self._send("GET", "/v1/engines").json()
 
+    def list_listen_engines(self) -> dict:
+        """List the engines this organization can stream live via ``WS /v1/listen``. GET /v1/listen/engines
+
+        Returns:
+            Dict with keys ``engines`` (``name``, ``kind``, ``private``, ``models``) and ``default``.
+        """
+        return self._send("GET", "/v1/listen/engines").json()
+
     def create_transcription(
         self,
         audio_path: "Path | str",

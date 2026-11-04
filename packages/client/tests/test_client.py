@@ -477,6 +477,20 @@ def test_list_engines(client):
     assert result["engines"][0]["name"] == "faster-whisper"
 
 
+def test_list_listen_engines(client):
+    with respx.mock:
+        respx.get(f"{BASE}/v1/listen/engines").mock(
+            return_value=httpx.Response(200, json={
+                "engines": [{"name": "faster-whisper", "kind": "local",
+                              "private": True, "models": ["large-v3"]}],
+                "default": "faster-whisper",
+            })
+        )
+        result = client.list_listen_engines()
+    assert result["default"] == "faster-whisper"
+    assert result["engines"][0]["name"] == "faster-whisper"
+
+
 def test_create_transcription(client, audio_file):
     with respx.mock:
         respx.post(f"{BASE}/v1/audio/transcriptions").mock(

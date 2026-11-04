@@ -22,6 +22,9 @@ resolved via the gateway catalogue:
     the provider's live STT WebSocket via ``resona_cloud_stt.streaming``.
 
 Cloud providers without a streaming API (OpenAI) are rejected.
+
+``GET /v1/listen/engines`` lists the engines this organization can stream
+through ``WS /v1/listen`` right now, plus the default one.
 """
 import asyncio
 import base64
@@ -53,6 +56,17 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# Encodings that map directly to the engine's int16 PCM input.
+_SUPPORTED_ENCODINGS = {"linear16", "pcm_s16le", "s16le", ""}
+
+
+def _streamable(info) -> bool:
+    """Whether the bridge can stream this engine: a local engine-server with a
+    URL, or a cloud provider with a realtime API."""
+    return (info.kind == "local" and bool(info.url)) or (
+        info.kind == "cloud" and supports_streaming(info.provider or "")
+    )
+
 
 @router.get("/v1/listen/engines", tags=["Streaming"])
 def list_listen_engines(
@@ -73,14 +87,9 @@ def list_listen_engines(
     engines = [
         {"name": e.name, "kind": e.kind, "private": e.private, "models": e.models}
         for e in reg.get_catalogue()
-        if "stt" in e.capabilities and e.available and (
-            (e.kind == "local" and e.url)
-            or (
-                e.kind == "cloud"
-                and supports_streaming(e.provider or "")
-                and settings.cloud_enabled
-                and cloud_endpoint_allowed(settings, e.name)
-            )
+        if "stt" in e.capabilities and e.available and _streamable(e) and (
+            e.kind == "local"
+            or (settings.cloud_enabled and cloud_endpoint_allowed(settings, e.name))
         )
     ]
     configured = reg.default_engine_name()
@@ -89,10 +98,6 @@ def list_listen_engines(
     else:
         default = next((e["name"] for e in engines if e["kind"] == "local"), None)
     return {"engines": engines, "default": default}
-
-
-# Encodings that map directly to the engine's int16 PCM input.
-_SUPPORTED_ENCODINGS = {"linear16", "pcm_s16le", "s16le", ""}
 
 
 def _truthy(value: str | None, default: bool = False) -> bool:
@@ -214,9 +219,9 @@ async def listen(websocket: WebSocket):
         pipeline=pipeline, request_id=request_id, models=info.models,
     )
 
-    if info.kind == "local" and info.url:
+    if _streamable(info) and info.kind == "local":
         await _run_local_bridge(websocket, info, language=language, **common)
-    elif info.kind == "cloud" and supports_streaming(info.provider or ""):
+    elif _streamable(info):
         await _run_cloud_bridge(websocket, info, language=language, loop=loop, **common)
     else:
         await websocket.send_json({

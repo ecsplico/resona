@@ -29,7 +29,8 @@ No variable is required; the defaults serve `https://resona.ecsplico.de`.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `RESONA_PUBLIC_URL` | `https://resona.ecsplico.de` | Caddy site, CORS origin, MCP `Origin` allowlist |
+| `RESONA_PUBLIC_URL` | `https://resona.ecsplico.de` | Caddy site, default CORS origin, MCP `Origin` allowlist |
+| `CORS_ORIGINS` | `${RESONA_PUBLIC_URL}` | Comma-separated browser origins allowed by CORS (`CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}`). Set it to add the PWA origin, e.g. `https://resona.ecsplico.de,https://<pwa-host>` |
 | `RESONA_PUBLIC_HOST` | `resona.ecsplico.de` | MCP `Host` allowlist |
 | `RESONA_MAX_UPLOAD_BYTES` | `209715200` | Upload and worker-result cap. The app enforces it while streaming, independent of the proxy |
 | `LOGLEVEL` | `info` | Uvicorn log level. Access lines never carry query strings |
