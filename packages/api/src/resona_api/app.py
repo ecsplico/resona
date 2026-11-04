@@ -8,8 +8,6 @@ from pathlib import Path
 from decouple import config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
 
 from . import hublock
 from .db.engine import create_db_and_tables
@@ -138,14 +136,3 @@ app.include_router(profiles_router)
 app.include_router(settings_router)
 app.include_router(streaming_router)
 app.include_router(evaluations_router)
-
-try:
-    app.mount("/static", StaticFiles(directory='webapp', html=True), name="static")
-except RuntimeError:
-    log.warning("webapp directory not found, skipping UI mount")
-
-
-@app.get("/")
-async def root():
-    """Redirect root to static index."""
-    return RedirectResponse(url="/static/dictaphone.html")
