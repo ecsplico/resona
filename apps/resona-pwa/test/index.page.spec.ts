@@ -187,4 +187,14 @@ describe("index (recordings list) page", () => {
 		expect(w2.find("[data-testid=\"hub-token-missing\"]").exists()).toBe(false);
 		useHubSettings().token = "";
 	});
+
+	it("links to the documents page before the calendar link", async () => {
+		const w = await mountSuspended(IndexPage);
+		const docs = w.find("[data-testid=\"nav-documents\"]");
+		expect(docs.exists()).toBe(true);
+		expect(docs.text()).toBe("Dokumente");
+		expect(docs.attributes("href")).toBe("/documents");
+		const html = w.html();
+		expect(html.indexOf("nav-documents")).toBeLessThan(html.indexOf("nav-calendar"));
+	});
 });

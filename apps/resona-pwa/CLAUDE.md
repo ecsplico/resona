@@ -98,6 +98,12 @@ it via `docker compose` (the `project-worker` service).
   `engine` stamp: `web-speech` / selected hub engine / listen default / `hub-live`.
   Settings persist in localStorage `resona.live.settings` (`chunkSeconds` clamped 8–30);
   the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
+  Live correction (`settings.correction`, `useLiveCorrection`): PCM is cut into blocks of
+  `chunkSeconds` at final boundaries, each re-transcribed sequentially via hub
+  `transcribeSync` (`correctionEngine`, empty → hub default); the page renders blocks
+  (`live__block--corrected`/`--pending`), save awaits `finish()` (≤90 s, prompt shows
+  `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
+  `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
 
 ### Live WebSocket contract (hub `/v1/listen`)
 
@@ -143,6 +149,8 @@ app/
 │   ├── login.vue                    # Directus email/password login
 │   ├── live.vue                     # live transcription (reads ?title= to preset name)
 │   ├── calendar.vue                 # Google Calendar: connect, filter, start dictation
+│   ├── documents/index.vue          # Dokumente: upload PDF/images, search, status (both modes)
+│   ├── documents/[id].vue           # document detail: markdown, retry, copy/.md export, delete
 │   └── recording/[id].vue           # detail: player, transcript edit, export
 ├── composables/                     # useDirectus, useRecordings, useRecording,
 │   │                                #   useRecorder, useUpload, useProfiles, useLive,

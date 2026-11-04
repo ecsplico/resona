@@ -136,13 +136,17 @@ There are **two transcription paths**:
   never submit twice), writes the `transcripts` row from the result, flips the
   recording to `done`, and deletes the hub job. Uploaded **documents** (PDF/images)
   take the same path into `documents.markdown`/`pages`. The PWA polls the recording until it reaches a
-  terminal state (`done`/`error`).
+  terminal state (`done`/`error`). The **Dokumente** page (`/documents`, linked from the
+  home app bar) uploads PDFs/images, lists them with status, and shows the resulting
+  markdown (copy, `.md` download, retry, delete) in both Directus and standalone mode.
 - **Live**: the PWA opens a WebSocket to the hub `/v1/listen`, streams 16 kHz PCM
   from the microphone, and renders rolling partial/final text. On stop it writes the
   `recordings` (`source=live`, `status=done`) and `transcripts` rows itself.
   The live source is chosen in Einstellungen → Live: a hub stream (engine picked from
   the hub's `/v1/listen/engines`; the page refuses to start if that list is empty) or
   on-device recognition (local-only Web Speech; no cloud browser recognition).
+  Optionally ("Mit besserem Modell korrigieren") the live text is re-transcribed in
+  8–30 s chunks by a better hub audio engine; saving waits for pending chunks.
 
 ### Standalone mode
 

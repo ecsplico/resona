@@ -1,4 +1,4 @@
-import type { Recording, Transcript } from "~/types/directus";
+import type { Recording, ResonaDocument, Transcript } from "~/types/directus";
 
 function formatDuration(seconds?: number): string {
 	if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
@@ -69,6 +69,14 @@ export function useExport() {
 		download(`${slugify(recording.title)}.md`, toMarkdown(recording, transcript), "text/markdown");
 	}
 
+	function documentToMarkdown(doc: ResonaDocument): string {
+		return `# ${doc.title}\n\n${doc.markdown ?? ""}`;
+	}
+
+	function downloadDocumentMarkdown(doc: ResonaDocument): void {
+		download(`${slugify(doc.title)}.md`, documentToMarkdown(doc), "text/markdown");
+	}
+
 	return {
 		toText,
 		toMarkdown,
@@ -76,5 +84,7 @@ export function useExport() {
 		download,
 		downloadText,
 		downloadMarkdown,
+		documentToMarkdown,
+		downloadDocumentMarkdown,
 	};
 }

@@ -160,5 +160,21 @@ describe("useExport", () => {
 			downloadMarkdown(baseRecording(), baseTranscript());
 			expect(anchors[0]?.download).toMatch(/\.md$/);
 		});
+
+		it("downloadDocumentMarkdown writes <slug>.md with a title heading and the markdown", async () => {
+			const { downloadDocumentMarkdown } = useExport();
+			downloadDocumentMarkdown({ id: "d1", title: "Arztbrief Müller", status: "done", markdown: "## Befund\n\nOK" });
+			expect(anchors[0]?.download).toBe("arztbrief-muller.md");
+			const blob = (URL.createObjectURL as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Blob;
+			expect(blob.type).toBe("text/markdown");
+			expect(await blob.text()).toBe("# Arztbrief Müller\n\n## Befund\n\nOK");
+		});
+
+		it("downloadDocumentMarkdown tolerates missing markdown", async () => {
+			const { downloadDocumentMarkdown } = useExport();
+			downloadDocumentMarkdown({ id: "d2", title: "Scan", status: "pending", markdown: null });
+			const blob = (URL.createObjectURL as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Blob;
+			expect(await blob.text()).toBe("# Scan\n\n");
+		});
 	});
 });

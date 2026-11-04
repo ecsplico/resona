@@ -175,6 +175,13 @@ onMounted(() => {
 			<template #trailing>
 				<NuxtLink
 					class="home__live"
+					to="/documents"
+					data-testid="nav-documents"
+				>
+					Dokumente
+				</NuxtLink>
+				<NuxtLink
+					class="home__live"
 					to="/calendar"
 					data-testid="nav-calendar"
 				>
