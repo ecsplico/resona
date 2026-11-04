@@ -82,6 +82,25 @@ def load_org_profile(session: Session, organization_id: str, name: str) -> Profi
     return validate_profile_body(json.loads(row.profile_json))
 
 
+def cloud_endpoint_allowed(settings: OrganizationSettings, engine: str) -> bool:
+    """Whether the org's cloud policy approves ``engine``'s cloud ASR endpoint.
+
+    Engines without a cloud ASR endpoint (local engines) are always allowed.
+    """
+    endpoint_id = reg.cloud_asr_endpoint_id(engine)
+    if endpoint_id is None:
+        return True
+    cloud_policy = settings.policy(private=False)
+    endpoint = cloud_policy.endpoint(endpoint_id)
+    if endpoint is None:
+        return False
+    try:
+        check_policy(cloud_policy, [Stage(name="asr", kind="asr", endpoint=endpoint)])
+    except PolicyDenied:
+        return False
+    return True
+
+
 def asr_stage(info: reg.EngineInfo, settings: OrganizationSettings) -> Stage:
     """The ASR stage for a resolved engine.
 

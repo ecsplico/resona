@@ -40,7 +40,7 @@ services:
     environment:
       DATA_PATH: /data
       RESONA_MAX_UPLOAD_BYTES: ${RESONA_MAX_UPLOAD_BYTES:-209715200}
-      CORS_ORIGINS: ${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
+      CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}
       RESONA_PUBLIC_URL: ${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
       LOGLEVEL: ${LOGLEVEL:-info}
     healthcheck:

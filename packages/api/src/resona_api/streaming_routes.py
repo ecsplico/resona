@@ -31,7 +31,7 @@ import uuid
 from datetime import datetime, timezone
 
 import websockets
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, Depends, WebSocket
 from sqlmodel import Session
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
@@ -39,9 +39,11 @@ from resona_cloud_stt.streaming import open_stream, supports_streaming
 from resona_job_core import PolicyDenied
 
 from . import engine_registry as reg
-from .auth import Principal, websocket_principal
+from .auth import Principal, client_principal, websocket_principal
 from .db.engine import engine as db_engine
-from .privacy import admit
+from .deps import get_db_session
+from .privacy import admit, cloud_endpoint_allowed
+from .settings_store import current_settings
 
 # How long to keep draining final transcripts after the client stops sending,
 # for providers (e.g. ElevenLabs) that do not close the socket on commit.
@@ -49,6 +51,45 @@ _CLOUD_FINAL_DRAIN_SECONDS = 3.0
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+
+@router.get("/v1/listen/engines", tags=["Streaming"])
+def list_listen_engines(
+    principal: Principal = Depends(client_principal),
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """Engines this organization can stream live via ``WS /v1/listen`` right now.
+
+    Mirrors the bridge dispatch below: an available local engine-server, or a
+    cloud provider with a realtime API when the org enables cloud processing and
+    approves its endpoint. ``default`` is ``RESONA_DEFAULT_ENGINE`` if it is a
+    listed private engine, else the first listed local engine.
+    """
+    try:
+        _, settings = current_settings(session, principal.organization_id)
+    except LookupError:
+        return {"engines": [], "default": None}
+    engines = [
+        {"name": e.name, "kind": e.kind, "private": e.private, "models": e.models}
+        for e in reg.get_catalogue()
+        if "stt" in e.capabilities and e.available and (
+            (e.kind == "local" and e.url)
+            or (
+                e.kind == "cloud"
+                and supports_streaming(e.provider or "")
+                and settings.cloud_enabled
+                and cloud_endpoint_allowed(settings, e.name)
+            )
+        )
+    ]
+    configured = reg.default_engine_name()
+    if any(e["name"] == configured and e["private"] for e in engines):
+        default = configured
+    else:
+        default = next((e["name"] for e in engines if e["kind"] == "local"), None)
+    return {"engines": engines, "default": default}
+
 
 # Encodings that map directly to the engine's int16 PCM input.
 _SUPPORTED_ENCODINGS = {"linear16", "pcm_s16le", "s16le", ""}

@@ -311,3 +311,86 @@ def test_listen_cloud_interim_results(monkeypatch, cloud_org, client_headers):
     finals = [m for m in msgs if m["type"] == "Results" and m["is_final"]]
     assert any(m["channel"]["alternatives"][0]["transcript"] == "guten" for m in interims)
     assert any(m["channel"]["alternatives"][0]["transcript"] == "guten tag" for m in finals)
+
+
+# ── GET /v1/listen/engines ───────────────────────────────────────────────────
+
+def _listen_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(sr.router)
+    return TestClient(app)
+
+
+def _local(name="faster-whisper", available=True) -> reg.EngineInfo:
+    return reg.EngineInfo(name=name, kind="local", capabilities=["stt"], private=True,
+                          available=available, models=["large-v3"], url="http://e:7001")
+
+
+def _cloud(provider: str, model: str) -> reg.EngineInfo:
+    return reg.EngineInfo(name=provider, kind="cloud", capabilities=["stt"], private=False,
+                          available=True, models=[model], provider=provider)
+
+
+@pytest.fixture
+def listen_catalogue(monkeypatch):
+    """Factory: ``listen_catalogue([EngineInfo, ...])`` fixes the gateway catalogue."""
+    monkeypatch.setattr(reg, "default_engine_name", lambda: None)
+
+    def set_catalogue(entries):
+        monkeypatch.setattr(reg, "get_catalogue", lambda: list(entries))
+    return set_catalogue
+
+
+def test_listen_engines_lists_available_local_as_default(fresh_org, client_headers, listen_catalogue):
+    listen_catalogue([_local()])
+    r = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org))
+    assert r.status_code == 200
+    assert r.json() == {
+        "engines": [{"name": "faster-whisper", "kind": "local", "private": True, "models": ["large-v3"]}],
+        "default": "faster-whisper",
+    }
+
+
+def test_listen_engines_omits_unavailable_local(fresh_org, client_headers, listen_catalogue):
+    listen_catalogue([_local(available=False)])
+    r = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org))
+    assert r.status_code == 200
+    assert r.json() == {"engines": [], "default": None}
+
+
+def test_listen_engines_deepgram_needs_cloud_and_approved_endpoint(
+    fresh_org, client_headers, store_settings, listen_catalogue,
+):
+    from resona_job_core import Endpoint
+
+    listen_catalogue([_cloud("deepgram", "nova-3")])
+    client = _listen_client()
+    headers = client_headers(fresh_org)
+
+    def names():
+        return [e["name"] for e in client.get("/v1/listen/engines", headers=headers).json()["engines"]]
+
+    assert names() == []
+    store_settings(fresh_org, cloud_enabled=True)
+    assert names() == []
+    endpoint = Endpoint(id="cloud-asr:deepgram", kind="cloud_asr", model="nova-3")
+    store_settings(fresh_org, endpoints=[endpoint.model_dump(mode="json")])
+    body = client.get("/v1/listen/engines", headers=headers).json()
+    assert body["engines"] == [{"name": "deepgram", "kind": "cloud", "private": False, "models": ["nova-3"]}]
+    assert body["default"] is None
+
+
+def test_listen_engines_never_lists_openai(fresh_org, client_headers, store_settings, listen_catalogue):
+    from resona_job_core import Endpoint
+
+    listen_catalogue([_cloud("openai", "whisper-1")])
+    endpoint = Endpoint(id="cloud-asr:openai", kind="cloud_asr", model="whisper-1")
+    store_settings(fresh_org, cloud_enabled=True, endpoints=[endpoint.model_dump(mode="json")])
+    r = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org))
+    assert r.status_code == 200
+    assert r.json() == {"engines": [], "default": None}
+
+
+def test_listen_engines_requires_auth(listen_catalogue):
+    listen_catalogue([_local()])
+    assert _listen_client().get("/v1/listen/engines").status_code == 401

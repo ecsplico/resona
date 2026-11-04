@@ -17,7 +17,7 @@ from decouple import config
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ValidationError
-from resona_job_core import Candidate, JobResult, PolicyDenied, Stage, check_policy
+from resona_job_core import Candidate, JobResult, PolicyDenied
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -27,7 +27,7 @@ from .auth import Principal, client_principal
 from .db.engine import engine as db_engine
 from .db.models import Job, JobStatus, Organization, Worker
 from .errors import api_error, validation_message
-from .privacy import admit_speech
+from .privacy import admit_speech, cloud_endpoint_allowed
 from .settings_store import current_settings
 
 log = logging.getLogger(__name__)
@@ -83,7 +83,6 @@ def _org_engines(session: Session, organization_id: str) -> dict:
         _, settings = current_settings(session, organization_id)
     except LookupError:
         return {"engines": [], "default": None}
-    cloud_policy = settings.policy(private=False)
     online = {w.worker_id for w in jobs_routes._online_workers(session, organization_id, clock.now())}
     workers = session.exec(
         select(Worker).where(
@@ -102,25 +101,12 @@ def _org_engines(session: Session, organization_id: str) -> dict:
                 continue
             offered.setdefault(candidate, set()).add(worker.id)
 
-    def cloud_allowed(candidate: Candidate) -> bool:
-        endpoint_id = reg.cloud_asr_endpoint_id(candidate.engine)
-        if endpoint_id is None:
-            return True
-        endpoint = cloud_policy.endpoint(endpoint_id)
-        if endpoint is None:
-            return False
-        try:
-            check_policy(cloud_policy, [Stage(name="asr", kind="asr", endpoint=endpoint)])
-        except PolicyDenied:
-            return False
-        return True
-
     engines: dict[tuple[str, str], dict] = {}
     for profile_name, profile in sorted(settings.execution_profiles.items()):
         for kind in ("audio", "document"):
             for candidate in profile.candidates(kind):
                 worker_ids = offered.get(candidate)
-                if not worker_ids or not cloud_allowed(candidate):
+                if not worker_ids or not cloud_endpoint_allowed(settings, candidate.engine):
                     continue
                 cloud = reg.cloud_asr_endpoint_id(candidate.engine) is not None
                 entry = engines.setdefault((candidate.engine, kind), {
