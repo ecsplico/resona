@@ -40,7 +40,8 @@ env:
 jobs:
   verify:
     name: Verify versions, privacy/lease tests, tool inventory
-    runs-on: ubuntu-latest
+    # Pinned like test.yml: libportaudio2 on ubuntu-26.04 needs a PulseAudio server.
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -177,7 +178,7 @@ jobs:
   eval-cpu:
     name: CPU corpus evaluation (cpu-private)
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - name: Install system dependencies
