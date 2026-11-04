@@ -2676,7 +2676,7 @@ Inputs, outputs, exit codes and the shared flags (<code>--recursive</code>, <cod
 <tr>
 <td><code>--ocr MODE</code></td>
 <td><code>auto</code></td>
-<td><code>auto</code> (OCR the layout regions that have no text layer; existing text is kept), <code>force</code> (full-page OCR, text layer ignored) or <code>off</code></td>
+<td><code>auto</code> (OCR the layout regions without visible text; a visible, digital text layer is kept, an invisible OCR text layer is not counted as text, so those regions are OCRed again and the new OCR text replaces it), <code>force</code> (full-page OCR, any text layer ignored) or <code>off</code> (no OCR: the text layer as it is, an invisible one included)</td>
 </tr>
 <tr>
 <td><code>--ocr-engine NAME</code></td>
@@ -2789,7 +2789,11 @@ grow with the square of the scale.</p>
   and breaks reading order.</li>
 <li><code>--image-scale 2</code> made small print worse with <code>rapidocr</code>. Raise it only after checking the result.</li>
 <li><code>--ocr-min-confidence</code> 0.3 and 0.7 changed no score.</li>
-<li><code>ocrmac</code> (Apple Vision, Mac worker) read every corpus fixture at CER 0.000, in <code>auto</code> too.</li>
+<li><code>ocrmac</code> (Apple Vision, Mac worker) read every fixture of that corpus at CER 0.000, in <code>auto</code> too.</li>
+<li>A scan under a garbled invisible text layer (<code>bad-text-layer</code>) scored like a plain scan in <code>auto</code>
+  (0.004 <code>rapidocr</code>, 0.000 <code>ocrmac</code>): the bad layer does not reach the output.</li>
+<li>French, Italian and Spanish scans (<code>rapidocr</code>, Mac CPU, 2026-11-04): <code>auto</code> 0.200 / 0.000 / 0.000,
+  <code>force</code> 0.000 for all three. In <code>auto</code>, the French page lost most of its first line.</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>resona<span class="w"> </span>doc<span class="w"> </span>scan.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="m">1</span>-3<span class="w"> </span>--languages<span class="w"> </span>de,en
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>resona<span class="w"> </span>doc<span class="w"> </span>./faxes/<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>tesseract

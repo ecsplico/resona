@@ -2447,6 +2447,7 @@
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o-mini&quot;</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">}</span>
 </code></pre></div>
+<p><code>temperature</code>, <code>max_tokens</code> and <code>timeout</code> apply as for <code>llm</code>; the call is made in JSON mode.</p>
 <h2 id="postprocessresult">PostprocessResult<a class="headerlink" href="#postprocessresult" title="Permanent link">&para;</a></h2>
 <p><code>build_pipeline(profile, policy=policy).run(text)</code> returns a <code>PostprocessResult</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@dataclass</span>
@@ -2502,7 +2503,7 @@
 </table>
 <p>Plus medical section headings (<code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code>, <code>Procedere</code>) and common name corrections.</p>
 <h2 id="the-bundled-document-polish-profile">The bundled document polish profile<a class="headerlink" href="#the-bundled-document-polish-profile" title="Permanent link">&para;</a></h2>
-<p><code>profiles/document-polish-de.json</code> (<code>document-polish-de</code>) is a single chunked <code>llm</code> step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay verbatim. Settings: endpoint <code>gpu-llama</code>, <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.3, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. It is not resolved by name from the package: upload it to the hub as an organization profile (see <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>).</p>
+<p><code>profiles/document-polish-de.json</code> (<code>document-polish-de</code>) is a single chunked <code>llm</code> step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay verbatim. Settings: endpoint <code>local-llm</code>, <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.3, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. The endpoint id names no host: an org admin registers a <code>local_llm</code> endpoint with the id <code>local-llm</code> and a loopback <code>url</code> on the approved worker. It is not resolved by name from the package: upload it to the hub as an organization profile (see <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>).</p>
 <h2 id="profile-resolution">Profile resolution<a class="headerlink" href="#profile-resolution" title="Permanent link">&para;</a></h2>
 <p><code>resolve_profile(ref, profiles_dir)</code> accepts any of:
 - A <code>Profile</code> object — returned as-is
@@ -2520,11 +2521,11 @@
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    ↓
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>result = pipeline.run(text)   (PolicyDenied is raised, never swallowed)
 <a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    ↓
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>raw transcript and polished Markdown go into the JobResult
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>raw_text stays the engine&#39;s text; the engine&#39;s Markdown moves to raw_markdown when a step changed it; markdown is the polished text
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    ↓
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>worker uploads the result; the hub marks the job completed
 </code></pre></div>
-<p>Before each <code>llm</code>/<code>extract</code> step the worker asks the hub for a fresh policy decision on that endpoint. After the job's last step on an endpoint that has an <code>unload_url</code>, the worker POSTs to that URL (best effort, 10 s timeout, logged by endpoint id only) so the model server frees the GPU for the next job.</p>
+<p>Before each <code>llm</code>/<code>extract</code> step the worker asks the hub for a fresh policy decision on that endpoint. After the job's last step on an endpoint that has an <code>unload_url</code>, the worker POSTs to that URL (best effort, 10 s timeout) so the model server frees the GPU for the next job. A 2xx answer is logged at info level; another status or a transport error is a warning naming the endpoint id and the status code or exception type, never content.</p>
 <p>The engine receives <code>profile.initial_prompt_string()</code> as its <code>initial_prompt</code>. It never receives replacement rules — postprocessing is the worker's responsibility, not the engine's.</p>
 <h3 id="local-mode-cli-process">Local mode (CLI process)<a class="headerlink" href="#local-mode-cli-process" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>engine returns {text, language, segments}

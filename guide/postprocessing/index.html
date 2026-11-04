@@ -2497,7 +2497,8 @@ Uses <a href="https://github.com/BerriAI/litellm">litellm</a> — any OpenAI-com
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">}</span>
 </code></pre></div>
 <p>LLM steps add latency. Use them only when rule-based replacements are insufficient.</p>
-<p>For long documents, set <code>chunk_chars</code>. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a <code>polish_chunk_rejected:&lt;n&gt;:&lt;reason&gt;</code> warning. Details: <a href="../../architecture/postprocessing/#chunked-mode-long-markdown">Postprocessing Pipeline</a>. The bundled <code>document-polish-de</code> profile uses this mode for OCR correction of German documents; <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a> shows how to enable it with a local model.</p>
+<p>For long documents, set <code>chunk_chars</code>. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a <code>polish_chunk_rejected:&lt;n&gt;:&lt;reason&gt;</code> warning. Details: <a href="../../architecture/postprocessing/#chunked-mode-long-markdown">Postprocessing Pipeline</a>. The bundled <code>document-polish-de</code> profile uses this mode for OCR correction of German documents. It calls the endpoint id <code>local-llm</code>, which names no host: an org admin registers a <code>local_llm</code> endpoint with that id and a loopback <code>url</code> on the approved worker; <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a> shows how.</p>
+<p>When a step changes the Markdown, the job result keeps the engine's Markdown before postprocessing in <code>raw_markdown</code>; <code>markdown</code> is the postprocessed text.</p>
 <h3 id="extract">extract<a class="headerlink" href="#extract" title="Permanent link">&para;</a></h3>
 <p>Sends the current text to a language model and stores the model's <strong>structured JSON</strong> response
 alongside the transcript. The text is not modified.</p>
@@ -2508,6 +2509,7 @@ alongside the transcript. The text is not modified.</p>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o-mini&quot;</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">}</span>
 </code></pre></div>
+<p><code>temperature</code>, <code>max_tokens</code> and <code>timeout</code> apply as for <code>llm</code>.</p>
 <p>Extracted data is stored in <code>job.structured</code> (server) or <code>PostprocessResult.data</code> (local).</p>
 <hr />
 <h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
