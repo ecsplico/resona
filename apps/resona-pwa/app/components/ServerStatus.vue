@@ -34,7 +34,11 @@ const title = computed(() => {
 	if (!health.online.value) {
 		return "Keine Internetverbindung";
 	}
-	return `Directus: ${reach(health.directus.value)}\nResona-API: ${reach(health.resonaApi.value)}`;
+	const api = `Resona-API: ${reach(health.resonaApi.value)}`;
+	if (useRuntimeConfig().public.dataMode === "standalone") {
+		return api;
+	}
+	return `Directus: ${reach(health.directus.value)}\n${api}`;
 });
 
 onMounted(() => health.start());

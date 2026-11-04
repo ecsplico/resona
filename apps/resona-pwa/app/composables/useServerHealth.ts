@@ -79,8 +79,10 @@ function create(): ServerHealth {
 		const cfg = useRuntimeConfig().public;
 		checking.value = true;
 		try {
+			// Standalone mode has no CMS: Directus is not pinged and stays unknown.
+			const standalone = cfg.dataMode === "standalone";
 			const [d, r] = await Promise.all([
-				ping(`${trimUrl(cfg.directusUrl)}/server/health`),
+				standalone ? Promise.resolve(null) : ping(`${trimUrl(cfg.directusUrl)}/server/health`),
 				ping(`${trimUrl(cfg.resonaApiUrl)}/health`),
 			]);
 			directus.value = d;

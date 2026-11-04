@@ -1,5 +1,6 @@
 import type { DataStore } from "~/data/types";
 import { createDirectusStore } from "~/data/directusStore";
+import { createLocalStore } from "~/data/localStore";
 
 let store: DataStore | null = null;
 
@@ -10,7 +11,7 @@ export function useDataStore(): DataStore {
 			store = createDirectusStore();
 		}
 		else if (mode === "standalone") {
-			throw new Error("NUXT_PUBLIC_DATA_MODE \"standalone\" not available");
+			store = createLocalStore();
 		}
 		else {
 			throw new Error("NUXT_PUBLIC_DATA_MODE must be \"directus\" or \"standalone\"");

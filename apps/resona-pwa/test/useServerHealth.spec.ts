@@ -53,3 +53,42 @@ describe("useServerHealth", () => {
 		expect(fetchMock.mock.calls[0]![1]).toMatchObject({ mode: "no-cors" });
 	});
 });
+
+describe("useServerHealth in standalone mode", () => {
+	let cfg: { dataMode: string };
+	let original: string;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		cfg = useRuntimeConfig().public as { dataMode: string };
+		original = cfg.dataMode;
+		cfg.dataMode = "standalone";
+	});
+
+	afterEach(() => {
+		cfg.dataMode = original;
+		globalThis.fetch = realFetch;
+		useServerHealth().stop();
+	});
+
+	it("skips the Directus ping and reports 'up' from the hub alone", async () => {
+		fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+		const health = useServerHealth();
+		await health.check();
+		const urls = fetchMock.mock.calls.map(c => String(c[0]));
+		expect(urls.some(u => u.endsWith("/server/health"))).toBe(false);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(health.directus.value).toBeNull();
+		expect(health.resonaApi.value).toBe(true);
+		expect(health.overall.value).toBe("up");
+	});
+
+	it("reports 'down' when the hub is unreachable", async () => {
+		fetchMock.mockRejectedValue(new Error("network"));
+		const health = useServerHealth();
+		await health.check();
+		expect(health.directus.value).toBeNull();
+		expect(health.overall.value).toBe("down");
+	});
+});

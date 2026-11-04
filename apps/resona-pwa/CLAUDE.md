@@ -91,6 +91,13 @@ it via `docker compose` (the `project-worker` service).
 - **Live**: PWA opens a WebSocket to the hub `/v1/listen`, streams 16 kHz PCM16 from
   the mic, renders rolling partial/final text. On stop the PWA itself writes the
   `recordings` (`source=live, status=done`) and `transcripts` rows.
+  Live source (Einstellungen → Live, `useLiveSettings().source`): `hub` streams PCM from
+  `usePcmCapture()` to `/v1/listen` using an engine from `/v1/listen/engines` discovery
+  (`private=false` only for cloud entries; empty list → start disabled); `device` uses
+  on-device Web Speech (`useDeviceSpeech`, `processLocally` always true). Transcript
+  `engine` stamp: `web-speech` / selected hub engine / listen default / `hub-live`.
+  Settings persist in localStorage `resona.live.settings` (`chunkSeconds` clamped 8–30);
+  the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
 
 ### Live WebSocket contract (hub `/v1/listen`)
 
@@ -100,6 +107,18 @@ it via `docker compose` (the `project-worker` service).
 - Up: binary PCM16 LE, 16 kHz mono. Down: Deepgram JSON
   `{type:"Results",channel:{alternatives:[{transcript}]},is_final}` + `{type:"Metadata"}`.
 - Finish: send `{"type":"CloseStream"}`, then close.
+
+### Standalone mode (`NUXT_PUBLIC_DATA_MODE=standalone`)
+
+No CMS: recordings, transcripts, documents and files live in IndexedDB
+(`app/data/localStore.ts`; one idb-keyval database per collection,
+`resona-local-recordings|transcripts|documents|files`, store `items`, files as
+`{bytes, type, name}`), there is no login (`auth.global.ts` sends `/login` to `/`),
+and the health indicator skips the Directus ping. `app/plugins/local-processor.client.ts`
+runs `runLocalCycle()` (`app/data/localProcessor.ts`) every 5 s and on `online`: it
+submits pending rows to the hub and polls their jobs, the same state machine as
+`worker/`. Processing only happens while the app is open, and it needs a hub device
+token (no token → nothing is processed).
 
 ## Tech stack
 

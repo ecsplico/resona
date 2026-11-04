@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import type { RouteLocationNormalized } from "vue-router";
 import middleware from "~/middleware/auth.global";
@@ -54,5 +54,35 @@ describe("auth.global middleware", () => {
 		expect(state.restoreSession).toHaveBeenCalled();
 		expect(navigateTo).not.toHaveBeenCalled();
 		expect(result).toBeUndefined();
+	});
+});
+
+describe("auth.global middleware in standalone mode", () => {
+	let cfg: { dataMode: string };
+	let original: string;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		state.isAuthenticated.value = false;
+		cfg = useRuntimeConfig().public as { dataMode: string };
+		original = cfg.dataMode;
+		cfg.dataMode = "standalone";
+	});
+
+	afterEach(() => {
+		cfg.dataMode = original;
+	});
+
+	it("needs no login: lets unauthenticated users through without restoring a session", async () => {
+		const result = await middleware(route("/"), from);
+		expect(result).toBeUndefined();
+		expect(navigateTo).not.toHaveBeenCalled();
+		expect(state.restoreSession).not.toHaveBeenCalled();
+	});
+
+	it("redirects /login to /", async () => {
+		const result = await middleware(route("/login"), from);
+		expect(navigateTo).toHaveBeenCalledWith("/");
+		expect(result).toEqual({ __redirect: "/" });
 	});
 });

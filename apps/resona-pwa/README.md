@@ -140,6 +140,16 @@ There are **two transcription paths**:
 - **Live**: the PWA opens a WebSocket to the hub `/v1/listen`, streams 16 kHz PCM
   from the microphone, and renders rolling partial/final text. On stop it writes the
   `recordings` (`source=live`, `status=done`) and `transcripts` rows itself.
+  The live source is chosen in Einstellungen → Live: a hub stream (engine picked from
+  the hub's `/v1/listen/engines`; the page refuses to start if that list is empty) or
+  on-device recognition (local-only Web Speech; no cloud browser recognition).
+
+### Standalone mode
+
+Set `NUXT_PUBLIC_DATA_MODE=standalone` to run without Directus: no CMS and no login,
+all data is stored in the browser's IndexedDB. The browser itself submits pending
+recordings/documents to the hub and fetches the results, so processing only happens
+while the app is open, and a hub device token (Einstellungen → Verbindung) is required.
 
 ## Tech stack
 
