@@ -284,6 +284,59 @@ def test_document_upload_is_admitted_as_document_job(http, fresh_org, client_hea
     assert snapshot["options"] == {"languages": ["de"], "ocr": "auto"}
 
 
+def _submit_document(http, headers, **fields):
+    upload_id = upload(http, headers, PDF, name="scan.pdf", ctype="application/pdf").json()["upload_id"]
+    return submit(http, headers, {"kind": "document", "upload_id": upload_id, **fields})
+
+
+def _snapshot_ocr_engines(resp) -> list[str]:
+    snapshot = json.loads(job_row(resp.json()["job_id"]).execution_snapshot)
+    return [c["ocr_engine"] for c in snapshot["candidates"]]
+
+
+@pytest.mark.parametrize(
+    "profile, fields",
+    [
+        ("private-auto", {"options": {"ocr": "off", "image_scale": 2.0}}),
+        ("private-auto", {"options": {"ocr": "off", "ocr_min_confidence": 0.6}}),
+        ("mac-private", {"options": {"ocr_min_confidence": 0.6}}),
+        ("tesseract-cpu", {"options": {"ocr_min_confidence": 0.6}}),
+        ("linux-cuda", {"options": {"languages": ["de", "ko"]}}),
+        ("linux-cuda", {"language": "ko"}),
+    ],
+)
+def test_document_options_that_no_candidate_can_run_are_rejected_at_submission(
+    http, fresh_org, client_headers, store_settings, profile, fields
+):
+    profiles = {name: p.model_dump(mode="json") for name, p in default_settings().execution_profiles.items()}
+    profiles["tesseract-cpu"] = {"document": [{"engine": "docling", "model": "docling-standard",
+                                               "accelerator": "cpu", "ocr_engine": "tesseract"}]}
+    store_settings(fresh_org, execution_profiles=profiles)
+    headers = client_headers(fresh_org)
+
+    resp = _submit_document(http, headers, execution_profile=profile, **fields)
+
+    assert resp.status_code == 422
+    assert error_code(resp) == "invalid_options"
+    assert http.get("/v1/jobs", headers=headers).json()["items"] == []
+
+
+def test_confidence_threshold_keeps_only_the_rapidocr_candidate(http, fresh_org, client_headers):
+    resp = _submit_document(http, client_headers(fresh_org), execution_profile="private-auto",
+                            options={"ocr_min_confidence": 0.6})
+
+    assert resp.status_code == 202
+    assert _snapshot_ocr_engines(resp) == ["rapidocr"]
+
+
+def test_korean_document_is_routed_to_the_ocrmac_candidate(http, fresh_org, client_headers):
+    resp = _submit_document(http, client_headers(fresh_org), execution_profile="private-auto",
+                            options={"languages": ["ko"]})
+
+    assert resp.status_code == 202
+    assert _snapshot_ocr_engines(resp) == ["ocrmac"]
+
+
 # ── Admission policy and settings resolution ─────────────────────────────────
 
 def _cloud_profile_settings():

@@ -1,9 +1,10 @@
 """Shared fakes: a recording stand-in for ResonaClient (no hub, no network)."""
 import json
+import secrets
 from typing import Any, Optional
 
 import pytest
-from resona_client.client import JobRef, JobView, MarkdownChunk, SettingsDoc, Upload
+from resona_client.client import JobRef, JobView, MarkdownChunk, SettingsDoc, Upload, UploadLink
 from resona_job_core import JobResult, Provenance
 
 
@@ -15,6 +16,7 @@ class FakeHub:
         self.tokens: list[Optional[str]] = []
         self.result = JobResult(kind="audio", raw_text="raw", markdown="# x\n", provenance=Provenance())
         self.error: Optional[Exception] = None
+        self.upload_link: Optional[UploadLink] = None
 
     def client(self, token: Optional[str] = None) -> "FakeClient":
         self.tokens.append(token)
@@ -43,6 +45,18 @@ class FakeClient:
     def upload_bytes(self, filename: str, data: bytes):
         self._record("upload_bytes", (filename, len(data)))
         return Upload(upload_id="upl_" + "b" * 24, sha256="1" * 64, size=len(data))
+
+    def create_upload_link(self):
+        """Shaped like the hub's: a random url-safe token, sent in its own header."""
+        self._record("create_upload_link", None)
+        self.hub.upload_link = UploadLink(
+            upload_url="https://resona.example/v1/upload-links/upload",
+            token_header="X-Resona-Upload-Token",
+            token="upt_" + secrets.token_urlsafe(32),
+            expires_at="2026-11-04T10:10:00Z",
+            max_bytes=200 * 1024 * 1024,
+        )
+        return self.hub.upload_link
 
     def submit_upload(self, upload_id: str, **kwargs: Any):
         self._record("submit_upload", (upload_id, kwargs))

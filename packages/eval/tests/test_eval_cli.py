@@ -215,8 +215,8 @@ def test_fixture_options_reach_the_submitted_jobs(corpus, tmp_path, result_for):
         hub.install(mock)
         assert runner.invoke(app, _args(corpus, tmp_path, "--remote")).exit_code == 4
     by_fixture = {body["provenance"]["source"].rsplit(":", 1)[1]: body for body in hub.jobs.values()}
-    assert by_fixture["bad-text-layer-force"]["options"] == {"languages": ["de"], "ocr": "force"}
-    assert by_fixture["bad-text-layer-auto"]["options"] == {"languages": ["de"]}
+    assert by_fixture["fr-scan-pdf"]["options"] == {"languages": ["fr"]}
+    assert by_fixture["bad-text-layer"]["options"] == {"languages": ["de"]}
     assert by_fixture["de-speech"]["options"] == {"translate": False, "word_timestamps": False, "vad_filter": True}
 
 

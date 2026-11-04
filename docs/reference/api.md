@@ -114,12 +114,15 @@ All fields are optional; an unset field is resolved by the execution profile and
 | `image_scale` | float 1.0–4.0 | `1.0` | Multiplies Docling's OCR raster: OCR crops are rendered at `3.0 × image_scale` × 72 dpi (216 dpi at `1.0`). Also sets Docling's `images_scale` for rendered page images, which Resona does not export. Requires OCR |
 | `ocr_min_confidence` | float 0–1 | engine default | Recognizer confidence threshold. Only `rapidocr` (`text_score`, default `0.5`). Requires OCR |
 
-Combinations no worker can run fail the job with `invalid_snapshot` (not retried) instead of being ignored:
-`ocr_min_confidence` with `ocrmac`/`tesseract` (no threshold exists) or with `ocr: off`; `image_scale` other
-than `1.0` with `ocr: off`; `ko` with `rapidocr` (the pinned rapidocr bundles only the multilingual PP-OCRv6
-recognizer, which serves `de`/`en`/`fr`/`it`/`es`; Korean weights would be downloaded at job time, which jobs
-never do). A tesseract language whose pack is not installed on a worker is `unsupported_capability`: that worker
-stops offering the candidate and the job is requeued.
+Combinations no worker can run are rejected at submission with `422 invalid_options` instead of being ignored:
+`ocr_min_confidence` or an `image_scale` other than `1.0` with `ocr: off`; `ocr_min_confidence` with
+`ocrmac`/`tesseract` (no threshold exists); `ko` with `rapidocr` (the pinned rapidocr bundles only the
+multilingual PP-OCRv6 recognizer, which serves `de`/`en`/`fr`/`it`/`es`; Korean weights would be downloaded at
+job time, which jobs never do). The OCR-engine rules are checked per document candidate of the execution profile
+(using the job `language` when `languages` is unset): the job snapshot keeps only the candidates that can run the
+options, and `422` follows only when none can. For example, `ocr_min_confidence` on `private-auto` leaves only its
+`rapidocr` candidate, and `ko` only its `ocrmac` candidate. A tesseract language whose pack is not installed on a
+worker is `unsupported_capability`: that worker stops offering the candidate and the job is requeued.
 
 #### List, get, cancel, delete
 
@@ -146,7 +149,7 @@ JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending
 
 `DELETE /v1/jobs/{id}` works in every state. On a pending or processing job it also cancels the job: the lease is fenced, so the worker's next lease call returns `409 stale_lease` and its result is rejected. The job, its idempotency keys, input and result files are gone at once; every later client read (`GET`, result, cancel, list, delete) answers `404`. The hub keeps an invisible tombstone of a deleted processing job only until its lease would have expired, to fence the worker.
 
-JobResult fields: `schema_version`, `kind`, `raw_text`, `markdown`, `language`, `segments`, `pages`, `warnings`, `provenance`.
+JobResult fields: `schema_version`, `kind`, `raw_text`, `markdown`, `raw_markdown`, `language`, `segments`, `pages`, `warnings`, `structured`, `provenance`. `markdown` is the final text. `raw_markdown` is optional (`null` or absent): it holds the engine's Markdown before postprocessing and is set only when a postprocess step changed it. For documents `raw_text` is the converter's plain text without tables, so `raw_markdown` is the unpolished reference. Results without the field stay valid; a hub older than this field rejects results that carry it (`422 invalid_result`), so update the hub before its workers.
 
 #### Job state machine
 

@@ -65,12 +65,24 @@ def test_audio_fixture_options_are_refused(corpus, tmp_path):
         load_corpus(copy)
 
 
-def test_fixture_options_override_defaults_and_keep_the_fixture_language(fixture_by_id):
-    forced = fixture_by_id["bad-text-layer-force"].document_options()
+def test_fixture_options_override_defaults_and_keep_the_fixture_language(corpus, tmp_path):
+    copy = _with_manifest_change(corpus, tmp_path, "scan-pdf", options={"ocr": "force"})
+    by_id = {f.id: f for f in load_corpus(copy).fixtures}
+    forced = by_id["scan-pdf"].document_options()
     assert forced.ocr == "force" and forced.languages == ["de"]
-    default = fixture_by_id["bad-text-layer-auto"].document_options()
+    default = by_id["bad-text-layer"].document_options()
     assert default.ocr is None and default.languages == ["de"]
-    assert fixture_by_id["bad-text-layer-force"].file == fixture_by_id["bad-text-layer-auto"].file
+
+
+def test_corpus_measures_the_non_german_document_languages(corpus):
+    measured = {lang for f in corpus.fixtures if f.kind == "document" for lang in f.document_options().languages}
+    assert measured >= {"de", "fr", "it", "es"}
+
+
+def test_document_fixture_in_an_unsupported_language_is_refused(corpus, tmp_path):
+    copy = _with_manifest_change(corpus, tmp_path, "scan-pdf", language="nl")
+    with pytest.raises(CorpusError, match="scan-pdf.*not a document language"):
+        load_corpus(copy)
 
 
 def test_document_cer_scores_the_markdown_not_raw_text(fixture_by_id, result_for):

@@ -3,6 +3,7 @@ import pytest
 import resona_postprocess.llm as llm_mod
 from resona_job_core.policy import Endpoint, EndpointKind, ExecutionPolicy, PolicyDenied
 from resona_postprocess.llm import (
+    LlmCallSettings,
     LLMUnavailableError,
     _resolve_api_base,
     legacy_endpoint_id,
@@ -33,7 +34,7 @@ def _policy(*endpoints, private=True, cloud_enabled=False, approved=None):
 def test_llm_transform_calls_approved_endpoint(fake_litellm):
     fake_litellm.script = ["FORMATTED"]
     out = llm_transform(
-        "raw", prompt="format", endpoint=LOCAL, policy=_policy(LOCAL), temperature=0.3,
+        "raw", prompt="format", endpoint=LOCAL, policy=_policy(LOCAL), settings=LlmCallSettings(temperature=0.3),
     )
     assert out == "FORMATTED"
     call = fake_litellm.calls[0]

@@ -125,7 +125,7 @@ resona doc [INPUTS...] [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--ocr MODE` | `auto` | `auto` (OCR the layout regions that have no text layer; existing text is kept), `force` (full-page OCR, text layer ignored) or `off` |
+| `--ocr MODE` | `auto` | `auto` (OCR the layout regions without visible text; a visible, digital text layer is kept, an invisible OCR text layer is not counted as text, so those regions are OCRed again and the new OCR text replaces it), `force` (full-page OCR, any text layer ignored) or `off` (no OCR: the text layer as it is, an invisible one included) |
 | `--ocr-engine NAME` | (profile) | `ocrmac`, `rapidocr` or `tesseract`; must be available in the execution profile |
 | `--languages LIST` (alias `--language`) | (organization setting) | Comma-separated document languages: `de`, `en`, `fr`, `it`, `es`, `ko` |
 | `--pages RANGE` | (all) | Inclusive 1-based page range: `a-b`, `a-`, `-b` or a single page |
@@ -160,7 +160,11 @@ Measured on the evaluation corpus (gpu-box, `rapidocr`, 2026-11-02; CER = charac
   and breaks reading order.
 - `--image-scale 2` made small print worse with `rapidocr`. Raise it only after checking the result.
 - `--ocr-min-confidence` 0.3 and 0.7 changed no score.
-- `ocrmac` (Apple Vision, Mac worker) read every corpus fixture at CER 0.000, in `auto` too.
+- `ocrmac` (Apple Vision, Mac worker) read every fixture of that corpus at CER 0.000, in `auto` too.
+- A scan under a garbled invisible text layer (`bad-text-layer`) scored like a plain scan in `auto`
+  (0.004 `rapidocr`, 0.000 `ocrmac`): the bad layer does not reach the output.
+- French, Italian and Spanish scans (`rapidocr`, Mac CPU, 2026-11-04): `auto` 0.200 / 0.000 / 0.000,
+  `force` 0.000 for all three. In `auto`, the French page lost most of its first line.
 
 ```bash
 resona doc scan.pdf --pages 1-3 --languages de,en

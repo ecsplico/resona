@@ -72,10 +72,14 @@ class Provenance(_Strict):
 
 
 class JobResult(_Strict):
+    """``markdown`` is the final text. ``raw_markdown`` holds the engine's Markdown
+    before postprocessing; it is set only when a postprocess step changed it."""
+
     schema_version: Literal[1] = 1
     kind: Literal["audio", "document"]
     raw_text: str
     markdown: str
+    raw_markdown: str | None = None
     language: str | None = None
     segments: list[Segment] = []
     pages: list[Page] = []

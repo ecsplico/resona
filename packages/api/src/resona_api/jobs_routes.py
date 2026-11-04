@@ -32,6 +32,7 @@ from sqlmodel import Session, or_, select
 from starlette.concurrency import run_in_threadpool
 
 from resona_job_core import (
+    DEFAULT_OCR_ENGINE,
     AudioOptions,
     Candidate,
     DocumentOptions,
@@ -41,6 +42,7 @@ from resona_job_core import (
     PolicyDenied,
     Stage,
     check_policy,
+    document_options_conflict,
 )
 from resona_postprocess.pipeline import build_pipeline, endpoint_ids
 from resona_postprocess.profile import ProfileError
@@ -585,7 +587,33 @@ def _resolve_candidates(req: JobRequest, options: dict[str, Any], settings: Orga
         candidates = [c for c in candidates if c.ocr_engine == ocr_engine]
         if not candidates:
             raise api_error(422, "invalid_options", "ocr_engine is not available in this execution profile")
+    if req.kind == "document":
+        candidates = _option_compatible(candidates, options, req.language or settings.language)
     return name, candidates
+
+
+def _option_compatible(candidates: list[Candidate], options: dict[str, Any], language: str) -> list[Candidate]:
+    """The document candidates whose OCR engine can run ``options``; 422 if none can.
+
+    Resolves options as the worker does (the job language when options name none, the
+    engine's default OCR engine when a candidate pins none), so the snapshot only offers
+    candidates whose workers will not reject the job after claiming it.
+    """
+    try:
+        resolved = DocumentOptions.model_validate({"languages": [language], **options})
+    except ValidationError:
+        raise api_error(422, "invalid_options", "the job language is not supported for documents") from None
+    compatible: list[Candidate] = []
+    conflicts: list[str] = []
+    for candidate in candidates:
+        conflict = document_options_conflict(resolved, candidate.ocr_engine or DEFAULT_OCR_ENGINE)
+        if conflict is None:
+            compatible.append(candidate)
+        elif conflict not in conflicts:
+            conflicts.append(conflict)
+    if not compatible:
+        raise api_error(422, "invalid_options", "; ".join(conflicts))
+    return compatible
 
 
 def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest,

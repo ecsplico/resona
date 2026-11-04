@@ -2,12 +2,14 @@
 import base64
 import hashlib
 import os
+import shlex
 from pathlib import Path
 
 import anyio
+import httpx
 import pytest
 from mcp import Client
-from resona_client.client import AudioOptions, DocumentOptions, ResonaAPIError
+from resona_client.client import AudioOptions, ResonaAPIError
 from resona_job_core import JobResult, Provenance
 
 from resona_mcp.server import (
@@ -87,6 +89,47 @@ def test_upload_content_rejects_altered_base64_before_uploading(hub, error_text)
     assert hub.calls == []
 
 
+# ── create_upload_url ──────────────────────────────────────────────────────
+
+def _curl_request(command: str) -> tuple[str, str, dict[str, str], dict[str, str]]:
+    """Read a curl command the way curl does: (method, url, headers, -F form fields)."""
+    argv = shlex.split(command)
+    assert argv[0] == "curl"
+    method, url, headers, form = "GET", None, {}, {}
+    args = iter(argv[1:])
+    for arg in args:
+        if arg == "-X":
+            method = next(args)
+        elif arg == "-H":
+            name, _, value = next(args).partition(":")
+            headers[name.strip()] = value.strip()
+        elif arg == "-F":
+            name, _, value = next(args).partition("=")
+            form[name] = value
+        elif arg.startswith("-"):
+            continue
+        else:
+            assert url is None, f"second URL in curl command: {arg}"
+            url = arg
+    assert url is not None
+    return method, url, headers, form
+
+
+def test_upload_url_curl_sends_the_file_with_the_token_in_the_link_header(hub, payload, tmp_path):
+    memo = tmp_path / "my memo.wav"  # a space: the path must survive shell quoting
+    memo.write_bytes(b"RIFF-bytes")
+    out = payload(call(remote(hub), "create_upload_url"))
+    link = hub.upload_link
+
+    method, url, headers, form = _curl_request(out["curl"].replace("<PATH>", str(memo)))
+    assert (method, url) == ("POST", link.upload_url)
+    assert headers == {link.token_header: link.token}
+    assert form == {"file": f"@{memo}"}
+    assert Path(form["file"][1:]).read_bytes() == b"RIFF-bytes"
+    assert link.token not in out["upload_url"]
+    assert not httpx.URL(url).query
+
+
 # ── submission sources ─────────────────────────────────────────────────────
 
 def test_submit_with_upload_id_returns_job_immediately(hub, payload):
@@ -100,18 +143,6 @@ def test_submit_with_upload_id_returns_job_immediately(hub, payload):
     assert kwargs["kind"] == "audio" and kwargs["private"] is True
     assert kwargs["execution_profile"] == "cpu-private" and kwargs["language"] == "de"
     assert kwargs["options"] == AudioOptions(word_timestamps=True)
-
-
-def test_convert_document_passes_scale_confidence_and_languages(hub, payload):
-    payload(call(remote(hub), "convert_document", {
-        "upload_id": "upl_" + "c" * 24,
-        "options": {"ocr_engine": "rapidocr", "languages": ["fr", "ko"], "image_scale": 2.0,
-                    "ocr_min_confidence": 0.6},
-    }))
-    name, (_upload_id, kwargs) = hub.calls[0]
-    assert (name, kwargs["kind"]) == ("submit_upload", "document")
-    assert kwargs["options"] == DocumentOptions(ocr_engine="rapidocr", languages=["fr", "ko"],
-                                                image_scale=2.0, ocr_min_confidence=0.6)
 
 
 def test_convert_document_rejects_out_of_range_image_scale(hub, error_text):

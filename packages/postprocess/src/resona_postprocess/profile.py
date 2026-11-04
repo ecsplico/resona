@@ -64,8 +64,13 @@ def _validate_step(step: dict, idx: int, extract_names: set[str]) -> None:
 _CHUNK_ONLY_KEYS = ("max_attempts", "max_length_deviation", "preserve_markup")
 
 
+def _is_int(value: object) -> bool:
+    """True for an integer; ``bool`` is an ``int`` subclass but not a count."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _positive_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+    return (_is_int(value) or isinstance(value, float)) and value > 0
 
 
 def _validate_chunking(step: dict, idx: int) -> None:
@@ -76,10 +81,10 @@ def _validate_chunking(step: dict, idx: int) -> None:
             raise ProfileError(f"Step {idx}: {', '.join(extra)} require 'chunk_chars'")
         return
     chunk_chars = step["chunk_chars"]
-    if not isinstance(chunk_chars, int) or isinstance(chunk_chars, bool) or chunk_chars < 1000:
+    if not _is_int(chunk_chars) or chunk_chars < 1000:
         raise ProfileError(f"Step {idx}: 'chunk_chars' must be an integer >= 1000")
     attempts = step.get("max_attempts", 3)
-    if not isinstance(attempts, int) or isinstance(attempts, bool) or not 1 <= attempts <= 10:
+    if not _is_int(attempts) or not 1 <= attempts <= 10:
         raise ProfileError(f"Step {idx}: 'max_attempts' must be an integer from 1 to 10")
     if "max_length_deviation" in step and not _positive_number(step["max_length_deviation"]):
         raise ProfileError(f"Step {idx}: 'max_length_deviation' must be a positive number")

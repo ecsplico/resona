@@ -8,6 +8,7 @@ Nothing here falls back to an ambient model or base URL; the endpoint fixes both
 import json as _json
 import logging
 import re
+from dataclasses import dataclass, replace
 
 from decouple import config
 from resona_job_core.policy import (
@@ -25,6 +26,34 @@ from .chunking import length_deviation, markup_signature, split_markdown
 log = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 120.0
+_DEFAULT_ATTEMPTS = 2
+_DEFAULT_CHUNK_ATTEMPTS = 3
+
+
+@dataclass(frozen=True)
+class LlmCallSettings:
+    """Request parameters of one llm/extract step.
+
+    ``attempts`` counts calls in total: for one text, or per chunk in chunked mode.
+    ``None`` leaves temperature/max_tokens to the server and timeout to the default.
+    """
+
+    temperature: float | None = None
+    max_tokens: int | None = None
+    timeout: float | None = None
+    attempts: int = _DEFAULT_ATTEMPTS
+
+    @classmethod
+    def from_step(cls, step: dict) -> "LlmCallSettings":
+        """Settings of a profile step; a chunked step's ``max_attempts`` applies per chunk."""
+        default_attempts = _DEFAULT_CHUNK_ATTEMPTS if "chunk_chars" in step else _DEFAULT_ATTEMPTS
+        return cls(
+            temperature=step.get("temperature"),
+            max_tokens=step.get("max_tokens"),
+            timeout=step.get("timeout"),
+            attempts=step.get("max_attempts", default_attempts),
+        )
+
 
 _UNSET = object()
 # Resolved lazily on first use (keeps the heavy `import litellm` out of CLI
@@ -110,33 +139,33 @@ def _api_key_for(endpoint: Endpoint) -> str | None:
     return _LOCAL_API_KEY if endpoint.kind == EndpointKind.LOCAL_LLM else None
 
 
-def _completion(*, model, api_base, messages, temperature, max_tokens,
-                response_format=None, timeout=None, attempts=2, api_key=None):
-    """Call litellm.completion, retrying a transient failure up to ``attempts`` calls in total."""
+def _completion(*, endpoint: Endpoint, messages: list[dict], settings: LlmCallSettings, response_format=None):
+    """Call litellm.completion on ``endpoint``, retrying a transient failure up to ``settings.attempts`` calls."""
     import os
     os.environ.setdefault("LITELLM_LOG", "ERROR")
     litellm = _resolve_litellm()
     kwargs = {
-        "model": model,
-        "api_base": api_base,
+        "model": endpoint.model,
+        "api_base": endpoint.url,
         "messages": messages,
-        "timeout": timeout or _DEFAULT_TIMEOUT,
+        "timeout": settings.timeout or _DEFAULT_TIMEOUT,
     }
+    api_key = _api_key_for(endpoint)
     if api_key is not None:
         kwargs["api_key"] = api_key
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+    if settings.temperature is not None:
+        kwargs["temperature"] = settings.temperature
+    if settings.max_tokens is not None:
+        kwargs["max_tokens"] = settings.max_tokens
     if response_format is not None:
         kwargs["response_format"] = response_format
 
     last_exc = None
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, settings.attempts + 1):
         try:
             resp = litellm.completion(**kwargs)
             usage = getattr(resp, "usage", None)
-            log.info("LLM call model=%s attempt=%d usage=%s", model, attempt, usage)
+            log.info("LLM call model=%s attempt=%d usage=%s", endpoint.model, attempt, usage)
             return resp.choices[0].message.content
         except LLMUnavailableError:
             raise
@@ -146,16 +175,17 @@ def _completion(*, model, api_base, messages, temperature, max_tokens,
     raise last_exc
 
 
+def _messages(prompt: str, text: str) -> list[dict]:
+    return [{"role": "system", "content": prompt}, {"role": "user", "content": text}]
+
+
 def llm_transform(
     text: str,
     *,
     prompt: str,
     endpoint: Endpoint,
     policy: ExecutionPolicy,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    timeout: float | None = None,
-    attempts: int = 2,
+    settings: LlmCallSettings = LlmCallSettings(),
 ) -> str:
     """Send transcript text to an approved LLM endpoint and return the result.
 
@@ -163,19 +193,7 @@ def llm_transform(
     fixes the model and base URL; no environment fallback applies here.
     """
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
-    return _completion(
-        model=endpoint.model,
-        api_base=endpoint.url,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": text},
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout,
-        attempts=attempts,
-        api_key=_api_key_for(endpoint),
-    )
+    return _completion(endpoint=endpoint, messages=_messages(prompt, text), settings=settings)
 
 
 _THINK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
@@ -203,16 +221,13 @@ def llm_transform_chunked(
     policy: ExecutionPolicy,
     chunk_chars: int,
     step_name: str = "llm",
-    max_attempts: int = 3,
     max_length_deviation: float | None = None,
     preserve_markup: bool = False,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    timeout: float | None = None,
-) -> tuple[str, list[str]]:
+    settings: LlmCallSettings = LlmCallSettings(attempts=_DEFAULT_CHUNK_ATTEMPTS),
+) -> tuple[str, tuple[str, ...]]:
     """Transform long Markdown chunk by chunk (see :func:`split_markdown`).
 
-    Each chunk gets at most ``max_attempts`` calls; a chunk that keeps failing raises
+    Each chunk gets at most ``settings.attempts`` calls; a chunk that keeps failing raises
     :class:`PostprocessStepFailed` (never a silent skip). A reply whose length deviates
     from its chunk by more than ``max_length_deviation`` (relative), or that changes the
     chunk's placeholders/headings/table shape when ``preserve_markup`` is set, is
@@ -221,6 +236,7 @@ def llm_transform_chunked(
     ``PolicyDenied`` propagates unchanged.
     """
     chunks = split_markdown(text, chunk_chars)
+    single_call = replace(settings, attempts=1)
     out: list[str] = []
     warnings: list[str] = []
     for number, chunk in enumerate(chunks, start=1):
@@ -229,12 +245,9 @@ def llm_transform_chunked(
             out.append(chunk)
             continue
         reply = None
-        for attempt in range(1, max_attempts + 1):
+        for attempt in range(1, settings.attempts + 1):
             try:
-                reply = llm_transform(
-                    core, prompt=prompt, endpoint=endpoint, policy=policy,
-                    temperature=temperature, max_tokens=max_tokens, timeout=timeout, attempts=1,
-                )
+                reply = llm_transform(core, prompt=prompt, endpoint=endpoint, policy=policy, settings=single_call)
                 break
             except PolicyDenied:
                 raise
@@ -242,9 +255,9 @@ def llm_transform_chunked(
                 raise PostprocessStepFailed(step_name, "litellm is not installed") from None
             except Exception as e:  # noqa: BLE001 — litellm raises many error types
                 log.warning("Step %r chunk %d/%d attempt %d/%d failed: %s",
-                            step_name, number, len(chunks), attempt, max_attempts, type(e).__name__)
+                            step_name, number, len(chunks), attempt, settings.attempts, type(e).__name__)
         else:
-            raise PostprocessStepFailed(step_name, f"chunk {number} failed after {max_attempts} attempts")
+            raise PostprocessStepFailed(step_name, f"chunk {number} failed after {settings.attempts} attempts")
 
         polished = _clean_reply(reply, core)
         reason = None
@@ -260,7 +273,7 @@ def llm_transform_chunked(
         lead = chunk[: len(chunk) - len(chunk.lstrip())]
         trail = chunk[len(chunk.rstrip()):]
         out.append(f"{lead}{polished}{trail}")
-    return "".join(out), warnings
+    return "".join(out), tuple(warnings)
 
 
 def llm_extract(
@@ -269,8 +282,7 @@ def llm_extract(
     prompt: str,
     endpoint: Endpoint,
     policy: ExecutionPolicy,
-    temperature: float | None = None,
-    timeout: float | None = None,
+    settings: LlmCallSettings = LlmCallSettings(),
 ) -> dict:
     """Extract structured data from text. Returns a parsed JSON object.
 
@@ -279,17 +291,10 @@ def llm_extract(
     """
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
     raw = _completion(
-        model=endpoint.model,
-        api_base=endpoint.url,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": text},
-        ],
-        temperature=temperature,
-        max_tokens=None,
+        endpoint=endpoint,
+        messages=_messages(prompt, text),
+        settings=settings,
         response_format={"type": "json_object"},
-        timeout=timeout,
-        api_key=_api_key_for(endpoint),
     )
     try:
         parsed = _json.loads(raw)

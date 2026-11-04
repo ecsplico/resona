@@ -49,6 +49,7 @@ from resona_eval import (
     evaluation_record,
     find_baseline,
     load_corpus,
+    measurement_only,
     promoted_entry,
     upsert_baseline,
 )
@@ -135,7 +136,7 @@ def _write_json(path: Path, data: Any) -> None:
 def _summary(report: dict[str, Any]) -> None:
     typer.echo(f"eval: {report['execution_profile']} on {report['platform']} "
                f"corpus {report['corpus_sha256'][:12]} ({report['mode']})", err=True)
-    if report["postprocess_profile"] is not None:
+    if measurement_only(report["postprocess_profile"]):
         typer.echo(f"postprocess profile {report['postprocess_profile']} on document fixtures: measurement only, "
                    "not compared with or promotable as a baseline", err=True)
     for fid, entry in report["fixtures"].items():
@@ -196,7 +197,7 @@ def evaluate(
         detected = detect_platform(runs)
         if platform is not None and platform != detected:
             fail(f"fixtures ran on {detected}, not {platform}")
-        if postprocess_profile is not None:
+        if measurement_only(postprocess_profile):
             baseline, source = None, None  # baselines measure the plain engines
         elif client is not None:
             hub_baseline = client.get_baseline(execution_profile=profile, platform=detected)
@@ -210,7 +211,7 @@ def evaluate(
             baseline=baseline, baseline_source=source if baseline is not None else None,
             postprocess_profile=postprocess_profile,
         )
-        if client is not None and postprocess_profile is None:
+        if client is not None and not measurement_only(postprocess_profile):
             report["hub_baseline_revision"] = hub_baseline_revision
             record = client.create_evaluation(evaluation_record(report, gate))
             report["evaluation_id"] = record["evaluation_id"]
@@ -252,7 +253,7 @@ def promote(
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         fail(f"cannot read report {report_path}: {e}")
-    if report.get("postprocess_profile") is not None:
+    if measurement_only(report.get("postprocess_profile")):
         fail(f"{report_path} measured postprocess profile {report['postprocess_profile']!r}; "
              "postprocess runs cannot become a baseline")
     if report.get("mode") != "remote" or report.get("evaluation_id") != evaluation_id:

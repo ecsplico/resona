@@ -116,7 +116,7 @@ Each job runs in its own subprocess. The model is loaded for that job and is rel
 
 ## LLM polish on the worker host
 
-Document jobs can get an OCR-correction pass from a local model on the worker host. The bundled `document-polish-de` profile (in the `resona-postprocess` wheel, `resona_postprocess/profiles/document-polish-de.json`) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint `gpu-llama`. Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning `polish_chunk_rejected:<n>:<length|markup>`. A chunk that fails 3 calls fails the job (`postprocess_failed`, retryable); the polish is never skipped silently. The raw converter output stays in the result's `raw_text`; `markdown` is the polished text. See [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown).
+Document jobs can get an OCR-correction pass from a local model on the worker host. The bundled `document-polish-de` profile (in the `resona-postprocess` wheel, `resona_postprocess/profiles/document-polish-de.json`) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint `local-llm`. The profile names no host: an org admin registers a `local_llm` endpoint with the id `local-llm`, a loopback `url` and the approved worker's `worker_id` (see [Enable it](#enable-it)). Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning `polish_chunk_rejected:<n>:<length|markup>`. A chunk that fails 3 calls fails the job (`postprocess_failed`, retryable); the polish is never skipped silently. `markdown` is the polished text. The converter's Markdown before polish, tables included, stays in the result's `raw_markdown` (set whenever a postprocess step changed the Markdown); `raw_text` is the converter's plain text, which has no tables. See [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown).
 
 ### Privacy
 
@@ -137,19 +137,19 @@ docker compose -f docker-compose.worker.yml -f docker-compose.worker.llm.yml log
 
 ### GPU sharing with llama-swap
 
-llama-swap keeps a loaded model resident until its `ttl` expires (1800 s for `qwen3.6-27b` on gpu-box), using most of the 16 GB of VRAM. A whisper `large-v3` job (about 9 GB) started in that window would run out of memory. An endpoint can therefore name an `unload_url`: after the job's last LLM stage on that endpoint, and also when the job fails after calling it, the worker sends `POST <unload_url>` (no body, 10-second timeout). The request is best effort: a failure is logged with the endpoint id and the exception type only and never fails the job. `unload_url` must be a loopback `http(s)` URL and is allowed only on `local_llm` endpoints; anything else is rejected when the settings are validated.
+llama-swap keeps a loaded model resident until its `ttl` expires (1800 s for `qwen3.6-27b` on gpu-box), using most of the 16 GB of VRAM. A whisper `large-v3` job (about 9 GB) started in that window would run out of memory. An endpoint can therefore name an `unload_url`: after the job's last LLM stage on that endpoint, and also when the job fails after calling it, the worker sends `POST <unload_url>` (no body, 10-second timeout). The request is best effort and never fails the job. A 2xx answer is logged at info level; any other status (for example `404`/`405` from a server without that route) is logged as a warning with the endpoint id and the status code, and a transport error as a warning with the endpoint id and the exception type. A warning means the model may still hold the GPU. `unload_url` must be a loopback `http(s)` URL and is allowed only on `local_llm` endpoints; anything else is rejected when the settings are validated.
 
-llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`, not verified against the version installed on gpu-box): `POST /api/models/unload/<model_id>` unloads one model, `POST /api/models/unload` unloads all models. Older releases offer `GET /unload` instead, which the worker's `POST` does not reach. Check with `curl -X POST http://127.0.0.1:9292/api/models/unload/qwen3.6-27b` on the host.
+llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`): `POST /api/models/unload/<model_id>` unloads one model, `POST /api/models/unload` unloads all models. Older releases offer `GET /unload` instead, which the worker's `POST` does not reach (the worker logs the resulting `404`/`405` as a warning). The llama-swap installed on gpu-box answered `200` to `POST /api/models/unload/<model_id>`, `POST /api/models/unload` and `GET /unload`. Check with `curl -X POST http://127.0.0.1:9292/api/models/unload/qwen3.6-27b` on the host.
 
 ### Enable it
 
 1. Deploy a release that contains this feature to the hub **and** to every worker first. An older hub rejects `unload_url` in the settings (`422`); an older worker fails postprocess jobs whose snapshot contains it (`invalid_snapshot`).
 2. Start the worker with the override (above).
-3. As org admin, add the endpoint to the organization settings. `worker_id` is the id that `resona-admin worker enroll` printed for the Linux worker:
+3. As org admin, add the endpoint to the organization settings. The bundled profile calls the endpoint id `local-llm`, so register it under that id (or change the profile's `endpoint` before uploading it). `url` and `unload_url` point to the model server on the worker host's loopback; `worker_id` is the id that `resona-admin worker enroll` printed for the Linux worker:
 
     ```json
     {
-      "id": "gpu-llama",
+      "id": "local-llm",
       "kind": "local_llm",
       "model": "openai/qwen3.6-27b",
       "url": "http://127.0.0.1:9292/v1",
@@ -161,8 +161,8 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`, 
     The `openai/` prefix makes litellm speak the OpenAI chat API to `url`; llama-swap receives the model name `qwen3.6-27b`.
 
     ```bash
-    resona settings get | jq '.settings | .endpoints = ([.endpoints[] | select(.id != "gpu-llama")] + [input])' \
-      - gpu-llama.json > settings.json
+    resona settings get | jq '.settings | .endpoints = ([.endpoints[] | select(.id != "local-llm")] + [input])' \
+      - local-llm.json > settings.json
     resona settings set --file settings.json
     ```
 
@@ -189,7 +189,7 @@ Measured on 2026-11-02 (evaluation corpus, gpu-box, `linux-cuda`, `qwen3.6-27b` 
 |---|---|---|
 | degraded scan | 0.002 | 0.000 |
 | small print scan | 0.196 | 0.191 |
-| text layer replaced by OCR (`bad-text-layer-*`) | 0.004 | 0.000 |
+| invisible text layer re-OCRed in `auto` (`bad-text-layer`) | 0.004 | 0.000 |
 | dense table scan | 3 cells missing\* | 0 cells missing |
 | all other fixtures | 0.000 | 0.000 |
 
@@ -198,7 +198,7 @@ Measured on 2026-11-02 (evaluation corpus, gpu-box, `linux-cuda`, `qwen3.6-27b` 
 - Polish fixes single misread characters. It cannot restore text that OCR dropped, as on the small print scan; `--ocr force` fixes that case (see [CLI `doc`](../guide/cli.md#doc)).
 - It adds 36–77 s per one-page document, including reloading the model, because the worker unloads it after each job.
 - No chunk was rejected by the length or markup guards.
-- The polished `markdown` is still a model rewrite: keep `raw_text` as the reference.
+- The polished `markdown` is still a model rewrite: keep `raw_markdown` (the converter's Markdown before polish) as the reference.
 
 ## When CUDA is not available
 

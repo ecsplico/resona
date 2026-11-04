@@ -219,6 +219,7 @@ def run_local(plan: LocalPlan, path: Path) -> JobResult:
     skipped = run.data.get("_skipped", [])
     return result.model_copy(update={
         "markdown": run.text,
+        "raw_markdown": result.markdown if run.text != result.markdown else None,
         "warnings": [*result.warnings, *run.warnings, *(f"postprocess_step_skipped:{n}" for n in skipped)],
         "structured": {**result.structured, **{k: v for k, v in run.data.items() if k != "_skipped"}},
     })

@@ -3,20 +3,22 @@
 The corpus hash is the SHA-256 of MANIFEST.json; the manifest pins every file's
 SHA-256, so the hash covers the references and the fixture bytes together.
 
-A document fixture may carry job ``options`` (e.g. ``{"ocr": "force"}``); they are
-merged over the default document options of every evaluation job of that fixture
-and validated as :class:`DocumentOptions` when the corpus is loaded.
+A document fixture may carry job ``options`` (e.g. ``{"ocr": "force"}``), typed as
+:class:`DocumentOptions` so a bad manifest fails at load; they are merged over the
+default document options (the fixture language) of every evaluation job of that fixture.
+Audio fixtures carry no options.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, ValidationError
-from resona_job_core.options import DocumentOptions
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from resona_job_core.options import DocumentOptions, Language
 
 Check = Literal["wer", "cer", "silence", "table_cells", "reading_order"]
 
@@ -39,11 +41,26 @@ class Fixture(BaseModel):
     checks: list[Check]
     table_cells: list[str] = []
     reading_order: list[str] = []
-    options: dict[str, Any] = {}
+    options: DocumentOptions | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _audio_has_no_options(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("kind") == "audio" and "options" in data:
+            raise ValueError("options are only supported for document fixtures")
+        return data
+
+    @model_validator(mode="after")
+    def _document_language_is_supported(self) -> Fixture:
+        if (self.kind == "document" and (self.options is None or self.options.languages is None)
+                and self.language not in get_args(Language)):
+            raise ValueError(f"language {self.language!r} is not a document language")
+        return self
 
     def document_options(self) -> DocumentOptions:
         """Default document job options (the fixture language) with the fixture's options merged over them."""
-        return DocumentOptions.model_validate({"languages": [self.language], **self.options})
+        explicit = self.options.model_dump(exclude_unset=True) if self.options is not None else {}
+        return DocumentOptions.model_validate({"languages": [self.language], **explicit})
 
 
 class Manifest(BaseModel):
@@ -74,7 +91,7 @@ def load_corpus(root: Path) -> Corpus:
     try:
         manifest = Manifest.model_validate_json(raw)
     except ValidationError as exc:
-        raise CorpusError(f"invalid {manifest_path}: {exc.error_count()} error(s)") from None
+        raise CorpusError(f"invalid {manifest_path}: {_describe(exc, raw)}") from None
     seen: set[str] = set()
     for fixture in manifest.fixtures:
         if fixture.id in seen:
@@ -85,19 +102,26 @@ def load_corpus(root: Path) -> Corpus:
         path = root / fixture.file
         if path.is_symlink() or not path.is_file():
             raise CorpusError(f"fixture {fixture.id!r}: {fixture.file} is missing")
-        _check_options(fixture)
         if hashlib.sha256(path.read_bytes()).hexdigest() != fixture.sha256:
             raise CorpusError(f"fixture {fixture.id!r}: {fixture.file} does not match its manifest SHA-256")
     return Corpus(root=root, sha256=hashlib.sha256(raw).hexdigest(), fixtures=tuple(manifest.fixtures))
 
 
-def _check_options(fixture: Fixture) -> None:
-    if fixture.kind != "document":
-        if fixture.options:
-            raise CorpusError(f"fixture {fixture.id!r}: options are only supported for document fixtures")
-        return
+def _describe(exc: ValidationError, raw: bytes) -> str:
+    """Validation errors named by fixture id and field."""
     try:
-        fixture.document_options()
-    except ValidationError as exc:
-        fields = sorted({".".join(str(p) for p in err["loc"]) or "options" for err in exc.errors()})
-        raise CorpusError(f"fixture {fixture.id!r}: invalid document options ({', '.join(fields)})") from None
+        ids = [f.get("id") if isinstance(f, dict) else None for f in json.loads(raw)["fixtures"]]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        ids = []
+    problems = []
+    for err in exc.errors():
+        loc = err["loc"]
+        if len(loc) < 2 or loc[0] != "fixtures" or not isinstance(loc[1], int) or loc[1] >= len(ids):
+            problems.append(f"{'.'.join(map(str, loc)) or 'manifest'}: {err['msg']}")
+            continue
+        field = ".".join(map(str, loc[2:]))
+        if loc[2:3] == ("options",):
+            problems.append(f"fixture {ids[loc[1]]!r}: invalid document options ({field})")
+        else:
+            problems.append(f"fixture {ids[loc[1]]!r}: {field + ': ' if field else ''}{err['msg']}")
+    return "; ".join(dict.fromkeys(problems))

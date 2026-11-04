@@ -1,12 +1,14 @@
-"""Document polish on the worker: chunk warnings reach the result, hard failure, model unload."""
+"""Document polish on the worker: chunk warnings reach the result, raw Markdown kept, hard failure, model unload."""
 
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
+import pytest
 from resona_job_core import Candidate, JobResult
 from resona_postprocess import llm as llm_mod
 
@@ -16,7 +18,7 @@ UNLOAD_URL = "http://127.0.0.1:9292/api/models/unload/qwen3.6-27b"
 
 def _policy(unload_url: str | None = UNLOAD_URL) -> dict[str, Any]:
     endpoint = {
-        "id": "gpu-llama",
+        "id": "local-llm",
         "kind": "local_llm",
         "model": "openai/qwen3.6-27b",
         "url": "http://127.0.0.1:9292/v1",
@@ -24,19 +26,20 @@ def _policy(unload_url: str | None = UNLOAD_URL) -> dict[str, Any]:
     }
     if unload_url is not None:
         endpoint["unload_url"] = unload_url
-    return {"private": True, "cloud_enabled": False, "approved_endpoint_ids": ["gpu-llama"], "endpoints": [endpoint]}
+    return {"private": True, "cloud_enabled": False, "approved_endpoint_ids": ["local-llm"], "endpoints": [endpoint]}
 
 
-POLISH = {"type": "llm", "name": "ocr-polish", "prompt": "POLISH", "endpoint": "gpu-llama",
+POLISH = {"type": "llm", "name": "ocr-polish", "prompt": "POLISH", "endpoint": "local-llm",
           "chunk_chars": 1000, "max_attempts": 2, "max_length_deviation": 0.3}
-SECOND = {"type": "llm", "name": "second", "prompt": "SECOND", "endpoint": "gpu-llama"}
+SECOND = {"type": "llm", "name": "second", "prompt": "SECOND", "endpoint": "local-llm"}
 
 
 class Recorder:
     """Shared event log for the fake LLM and the fake model server's unload route."""
 
-    def __init__(self, reply) -> None:
+    def __init__(self, reply, unload_status: int = 200) -> None:
         self.reply = reply
+        self.unload_status = unload_status
         self.events: list[str] = []
 
     def completion(self, **kwargs: Any) -> SimpleNamespace:
@@ -49,7 +52,7 @@ class Recorder:
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
             self.events.append(f"{request.method} {request.url}")
-            return httpx.Response(200, json={"msg": "ok"})
+            return httpx.Response(self.unload_status, json={"msg": "ok"})
 
         return httpx.MockTransport(handle)
 
@@ -72,6 +75,17 @@ def test_model_is_unloaded_once_after_the_last_stage_on_its_endpoint(fakes, buil
     assert hub.paths("/result")
 
 
+def test_polished_result_keeps_the_engine_markdown_separately(fakes, build_supervisor, monkeypatch) -> None:
+    recorder = Recorder(lambda chunk: chunk.replace("welt", "Welt"))
+
+    hub = _run(fakes, build_supervisor, monkeypatch, recorder, POLISH)
+
+    ((_, _, _, body),) = hub.paths("/result")
+    result = JobResult.model_validate_json(body)
+    assert result.markdown == "hallo Welt"
+    assert result.raw_markdown == "hallo welt"
+
+
 def test_rejected_chunk_is_a_result_warning_with_the_raw_text_kept(fakes, build_supervisor, monkeypatch) -> None:
     recorder = Recorder(lambda chunk: "x")
 
@@ -80,6 +94,7 @@ def test_rejected_chunk_is_a_result_warning_with_the_raw_text_kept(fakes, build_
     ((_, _, _, body),) = hub.paths("/result")
     result = JobResult.model_validate_json(body)
     assert result.markdown == "hallo welt"
+    assert result.raw_markdown is None
     assert result.warnings == ["polish_chunk_rejected:1:length"]
 
 
@@ -97,8 +112,11 @@ def test_failing_polish_fails_the_job_and_still_unloads(fakes, build_supervisor,
     assert recorder.events == ["llm:POLISH", "llm:POLISH", f"POST {UNLOAD_URL}"]
 
 
-def test_unreachable_unload_url_does_not_fail_the_job(fakes, build_supervisor, monkeypatch) -> None:
+def test_unreachable_unload_url_is_a_warning_and_does_not_fail_the_job(
+    fakes, build_supervisor, monkeypatch, caplog
+) -> None:
     recorder = Recorder(lambda chunk: chunk)
+    caplog.set_level(logging.INFO, logger="resona_worker.supervisor")
 
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
@@ -109,6 +127,37 @@ def test_unreachable_unload_url_does_not_fail_the_job(fakes, build_supervisor, m
 
     assert hub.paths("/result")
     assert hub.paths("/fail") == []
+    assert len(_unload_warnings(caplog)) == 1
+
+
+def _unload_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        record for record in caplog.records
+        if record.name == "resona_worker.supervisor" and record.levelno >= logging.WARNING
+        and "local-llm" in (record.args or ())
+    ]
+
+
+@pytest.mark.parametrize("status", [404, 405, 500])
+def test_rejected_unload_is_a_warning_with_its_status(fakes, build_supervisor, monkeypatch, caplog, status) -> None:
+    recorder = Recorder(lambda chunk: chunk, unload_status=status)
+    caplog.set_level(logging.INFO, logger="resona_worker.supervisor")
+
+    hub = _run(fakes, build_supervisor, monkeypatch, recorder, POLISH)
+
+    assert hub.paths("/result")
+    (warning,) = _unload_warnings(caplog)
+    assert status in warning.args
+
+
+def test_accepted_unload_is_not_a_warning(fakes, build_supervisor, monkeypatch, caplog) -> None:
+    recorder = Recorder(lambda chunk: chunk)
+    caplog.set_level(logging.INFO, logger="resona_worker.supervisor")
+
+    _run(fakes, build_supervisor, monkeypatch, recorder, POLISH)
+
+    assert recorder.events[-1] == f"POST {UNLOAD_URL}"
+    assert _unload_warnings(caplog) == []
 
 
 def test_endpoint_without_unload_url_is_not_unloaded(fakes, build_supervisor, monkeypatch) -> None:

@@ -39,6 +39,14 @@ class FixtureRun:
     job_id: int | None = None
 
 
+def measurement_only(postprocess_profile: str | None) -> bool:
+    """Whether a run is measurement-only: never compared with, recorded as or promoted to a baseline.
+
+    That holds for every run with a postprocess profile, because baselines measure the plain engines.
+    """
+    return postprocess_profile is not None
+
+
 def primary_accelerator(result: JobResult) -> str:
     """Accelerator of the stage that defines the platform (ASR, or Docling layout)."""
     for name in _PRIMARY_STAGES[result.kind]:
@@ -88,12 +96,12 @@ def build_report(
     """
     if {run.fixture.id for run in runs} != {f.id for f in corpus.fixtures}:
         raise EvaluationError("every corpus fixture must be evaluated exactly once")
-    if postprocess_profile is not None and baseline is not None:
+    if measurement_only(postprocess_profile) and baseline is not None:
         raise EvaluationError("a postprocess run is not comparable with a plain baseline")
     metrics = score_runs(runs)
     gate = evaluate_gate(metrics, baseline["fixtures"] if baseline is not None else None)
     outcome = gate.outcome
-    if postprocess_profile is not None:
+    if measurement_only(postprocess_profile):
         gate = Gate(failures=gate.failures, baseline_required=False)
         outcome = gate.outcome if gate.failures else MEASUREMENT_ONLY
     runtimes = sorted({v for run in runs if (v := run.result.provenance.runtime_version)})
@@ -142,7 +150,7 @@ def build_report(
 
 def evaluation_record(report: Mapping[str, Any], gate: Gate) -> dict[str, Any]:
     """Body of ``POST /v1/evaluations``: identifiers, hashes and numbers only."""
-    if report.get("postprocess_profile") is not None:
+    if measurement_only(report.get("postprocess_profile")):
         raise EvaluationError("a postprocess run is measurement-only and is not recorded as an evaluation")
     baseline = report["baseline"]
     return {

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from functools import partial
 from importlib import resources
 from pathlib import Path
 from typing import Callable
@@ -12,6 +13,7 @@ from typing import Callable
 from resona_job_core.policy import Endpoint, ExecutionPolicy, PolicyDenied, Stage, check_policy
 
 from .llm import (
+    LlmCallSettings,
     PostprocessStepFailed,
     legacy_endpoint_id,
     legacy_step_endpoint,
@@ -126,17 +128,17 @@ def _resolve_endpoint(step: dict, policy: ExecutionPolicy) -> Endpoint:
     return registered
 
 
-def endpoint_ids(profile: Profile) -> list[str]:
-    """IDs of the endpoints this profile's llm/extract steps call, in step order, without duplicates.
+def step_endpoint_id(step: dict) -> str:
+    """ID of the endpoint an llm/extract step calls: its ``endpoint``, else the legacy-derived ID.
 
-    A step names its registry entry with ``endpoint``; a legacy step resolves to the
-    ID derived from its ``model``/``api_base``.
+    Raises :class:`PolicyDenied` for a legacy step without a resolvable model.
     """
-    ids = (
-        step.get("endpoint") or legacy_endpoint_id(step)
-        for step in profile.steps
-        if step.get("type") in _LLM_STEP_TYPES
-    )
+    return step.get("endpoint") or legacy_endpoint_id(step)
+
+
+def endpoint_ids(profile: Profile) -> list[str]:
+    """IDs of the endpoints this profile's llm/extract steps call, in step order, without duplicates."""
+    ids = (step_endpoint_id(step) for step in profile.steps if step.get("type") in _LLM_STEP_TYPES)
     return list(dict.fromkeys(ids))
 
 
@@ -180,36 +182,25 @@ def build_pipeline(profile: Profile, *, policy: ExecutionPolicy) -> PostprocessP
         if stype == "replacements":
             rules = _load_rules(step, profile.base_dir)
             pipe.add_text(name, lambda t, r=rules: apply_replacements(t, r))
-        elif stype == "llm" and "chunk_chars" in step:
-            pipe.add_text(name, lambda t, s=step, n=name, e=endpoints[idx]: _chunked(t, s, n, e, policy))
-        elif stype == "llm":
-            pipe.add_text(name, lambda t, s=step, e=endpoints[idx]: llm_transform(
-                t, prompt=s["prompt"], endpoint=e, policy=policy,
-                temperature=s.get("temperature"), max_tokens=s.get("max_tokens"),
-                timeout=s.get("timeout"),
-            ))
-        elif stype == "extract":
-            pipe.add_extract(name, lambda t, s=step, e=endpoints[idx]: llm_extract(
-                t, prompt=s["prompt"], endpoint=e, policy=policy,
-                temperature=s.get("temperature"), timeout=s.get("timeout"),
-            ))
+            continue
+        call = {
+            "prompt": step["prompt"],
+            "endpoint": endpoints[idx],
+            "policy": policy,
+            "settings": LlmCallSettings.from_step(step),
+        }
+        if stype == "extract":
+            pipe.add_extract(name, partial(llm_extract, **call))
+        elif "chunk_chars" in step:
+            chunked = partial(
+                llm_transform_chunked,
+                **call,
+                chunk_chars=step["chunk_chars"],
+                step_name=name,
+                max_length_deviation=step.get("max_length_deviation"),
+                preserve_markup=step.get("preserve_markup", False),
+            )
+            pipe.add_text(name, lambda t, f=chunked: StepOutput(*f(t)))
+        else:
+            pipe.add_text(name, partial(llm_transform, **call))
     return pipe
-
-
-def _chunked(text: str, step: dict, name: str, endpoint: Endpoint, policy: ExecutionPolicy) -> StepOutput:
-    """Run a chunked llm step (``chunk_chars`` set): hard failure, guarded chunk output."""
-    polished, warnings = llm_transform_chunked(
-        text,
-        prompt=step["prompt"],
-        endpoint=endpoint,
-        policy=policy,
-        chunk_chars=step["chunk_chars"],
-        step_name=name,
-        max_attempts=step.get("max_attempts", 3),
-        max_length_deviation=step.get("max_length_deviation"),
-        preserve_markup=step.get("preserve_markup", False),
-        temperature=step.get("temperature"),
-        max_tokens=step.get("max_tokens"),
-        timeout=step.get("timeout"),
-    )
-    return StepOutput(text=polished, warnings=tuple(warnings))

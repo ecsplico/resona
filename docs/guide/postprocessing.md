@@ -92,7 +92,9 @@ Uses [litellm](https://github.com/BerriAI/litellm) — any OpenAI-compatible end
 
 LLM steps add latency. Use them only when rule-based replacements are insufficient.
 
-For long documents, set `chunk_chars`. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a `polish_chunk_rejected:<n>:<reason>` warning. Details: [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown). The bundled `document-polish-de` profile uses this mode for OCR correction of German documents; [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host) shows how to enable it with a local model.
+For long documents, set `chunk_chars`. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a `polish_chunk_rejected:<n>:<reason>` warning. Details: [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown). The bundled `document-polish-de` profile uses this mode for OCR correction of German documents. It calls the endpoint id `local-llm`, which names no host: an org admin registers a `local_llm` endpoint with that id and a loopback `url` on the approved worker; [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host) shows how.
+
+When a step changes the Markdown, the job result keeps the engine's Markdown before postprocessing in `raw_markdown`; `markdown` is the postprocessed text.
 
 ### extract
 
@@ -107,6 +109,8 @@ alongside the transcript. The text is not modified.
   "model": "gpt-4o-mini"
 }
 ```
+
+`temperature`, `max_tokens` and `timeout` apply as for `llm`.
 
 Extracted data is stored in `job.structured` (server) or `PostprocessResult.data` (local).
 

@@ -2,7 +2,7 @@
 
 import pytest
 from pydantic import ValidationError
-from resona_job_core import AudioOptions, DocumentOptions, StageProvenance
+from resona_job_core import AudioOptions, DocumentOptions, StageProvenance, document_options_conflict
 
 
 def test_document_options_leave_unset_fields_to_the_execution_profile() -> None:
@@ -22,6 +22,8 @@ def test_document_options_leave_unset_fields_to_the_execution_profile() -> None:
         {"image_scale": 4.5},
         {"ocr_min_confidence": 1.5},
         {"ocr": "sometimes"},
+        {"ocr": "off", "image_scale": 2.0},
+        {"ocr": "off", "ocr_min_confidence": 0.6},
         {"ocr_engine": "mistral"},
         {"pipeline": "vlm"},
         {"model_path": "/etc/passwd"},
@@ -32,13 +34,33 @@ def test_document_options_reject_values_outside_the_contract(fields: dict) -> No
         DocumentOptions(**fields)
 
 
-def test_document_options_accept_scale_confidence_and_languages_at_their_bounds() -> None:
-    options = DocumentOptions(languages=["fr", "it", "es", "ko"], image_scale=4.0, ocr_min_confidence=0.0)
+def test_document_options_with_ocr_off_accept_the_neutral_image_scale() -> None:
+    assert DocumentOptions(ocr="off", image_scale=1.0).ocr == "off"
 
-    assert options.model_dump(exclude_none=True) == {
-        "languages": ["fr", "it", "es", "ko"], "image_scale": 4.0, "ocr_min_confidence": 0.0,
-    }
-    assert DocumentOptions(image_scale=1.0, ocr_min_confidence=1.0).image_scale == 1.0
+
+@pytest.mark.parametrize(
+    "fields, ocr_engine",
+    [
+        ({"ocr_min_confidence": 0.6}, "ocrmac"),
+        ({"ocr_min_confidence": 0.6}, "tesseract"),
+        ({"languages": ["de", "ko"]}, "rapidocr"),
+    ],
+)
+def test_document_options_conflict_with_an_ocr_engine_that_cannot_run_them(fields: dict, ocr_engine: str) -> None:
+    assert document_options_conflict(DocumentOptions(**fields), ocr_engine) is not None
+
+
+@pytest.mark.parametrize(
+    "fields, ocr_engine",
+    [
+        ({"ocr_min_confidence": 0.6, "languages": ["de", "en"]}, "rapidocr"),
+        ({"languages": ["ko"]}, "ocrmac"),
+        ({"languages": ["ko"]}, "tesseract"),
+        ({"ocr": "off", "languages": ["ko"]}, "rapidocr"),
+    ],
+)
+def test_document_options_compatible_with_an_ocr_engine_have_no_conflict(fields: dict, ocr_engine: str) -> None:
+    assert document_options_conflict(DocumentOptions(**fields), ocr_engine) is None
 
 
 def test_audio_options_forbid_engine_keyword_forwarding() -> None:

@@ -24,6 +24,7 @@ from resona_client.client import (
     ResultExpired,
     SettingsDoc,
     SyncWaitTimeout,
+    UploadLink,
 )
 from resona_job_core import JobResult
 
@@ -252,6 +253,33 @@ def test_submit_job_uses_given_idempotency_key(audio_file, client):
             return_value=httpx.Response(202, json={"job_id": 1, "status": "pending"}))
         client.submit_job(audio_file, kind="audio", idempotency_key="fixed-key")
     assert job.calls[0].request.headers["Idempotency-Key"] == "fixed-key"
+
+
+def test_create_upload_link_posts_with_bearer_and_returns_typed_link():
+    body = {
+        "upload_url": "https://hub.example/v1/upload-links/upload",
+        "token_header": "X-Resona-Upload-Token",
+        "token": "upt_abc",
+        "expires_at": "2026-11-04T10:10:00Z",
+        "max_bytes": 209715200,
+    }
+    c = ResonaClient(base_url=BASE, api_key="secret-key")
+    with respx.mock:
+        route = respx.post(f"{BASE}/v1/upload-links").mock(return_value=httpx.Response(201, json=body))
+        link = c.create_upload_link()
+    c.close()
+    assert route.calls[0].request.headers["Authorization"] == "Bearer secret-key"
+    assert link == UploadLink(**body)
+
+
+@pytest.mark.parametrize("status,code", [(401, "unauthorized"), (403, "forbidden")])
+def test_create_upload_link_maps_auth_errors(client, status, code):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/upload-links").mock(return_value=httpx.Response(
+            status, json={"detail": {"error": code, "message": "no"}}))
+        with pytest.raises(ResonaAPIError) as exc:
+            client.create_upload_link()
+    assert (exc.value.status, exc.value.code) == (status, code)
 
 
 def test_get_job_returns_typed_view(client):

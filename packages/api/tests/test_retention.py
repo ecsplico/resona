@@ -11,16 +11,18 @@ import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlmodel import Session
 
 from resona_job_core import Candidate
-from resona_api import broker, clock, maintenance, storage
+from resona_api import broker, clock, jobs_routes, maintenance, storage
 from resona_api.admin import approve_worker, enroll_worker
+from resona_api.auth import hash_token
 from resona_api.releases import hub_release_id
 from release_approval import approve_release
 from resona_api.db.engine import engine
-from resona_api.db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload
+from resona_api.db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload, UploadLink
 
 CAND = Candidate(
     engine="faster-whisper",
@@ -36,6 +38,7 @@ def clean_retention_tables():
     """Counts are global per pass, so start every test without leftover rows."""
     with Session(engine) as session:
         session.execute(text("DELETE FROM upload"))
+        session.execute(text("DELETE FROM uploadlink"))
         session.execute(text("DELETE FROM idempotencyrecord"))
         session.commit()
 
@@ -119,6 +122,28 @@ def test_unattached_upload_expires_after_one_hour(fresh_org, at):
     with Session(engine) as session:
         assert session.get(Upload, "upl_unattached") is None
         assert session.get(Upload, "upl_consumed") is not None
+
+
+def test_expired_upload_link_is_deleted_and_fresh_link_kept(fresh_org, at, test_app, client_headers, wav_bytes):
+    with TestClient(test_app) as http:
+        headers = client_headers(fresh_org)
+        old = http.post("/v1/upload-links", headers=headers).json()
+        at(T0 + timedelta(minutes=5))
+        fresh = http.post("/v1/upload-links", headers=headers).json()
+
+        at(T0 + jobs_routes.UPLOAD_LINK_TTL)
+        assert maintenance.run_once()["upload_links_expired"] == 1
+        with Session(engine) as session:
+            assert session.get(UploadLink, hash_token(old["token"])) is None
+            assert session.get(UploadLink, hash_token(fresh["token"])) is not None
+
+        def send(link):
+            return http.post("/v1/upload-links/upload", headers={link["token_header"]: link["token"]},
+                             files={"file": ("a.wav", wav_bytes, "audio/wav")})
+
+        assert send(fresh).status_code == 201
+        at(T0)  # within the old link's lifetime: refused because its row is gone, not because of the clock
+        assert send(old).status_code == 401
 
 
 def test_result_file_expires_after_24_hours_and_row_stays(fresh_org, at):

@@ -29,8 +29,8 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 from resona_job_core import Candidate, Endpoint, ExecutionPolicy, JobResult, PolicyDenied, StageProvenance
-from resona_postprocess.llm import PostprocessStepFailed, legacy_endpoint_id
-from resona_postprocess.pipeline import PostprocessResult, build_pipeline
+from resona_postprocess.llm import PostprocessStepFailed
+from resona_postprocess.pipeline import PostprocessResult, build_pipeline, step_endpoint_id
 from resona_postprocess.profile import Profile, ProfileError
 
 from .config import WorkerConfig, runtime_version
@@ -492,7 +492,7 @@ class Supervisor:
         for idx, step in enumerate(steps):
             if isinstance(step, dict) and step.get("type") in _STAGE_LLM_TYPES:
                 try:
-                    last_use[step.get("endpoint") or legacy_endpoint_id(step)] = idx
+                    last_use[step_endpoint_id(step)] = idx
                 except PolicyDenied:
                     raise JobFailure("policy_denied", retryable=False) from None
         # Endpoints called and not yet unloaded; a failing job unloads them on the way out.
@@ -512,7 +512,7 @@ class Supervisor:
 
                 endpoint_id: str | None = None
                 if step.get("type") in _STAGE_LLM_TYPES:
-                    endpoint_id = step.get("endpoint") or legacy_endpoint_id(step)
+                    endpoint_id = step_endpoint_id(step)
                     self._guard_stage(job, keeper, stage_name, endpoint_id)
                     loaded.add(endpoint_id)
 
@@ -553,6 +553,7 @@ class Supervisor:
         return result.model_copy(
             update={
                 "markdown": text,
+                "raw_markdown": result.markdown if text != result.markdown else None,
                 "warnings": warnings,
                 "structured": structured,
                 "provenance": result.provenance.model_copy(update={"stages": stages}),
@@ -573,7 +574,9 @@ class Supervisor:
         """Best effort: ask the endpoint's model server to free the GPU (``unload_url``).
 
         ``Endpoint`` admits only loopback ``unload_url`` values. The request carries no
-        content; failures are logged by endpoint id and never fail the job.
+        content; the outcome is logged by endpoint id and status code and never fails
+        the job. A non-2xx answer (e.g. 404/405 from a server without that route) is a
+        warning: the model may still hold the GPU.
         """
         if endpoint is None or endpoint.unload_url is None:
             return
@@ -582,16 +585,22 @@ class Supervisor:
                 transport=self._endpoint_transport, timeout=_UNLOAD_TIMEOUT_SECONDS, trust_env=False
             ) as client:
                 response = client.post(endpoint.unload_url)
-            log.info("endpoint %s: unload requested (HTTP %d)", endpoint.id, response.status_code)
         except httpx.HTTPError as exc:
             log.warning("endpoint %s: unload request failed (%s)", endpoint.id, type(exc).__name__)
+            return
+        if response.is_success:
+            log.info("endpoint %s: unload accepted (HTTP %d)", endpoint.id, response.status_code)
+        else:
+            log.warning("endpoint %s: unload failed (HTTP %d)", endpoint.id, response.status_code)
 
     # -- reporting ----------------------------------------------------------
 
     def _upload(self, job: ClaimedJob, keeper: LeaseKeeper, result: JobResult, job_dir: Path) -> None:
         keeper.check()
         body_path = job_dir / "result.json"
-        body_path.write_text(result.model_dump_json(), encoding="utf-8")
+        # An unset raw_markdown is left out so hubs that predate the field accept unpolished results.
+        unset = {"raw_markdown"} if result.raw_markdown is None else None
+        body_path.write_text(result.model_dump_json(exclude=unset), encoding="utf-8")
         sha, size = sha256_file(body_path)
         if size > MAX_RESULT_BYTES:
             raise JobFailure("result_too_large", retryable=False)

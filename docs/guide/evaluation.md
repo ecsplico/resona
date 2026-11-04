@@ -18,14 +18,16 @@
 | `small-print-scan-pdf` | 7 pt text rasterized at 150 dpi (tests the OCR image scale) | CER |
 | `dense-table-scan-pdf` | 6×6 ruled table with numbers, units and umlauts, raster only | CER, all 36 table cells |
 | `three-column-pdf` | digital page: title over three columns with headings | CER, reading order |
-| `bad-text-layer-auto` | raster page under an invisible, deliberately garbled text layer (like a bad old OCR layer); default options | CER |
-| `bad-text-layer-force` | the same file with the job option `ocr=force` | CER |
+| `bad-text-layer` | raster page under an invisible, deliberately garbled text layer (like a bad old OCR layer); default options | CER |
+| `fr-scan-pdf` | French paragraphs with é è à ç, raster only; job option `languages: ["fr"]` | CER |
+| `it-scan-pdf` | Italian paragraphs with à ì ò ù, raster only; job option `languages: ["it"]` | CER |
+| `es-scan-pdf` | Spanish paragraphs with ñ á é í ó ú ¿ ¡, raster only; job option `languages: ["es"]` | CER |
 
-The hard fixtures (from `degraded-scan-pdf` on) are rendered with Bitstream Vera Sans, which ships with reportlab (Bitstream Vera Fonts license), so they do not depend on system fonts. `bad-text-layer-auto` is expected to score poorly: in the default `auto` mode the converter keeps an existing text layer, so the fixture measures what a bad layer does. `bad-text-layer-force` measures the same page with full-page OCR.
+The hard fixtures (from `degraded-scan-pdf` on) are rendered with Bitstream Vera Sans, which ships with reportlab (Bitstream Vera Fonts license), so they do not depend on system fonts. `bad-text-layer` measures what a bad invisible layer does in the default `auto` mode. Docling does not count an invisible text layer as page text, so `auto` OCRs the page, and the OCR text replaces the garbled layer wherever OCR finds text; only `ocr=off` returns the layer. A visible, digital text layer is kept in `auto`. There is no Korean fixture: the bundled RapidOCR recognizer has no Korean weights.
 
 ### Per-fixture job options
 
-A document fixture may set `options` in the manifest, for example `{"ocr": "force"}`. They are merged over the default options of every evaluation job of that fixture (the fixture language as `languages`), locally and with `--remote`. The loader validates the merged options as `DocumentOptions` and refuses the corpus (`invalid document options`) when they are not valid. Audio fixtures cannot set options.
+A document fixture may set `options` in the manifest, for example `{"languages": ["fr"]}` or `{"ocr": "force"}`. They are typed as `DocumentOptions`, so the loader refuses a corpus with invalid options (`invalid document options`). They are merged over the default options of every evaluation job of that fixture (the fixture language as `languages`), locally and with `--remote`. A document fixture without `languages` in its options needs a fixture language that is a document language. Audio fixtures cannot set options.
 
 ### Corpus hash
 
@@ -40,7 +42,7 @@ uv run --no-project --with reportlab==5.1.0 --with pillow==12.2.0 --with numpy==
 
 `--only hard` regenerates the hard document fixtures and is byte-reproducible with the pinned versions above. `--only base` (or the default `all`) also regenerates the original fixtures and needs macOS with the German voice Anna and the system Arial; their bytes may differ on another macOS version, so leave them untouched unless they must change. `MANIFEST.json` is always rewritten from the files on disk.
 
-Any change to the manifest changes the corpus hash. Every baseline must then be measured and promoted again (`resona eval promote --rebaseline`). Adding the hard fixtures changed the corpus hash: baselines promoted on the earlier six-fixture corpus are no longer comparable and report `baseline_required` until they are promoted again.
+Any change to the manifest changes the corpus hash. Every baseline must then be measured and promoted again (`resona eval promote --rebaseline`). Baselines promoted on an earlier corpus are no longer comparable and report `baseline_required` until they are promoted again. This happened when the hard fixtures were added, and again when the French, Italian and Spanish scans replaced the duplicate `bad-text-layer-force` fixture.
 
 !!! warning "No private material"
     Do not add private audio, patient documents or transcripts derived from them to `eval/corpus/`. Keep operator corpora outside Git and outside public artifacts.

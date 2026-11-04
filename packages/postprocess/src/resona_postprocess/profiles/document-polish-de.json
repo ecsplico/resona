@@ -6,7 +6,7 @@
     {
       "type": "llm",
       "name": "ocr-polish",
-      "endpoint": "gpu-llama",
+      "endpoint": "local-llm",
       "chunk_chars": 12000,
       "max_attempts": 3,
       "max_length_deviation": 0.3,

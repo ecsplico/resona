@@ -90,6 +90,18 @@ class Upload:
 
 
 @dataclass(frozen=True)
+class UploadLink:
+    """A single-use upload link: send multipart ``file`` to ``upload_url`` with
+    ``token_header: token`` before ``expires_at`` (ISO 8601 UTC)."""
+
+    upload_url: str
+    token_header: str
+    token: str
+    expires_at: str
+    max_bytes: int
+
+
+@dataclass(frozen=True)
 class JobRef:
     job_id: int
     status: str
@@ -253,13 +265,19 @@ class ResonaClient:
         )
 
     @classmethod
-    def from_config(cls, auto_start: bool = True, timeout: float = 3600.0) -> "ResonaClient":
+    def from_config(
+        cls,
+        auto_start: bool = True,
+        timeout: float = 3600.0,
+        name: Optional[str] = None,
+    ) -> "ResonaClient":
         """
         Create a client by resolving the engine to use:
 
         1. RESONA_API_URL env var (if set) — used directly, no config lookup.
         2. WS_API_URL env var (if set) — used directly, no config lookup (fallback).
-        3. First reachable engine in ~/.resona/config.json.
+        3. With ``name``: only that entry in ~/.resona/config.json, never another.
+           Otherwise the first reachable entry.
         4. If none reachable and an engine has compose_dir set, start it via
            docker compose up -d and wait for it to become healthy.
 
@@ -270,7 +288,7 @@ class ResonaClient:
             return cls(base_url=env_url, timeout=timeout)
 
         from .config import resolve_engine
-        entry = resolve_engine(auto_start=auto_start)
+        entry = resolve_engine(auto_start=auto_start, name=name)
         if entry:
             return cls(base_url=entry.api_url, api_key=entry.api_key, timeout=timeout)
 
@@ -321,14 +339,20 @@ class ResonaClient:
             size=int(body["size"]),
         )
 
-    def create_upload_link(self) -> dict[str, Any]:
+    def create_upload_link(self) -> UploadLink:
         """Mint a single-use, ten-minute upload link. POST /v1/upload-links
 
-        Returns ``{upload_url, token_header, token, expires_at, max_bytes}``; whoever
-        holds the token can upload one file into this organization without the client
-        credential.
+        Whoever holds the token can upload one file into this organization without
+        the client credential.
         """
-        return self._send("POST", "/v1/upload-links").json()
+        body = self._send("POST", "/v1/upload-links").json()
+        return UploadLink(
+            upload_url=str(body["upload_url"]),
+            token_header=str(body["token_header"]),
+            token=str(body["token"]),
+            expires_at=str(body["expires_at"]),
+            max_bytes=int(body["max_bytes"]),
+        )
 
     def submit_job(
         self,

@@ -12,33 +12,46 @@ from typing import NoReturn, Optional
 import typer
 
 from resona_client.client import JobView, ResonaClient
-from resona_client.config import EngineConfig
+from resona_client.config import EngineConfig, EngineEntry
 
 EXIT_ERROR = 1
 EXIT_POLICY_DENIED = 2
 
 
+def _config_entry(cfg: Optional[EngineConfig] = None) -> Optional[EngineEntry]:
+    """The one config entry the CLI uses: the first with a URL."""
+    cfg = cfg or EngineConfig.load()
+    return next((entry for entry in cfg.engines if entry.api_url), None)
+
+
+def _env_hub_url() -> Optional[str]:
+    """Env hub URL in ``ResonaClient.from_config`` order: RESONA_API_URL, then WS_API_URL."""
+    return os.getenv("RESONA_API_URL") or os.getenv("WS_API_URL")
+
+
 def hub_identity(cfg: Optional[EngineConfig] = None) -> Optional[tuple[str, str]]:
     """``(hub URL, client key)`` from env or config, without contacting the hub."""
-    url = os.getenv("RESONA_API_URL")
+    url = _env_hub_url()
     if url:
-        return url.rstrip("/"), os.getenv("RESONA_API_KEY", "")
-    cfg = cfg or EngineConfig.load()
-    for entry in cfg.engines:
-        if entry.api_url:
-            return entry.api_url.rstrip("/"), entry.api_key or ""
-    return None
+        return url.rstrip("/"), os.getenv("RESONA_API_KEY") or os.getenv("WS_API_KEY", "")
+    entry = _config_entry(cfg)
+    if entry is None:
+        return None
+    return entry.api_url.rstrip("/"), entry.api_key or ""
 
 
 def connect_hub() -> ResonaClient:
-    """Client for the configured hub; exits 1 when none is configured or reachable."""
-    if hub_identity() is None:
+    """Client for exactly the hub ``hub_identity`` names; exits 1 when none is
+    configured or that hub is unreachable. Never falls back to another entry."""
+    identity = hub_identity()
+    if identity is None:
         fail("no hub configured: set RESONA_API_URL/RESONA_API_KEY or add one with "
              "`resona engines add`; use --local to process on this machine")
+    entry = None if _env_hub_url() else _config_entry()
     try:
-        return ResonaClient.from_config(auto_start=False)
-    except RuntimeError as e:
-        fail(f"configured hub is unreachable: {e}")
+        return ResonaClient.from_config(auto_start=False, name=entry.name if entry else None)
+    except RuntimeError:
+        fail(f"configured hub is unreachable: {identity[0]}")
 
 
 def fail(message: str, code: int = EXIT_ERROR) -> NoReturn:

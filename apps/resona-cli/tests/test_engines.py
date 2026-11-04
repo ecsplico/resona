@@ -97,6 +97,64 @@ def test_added_hub_is_used_without_env(isolated_config, monkeypatch):
     assert hub_identity() == ("https://hub.example", "k")
 
 
+def test_unreachable_chosen_hub_is_an_error_without_trying_another(isolated_config, monkeypatch):
+    import httpx
+    import typer
+
+    from resona_cli.hub import connect_hub, hub_identity
+
+    monkeypatch.delenv("RESONA_API_URL", raising=False)
+    monkeypatch.delenv("WS_API_URL", raising=False)
+    _write_engines(isolated_config,
+                   _engine("first", "https://down.example", "k1"),
+                   _engine("second", "https://up.example", "k2"))
+    probed = []
+
+    def fake_get(url, **kwargs):
+        probed.append(url)
+        if "down.example" in url:
+            raise httpx.ConnectError("refused")
+        return httpx.Response(200)
+
+    with patch("resona_client.config.httpx.get", side_effect=fake_get):
+        assert hub_identity() == ("https://down.example", "k1")
+        with pytest.raises(typer.Exit) as exc:
+            connect_hub()
+        assert exc.value.exit_code == 1
+
+    assert probed and all("up.example" not in url for url in probed)
+
+
+def test_connected_hub_matches_identity(isolated_config, monkeypatch):
+    import httpx
+
+    from resona_cli.hub import connect_hub, hub_identity
+
+    monkeypatch.delenv("RESONA_API_URL", raising=False)
+    monkeypatch.delenv("WS_API_URL", raising=False)
+    _write_engines(isolated_config,
+                   _engine("first", "https://a.example", "k1"),
+                   _engine("second", "https://b.example", "k2"))
+
+    with patch("resona_client.config.httpx.get", return_value=httpx.Response(200)):
+        client = connect_hub()
+
+    assert (client.base_url, client.api_key) == hub_identity()
+
+def test_ws_api_url_alone_drives_identity_and_connection(isolated_config, monkeypatch):
+    from resona_cli.hub import connect_hub, hub_identity
+
+    for var in ("RESONA_API_URL", "RESONA_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("WS_API_URL", "https://ws.example/")
+    monkeypatch.setenv("WS_API_KEY", "wk")
+    _write_engines(isolated_config, _engine("first", "https://a.example", "k1"))
+
+    client = connect_hub()
+
+    assert hub_identity() == ("https://ws.example", "wk")
+    assert (client.base_url, client.api_key) == hub_identity()
+
 # ── engines remove ────────────────────────────────────────────────────────────
 
 def test_remove_engine(isolated_config):

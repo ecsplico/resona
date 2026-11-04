@@ -105,6 +105,8 @@ Sends the current text to a language model and returns **structured JSON data**.
 }
 ```
 
+`temperature`, `max_tokens` and `timeout` apply as for `llm`; the call is made in JSON mode.
+
 ## PostprocessResult
 
 `build_pipeline(profile, policy=policy).run(text)` returns a `PostprocessResult`:
@@ -138,7 +140,7 @@ Plus medical section headings (`Verlauf`, `Medikation`, `Psychopathologischer Be
 
 ## The bundled document polish profile
 
-`profiles/document-polish-de.json` (`document-polish-de`) is a single chunked `llm` step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay verbatim. Settings: endpoint `gpu-llama`, `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.3, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. It is not resolved by name from the package: upload it to the hub as an organization profile (see [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)).
+`profiles/document-polish-de.json` (`document-polish-de`) is a single chunked `llm` step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay verbatim. Settings: endpoint `local-llm`, `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.3, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. The endpoint id names no host: an org admin registers a `local_llm` endpoint with the id `local-llm` and a loopback `url` on the approved worker. It is not resolved by name from the package: upload it to the hub as an organization profile (see [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)).
 
 ## Profile resolution
 
@@ -162,12 +164,12 @@ build_pipeline(profile, policy=<job ExecutionPolicy>) checks every stage first
     ↓
 result = pipeline.run(text)   (PolicyDenied is raised, never swallowed)
     ↓
-raw transcript and polished Markdown go into the JobResult
+raw_text stays the engine's text; the engine's Markdown moves to raw_markdown when a step changed it; markdown is the polished text
     ↓
 worker uploads the result; the hub marks the job completed
 ```
 
-Before each `llm`/`extract` step the worker asks the hub for a fresh policy decision on that endpoint. After the job's last step on an endpoint that has an `unload_url`, the worker POSTs to that URL (best effort, 10 s timeout, logged by endpoint id only) so the model server frees the GPU for the next job.
+Before each `llm`/`extract` step the worker asks the hub for a fresh policy decision on that endpoint. After the job's last step on an endpoint that has an `unload_url`, the worker POSTs to that URL (best effort, 10 s timeout) so the model server frees the GPU for the next job. A 2xx answer is logged at info level; another status or a transport error is a warning naming the endpoint id and the status code or exception type, never content.
 
 The engine receives `profile.initial_prompt_string()` as its `initial_prompt`. It never receives replacement rules — postprocessing is the worker's responsibility, not the engine's.
 

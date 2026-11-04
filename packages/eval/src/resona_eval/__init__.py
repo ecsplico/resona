@@ -8,6 +8,7 @@ from .evaluation import (
     build_report,
     detect_platform,
     evaluation_record,
+    measurement_only,
 )
 from .gate import BASELINE_REQUIRED, TOLERANCE, Gate, evaluate_gate
 from .scoring import ScoringError, score_fixture
@@ -30,6 +31,7 @@ __all__ = [
     "evaluation_record",
     "find_baseline",
     "load_corpus",
+    "measurement_only",
     "promoted_entry",
     "score_fixture",
     "upsert_baseline",

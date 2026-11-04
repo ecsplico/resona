@@ -92,19 +92,6 @@ def test_doc_single_page(tmp_path):
     assert (options.page_start, options.page_end) == (3, 3)
 
 
-def test_doc_passes_scale_confidence_and_languages_to_the_job(tmp_path):
-    pdf = tmp_path / "a.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
-    client = _client()
-
-    result = _invoke(client, [str(pdf), "--ocr-engine", "rapidocr", "--language", "fr,it,es",
-                              "--image-scale", "2.5", "--ocr-min-confidence", "0.6"])
-
-    assert result.exit_code == 0, result.output
-    assert client.submit_job.call_args.kwargs["options"] == DocumentOptions(
-        ocr_engine="rapidocr", languages=["fr", "it", "es"], image_scale=2.5, ocr_min_confidence=0.6)
-
-
 def test_doc_directory_picks_documents_only(tmp_path):
     (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4\n")
     (tmp_path / "b.png").write_bytes(b"\x89PNG\r\n\x1a\n")

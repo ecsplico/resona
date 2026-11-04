@@ -19,6 +19,14 @@ OcrMode = Literal["auto", "force", "off"]
 OcrEngine = Literal["ocrmac", "rapidocr", "tesseract"]
 DocumentPipeline = Literal["standard"]
 
+# The OCR engine a document job runs with when neither its options nor its candidate pin one.
+DEFAULT_OCR_ENGINE: OcrEngine = "ocrmac"
+# Only RapidOCR exposes a recognition-confidence threshold (Docling ``RapidOcrOptions.text_score``).
+_CONFIDENCE_OCR_ENGINES = frozenset({"rapidocr"})
+# Languages the pinned rapidocr wheel (3.9.2) serves offline: all share its bundled multilingual
+# PP-OCRv6 recognizer. Korean needs a PP-OCRv5 recognizer downloaded on first use, which a job never does.
+_RAPIDOCR_LANGUAGES = frozenset({"de", "en", "fr", "it", "es"})
+
 
 class AudioOptions(BaseModel):
     """Typed audio job options; the hub forwards nothing else to the engine."""
@@ -57,5 +65,46 @@ class DocumentOptions(BaseModel):
             raise ValueError("page_start must be <= page_end")
         return self
 
+    @model_validator(mode="after")
+    def _check_ocr_only_fields(self) -> DocumentOptions:
+        # Both fields only act on OCR input/output; with OCR off they would be silently ignored.
+        # image_scale 1.0 is the neutral raster, so it is not a conflict.
+        if self.ocr == "off":
+            if self.ocr_min_confidence is not None:
+                raise ValueError("ocr_min_confidence requires OCR; ocr is 'off'")
+            if self.image_scale not in (None, 1.0):
+                raise ValueError("image_scale changes only the OCR raster; ocr is 'off'")
+        return self
 
-__all__ = ["AudioOptions", "DocumentOptions", "DocumentPipeline", "Language", "OcrEngine", "OcrMode"]
+
+def document_options_conflict(options: DocumentOptions, ocr_engine: str) -> str | None:
+    """Why ``options`` cannot run with ``ocr_engine`` on any host, or ``None`` if they can.
+
+    Pure and dependency-free, so the hub filters candidates at admission with the same rule
+    the Docling adapter enforces. Host-specific limits (platform, installed tesseract packs)
+    are not covered: another worker may still serve those.
+    """
+    if options.ocr == "off":
+        return None
+    if options.ocr_min_confidence is not None and ocr_engine not in _CONFIDENCE_OCR_ENGINES:
+        return (
+            f"ocr_engine {ocr_engine!r} has no confidence threshold; ocr_min_confidence needs "
+            f"{', '.join(sorted(_CONFIDENCE_OCR_ENGINES))}"
+        )
+    if ocr_engine == "rapidocr":
+        unbundled = [lang for lang in options.languages or () if lang not in _RAPIDOCR_LANGUAGES]
+        if unbundled:
+            return f"ocr_engine 'rapidocr' has no bundled offline recognizer for {', '.join(unbundled)}"
+    return None
+
+
+__all__ = [
+    "DEFAULT_OCR_ENGINE",
+    "AudioOptions",
+    "DocumentOptions",
+    "DocumentPipeline",
+    "Language",
+    "OcrEngine",
+    "OcrMode",
+    "document_options_conflict",
+]

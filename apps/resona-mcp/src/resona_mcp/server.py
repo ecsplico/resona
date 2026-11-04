@@ -347,14 +347,14 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         def call() -> dict[str, Any]:
             with client:
                 link = client.create_upload_link()
-            header = f"{link['token_header']}: {link['token']}"
+            header = f"{link.token_header}: {link.token}"
             return {
-                "upload_url": link["upload_url"],
-                "token_header": link["token_header"],
-                "token": link["token"],
-                "expires_at": link["expires_at"],
-                "max_bytes": link["max_bytes"],
-                "curl": f"curl -sS -X POST -H '{header}' -F 'file=@<PATH>' {link['upload_url']}",
+                "upload_url": link.upload_url,
+                "token_header": link.token_header,
+                "token": link.token,
+                "expires_at": link.expires_at,
+                "max_bytes": link.max_bytes,
+                "curl": f"curl -sS -X POST -H '{header}' -F 'file=@<PATH>' {link.upload_url}",
             }
 
         return await _run(call)

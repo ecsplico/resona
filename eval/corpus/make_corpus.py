@@ -34,6 +34,9 @@ Hard document fixtures (single A4 page, raster pages at 150 dpi, seeded noise):
   three_columns.pdf    digital three-column page with column headings (Helvetica).
   bad_text_layer.pdf   raster page plus an invisible (render mode 3) garbled text layer,
                        like a bad OCR layer of an old scan.
+  fr_scan.pdf, it_scan.pdf, es_scan.pdf
+                       French, Italian and Spanish paragraphs with their accents
+                       (é è à ç, à ì ò ù, ñ á é í ó ú ¿ ¡) as a raster, no text layer.
 """
 
 from __future__ import annotations
@@ -174,6 +177,29 @@ BAD_LAYER_PARAGRAPHS = [
     "Die Gemeinde lässt die Schäden bis zum Spätsommer beheben. Über den Fortschritt berichtet "
     "der Bauhof in der nächsten Sitzung des Ausschusses.",
 ]
+# Invented French, Italian and Spanish texts for the document languages beyond de/en.
+FOREIGN_SCANS: dict[str, list[str]] = {
+    "fr": [
+        "Compte rendu de la visite du chantier à Besançon. Le maçon a réparé la façade côté rue, "
+        "mais la fenêtre du deuxième étage reste fissurée. Les élèves de l'école voisine ont été prévenus.",
+        "Après la pluie, l'équipe a vérifié la toiture et le garçon de l'entreprise a noté chaque dégât. "
+        "Le prochain contrôle aura lieu en décembre, à la même heure, près de la gare.",
+    ],
+    "it": [
+        "Verbale del sopralluogo di lunedì presso la scuola di Forlì. Il tetto è stato riparato, però "
+        "l'umidità nel corridoio resterà finché non si cambierà la grondaia.",
+        "La città pagherà i lavori entro la metà di aprile. Più tardi il tecnico verificherà anche la "
+        "caldaia e farà una relazione sulla qualità dell'aria nelle aule.",
+    ],
+    "es": [
+        "Informe de la inspección del edificio en la calle Mayor. ¿Quién revisó la instalación eléctrica? "
+        "El técnico señaló que la cañería del baño pierde agua desde el otoño.",
+        "¡Atención! La reparación comenzará el miércoles por la mañana. Según el contrato, el dueño "
+        "pagará también la pintura del salón y la limpieza del jardín.",
+    ],
+}
+FOREIGN_NAMES = {"fr": "French", "it": "Italian", "es": "Spanish"}
+FOREIGN_SEEDS = {"fr": 16, "it": 17, "es": 18}
 # Typical confusions of a poor OCR layer on an old scan (applied with a seeded RNG).
 _GARBLE = {"ü": "ii", "ö": "o", "ä": "a", "ß": "B", "e": "c", "n": "u", "l": "1", "i": "l",
            "m": "rn", "h": "b", "a": "o"}
@@ -406,6 +432,11 @@ def make_bad_text_layer(path: Path) -> None:
     _image_pdf(path, _degrade(image, seed=15, blur=0.4, noise=6.0), quality=60, overlay=overlay)
 
 
+def make_foreign_scan(path: Path, language: str) -> None:
+    image, _ = _text_page(FOREIGN_SCANS[language], 11)
+    _image_pdf(path, _degrade(image, seed=FOREIGN_SEEDS[language], blur=0.4, noise=6.0), quality=60)
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -442,13 +473,21 @@ def _hard_fixtures(doc_source: str) -> list[dict]:
          "source": doc_source + ", text layer (Helvetica), title over three columns with headings",
          "reference": paragraphs(three_reference), "checks": ["cer", "reading_order"],
          "reading_order": three_order},
-        {"id": "bad-text-layer-auto", "kind": "document", "file": "bad_text_layer.pdf", "language": "de",
-         "source": bad_layer_source + "; default OCR options (measures what the bad layer does)",
+        {"id": "bad-text-layer", "kind": "document", "file": "bad_text_layer.pdf", "language": "de",
+         "source": bad_layer_source + "; default OCR options (auto). Docling does not count an invisible "
+                                      "text layer as page text, so auto OCRs the page and the OCR text replaces "
+                                      "the garbled layer; only ocr=off returns the layer",
          "reference": paragraphs(BAD_LAYER_PARAGRAPHS), "checks": ["cer"]},
-        {"id": "bad-text-layer-force", "kind": "document", "file": "bad_text_layer.pdf", "language": "de",
-         "source": bad_layer_source + "; job option ocr=force (full-page OCR replaces the layer)",
-         "reference": paragraphs(BAD_LAYER_PARAGRAPHS), "checks": ["cer"], "options": {"ocr": "force"}},
     ]
+    for language, texts in FOREIGN_SCANS.items():
+        hard.append({
+            "id": f"{language}-scan-pdf", "kind": "document", "file": f"{language}_scan.pdf",
+            "language": language,
+            "source": f"synthetic {FOREIGN_NAMES[language]} document (text invented for testing), one A4 raster "
+                      "page at 150 dpi without text layer (PIL, Bitstream Vera Sans 11 pt), gaussian blur "
+                      f"0.4 px, noise sigma 6 (seed {FOREIGN_SEEDS[language]}), JPEG quality 60",
+            "reference": paragraphs(texts), "checks": ["cer"], "options": {"languages": [language]},
+        })
     for fixture in hard:
         fixture["license"] = LICENSE if fixture["file"] == "three_columns.pdf" else VERA_LICENSE
     return hard
@@ -476,6 +515,8 @@ def main() -> None:
         make_dense_table_scan(HERE / "dense_table_scan.pdf")
         make_three_columns(HERE / "three_columns.pdf")
         make_bad_text_layer(HERE / "bad_text_layer.pdf")
+        for language in FOREIGN_SCANS:
+            make_foreign_scan(HERE / f"{language}_scan.pdf", language)
 
     page_text = "\n".join(" ".join(lines) for lines in PAGE_TEXT)
     table_reference = "\n".join(

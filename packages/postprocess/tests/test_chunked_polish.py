@@ -12,8 +12,8 @@ from resona_postprocess.llm import PostprocessStepFailed
 from resona_postprocess.pipeline import build_pipeline
 from resona_postprocess.profile import Profile, ProfileError
 
-GPU_BOX = Endpoint(
-    id="gpu-llama",
+LOCAL_LLM = Endpoint(
+    id="local-llm",
     kind=EndpointKind.LOCAL_LLM,
     model="openai/qwen3.6-27b",
     url="http://127.0.0.1:9292/v1",
@@ -55,7 +55,7 @@ def _install(monkeypatch, reply) -> ReplyLLM:
 
 def _step(**extra) -> dict:
     step = {"type": "llm", "name": "ocr-polish", "prompt": "Korrigiere OCR-Fehler.",
-            "endpoint": "gpu-llama", "chunk_chars": 1000}
+            "endpoint": "local-llm", "chunk_chars": 1000}
     step.update(extra)
     return step
 
@@ -77,7 +77,7 @@ DOC = "\n\n".join([
 
 def test_placeholders_and_structure_survive_a_correcting_llm(monkeypatch) -> None:
     fake = _install(monkeypatch, lambda chunk: chunk.replace("fiir", "für"))
-    pipe = build_pipeline(_profile(_step(preserve_markup=True, max_length_deviation=0.3)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(preserve_markup=True, max_length_deviation=0.3)), policy=_policy(LOCAL_LLM))
 
     result = pipe.run(DOC)
 
@@ -90,7 +90,7 @@ def test_placeholders_and_structure_survive_a_correcting_llm(monkeypatch) -> Non
 
 def test_chunk_that_drops_a_placeholder_is_rejected_and_kept_raw(monkeypatch) -> None:
     _install(monkeypatch, lambda chunk: chunk.replace("fiir", "für").replace("<!-- image -->", "Bild"))
-    pipe = build_pipeline(_profile(_step(preserve_markup=True)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(preserve_markup=True)), policy=_policy(LOCAL_LLM))
 
     result = pipe.run(DOC)
 
@@ -103,7 +103,7 @@ def test_chunk_that_drops_a_placeholder_is_rejected_and_kept_raw(monkeypatch) ->
 def test_chunk_whose_length_deviates_too_much_is_rejected_and_kept_raw(monkeypatch) -> None:
     text = _paragraph(1) + "\n"
     _install(monkeypatch, lambda chunk: "Zusammenfassung: Befund unauffällig.")
-    pipe = build_pipeline(_profile(_step(max_length_deviation=0.3)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(max_length_deviation=0.3)), policy=_policy(LOCAL_LLM))
 
     result = pipe.run(text)
 
@@ -114,7 +114,7 @@ def test_chunk_whose_length_deviates_too_much_is_rejected_and_kept_raw(monkeypat
 def test_length_within_tolerance_is_accepted(monkeypatch) -> None:
     text = "Die Untersuchnug ergab keinen Befnud.\n"
     _install(monkeypatch, lambda chunk: "Die Untersuchung ergab keinen Befund.")
-    pipe = build_pipeline(_profile(_step(max_length_deviation=0.3)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(max_length_deviation=0.3)), policy=_policy(LOCAL_LLM))
 
     result = pipe.run(text)
 
@@ -125,14 +125,14 @@ def test_length_within_tolerance_is_accepted(monkeypatch) -> None:
 def test_reasoning_block_and_wrapping_fence_are_not_taken_into_the_document(monkeypatch) -> None:
     text = "Die Untersuchnug ergab nichts.\n"
     _install(monkeypatch, lambda chunk: "<think>hmm</think>\n```markdown\nDie Untersuchung ergab nichts.\n```")
-    pipe = build_pipeline(_profile(_step(max_length_deviation=0.3)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(max_length_deviation=0.3)), policy=_policy(LOCAL_LLM))
 
     assert pipe.run(text).text == "Die Untersuchung ergab nichts.\n"
 
 
 def test_chunk_failing_every_attempt_fails_the_step_instead_of_skipping(monkeypatch) -> None:
     fake = _install(monkeypatch, lambda chunk: ConnectionError("refused"))
-    pipe = build_pipeline(_profile(_step(max_attempts=3)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(max_attempts=3)), policy=_policy(LOCAL_LLM))
 
     with pytest.raises(PostprocessStepFailed) as excinfo:
         pipe.run(DOC)
@@ -149,14 +149,14 @@ def test_transient_chunk_failure_is_retried(monkeypatch) -> None:
         return TimeoutError("stalled") if calls["n"] == 1 else chunk.replace("fiir", "für")
 
     _install(monkeypatch, flaky)
-    pipe = build_pipeline(_profile(_step(max_attempts=3)), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step(max_attempts=3)), policy=_policy(LOCAL_LLM))
 
     assert pipe.run(DOC).text == DOC.replace("fiir", "für")
 
 
 def test_non_loopback_local_endpoint_is_denied_before_any_call(monkeypatch) -> None:
     fake = _install(monkeypatch, lambda chunk: chunk)
-    remote = Endpoint(id="gpu-llama", kind=EndpointKind.LOCAL_LLM, model="openai/qwen3.6-27b",
+    remote = Endpoint(id="local-llm", kind=EndpointKind.LOCAL_LLM, model="openai/qwen3.6-27b",
                       url="http://192.168.1.20:9292/v1")
 
     with pytest.raises(PolicyDenied):
@@ -166,7 +166,7 @@ def test_non_loopback_local_endpoint_is_denied_before_any_call(monkeypatch) -> N
     def deny(*args, **kwargs):
         raise PolicyDenied("llm", "revoked")
 
-    pipe = build_pipeline(_profile(_step()), policy=_policy(GPU_BOX))
+    pipe = build_pipeline(_profile(_step()), policy=_policy(LOCAL_LLM))
     monkeypatch.setattr(llm_mod, "check_policy", deny)
     with pytest.raises(PolicyDenied):
         pipe.run(DOC)
@@ -181,7 +181,7 @@ def test_bundled_document_polish_profile_runs_long_markdown_in_chunks(monkeypatc
     fake = _install(monkeypatch, lambda chunk: chunk)
     long_doc = "\n\n".join([DOC] * 30)
 
-    result = build_pipeline(profile, policy=_policy(GPU_BOX)).run(long_doc)
+    result = build_pipeline(profile, policy=_policy(LOCAL_LLM)).run(long_doc)
 
     assert result.text == long_doc
     assert len(fake.chunks) >= 3
@@ -205,7 +205,7 @@ def test_local_endpoint_never_receives_an_ambient_cloud_key(monkeypatch) -> None
     monkeypatch.setenv("OPENAI_API_KEY", "sk-cloud-secret")
     fake = _install(monkeypatch, lambda chunk: chunk)
 
-    build_pipeline(_profile(_step()), policy=_policy(GPU_BOX)).run(DOC)
+    build_pipeline(_profile(_step()), policy=_policy(LOCAL_LLM)).run(DOC)
 
     assert fake.api_keys and "sk-cloud-secret" not in fake.api_keys
     assert all(key for key in fake.api_keys)
