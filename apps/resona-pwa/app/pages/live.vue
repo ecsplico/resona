@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { NewRecording } from "~/data/types";
+import type { ListenEngine } from "~/composables/useHub";
 
 const cfg = useRuntimeConfig().public;
 
@@ -9,7 +10,23 @@ const cfg = useRuntimeConfig().public;
 const route = useRoute();
 const presetTitle = typeof route.query.title === "string" ? route.query.title : "";
 
-const live = useLive();
+const capture = usePcmCapture();
+const hub = useLive();
+const device = useDeviceSpeech();
+const settings = useLiveSettings();
+const source = computed(() => (settings.source === "device" ? device : hub));
+
+const listenEngines = ref<ListenEngine[]>([]);
+const listenDefault = ref<string | null>(null);
+const listenLoaded = ref(false);
+const selectedListenEngine = computed(() => {
+	const name = settings.hubEngine || listenDefault.value;
+	return listenEngines.value.find(e => e.name === name);
+});
+const noHubLive = computed(() =>
+	settings.source === "hub" && listenLoaded.value && listenEngines.value.length === 0,
+);
+
 const recorder = useRecorder();
 const store = useDataStore();
 const { copy } = useExport();
@@ -22,10 +39,11 @@ const title = ref(presetTitle);
 const capturedBlob = ref<Blob | null>(null);
 const capturedDuration = ref(0);
 const capturedText = ref("");
+const capturedEngine = ref("");
 
 const rollingText = computed(() => {
-	const f = live.final.value;
-	const p = live.partial.value;
+	const f = source.value.final.value;
+	const p = source.value.partial.value;
 	if (f && p) {
 		return `${f} ${p}`;
 	}
@@ -39,12 +57,47 @@ function copyTranscript(): void {
 	void copy(rollingText.value);
 }
 
+const sourceError = computed(() => source.value.error.value);
 // Show the reconnect banner only mid-session (after start, before a deliberate
-// stop) when the socket drops.
-const showReconnect = computed(() => sessionActive.value && live.status.value === "CLOSED");
+// stop) when the socket drops and no source error explains it.
+const showReconnect = computed(() =>
+	sessionActive.value && !sourceError.value && source.value.status.value === "CLOSED",
+);
+
+async function loadListenEngines(): Promise<void> {
+	try {
+		const res = await useHub().listListenEngines();
+		listenEngines.value = res.engines;
+		listenDefault.value = res.default;
+	}
+	catch {
+		// unreachable hub: treat as offering nothing
+		listenEngines.value = [];
+		listenDefault.value = null;
+	}
+	listenLoaded.value = true;
+}
+
+async function startSource(language: string): Promise<void> {
+	if (settings.source === "device") {
+		try {
+			await device.start({ language });
+		}
+		catch (err) {
+			device.error.value = err instanceof Error ? err.message : "Lokale Spracherkennung nicht verfügbar";
+		}
+		return;
+	}
+	await hub.start({
+		language,
+		engine: settings.hubEngine || undefined,
+		private: selectedListenEngine.value?.private === false ? false : undefined,
+		capture,
+	});
+}
 
 async function startLive(): Promise<void> {
-	if (sessionActive.value) {
+	if (sessionActive.value || noHubLive.value) {
 		return;
 	}
 	sessionActive.value = true;
@@ -63,7 +116,8 @@ async function startLive(): Promise<void> {
 			// no mic permission — fall through to transcript-only mode
 		}
 		if (stream) {
-			await live.start({ stream, language });
+			await capture.start(stream);
+			await startSource(language);
 			try {
 				await recorder.start(stream);
 			}
@@ -76,7 +130,7 @@ async function startLive(): Promise<void> {
 	}
 
 	// No mic (tests / SSR / permission denied): start transcript path without audio.
-	await live.start({ language });
+	await startSource(language);
 }
 
 async function stopLive(): Promise<void> {
@@ -86,9 +140,13 @@ async function stopLive(): Promise<void> {
 	// Snapshot AFTER the recorder.stop() await: yielding to the microtask queue
 	// lets Vue flush any pending reactive updates from WebSocket messages (e.g.
 	// the last partial that arrived just before the user pressed stop).
-	// Snapshot BEFORE live.stop(), which removes the data watcher immediately.
-	capturedText.value = live.fullText.value.trim();
-	live.stop();
+	// Snapshot BEFORE source.stop(), which removes the data watcher immediately.
+	capturedText.value = source.value.fullText.value.trim();
+	capturedEngine.value = settings.source === "device"
+		? "web-speech"
+		: settings.hubEngine || listenDefault.value || "hub-live";
+	source.value.stop();
+	capture.stop();
 	title.value = presetTitle;
 	showTitlePrompt.value = true;
 }
@@ -111,7 +169,7 @@ async function confirmSave(): Promise<void> {
 		};
 		const recording = await store.createRecording(input, blob, `${title.value}.webm`);
 
-		await store.createTranscript(recording.id, { text: capturedText.value });
+		await store.createTranscript(recording.id, { text: capturedText.value, engine: capturedEngine.value });
 
 		void navigateTo("/");
 	}
@@ -129,8 +187,9 @@ function cancelSave(): void {
 	void navigateTo("/");
 }
 
-onMounted(() => {
-	void startLive();
+onMounted(async () => {
+	await loadListenEngines();
+	await startLive();
 });
 </script>
 
@@ -142,7 +201,15 @@ onMounted(() => {
 		/>
 
 		<div
-			v-if="showReconnect"
+			v-if="sessionActive && sourceError"
+			class="live__reconnect"
+			data-testid="live-source-error"
+			role="alert"
+		>
+			{{ sourceError }}
+		</div>
+		<div
+			v-else-if="showReconnect"
 			class="live__reconnect"
 			data-testid="reconnect-banner"
 		>
@@ -186,11 +253,11 @@ onMounted(() => {
 				class="live__transcript"
 				data-testid="transcript"
 			>
-				<span class="live__final">{{ live.final.value }}</span>
+				<span class="live__final">{{ source.final.value }}</span>
 				<span
-					v-if="live.partial.value"
+					v-if="source.partial.value"
 					class="live__partial"
-				>{{ live.final.value ? " " : "" }}{{ live.partial.value }}</span>
+				>{{ source.final.value ? " " : "" }}{{ source.partial.value }}</span>
 				<span
 					v-if="!rollingText"
 					class="live__hint"
@@ -198,8 +265,44 @@ onMounted(() => {
 			</p>
 		</div>
 
+		<p
+			v-if="noHubLive"
+			class="live__notice"
+			data-testid="live-no-hub-stream"
+		>
+			Dieser Hub bietet kein Live-Streaming an – in Einstellungen → Live die lokale Erkennung wählen.
+		</p>
+
 		<div
-			v-if="!showTitlePrompt"
+			v-if="!showTitlePrompt && !sessionActive"
+			class="live__controls"
+		>
+			<button
+				class="live__stop"
+				type="button"
+				data-testid="start-live"
+				aria-label="Aufnahme starten"
+				:disabled="noHubLive || !listenLoaded"
+				@click="startLive"
+			>
+				<svg
+					width="26"
+					height="26"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					aria-hidden="true"
+				>
+					<circle
+						cx="12"
+						cy="12"
+						r="7"
+					/>
+				</svg>
+			</button>
+		</div>
+
+		<div
+			v-if="!showTitlePrompt && sessionActive"
 			class="live__controls"
 		>
 			<button
@@ -278,6 +381,8 @@ onMounted(() => {
 .live__controls { display:flex; justify-content:center; padding:28px 0 40px; }
 .live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent, #e0563a); color:var(--white, #fff); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }
 .live__save { display:flex; flex-direction:column; gap:14px; padding:20px; background:var(--crust, #241c16); }
+.live__stop:disabled { opacity:.4; cursor:not-allowed; }
+.live__notice { margin:0 20px 12px; padding:10px 14px; border-radius:10px; background:var(--crust, #241c16); color:var(--white, #fff); font-family:var(--font-body); font-size:14px; }
 .live__error { color:var(--danger); font-size:14px; margin:0; }
 .live__save-actions { display:flex; gap:10px; justify-content:flex-end; }
 </style>

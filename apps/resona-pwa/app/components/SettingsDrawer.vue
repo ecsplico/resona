@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { CalendarOption } from "#shared/calendar";
-import { HubError } from "~/composables/useHub";
+import { HubError, type ListenEngine } from "~/composables/useHub";
+import type { DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -43,6 +44,64 @@ async function testHub(): Promise<void> {
 	}
 }
 
+// ── Live: source, hub listen engine, on-device speech ──────────────────────
+const liveSettings = useLiveSettings();
+const deviceSpeech = useDeviceSpeech();
+const listenEngines = ref<ListenEngine[]>([]);
+const listenDefault = ref<string | null>(null);
+const listenLoaded = ref(false);
+const listenError = ref<string | null>(null);
+const deviceState = ref<DeviceSpeechAvailability | null>(null);
+const deviceInstalling = ref(false);
+
+const DEVICE_LABELS: Record<DeviceSpeechAvailability, string> = {
+	available: "Bereit (lokal)",
+	downloadable: "Sprachpaket verfügbar",
+	downloading: "Wird geladen…",
+	unavailable: "Nicht verfügbar in diesem Browser",
+	unsupported: "Nicht verfügbar in diesem Browser",
+};
+const deviceLabel = computed(() => deviceState.value ? DEVICE_LABELS[deviceState.value] : "Wird geprüft…");
+
+async function loadListenEngines(): Promise<void> {
+	listenError.value = null;
+	try {
+		const list = await useHub().listListenEngines();
+		listenEngines.value = list.engines;
+		listenDefault.value = list.default;
+	}
+	catch (err) {
+		listenEngines.value = [];
+		listenError.value = err instanceof Error ? err.message : String(err);
+	}
+	finally {
+		listenLoaded.value = true;
+	}
+}
+
+async function checkDevice(): Promise<void> {
+	try {
+		deviceState.value = await deviceSpeech.availability(cfg.defaultLanguage);
+	}
+	catch {
+		deviceState.value = "unavailable";
+	}
+}
+
+async function installDevice(): Promise<void> {
+	deviceInstalling.value = true;
+	try {
+		await deviceSpeech.install(cfg.defaultLanguage);
+	}
+	catch {
+		// Re-check below reports the resulting state.
+	}
+	finally {
+		deviceInstalling.value = false;
+	}
+	await checkDevice();
+}
+
 const cal = useCalendar("google");
 const settings = cal.settings;
 
@@ -80,12 +139,18 @@ function done(): void {
 	}
 }
 
-// Calendars load only once the Kalender tab is first opened.
+// Calendars / live engines load only once their tab is first opened.
 let calendarsRequested = false;
+let liveRequested = false;
 watch(tab, (value) => {
 	if (value === "calendar" && !calendarsRequested) {
 		calendarsRequested = true;
 		void loadCalendars();
+	}
+	if (value === "live" && !liveRequested) {
+		liveRequested = true;
+		void loadListenEngines();
+		void checkDevice();
 	}
 });
 </script>
@@ -294,11 +359,94 @@ watch(tab, (value) => {
 				</p>
 			</section>
 
-			<!-- Live settings arrive with the live-sources step. -->
 			<section
 				v-else
 				class="drawer__body"
-			/>
+			>
+				<div
+					class="drawer__field"
+					role="radiogroup"
+					aria-label="Live-Quelle"
+				>
+					<span class="drawer__label">Live-Quelle</span>
+					<label class="drawer__radio">
+						<input
+							v-model="liveSettings.source"
+							type="radio"
+							name="settings-live-source"
+							value="hub"
+							data-testid="settings-live-source"
+						>
+						Hub-Stream
+					</label>
+					<label class="drawer__radio">
+						<input
+							v-model="liveSettings.source"
+							type="radio"
+							name="settings-live-source"
+							value="device"
+							data-testid="settings-live-source"
+						>
+						Auf dem Gerät (lokal)
+					</label>
+				</div>
+
+				<label
+					v-if="listenEngines.length"
+					class="drawer__field"
+				>
+					<span class="drawer__label">Hub-Engine</span>
+					<select
+						v-model="liveSettings.hubEngine"
+						class="drawer__input"
+						data-testid="settings-live-engine"
+					>
+						<option value="">
+							Hub-Standard ({{ listenDefault || "keiner" }})
+						</option>
+						<option
+							v-for="e in listenEngines"
+							:key="e.name"
+							:value="e.name"
+						>
+							{{ e.name }}{{ e.private ? "" : " (Cloud)" }}
+						</option>
+					</select>
+				</label>
+				<p
+					v-else-if="listenLoaded"
+					class="drawer__notice"
+					data-testid="settings-live-no-engines"
+				>
+					Dieser Hub bietet kein Live-Streaming an – in Einstellungen → Live die lokale Erkennung wählen.
+					<template v-if="listenError">
+						({{ listenError }})
+					</template>
+				</p>
+
+				<div class="drawer__field">
+					<span class="drawer__label">Lokale Spracherkennung</span>
+					<span
+						class="drawer__readonly"
+						data-testid="settings-live-device"
+					>{{ deviceLabel }}</span>
+					<HButton
+						v-if="deviceState === 'downloadable'"
+						variant="secondary"
+						:disabled="deviceInstalling"
+						data-testid="settings-live-device-install"
+						@click="installDevice"
+					>
+						Sprachpaket laden
+					</HButton>
+				</div>
+
+				<p class="drawer__sub">
+					Die Tastatur-Diktierfunktion des Telefons funktioniert unabhängig davon im Texteditor.
+				</p>
+
+				<!-- Correction controls (chunked re-transcription) belong below this line. -->
+			</section>
 
 			<footer class="drawer__foot">
 				<NuxtLink
@@ -346,4 +494,5 @@ watch(tab, (value) => {
 .drawer__foot { padding:14px 22px 22px; border-top:1.5px solid var(--border-strong); display:flex; flex-direction:column; gap:10px; }
 .drawer__foot > * { width:100%; }
 .drawer__diag-link { text-align:center; font-size:13px; }
+.drawer__radio { display:flex; align-items:center; gap:8px; font-size:15px; color:var(--fg1); padding:4px 0; }
 </style>

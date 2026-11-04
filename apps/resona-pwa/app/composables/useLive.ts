@@ -3,23 +3,20 @@ import type { Ref, ComputedRef } from "vue";
 // Explicit import (rather than relying on the @vueuse/nuxt auto-import) so the
 // `@vueuse/core` module mock binds cleanly in tests.
 import { useWebSocket } from "@vueuse/core";
-import { floatTo16kPCM } from "~/utils/pcm";
+import type { PcmCapture } from "~/composables/usePcmCapture";
 
-interface StartOptions {
+export interface LiveStartOptions {
 	language?: string;
 	engine?: string;
-	stream?: MediaStream;
+	private?: boolean;
+	capture?: PcmCapture;
 }
 
 interface DeepgramResults {
 	type?: string;
+	description?: string;
 	channel?: { alternatives?: { transcript?: string }[] };
 	is_final?: boolean;
-}
-
-function getAudioContextCtor(): typeof AudioContext | undefined {
-	const g = globalThis as Record<string, unknown>;
-	return (g.AudioContext ?? g.webkitAudioContext) as typeof AudioContext | undefined;
 }
 
 function toWsUrl(httpUrl: string): string {
@@ -36,6 +33,7 @@ export function useLive() {
 	const partial: Ref<string> = ref("");
 	const final: Ref<string> = ref("");
 	const status: Ref<string> = ref("CLOSED");
+	const error: Ref<string | null> = ref(null);
 	const fullText: ComputedRef<string> = computed(() =>
 		partial.value ? `${final.value} ${partial.value}`.trim() : final.value,
 	);
@@ -45,12 +43,15 @@ export function useLive() {
 	let stopDataWatch: (() => void) | null = null;
 	let stopStatusWatch: (() => void) | null = null;
 
-	let audioCtx: AudioContext | null = null;
-	let source: MediaStreamAudioSourceNode | null = null;
-	let processor: ScriptProcessorNode | null = null;
-	let stream: MediaStream | null = null;
-	let ownsStream = false;
-	let stopped = false;
+	let unsubscribeFrames: (() => void) | null = null;
+	const finalListeners = new Set<(text: string) => void>();
+
+	function onFinal(cb: (text: string) => void): () => void {
+		finalListeners.add(cb);
+		return () => {
+			finalListeners.delete(cb);
+		};
+	}
 
 	function handleMessage(raw: unknown): void {
 		if (typeof raw !== "string" || raw.length === 0) {
@@ -63,6 +64,11 @@ export function useLive() {
 		catch {
 			return; // ignore non-JSON keepalives etc.
 		}
+		if (frame.type === "Error") {
+			error.value = frame.description || "Live-Transkription fehlgeschlagen";
+			stop();
+			return;
+		}
 		if (frame.type !== "Results") {
 			return; // ignore Metadata and other frame types
 		}
@@ -70,90 +76,16 @@ export function useLive() {
 		if (frame.is_final) {
 			final.value = final.value ? `${final.value} ${transcript}` : transcript;
 			partial.value = "";
+			for (const cb of finalListeners) {
+				cb(transcript);
+			}
 		}
 		else {
 			partial.value = transcript;
 		}
 	}
 
-	async function startAudio(opts: StartOptions): Promise<void> {
-		const Ctor = getAudioContextCtor();
-		const media = (globalThis as { navigator?: Navigator }).navigator?.mediaDevices;
-		if (!Ctor || !media) {
-			// happy-dom / unsupported browser: skip the capture graph entirely.
-			return;
-		}
-
-		if (opts.stream) {
-			stream = opts.stream;
-			ownsStream = false;
-		}
-		else {
-			stream = await media.getUserMedia({ audio: true });
-			ownsStream = true;
-		}
-
-		// stop() may have been called while getUserMedia was pending (quick
-		// press-release). Bail out to avoid an orphaned AudioContext/stream.
-		if (stopped) {
-			if (ownsStream) {
-				for (const track of stream.getTracks()) {
-					track.stop();
-				}
-			}
-			stream = null;
-			ownsStream = false;
-			return;
-		}
-
-		audioCtx = new Ctor();
-		// Chrome's autoplay policy may start the context suspended when created
-		// outside a synchronous user-gesture handler (e.g. after an await).
-		// resume() is a no-op on already-running contexts.
-		if (audioCtx.state === "suspended") {
-			await audioCtx.resume();
-		}
-		source = audioCtx.createMediaStreamSource(stream);
-		processor = audioCtx.createScriptProcessor(4096, 1, 1);
-		processor.onaudioprocess = (e: AudioProcessingEvent) => {
-			if (!send) {
-				return;
-			}
-			const channel = e.inputBuffer.getChannelData(0);
-			const pcm = floatTo16kPCM(channel, audioCtx!.sampleRate);
-			send(pcm.buffer);
-		};
-		source.connect(processor);
-		processor.connect(audioCtx.destination);
-	}
-
-	function teardownAudio(): void {
-		try {
-			if (processor) {
-				processor.onaudioprocess = null;
-				processor.disconnect();
-			}
-			source?.disconnect();
-		}
-		catch {
-			// nodes may already be detached
-		}
-		if (audioCtx && audioCtx.state !== "closed") {
-			void audioCtx.close();
-		}
-		if (stream && ownsStream) {
-			for (const track of stream.getTracks()) {
-				track.stop();
-			}
-		}
-		processor = null;
-		source = null;
-		audioCtx = null;
-		stream = null;
-		ownsStream = false;
-	}
-
-	async function start(opts: StartOptions = {}): Promise<void> {
+	async function start(opts: LiveStartOptions = {}): Promise<void> {
 		const cfg = useRuntimeConfig().public;
 		const language = opts.language ?? cfg.defaultLanguage;
 		const engine = opts.engine ?? "";
@@ -170,13 +102,16 @@ export function useLive() {
 		if (engine) {
 			url.searchParams.set("engine", engine);
 		}
+		if (opts.private === false) {
+			url.searchParams.set("private", "false");
+		}
 		url.searchParams.set("token", useHub().token());
 
-		stopped = false;
+		error.value = null;
 		final.value = "";
 		partial.value = "";
 
-		const sock = useWebSocket(url.toString(), { autoReconnect: true });
+		const sock = useWebSocket(url.toString(), { autoReconnect: { retries: 3, delay: 2000 } });
 		send = sock.send as (data: string | ArrayBufferLike) => void;
 		close = sock.close;
 
@@ -191,12 +126,14 @@ export function useLive() {
 			{ immediate: true, flush: "sync" },
 		);
 
-		await startAudio(opts);
+		unsubscribeFrames = opts.capture?.onFrame((pcm) => {
+			send?.(pcm.buffer);
+		}) ?? null;
 	}
 
 	function stop(): void {
-		stopped = true;
-		teardownAudio();
+		unsubscribeFrames?.();
+		unsubscribeFrames = null;
 		if (send) {
 			send(JSON.stringify({ type: "CloseStream" }));
 		}
@@ -218,7 +155,9 @@ export function useLive() {
 		final,
 		fullText,
 		status,
+		error,
 		start,
 		stop,
+		onFinal,
 	};
 }

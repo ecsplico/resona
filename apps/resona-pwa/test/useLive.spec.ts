@@ -72,10 +72,89 @@ describe("useLive", () => {
 		expect(url.searchParams.has("engine")).toBe(false);
 	});
 
-	it("enables autoReconnect", () => {
+	it("reconnects up to 3 times with a 2 s delay", () => {
 		const live = useLive();
 		void live.start();
-		expect((ws.lastOpts as { autoReconnect?: unknown }).autoReconnect).toBeTruthy();
+		expect(ws.lastOpts).toEqual({ autoReconnect: { retries: 3, delay: 2000 } });
+	});
+
+	it("omits engine when empty and private unless explicitly false", () => {
+		const live = useLive();
+		void live.start({ engine: "", private: true });
+		let url = new URL(ws.lastUrl);
+		expect(url.searchParams.has("engine")).toBe(false);
+		expect(url.searchParams.has("private")).toBe(false);
+
+		void live.start({ engine: "deepgram", private: false });
+		url = new URL(ws.lastUrl);
+		expect(url.searchParams.get("engine")).toBe("deepgram");
+		expect(url.searchParams.get("private")).toBe("false");
+	});
+
+	it("streams capture frames while running and unsubscribes on stop", () => {
+		let frameCb: ((pcm: Int16Array) => void) | null = null;
+		const unsubscribe = vi.fn(() => {
+			frameCb = null;
+		});
+		const capture = {
+			sampleRate: 16000,
+			start: vi.fn(async () => {}),
+			stop: vi.fn(),
+			onFrame: vi.fn((cb: (pcm: Int16Array) => void) => {
+				frameCb = cb;
+				return unsubscribe;
+			}),
+		};
+		const live = useLive();
+		void live.start({ capture });
+
+		const pcm = new Int16Array([1, 2, 3]);
+		frameCb!(pcm);
+		expect(ws.send).toHaveBeenCalledWith(pcm.buffer);
+
+		live.stop();
+		expect(unsubscribe).toHaveBeenCalledTimes(1);
+		// the capture itself is owned by the caller
+		expect(capture.stop).not.toHaveBeenCalled();
+	});
+
+	it("an Error frame sets error and stops the stream", async () => {
+		const live = useLive();
+		void live.start();
+
+		ws.data!.value = JSON.stringify({ type: "Error", description: "engine down" });
+		await nextTick();
+
+		expect(live.error.value).toBe("engine down");
+		expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: "CloseStream" }));
+		expect(ws.close).toHaveBeenCalled();
+
+		// a later frame is no longer processed
+		ws.data!.value = resultsFrame("zu spät", true);
+		await nextTick();
+		expect(live.final.value).toBe("");
+
+		// a new session clears the error
+		void live.start();
+		expect(live.error.value).toBeNull();
+	});
+
+	it("onFinal fires with each final transcript only, and unsubscribes", async () => {
+		const live = useLive();
+		const seen: string[] = [];
+		const off = live.onFinal(t => seen.push(t));
+		void live.start();
+
+		ws.data!.value = resultsFrame("teil", false);
+		await nextTick();
+		ws.data!.value = resultsFrame("ganzer satz", true);
+		await nextTick();
+		expect(seen).toEqual(["ganzer satz"]);
+
+		off();
+		ws.data!.value = resultsFrame("noch einer", true);
+		await nextTick();
+		expect(seen).toEqual(["ganzer satz"]);
 	});
 
 	it("updates partial on a non-final Results frame", async () => {

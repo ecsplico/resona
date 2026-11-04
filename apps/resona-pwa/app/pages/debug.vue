@@ -46,6 +46,18 @@ const mimeSupport = computed(() => MIME_CANDIDATES.map(type => ({
 
 const micPermission = ref("wird geprüft…");
 
+const deviceSpeech = useDeviceSpeech();
+const deviceSpeechState = ref("wird geprüft…");
+
+async function checkDeviceSpeech(): Promise<void> {
+	try {
+		deviceSpeechState.value = await deviceSpeech.availability("de");
+	}
+	catch (err) {
+		deviceSpeechState.value = `Fehler (${describeError(err)})`;
+	}
+}
+
 async function checkMicPermission(): Promise<void> {
 	if (typeof navigator === "undefined" || !navigator.permissions?.query) {
 		micPermission.value = "unbekannt (Permissions API nicht unterstützt)";
@@ -208,6 +220,7 @@ function formatTime(ts: number): string {
 
 onMounted(() => {
 	void checkMicPermission();
+	void checkDeviceSpeech();
 	void runReachabilityChecks();
 	window.addEventListener("keydown", onTestKeyDown);
 	window.addEventListener("keyup", onTestKeyUp);
@@ -314,6 +327,10 @@ onUnmounted(() => {
 						<HChip :tone="audioContextSupported ? 'success' : 'warning'">
 							{{ audioContextSupported ? "unterstützt" : "nicht unterstützt (Pegelanzeige fällt aus)" }}
 						</HChip>
+					</dd>
+					<dt>Lokale Spracherkennung (de)</dt>
+					<dd data-testid="debug-device-speech">
+						{{ deviceSpeechState }}
 					</dd>
 				</dl>
 			</HCard>
