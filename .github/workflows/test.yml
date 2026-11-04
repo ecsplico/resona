@@ -16,7 +16,8 @@ jobs:
       - name: Install system dependencies
         # libportaudio2  → required by `sounddevice` (imported by test_micrec)
         # ffmpeg         → required by `resona_asr_core.audio.load_audio()`
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg
+        # tesseract-ocr  → tesseract OCR tests; English pack only (tests expect `deu` missing)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg tesseract-ocr
 
       # setup-uv dropped moving major tags in v8 — pin a specific version.
       - uses: astral-sh/setup-uv@v8.1.0
@@ -29,6 +30,17 @@ jobs:
 
       - name: Install workspace packages
         run: uv sync --all-packages
+
+      # Like `resona-worker prepare`: fetch the pinned Docling weights, so the worker's
+      # private (offline) execution smoke test finds them in the HF cache.
+      - name: Prepare Docling weights
+        run: |
+          uv run python -c "
+          from huggingface_hub import snapshot_download
+          from resona_engine_docling import stage_weights
+          for repo, rev in stage_weights():
+              snapshot_download(repo, revision=rev)
+          "
 
       - name: Run tests
         run: uv run pytest
