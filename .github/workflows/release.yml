@@ -193,12 +193,10 @@ jobs:
         run: uv sync --all-packages --frozen
 
       # Weights are fetched here, at the revisions the release pins, never by a job.
+      # `prepare` also points each cache's `main` ref at the pinned commit; local
+      # mode resolves unpinned candidates through that ref.
       - name: Prepare pinned models
-        run: |
-          set -euo pipefail
-          rev=$(jq -r '.[] | select(.model == "Systran/faster-whisper-large-v3") | .revision' apps/resona-worker/src/resona_worker/models.json)
-          uv run hf download Systran/faster-whisper-large-v3 --revision "$rev" > /dev/null
-          uv run docling-tools models download > /dev/null
+        run: uv run resona-worker prepare --profile cpu-private --out "$RUNNER_TEMP/capabilities.json"
 
       - name: Evaluate against eval/baselines.json
         run: uv run resona eval --profile cpu-private --platform cpu --output-dir eval-report
