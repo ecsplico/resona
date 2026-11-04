@@ -33,13 +33,44 @@ let client: ResonaDirectusClient | null = null;
 let directusUrl = "";
 const isAuthenticated: Ref<boolean> = ref(false);
 const accessToken: Ref<string> = ref("");
+const authStorage = persistentAuthStorage();
+// Refresh this long before expires_at, matching the SDK's msRefreshBeforeExpires.
+const REFRESH_MARGIN_MS = 30_000;
+
+function clearLocalSession(): void {
+	authStorage.set(null);
+	client?.stopRefreshing();
+	accessToken.value = "";
+	isAuthenticated.value = false;
+}
 
 function getClient(): ResonaDirectusClient {
 	if (!client) {
 		directusUrl = useRuntimeConfig().public.directusUrl;
-		client = createDirectus<Schema>(directusUrl)
-			.with(authentication("json", { storage: persistentAuthStorage(), autoRefresh: true }))
+		// Captured now (first use runs in the auth middleware), so a 401 from a
+		// later async request can still navigate.
+		const nuxtApp = tryUseNuxtApp();
+		const base = createDirectus<Schema>(directusUrl)
+			.with(authentication("json", { storage: authStorage, autoRefresh: true }))
 			.with(rest());
+		// The SDK swallows a failed refresh and keeps sending the dead token, so
+		// every request 401s ("Token expired.") while the page still looks logged
+		// in. Treat any 401 as the end of the session and go back to /login.
+		const request = base.request.bind(base);
+		base.request = (async (options: Parameters<typeof request>[0]) => {
+			try {
+				return await request(options);
+			}
+			catch (err) {
+				const status = (err as { response?: { status?: number } } | null)?.response?.status;
+				if (status === 401 && isAuthenticated.value) {
+					clearLocalSession();
+					void nuxtApp?.runWithContext(() => navigateTo("/login"));
+				}
+				throw err;
+			}
+		}) as typeof base.request;
+		client = base;
 	}
 	return client;
 }
@@ -65,6 +96,18 @@ export function useDirectus() {
 	}
 
 	async function restoreSession(): Promise<boolean> {
+		// getToken() would return the stale access token when its refresh fails,
+		// so refresh an expired session here and treat failure as logged out.
+		const stored = await authStorage.get();
+		if (stored?.expires_at != null && stored.expires_at <= Date.now() + REFRESH_MARGIN_MS) {
+			try {
+				await directus.refresh();
+			}
+			catch {
+				clearLocalSession();
+				return false;
+			}
+		}
 		try {
 			const token = await directus.getToken();
 			accessToken.value = token ?? "";

@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { useDirectus } from "~/composables/useDirectus";
 
+// useDirectus wraps client.request on construction, so keep the raw fn apart.
+const rawRequest = vi.hoisted(() => vi.fn());
 const mockClient = vi.hoisted(() => ({
 	login: vi.fn(),
 	logout: vi.fn(),
 	getToken: vi.fn(),
-	request: vi.fn(),
+	refresh: vi.fn(),
+	stopRefreshing: vi.fn(),
+	request: rawRequest as (...args: unknown[]) => unknown,
 }));
+const navigateTo = vi.hoisted(() => vi.fn());
+mockNuxtImport("navigateTo", () => navigateTo);
 // Capture how authentication() was configured at client-construction time. The
 // client is a module singleton built on first use, so we stash the args here
 // (clearAllMocks wipes mock.calls but not this object).
@@ -126,6 +133,61 @@ describe("useDirectus", () => {
 	it("assetUrl returns a token-less URL before auth", () => {
 		const d = useDirectus();
 		expect(d.assetUrl("abc-123")).toBe("http://localhost:7700/assets/abc-123");
+	});
+
+	describe("expired session", () => {
+		const storageOf = () => (authConfig.options as AuthStorageOpts).storage!;
+		const expiredSession = () => ({ access_token: "old", refresh_token: "r", expires: 900000, expires_at: Date.now() - 1000 });
+
+		it("restoreSession returns false and clears the stored session when the refresh fails", async () => {
+			useDirectus();
+			storageOf().set(expiredSession());
+			mockClient.refresh.mockRejectedValue(new Error("Invalid user credentials."));
+			mockClient.getToken.mockResolvedValue("old");
+			const d = useDirectus();
+
+			expect(await d.restoreSession()).toBe(false);
+			expect(d.isAuthenticated.value).toBe(false);
+			expect(storageOf().get()).toBeNull();
+		});
+
+		it("restoreSession refreshes an expired session and stays logged in", async () => {
+			useDirectus();
+			storageOf().set(expiredSession());
+			mockClient.refresh.mockResolvedValue({ access_token: "new" });
+			mockClient.getToken.mockResolvedValue("new");
+			const d = useDirectus();
+
+			expect(await d.restoreSession()).toBe(true);
+			expect(mockClient.refresh).toHaveBeenCalledTimes(1);
+			expect(d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=new");
+		});
+
+		it("a 401 from a request logs out locally and navigates to /login, once", async () => {
+			const d = useDirectus();
+			storageOf().set({ ...expiredSession(), expires_at: Date.now() + 600000 });
+			d.isAuthenticated.value = true;
+			const err = Object.assign(new Error("Token expired."), { response: { status: 401 } });
+			rawRequest.mockRejectedValue(err);
+
+			await expect(d.client.request({} as never)).rejects.toBe(err);
+			await expect(d.client.request({} as never)).rejects.toBe(err);
+
+			expect(d.isAuthenticated.value).toBe(false);
+			expect(storageOf().get()).toBeNull();
+			expect(navigateTo).toHaveBeenCalledTimes(1);
+			expect(navigateTo).toHaveBeenCalledWith("/login");
+		});
+
+		it("a non-auth request error leaves the session alone", async () => {
+			const d = useDirectus();
+			d.isAuthenticated.value = true;
+			rawRequest.mockRejectedValue(Object.assign(new Error("Forbidden"), { response: { status: 403 } }));
+
+			await expect(d.client.request({} as never)).rejects.toThrow("Forbidden");
+			expect(d.isAuthenticated.value).toBe(true);
+			expect(navigateTo).not.toHaveBeenCalled();
+		});
 	});
 
 	it("assetUrl appends the access token after restoreSession", async () => {
