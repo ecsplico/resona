@@ -338,12 +338,84 @@ def _v3_upload_links(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 4: job ids are never reused ───────────────────────────────
+#
+# A plain ``INTEGER PRIMARY KEY`` hands the highest id out again once that row
+# is deleted, so a client holding a stale job id could read a newer job. The
+# ``job`` table is rebuilt with AUTOINCREMENT from the ORM metadata (refusing if
+# its columns or foreign keys differ from the table on disk), its indexes are
+# recreated from their stored SQL, and ``sqlite_sequence`` is seeded with the
+# highest job id referenced anywhere, so ids already handed out (and possibly
+# deleted) are never issued again. On a fresh database migration 1 already
+# created ``job`` with AUTOINCREMENT; only the seeding runs.
+
+# Every (table, column) besides ``job.id`` that holds a job id.
+_JOB_ID_REFERENCES = (("upload", "consumed_by_job_id"), ("idempotencyrecord", "job_id"))
+
+
+def _job_has_autoincrement(conn: sqlite3.Connection) -> bool:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'job'").fetchone()
+    return row is not None and "AUTOINCREMENT" in row[0].upper()
+
+
+def _table_shape(conn: sqlite3.Connection, table: str) -> tuple[list[tuple], list[tuple]]:
+    columns = [tuple(r)[1:] for r in conn.execute(f"PRAGMA table_info({table})")]
+    foreign_keys = [tuple(r)[2:] for r in conn.execute(f"PRAGMA foreign_key_list({table})")]
+    return columns, foreign_keys
+
+
+def _v4_job_autoincrement(conn: sqlite3.Connection) -> AfterCommit | None:
+    rows = conn.execute("SELECT COUNT(*) FROM job").fetchone()[0]
+    if not _job_has_autoincrement(conn):
+        old_shape = _table_shape(conn, "job")
+        index_sql = [r[0] for r in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'job' AND sql IS NOT NULL"
+        )]
+        conn.execute("ALTER TABLE job RENAME TO job_v4_old")
+        for (name,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'job_v4_old' "
+            "AND sql IS NOT NULL"
+        ).fetchall():
+            conn.execute(f'DROP INDEX "{name}"')
+        conn.execute(str(CreateTable(Job.__table__).compile(dialect=sqlite_dialect.dialect())))
+        if _table_shape(conn, "job") != old_shape:
+            raise SchemaError(
+                "migration 4: the job table on disk does not match the model; refusing to rebuild it"
+            )
+        for sql in index_sql:
+            conn.execute(sql)
+        columns = ", ".join(c.name for c in Job.__table__.columns)
+        conn.execute(f"INSERT INTO job ({columns}) SELECT {columns} FROM job_v4_old")
+        conn.execute("DROP TABLE job_v4_old")
+
+    tables = _table_names(conn)
+    highest = conn.execute("SELECT COALESCE(MAX(id), 0) FROM job").fetchone()[0]
+    for table, column in _JOB_ID_REFERENCES:
+        if table in tables:
+            value = conn.execute(f"SELECT COALESCE(MAX({column}), 0) FROM {table}").fetchone()[0]
+            highest = max(highest, int(value))
+    seq = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'job'").fetchone()
+    if seq is None:
+        conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('job', ?)", (highest,))
+    elif int(seq[0]) < highest:
+        conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'job'", (highest,))
+
+    if not _job_has_autoincrement(conn):
+        raise SchemaError("migration 4 did not make job.id AUTOINCREMENT")
+    if conn.execute("SELECT COUNT(*) FROM job").fetchone()[0] != rows:
+        raise SchemaError("migration 4 lost job rows")
+    seq = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'job'").fetchone()
+    if seq is None or int(seq[0]) < highest:
+        raise SchemaError("migration 4 did not seed the job id sequence")
+    return None
+
 
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (1, _v1_identity_settings_jobs),
     (2, _v2_releases_evaluations),
     (3, _v3_upload_links),
+    (4, _v4_job_autoincrement),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]

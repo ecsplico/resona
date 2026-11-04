@@ -179,6 +179,78 @@ def test_listen_rejects_non_streaming_cloud(monkeypatch, cloud_org, client_heade
             assert "streaming" in msg["description"]
 
 
+# ── Closing after the client already left ────────────────────────────────────
+
+class _AsgiClient:
+    """ASGI side of a client socket that behaves like uvicorn after a disconnect.
+
+    Once the client has disconnected, uvicorn rejects ``websocket.close`` with a
+    ``RuntimeError``; ``fail_close`` makes it reject even before (the race where
+    the peer vanishes between the state check and the send).
+    """
+
+    def __init__(self, incoming, fail_close=False):
+        self._incoming = [{"type": "websocket.connect"}, *incoming]
+        self.fail_close = fail_close
+        self.disconnected = False
+        self.sent = []
+
+    async def receive(self):
+        message = self._incoming.pop(0)
+        if message["type"] == "websocket.disconnect":
+            self.disconnected = True
+        return message
+
+    async def send(self, message):
+        if message["type"] == "websocket.close" and (self.disconnected or self.fail_close):
+            raise RuntimeError(
+                "Unexpected ASGI message 'websocket.close', after sending 'websocket.close' "
+                "or response already completed."
+            )
+        self.sent.append(message)
+
+
+async def _accepted(asgi):
+    from starlette.websockets import WebSocket
+
+    ws = WebSocket({"type": "websocket", "path": "/v1/listen", "headers": []}, asgi.receive, asgi.send)
+    await ws.accept()
+    return ws
+
+
+def test_local_bridge_ends_quietly_after_client_disconnect(monkeypatch, caplog):
+    asgi = _AsgiClient([{"type": "websocket.disconnect", "code": 1000}])
+    info = reg.EngineInfo(
+        name="faster-whisper", kind="local", capabilities=["stt"],
+        private=True, available=True, models=["large-v3"], url="http://engine:7001",
+    )
+
+    async def run():
+        fake_ws = _FakeEngineWS(script=[])
+        monkeypatch.setattr(sr.websockets, "connect", lambda url, **k: _FakeConnect(fake_ws))
+        ws = await _accepted(asgi)
+        await sr._run_local_bridge(
+            ws, info, language="de", sample_rate=16000, channels=1,
+            interim_results=False, pipeline=None, request_id="req-1", models=["large-v3"],
+        )
+
+    with caplog.at_level("ERROR"):
+        asyncio.run(run())
+
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    assert all(m["type"] != "websocket.close" for m in asgi.sent)
+
+
+def test_close_tolerates_peer_vanishing_mid_close():
+    asgi = _AsgiClient([], fail_close=True)
+
+    async def run():
+        ws = await _accepted(asgi)
+        await sr._close(ws)
+
+    asyncio.run(run())  # no RuntimeError escapes
+
+
 # ── Cloud streaming bridge (Deepgram / ElevenLabs via resona_cloud_stt) ───────
 
 class _FakeCloudSession:

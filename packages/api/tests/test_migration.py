@@ -199,7 +199,86 @@ def test_v2_database_gains_upload_links_and_keeps_jobs(legacy_db, monkeypatch):
     version = raw.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
     jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
     raw.close()
-    assert "uploadlink" in tables and version == 3 and jobs == 2
+    assert "uploadlink" in tables and version == schema.TARGET_VERSION and jobs == 2
+
+
+def _insert_job(raw) -> int:
+    cursor = raw.execute(
+        "INSERT INTO job (organization_id, status, created_at, updated_at) "
+        "VALUES ('bootstrap-org', 'PENDING', '2026-01-03 10:00:00', '2026-01-03 10:00:00')"
+    )
+    raw.commit()
+    return cursor.lastrowid
+
+
+def _job_ddl(raw) -> str:
+    return raw.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='job'").fetchone()[0]
+
+
+def test_v3_database_never_reissues_a_deleted_job_id(legacy_db, monkeypatch):
+    from resona_api.db.models import Job
+
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:3])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 3)
+    # A v3 hub created job with a plain INTEGER PRIMARY KEY.
+    monkeypatch.setitem(Job.__table__.dialect_options["sqlite"], "autoincrement", False)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    raw = sqlite3.connect(legacy_db)
+    assert "AUTOINCREMENT" not in _job_ddl(raw)
+    raw.execute("CREATE INDEX ix_job_worker_id ON job (worker_id)")
+    raw.execute(
+        "INSERT INTO upload (id, organization_id, sha256, size, media_family, media_type, "
+        "created_at, expires_at, consumed_by_job_id) VALUES ('upl_1', 'bootstrap-org', 'x', 1, "
+        "'audio', 'audio/wav', '2026-01-03 10:00:00', '2026-01-03 11:00:00', 12)"
+    )
+    raw.execute(
+        "INSERT INTO idempotencyrecord (organization_id, key, request_hash, job_id, created_at) "
+        "VALUES ('bootstrap-org', 'k', 'h', 11, '2026-01-03 10:00:00')"
+    )
+    raw.execute("DELETE FROM job WHERE id = 9")
+    raw.commit()
+    before = raw.execute("SELECT * FROM job ORDER BY id").fetchall()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    after = raw.execute("SELECT * FROM job ORDER BY id").fetchall()
+    ddl = _job_ddl(raw)
+    indexes = {r[0] for r in raw.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='job'")}
+    version = raw.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    first = _insert_job(raw)
+    raw.execute("DELETE FROM job WHERE id = ?", (first,))
+    raw.commit()
+    second = _insert_job(raw)
+    raw.close()
+    assert after == before and [r[0] for r in after] == [7]
+    assert "AUTOINCREMENT" in ddl and "ix_job_worker_id" in indexes
+    assert version == schema.TARGET_VERSION
+    assert (first, second) == (13, 14)
+
+
+def test_fresh_database_does_not_reuse_deleted_job_ids(tmp_path):
+    path = tmp_path / "fresh.db"
+    migrate(_engine_for(path))
+    raw = sqlite3.connect(path)
+    raw.execute(
+        "INSERT INTO organization (id, storage_id, created_at) "
+        "VALUES ('bootstrap-org', 's', '2026-01-03 10:00:00')"
+    )
+    raw.commit()
+    assert "AUTOINCREMENT" in _job_ddl(raw)
+    _insert_job(raw)
+    last = _insert_job(raw)
+    raw.execute("DELETE FROM job WHERE id = ?", (last,))
+    raw.commit()
+    reissued = _insert_job(raw)
+    raw.close()
+    assert (last, reissued) == (2, 3)
+
 
 
 

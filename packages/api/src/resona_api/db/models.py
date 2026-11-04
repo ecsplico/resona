@@ -102,8 +102,11 @@ class Job(SQLModel, table=True):
     ``storage.job_dir``; the row holds state, hashes and expiry only.
     ``execution_snapshot`` is JSON of approved identifiers and non-content options.
     Columns that are NOT NULL carry ``server_default`` so raw inserts (migration 1
-    copies legacy rows with SQL) remain valid.
+    copies legacy rows with SQL) remain valid. ``id`` is AUTOINCREMENT: a deleted
+    job's id is never issued again, so a stale id cannot address a newer job.
     """
+
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)

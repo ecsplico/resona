@@ -111,6 +111,23 @@ def _resolve_principal(websocket: WebSocket) -> Principal | None:
     with Session(db_engine) as session:
         return websocket_principal(websocket, session)
 
+
+async def _close(websocket: WebSocket, code: int = 1000) -> None:
+    """Close an accepted client socket unless either side already closed it.
+
+    The client may vanish between the state check and the send; uvicorn then
+    rejects the close (``RuntimeError``) or the send fails (``WebSocketDisconnect``).
+    Both mean the session is already over, so neither is an error.
+    """
+    if (websocket.client_state != WebSocketState.CONNECTED
+            or websocket.application_state != WebSocketState.CONNECTED):
+        return
+    try:
+        await websocket.close(code=code)
+    except (RuntimeError, WebSocketDisconnect) as exc:
+        log.debug("client socket already closed: %s", exc)
+
+
 def _ws_url(http_url: str, language: str) -> str:
     """Convert an engine-server http(s) base URL to its /ws/live WebSocket URL."""
     base = http_url.rstrip("/")
@@ -183,7 +200,7 @@ async def listen(websocket: WebSocket):
             "type": "Error",
             "description": f"unsupported encoding '{encoding}' — only linear16 PCM is supported",
         })
-        await websocket.close(code=1003)
+        await _close(websocket, code=1003)
         return
 
     # Admit the whole chain (settings, engine, postprocess profile) before any audio flows.
@@ -202,11 +219,11 @@ async def listen(websocket: WebSocket):
             "type": "Error",
             "description": f"policy_denied: {exc.stage}: {exc.reason}",
         })
-        await websocket.close(code=1008)
+        await _close(websocket, code=1008)
         return
     except (reg.EngineError, LookupError, ValueError) as exc:
         await websocket.send_json({"type": "Error", "description": str(exc)})
-        await websocket.close(code=1011)
+        await _close(websocket, code=1011)
         return
 
     info = admission.engine
@@ -229,7 +246,7 @@ async def listen(websocket: WebSocket):
             "description": f"engine '{info.name}' does not support live streaming "
                            "(no realtime API)",
         })
-        await websocket.close(code=1003)
+        await _close(websocket, code=1003)
 
 
 
@@ -255,8 +272,7 @@ async def _run_local_bridge(websocket, info, *, language, sample_rate, channels,
             except Exception:
                 pass
     finally:
-        if websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.close()
+        await _close(websocket)
 
 
 async def _run_cloud_bridge(websocket, info, *, language, loop, sample_rate, channels,
@@ -266,7 +282,7 @@ async def _run_cloud_bridge(websocket, info, *, language, loop, sample_rate, cha
         api_key = reg.cloud_api_key(info.provider)
     except reg.EngineError as exc:
         await websocket.send_json({"type": "Error", "description": str(exc)})
-        await websocket.close(code=1011)
+        await _close(websocket, code=1011)
         return
 
     model = info.models[0] if info.models else None
@@ -285,7 +301,7 @@ async def _run_cloud_bridge(websocket, info, *, language, loop, sample_rate, cha
                 })
             except Exception:
                 pass
-            await websocket.close(code=1011)
+            await _close(websocket, code=1011)
         return
 
     try:
@@ -300,8 +316,7 @@ async def _run_cloud_bridge(websocket, info, *, language, loop, sample_rate, cha
         log.error("cloud streaming bridge failed: %s", exc, exc_info=True)
     finally:
         await session.close()
-        if websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.close()
+        await _close(websocket)
 
 
 async def _bridge(
