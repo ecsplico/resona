@@ -165,6 +165,9 @@ Measured on the evaluation corpus (gpu-box, `rapidocr`, 2026-11-02; CER = charac
   (0.004 `rapidocr`, 0.000 `ocrmac`): the bad layer does not reach the output.
 - French, Italian and Spanish scans (`rapidocr`, Mac CPU, 2026-11-04): `auto` 0.200 / 0.000 / 0.000,
   `force` 0.000 for all three. In `auto`, the French page lost most of its first line.
+- Korean (`ko`, `ocrmac` only, Mac, 2026-11-04): a rendered page of two Hangul lines (Apple SD Gothic
+  Neo 26 px, light blur) read at CER 0.000 in `auto` and `force`. The corpus has no Korean fixture
+  because `rapidocr` ships no Korean weights.
 
 ```bash
 resona doc scan.pdf --pages 1-3 --languages de,en
