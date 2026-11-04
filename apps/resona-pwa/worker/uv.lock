@@ -154,7 +154,7 @@ wheels = [
 ]
 
 [[package]]
-name = "resona-directus-transcribe"
+name = "resona-project-worker"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

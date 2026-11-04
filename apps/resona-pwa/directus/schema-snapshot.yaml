@@ -1,2 +1,2 @@
-# Placeholder — regenerate with `directus schema snapshot` after authoring the
-# recordings/transcripts collections (see bootstrap.md §4). Commit the result.
+# Placeholder — regenerate with `directus schema snapshot` after bootstrapping the
+# recordings/transcripts/documents collections (see bootstrap.md §4). Commit the result.

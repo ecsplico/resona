@@ -4,19 +4,19 @@ import httpx
 import pytest
 import respx
 
-from resona_directus_transcribe.client import DirectusClient
+from resona_project_worker.directus import DirectusClient
 
 TOKEN = "svc-token"
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_list_pending_filters_and_authenticates(base_url, recording):
+async def test_list_by_status_filters_and_authenticates(base_url, recording):
     route = respx.get(f"{base_url}/items/recordings").mock(
         return_value=httpx.Response(200, json={"data": [recording]})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    result = await client.list_pending(limit=10)
+    result = await client.list_by_status("recordings", "pending", limit=10)
     await client.aclose()
 
     assert result == [recording]
@@ -25,30 +25,59 @@ async def test_list_pending_filters_and_authenticates(base_url, recording):
     assert req.url.params["filter[status][_eq]"] == "pending"
     assert req.url.params["limit"] == "10"
     assert req.url.params["sort"] == "date_created"
+    assert "filter[hub_job_id][_nnull]" not in req.url.params
+    assert "filter[hub_job_id][_null]" not in req.url.params
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_claim_patches_status_to_transcribing(base_url):
-    route = respx.patch(f"{base_url}/items/recordings/rec-1").mock(
-        return_value=httpx.Response(200, json={"data": {"id": "rec-1", "status": "transcribing"}})
+async def test_list_by_status_job_filters(base_url):
+    route = respx.get(f"{base_url}/items/documents").mock(
+        return_value=httpx.Response(200, json={"data": []})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    ok = await client.claim("rec-1")
+    await client.list_by_status("documents", "processing", limit=5, with_job=True)
+    await client.list_by_status("documents", "processing", limit=5, with_job=False)
     await client.aclose()
-
-    assert ok is True
-    assert json.loads(route.calls.last.request.content) == {"status": "transcribing"}
+    assert route.calls[0].request.url.params["filter[hub_job_id][_nnull]"] == "true"
+    assert route.calls[1].request.url.params["filter[hub_job_id][_null]"] == "true"
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_download_audio_writes_temp_file(base_url, tmp_path):
+async def test_claim_patches_active_status(base_url):
+    route = respx.patch(f"{base_url}/items/documents/doc-1").mock(
+        return_value=httpx.Response(200, json={"data": {"id": "doc-1", "status": "processing"}})
+    )
+    client = DirectusClient(base_url=base_url, token=TOKEN)
+    ok = await client.claim("documents", "doc-1", "processing")
+    await client.aclose()
+    assert ok is True
+    assert json.loads(route.calls.last.request.content) == {"status": "processing"}
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_set_job(base_url):
+    route = respx.patch(f"{base_url}/items/recordings/rec-1").mock(
+        return_value=httpx.Response(200, json={"data": {}})
+    )
+    client = DirectusClient(base_url=base_url, token=TOKEN)
+    await client.set_job("recordings", "rec-1", 42)
+    await client.aclose()
+    assert json.loads(route.calls.last.request.content) == {
+        "hub_job_id": 42, "error_message": None,
+    }
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_download_file_writes_temp_file(base_url, tmp_path):
     respx.get(f"{base_url}/assets/file-1").mock(
         return_value=httpx.Response(200, content=b"RIFFfake-wav-bytes")
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    path = await client.download_audio("file-1", dest_dir=tmp_path)
+    path = await client.download_file("file-1", dest_dir=tmp_path)
     await client.aclose()
     assert path.exists()
     assert path.read_bytes() == b"RIFFfake-wav-bytes"
@@ -97,30 +126,49 @@ async def test_write_transcript_patches_when_exists(base_url):
 
 @respx.mock
 @pytest.mark.anyio
-async def test_mark_done_and_error(base_url):
-    done = respx.patch(f"{base_url}/items/recordings/rec-1").mock(
+async def test_write_document(base_url):
+    route = respx.patch(f"{base_url}/items/documents/doc-1").mock(
         return_value=httpx.Response(200, json={"data": {}})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    await client.mark_done("rec-1")
-    await client.mark_error("rec-1", "boom")
+    await client.write_document("doc-1", markdown="# A", pages=[{"n": 1}])
     await client.aclose()
-    assert json.loads(done.calls[0].request.content) == {"status": "done"}
-    err = json.loads(done.calls[1].request.content)
-    assert err == {"status": "error", "error_message": "boom"}
+    assert json.loads(route.calls.last.request.content) == {
+        "markdown": "# A", "pages": [{"n": 1}],
+    }
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_reclaim_stale_resets_old_transcribing(base_url):
-    respx.get(f"{base_url}/items/recordings").mock(
+async def test_mark_done_and_error(base_url):
+    route = respx.patch(f"{base_url}/items/recordings/rec-1").mock(
+        return_value=httpx.Response(200, json={"data": {}})
+    )
+    client = DirectusClient(base_url=base_url, token=TOKEN)
+    await client.mark_done("recordings", "rec-1")
+    await client.mark_error("recordings", "rec-1", "boom")
+    await client.aclose()
+    assert json.loads(route.calls[0].request.content) == {"status": "done", "hub_job_id": None}
+    assert json.loads(route.calls[1].request.content) == {
+        "status": "error", "error_message": "boom",
+    }
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_reclaim_stale_only_rows_without_job(base_url):
+    get = respx.get(f"{base_url}/items/recordings").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "rec-old"}]})
     )
     patch = respx.patch(f"{base_url}/items/recordings/rec-old").mock(
         return_value=httpx.Response(200, json={"data": {}})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    n = await client.reclaim_stale(older_than_minutes=15)
+    n = await client.reclaim_stale("recordings", "transcribing", older_than_minutes=15)
     await client.aclose()
     assert n == 1
+    params = get.calls.last.request.url.params
+    assert params["filter[status][_eq]"] == "transcribing"
+    assert params["filter[hub_job_id][_null]"] == "true"
+    assert params["filter[date_updated][_lt]"] == "$NOW(-15 minutes)"
     assert json.loads(patch.calls.last.request.content) == {"status": "pending"}

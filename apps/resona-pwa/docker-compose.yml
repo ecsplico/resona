@@ -1,4 +1,5 @@
-# PWA data layer: Directus (auth/data/files) + the directus-transcribe worker.
+# PWA data layer: Directus (auth/data/files) + the project-worker (recordings and
+# documents → durable hub jobs → results back into Directus).
 # Resona (api + engines) runs as a SEPARATE stack from the resona monorepo and is
 # reached over the network via RESONA_API_URL below.
 services:
@@ -77,21 +78,22 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  directus-transcribe:
+  project-worker:
     build:
       context: ./worker
       dockerfile: Dockerfile
     environment:
       DIRECTUS_URL: http://directus:8055
       DIRECTUS_TOKEN: ${DIRECTUS_TOKEN}
-      # resona-api lives in the separate resona stack — point this at its reachable URL.
-      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7710}
+      # The Resona hub runs externally — point this at its reachable URL.
+      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7000}
+      # Hub client token (org-bound); required.
       RESONA_API_KEY: ${RESONA_API_KEY:-}
-      # Engine requested for every batch job and stamped on the transcript row.
-      TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-faster-whisper}
-      TRANSCRIBE_POLL_INTERVAL: ${TRANSCRIBE_POLL_INTERVAL:-5}
-      TRANSCRIBE_CONCURRENCY: ${TRANSCRIBE_CONCURRENCY:-2}
-      TRANSCRIBE_STALE_MINUTES: ${TRANSCRIBE_STALE_MINUTES:-15}
+      # Audio engine requested per job; empty = hub default.
+      WORKER_ENGINE: ${WORKER_ENGINE:-}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-5}
+      WORKER_BATCH: ${WORKER_BATCH:-5}
+      WORKER_STALE_MINUTES: ${WORKER_STALE_MINUTES:-15}
       LOGLEVEL: ${LOGLEVEL:-info}
     extra_hosts:
       # lets the container reach a resona-api running on the docker host (Linux)

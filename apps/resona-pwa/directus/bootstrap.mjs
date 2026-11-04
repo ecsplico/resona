@@ -2,8 +2,9 @@
 // Idempotent first-start bootstrap for the Resona data layer.
 //
 // Brings a blank Directus instance up to the state described in
-// directus/bootstrap.md: the `recordings` + `transcripts` collections, a
-// non-admin `user` role/policy/permissions, and the `transcribe-worker` admin
+// directus/bootstrap.md: the `recordings` + `transcripts` + `documents`
+// collections (missing fields are added to existing installs), a non-admin
+// `user` role/policy/permissions, and the `transcribe-worker` admin
 // user whose static token is pinned to DIRECTUS_TOKEN (so the worker just
 // works — no copy-paste). Safe to run repeatedly: every step checks first.
 //
@@ -83,6 +84,8 @@ const COLLECTIONS = {
 		{ field: "error_message", type: "text", schema: {} },
 		{ field: "source", type: "string", schema: { default_value: "batch" } },
 		{ field: "review_status", type: "string", schema: { default_value: "editing" } },
+		// durable Resona hub job (project-worker); null when no job is in flight
+		{ field: "hub_job_id", type: "integer", schema: {} },
 	],
 	transcripts: [
 		uuidPk,
@@ -95,12 +98,27 @@ const COLLECTIONS = {
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 	],
+	documents: [
+		uuidPk,
+		sysField("user_created", ["user-created"]),
+		sysField("date_created", ["date-created"]),
+		sysField("date_updated", ["date-updated"]),
+		{ field: "title", type: "string", schema: {} },
+		// file M2O → directus_files; relation added separately
+		{ field: "file", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
+		{ field: "status", type: "string", schema: { default_value: "pending" } },
+		{ field: "error_message", type: "text", schema: {} },
+		{ field: "markdown", type: "text", schema: {} },
+		{ field: "pages", type: "json", schema: {}, meta: { special: ["cast-json"] } },
+		{ field: "hub_job_id", type: "integer", schema: {} },
+	],
 };
 
 // (collection, field, related_collection) for the M2O foreign keys
 const RELATIONS = [
 	["recordings", "audio_file", "directus_files"],
 	["transcripts", "recording", "recordings"],
+	["documents", "file", "directus_files"],
 ];
 
 async function ensureCollections() {
@@ -117,6 +135,19 @@ async function ensureCollections() {
 			fields,
 		});
 		console.log(`+ collection ${name}`);
+	}
+}
+
+// ensureCollections skips existing collections, so fields added to COLLECTIONS
+// later (e.g. recordings.hub_job_id) are created here on existing installs.
+async function ensureFields() {
+	for (const [name, fields] of Object.entries(COLLECTIONS)) {
+		const have = new Set((await api("GET", `/fields/${name}`)).map(f => f.field));
+		for (const field of fields) {
+			if (have.has(field.field)) continue;
+			await api("POST", `/fields/${name}`, field);
+			console.log(`+ field ${name}.${field.field}`);
+		}
 	}
 }
 
@@ -149,7 +180,12 @@ const PERMISSIONS = [
 	{ collection: "transcripts", action: "create", validation: { recording: { user_created: OWNER } } },
 	{ collection: "transcripts", action: "update", permissions: { recording: { user_created: OWNER } } },
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
-	// files: upload + read own (needed for audio upload / playback)
+	// documents: full CRUD scoped to owner
+	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
+	{ collection: "documents", action: "create", permissions: {} },
+	{ collection: "documents", action: "update", permissions: { user_created: OWNER } },
+	{ collection: "documents", action: "delete", permissions: { user_created: OWNER } },
+	// files: upload + read own (needed for audio/document upload + playback)
 	{ collection: "directus_files", action: "create", permissions: {} },
 	{ collection: "directus_files", action: "read", permissions: { uploaded_by: OWNER } },
 	{ collection: "directus_files", action: "update", permissions: { uploaded_by: OWNER } },
@@ -237,6 +273,7 @@ async function main() {
 	console.log(`→ bootstrapping ${URL} as ${EMAIL}`);
 	await login();
 	await ensureCollections();
+	await ensureFields();
 	await ensureRelations();
 	await ensureUserRole();
 	await ensureWorker();

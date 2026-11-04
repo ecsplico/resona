@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "resona-directus-transcribe"
+name = "resona-project-worker"
 version = "0.1.0"
-description = "Glue worker: transcribes pending Directus recordings via resona-api"
+description = "Project worker: sends CMS recordings and documents through the Resona hub and writes results back"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "mortegro", email = "495066+mortegro@users.noreply.github.com" }]
@@ -16,10 +16,10 @@ dependencies = [
 ]
 
 [project.scripts]
-resona-directus-transcribe = "resona_directus_transcribe.run:main"
+resona-project-worker = "resona_project_worker.run:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/resona_directus_transcribe"]
+packages = ["src/resona_project_worker"]
 
 [dependency-groups]
 dev = [

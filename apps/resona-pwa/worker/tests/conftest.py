@@ -20,5 +20,15 @@ def recording():
 
 
 @pytest.fixture
+def document():
+    return {
+        "id": "doc-1",
+        "title": "Arztbrief",
+        "file": "file-2",
+        "status": "pending",
+    }
+
+
+@pytest.fixture
 def base_url():
     return "http://directus.test"

@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock* README.md ./
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev || uv sync --no-dev
-CMD ["uv", "run", "resona-directus-transcribe"]
+CMD ["uv", "run", "resona-project-worker"]
