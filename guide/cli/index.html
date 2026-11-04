@@ -2794,6 +2794,9 @@ grow with the square of the scale.</p>
   (0.004 <code>rapidocr</code>, 0.000 <code>ocrmac</code>): the bad layer does not reach the output.</li>
 <li>French, Italian and Spanish scans (<code>rapidocr</code>, Mac CPU, 2026-11-04): <code>auto</code> 0.200 / 0.000 / 0.000,
   <code>force</code> 0.000 for all three. In <code>auto</code>, the French page lost most of its first line.</li>
+<li>Korean (<code>ko</code>, <code>ocrmac</code> only, Mac, 2026-11-04): a rendered page of two Hangul lines (Apple SD Gothic
+  Neo 26 px, light blur) read at CER 0.000 in <code>auto</code> and <code>force</code>. The corpus has no Korean fixture
+  because <code>rapidocr</code> ships no Korean weights.</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>resona<span class="w"> </span>doc<span class="w"> </span>scan.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="m">1</span>-3<span class="w"> </span>--languages<span class="w"> </span>de,en
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>resona<span class="w"> </span>doc<span class="w"> </span>./faxes/<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>tesseract
