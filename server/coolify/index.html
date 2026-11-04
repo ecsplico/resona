@@ -2242,7 +2242,12 @@
 <tr>
 <td><code>RESONA_PUBLIC_URL</code></td>
 <td><code>https://resona.ecsplico.de</code></td>
-<td>Caddy site, CORS origin, MCP <code>Origin</code> allowlist</td>
+<td>Caddy site, default CORS origin, MCP <code>Origin</code> allowlist</td>
+</tr>
+<tr>
+<td><code>CORS_ORIGINS</code></td>
+<td><code>${RESONA_PUBLIC_URL}</code></td>
+<td>Comma-separated browser origins allowed by CORS (<code>CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}</code>). Set it to add the PWA origin, e.g. <code>https://resona.ecsplico.de,https://&lt;pwa-host&gt;</code></td>
 </tr>
 <tr>
 <td><code>RESONA_PUBLIC_HOST</code></td>
