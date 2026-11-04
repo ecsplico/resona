@@ -139,6 +139,36 @@ describe("runLocalCycle", () => {
 		expect(keys[0]).not.toBe(keys[1]);
 	});
 
+	it("persists the idempotency key on the row before creating the job", async () => {
+		recording("1");
+		db.files.set("f-1", new Blob(["a"]));
+		const seen: unknown[] = [];
+		hub.createJob.mockImplementation(async (_body, key) => {
+			seen.push(db.recordings.get("1")!.hub_job_key === key);
+			throw new HubError(0, "timeout", "timeout");
+		});
+		await runLocalCycle();
+		expect(seen).toEqual([true]);
+		expect(db.recordings.get("1")).toMatchObject({ status: "pending", hub_job_id: null });
+		expect(db.recordings.get("1")!.hub_job_key).toMatch(/^local:recordings:1:.+/);
+	});
+
+	it("resubmits with the row's existing idempotency key", async () => {
+		recording("1", { hub_job_key: "local:recordings:1:first" });
+		db.files.set("f-1", new Blob(["a"]));
+		await runLocalCycle();
+		expect(hub.createJob.mock.calls[0]![1]).toBe("local:recordings:1:first");
+		expect(db.recordings.get("1")).toMatchObject({ status: "transcribing", hub_job_id: 42, hub_job_key: "local:recordings:1:first" });
+	});
+
+	it("clears the idempotency key when a submit fails", async () => {
+		recording("1", { hub_job_key: "local:recordings:1:first" });
+		db.files.set("f-1", new Blob(["a"]));
+		hub.createJob.mockRejectedValue(new HubError(400, "bad_request", "bad"));
+		await runLocalCycle();
+		expect(db.recordings.get("1")).toMatchObject({ status: "error", hub_job_id: null, hub_job_key: null });
+	});
+
 	it("sends only kind and upload_id for documents", async () => {
 		doc("1");
 		db.files.set("f-1", new Blob(["%PDF"]));

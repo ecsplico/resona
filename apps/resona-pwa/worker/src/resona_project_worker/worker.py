@@ -53,7 +53,11 @@ async def _submit(
     if not file_id:
         await directus.mark_error(src.collection, row_id, "Datei fehlt")
         return True
-    if not await directus.claim(src.collection, row_id, src.active_status):
+    # Persisted with the claim, before create_job: if the hub accepts the job but the
+    # response is lost, stale recovery keeps the key and the resubmission gets the
+    # original job back instead of a second one.
+    key = row.get("hub_job_key") or f"{src.collection}:{row_id}:{uuid4().hex}"
+    if not await directus.claim(src.collection, row_id, src.active_status, key):
         return False
     path: Path | None = None
     try:
@@ -66,7 +70,7 @@ async def _submit(
         } if src.kind == "audio" else {}
         job_id = await hub.create_job(
             kind=src.kind, upload_id=upload_id,
-            idempotency_key=f"{src.collection}:{row_id}:{uuid4().hex}",
+            idempotency_key=key,
             **extra,
         )
         await directus.set_job(src.collection, row_id, job_id)

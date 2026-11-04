@@ -8,11 +8,16 @@ Per cycle, for `recordings` (hub job kind `audio`, active status `transcribing`)
 and `documents` (kind `document`, active status `processing`):
 
 1. **Reclaim:** active rows *without* `hub_job_id` older than
-   `WORKER_STALE_MINUTES` go back to `pending` (a crash between claim and submit).
+   `WORKER_STALE_MINUTES` go back to `pending` (a crash between claim and submit),
+   keeping their `hub_job_key`.
 2. **Submit:** up to `WORKER_BATCH` `pending` rows (oldest first) are claimed,
    their file is downloaded, uploaded to `POST /v1/uploads`, and submitted to
-   `POST /v1/jobs` (with an `Idempotency-Key`). The job id is stored in
-   `hub_job_id`, so a restart resumes polling instead of submitting twice.
+   `POST /v1/jobs`. The `Idempotency-Key` is the row's `hub_job_key`, or a fresh
+   `<collection>:<id>:<uuid>` written to `hub_job_key` in the claim PATCH, i.e.
+   before the create call: if the hub accepted a job but the response was lost,
+   the resubmission reuses the key and the hub returns the original job. The job
+   id is stored in `hub_job_id`, so a restart resumes polling instead of
+   submitting twice.
 3. **Poll:** active rows with `hub_job_id` are checked via `GET /v1/jobs/{id}`.
    `completed` → the result is written back (recordings: a `transcripts` row from
    the result `markdown`; documents: `markdown` + `pages`), the row goes `done`,
@@ -22,7 +27,8 @@ and `documents` (kind `document`, active status `processing`):
 
 A temporarily unavailable hub (unreachable, timeout, HTTP 429/502/503/504) leaves
 rows untouched; other per-row failures mark only that row as `error` and clear its
-`hub_job_id`, so a retried row gets a fresh job. The state machine matches the PWA's
+`hub_job_id` and `hub_job_key`, so a retried row gets a fresh job (and key); `done`
+clears both too. The state machine matches the PWA's
 standalone processor
 (`app/data/localProcessor.ts`).
 

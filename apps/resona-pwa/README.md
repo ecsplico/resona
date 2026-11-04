@@ -132,8 +132,8 @@ There are **two transcription paths**:
 - **Batch** (record-then-save, or upload an existing file): the PWA uploads the audio
   to Directus and inserts a `recordings` row with `status=pending`, `source=batch`. The
   **project-worker** (running in this repo's compose stack) claims the row, uploads the
-  audio to the hub and submits a durable job (job id kept in `hub_job_id`, so restarts
-  never submit twice), writes the `transcripts` row from the result, flips the
+  audio to the hub and submits a durable job (job id kept in `hub_job_id`, idempotency key in
+  `hub_job_key`, so restarts and lost responses never submit twice), writes the `transcripts` row from the result, flips the
   recording to `done`, and deletes the hub job. Uploaded **documents** (PDF/images)
   take the same path into `documents.markdown`/`pages`. The PWA polls the recording until it reaches a
   terminal state (`done`/`error`). The **Dokumente** page (`/documents`, linked from the

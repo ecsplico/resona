@@ -55,7 +55,7 @@ function isTransient(err: unknown): boolean {
 }
 
 async function fail(spec: Spec, id: string, message: string): Promise<void> {
-	await spec.patch(id, { status: "error", error_message: message, hub_job_id: null });
+	await spec.patch(id, { status: "error", error_message: message, hub_job_id: null, hub_job_key: null });
 }
 
 async function submit(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promise<void> {
@@ -66,12 +66,16 @@ async function submit(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Pro
 		return;
 	}
 	const name = blob instanceof File && blob.name ? blob.name : spec.fallbackName(row.id);
+	// Persist the idempotency key before the create call: if the hub accepts the job but
+	// the response is lost, the retry reuses the key and the hub returns the original job.
+	const key = row.hub_job_key ?? `local:${spec.collection}:${row.id}:${crypto.randomUUID()}`;
 	try {
+		if (row.hub_job_key == null) await spec.patch(row.id, { hub_job_key: key });
 		const uploadId = await hub.upload(blob, name);
 		const body = spec.kind === "audio"
 			? { kind: spec.kind, upload_id: uploadId, language: (row as Recording).language, profile: (row as Recording).profile }
 			: { kind: spec.kind, upload_id: uploadId };
-		const jobId = await hub.createJob(body, `local:${spec.collection}:${row.id}:${crypto.randomUUID()}`);
+		const jobId = await hub.createJob(body, key);
 		await spec.patch(row.id, { status: spec.active, hub_job_id: jobId, error_message: null });
 	}
 	catch (err) {
@@ -130,10 +134,10 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 			structured: result.structured,
 			engine: job.candidate?.engine,
 		});
-		await spec.patch(row.id, { status: "done", hub_job_id: null });
+		await spec.patch(row.id, { status: "done", hub_job_id: null, hub_job_key: null });
 	}
 	else {
-		await spec.patch(row.id, { markdown: result.markdown, pages: result.pages, status: "done", hub_job_id: null });
+		await spec.patch(row.id, { markdown: result.markdown, pages: result.pages, status: "done", hub_job_id: null, hub_job_key: null });
 	}
 	try {
 		await hub.deleteJob(jobId);

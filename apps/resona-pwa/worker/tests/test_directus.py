@@ -50,11 +50,11 @@ async def test_claim_patches_active_status_and_clears_job(base_url):
         return_value=httpx.Response(200, json={"data": {"id": "doc-1", "status": "processing"}})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    ok = await client.claim("documents", "doc-1", "processing")
+    ok = await client.claim("documents", "doc-1", "processing", "documents:doc-1:k")
     await client.aclose()
     assert ok is True
     assert json.loads(route.calls.last.request.content) == {
-        "status": "processing", "hub_job_id": None,
+        "status": "processing", "hub_job_id": None, "hub_job_key": "documents:doc-1:k",
     }
 
 
@@ -150,9 +150,11 @@ async def test_mark_done_and_error(base_url):
     await client.mark_done("recordings", "rec-1")
     await client.mark_error("recordings", "rec-1", "boom")
     await client.aclose()
-    assert json.loads(route.calls[0].request.content) == {"status": "done", "hub_job_id": None}
+    assert json.loads(route.calls[0].request.content) == {
+        "status": "done", "hub_job_id": None, "hub_job_key": None,
+    }
     assert json.loads(route.calls[1].request.content) == {
-        "status": "error", "error_message": "boom", "hub_job_id": None,
+        "status": "error", "error_message": "boom", "hub_job_id": None, "hub_job_key": None,
     }
 
 

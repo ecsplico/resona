@@ -43,10 +43,14 @@ class DirectusClient:
         resp.raise_for_status()
         return resp.json()["data"]
 
-    async def claim(self, collection: str, item_id: str, active_status: str) -> bool:
+    async def claim(
+        self, collection: str, item_id: str, active_status: str, job_key: str,
+    ) -> bool:
         """Optimistically mark a row as `active_status`. Returns True on success.
 
-        Also clears `hub_job_id`, so a retried row never polls its previous job.
+        Also clears `hub_job_id`, so a retried row never polls its previous job,
+        and persists `job_key` (the hub Idempotency-Key) before the job is created,
+        so a resubmission after a lost create response reuses it.
 
         This is an unconditional PATCH, not a compare-and-swap — Directus has no
         native CAS. Two workers racing on the same page could both "claim" the
@@ -54,7 +58,8 @@ class DirectusClient:
         deployment are the agreed mitigations.
         """
         data = await self._patch(
-            collection, item_id, {"status": active_status, "hub_job_id": None},
+            collection, item_id,
+            {"status": active_status, "hub_job_id": None, "hub_job_key": job_key},
         )
         return data["status"] == active_status
 
@@ -126,10 +131,15 @@ class DirectusClient:
         await self._patch("documents", document_id, {"markdown": markdown, "pages": pages})
 
     async def mark_done(self, collection: str, item_id: str) -> None:
-        await self._patch(collection, item_id, {"status": "done", "hub_job_id": None})
+        await self._patch(
+            collection, item_id, {"status": "done", "hub_job_id": None, "hub_job_key": None},
+        )
 
     async def mark_error(self, collection: str, item_id: str, message: str) -> None:
         await self._patch(
             collection, item_id,
-            {"status": "error", "error_message": message[:1000], "hub_job_id": None},
+            {
+                "status": "error", "error_message": message[:1000],
+                "hub_job_id": None, "hub_job_key": None,
+            },
         )

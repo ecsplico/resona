@@ -68,33 +68,43 @@ function sysField(field, special) {
 	};
 }
 
+// Plain data field. Every field carries `meta` so it gets a directus_fields row:
+// `directus schema snapshot` only exports fields that have one.
+const INTERFACE = { string: "input", text: "input-multiline", integer: "input", float: "input" };
+function plain(field, type, schema = {}) {
+	return { field, type, schema, meta: { interface: INTERFACE[type] } };
+}
+
 const COLLECTIONS = {
 	recordings: [
 		uuidPk,
 		sysField("user_created", ["user-created"]),
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
-		{ field: "title", type: "string", schema: {} },
+		plain("title", "string"),
 		// audio_file M2O → directus_files; relation added separately
 		{ field: "audio_file", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
-		{ field: "duration_seconds", type: "float", schema: {} },
-		{ field: "language", type: "string", schema: { default_value: "de" } },
-		{ field: "profile", type: "string", schema: { default_value: "default" } },
-		{ field: "status", type: "string", schema: { default_value: "pending" } },
-		{ field: "error_message", type: "text", schema: {} },
-		{ field: "source", type: "string", schema: { default_value: "batch" } },
-		{ field: "review_status", type: "string", schema: { default_value: "editing" } },
+		plain("duration_seconds", "float"),
+		plain("language", "string", { default_value: "de" }),
+		plain("profile", "string", { default_value: "default" }),
+		plain("status", "string", { default_value: "pending" }),
+		plain("error_message", "text"),
+		plain("source", "string", { default_value: "batch" }),
+		plain("review_status", "string", { default_value: "editing" }),
 		// durable Resona hub job (project-worker); null when no job is in flight
-		{ field: "hub_job_id", type: "integer", schema: {} },
+		plain("hub_job_id", "integer"),
+		// hub Idempotency-Key of the current submission attempt; kept across stale
+		// recovery so a lost create response never yields a second hub job
+		plain("hub_job_key", "string"),
 	],
 	transcripts: [
 		uuidPk,
 		// recording M2O → recordings; relation added separately
 		{ field: "recording", type: "uuid", schema: {}, meta: { interface: "select-dropdown-m2o", special: ["m2o"] } },
-		{ field: "text", type: "text", schema: {} },
+		plain("text", "text"),
 		{ field: "structured", type: "json", schema: {}, meta: { special: ["cast-json"] } },
 		{ field: "segments", type: "json", schema: {}, meta: { special: ["cast-json"] } },
-		{ field: "engine", type: "string", schema: {} },
+		plain("engine", "string"),
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 	],
@@ -103,14 +113,17 @@ const COLLECTIONS = {
 		sysField("user_created", ["user-created"]),
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
-		{ field: "title", type: "string", schema: {} },
+		plain("title", "string"),
 		// file M2O → directus_files; relation added separately
 		{ field: "file", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
-		{ field: "status", type: "string", schema: { default_value: "pending" } },
-		{ field: "error_message", type: "text", schema: {} },
-		{ field: "markdown", type: "text", schema: {} },
+		plain("status", "string", { default_value: "pending" }),
+		plain("error_message", "text"),
+		plain("markdown", "text"),
 		{ field: "pages", type: "json", schema: {}, meta: { special: ["cast-json"] } },
-		{ field: "hub_job_id", type: "integer", schema: {} },
+		plain("hub_job_id", "integer"),
+		// hub Idempotency-Key of the current submission attempt; kept across stale
+		// recovery so a lost create response never yields a second hub job
+		plain("hub_job_key", "string"),
 	],
 };
 
@@ -140,13 +153,21 @@ async function ensureCollections() {
 
 // ensureCollections skips existing collections, so fields added to COLLECTIONS
 // later (e.g. recordings.hub_job_id) are created here on existing installs.
+// Fields created earlier without `meta` get it backfilled, so the schema
+// snapshot includes them.
 async function ensureFields() {
 	for (const [name, fields] of Object.entries(COLLECTIONS)) {
-		const have = new Set((await api("GET", `/fields/${name}`)).map(f => f.field));
+		const have = new Map((await api("GET", `/fields/${name}`)).map(f => [f.field, f]));
 		for (const field of fields) {
-			if (have.has(field.field)) continue;
-			await api("POST", `/fields/${name}`, field);
-			console.log(`+ field ${name}.${field.field}`);
+			const current = have.get(field.field);
+			if (!current) {
+				await api("POST", `/fields/${name}`, field);
+				console.log(`+ field ${name}.${field.field}`);
+			}
+			else if (!current.meta && field.meta) {
+				await api("PATCH", `/fields/${name}/${field.field}`, { meta: field.meta });
+				console.log(`~ meta ${name}.${field.field}`);
+			}
 		}
 	}
 }

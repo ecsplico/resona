@@ -106,6 +106,9 @@ Export after authoring:
       npx directus schema snapshot --yes /directus/schema-snapshot.yaml
 
 This writes to the bind-mounted `./directus/schema-snapshot.yaml`. Commit it.
+The snapshot only contains fields that have a `directus_fields` row, i.e. were
+created with `meta`. `bootstrap.mjs` gives every field `meta` and backfills it on
+older installs (`~ meta ...`), so run the bootstrap before exporting.
 
 Apply on a fresh instance:
 

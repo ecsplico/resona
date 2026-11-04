@@ -190,6 +190,7 @@ export function createLocalStore(): DataStore {
 				duration_seconds: input.duration_seconds,
 				error_message: null,
 				hub_job_id: null,
+				hub_job_key: null,
 				date_created: ts,
 				date_updated: ts,
 			};
@@ -261,6 +262,7 @@ export function createLocalStore(): DataStore {
 				markdown: null,
 				pages: null,
 				hub_job_id: null,
+				hub_job_key: null,
 				date_created: ts,
 				date_updated: ts,
 			};

@@ -211,10 +211,12 @@ cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
   field**. `review_status` is the user's review workflow, independent of `status`.
 - **transcripts**: `id, recording, text, structured, segments, engine, date_created,
   date_updated` — the `engine` field lives **HERE**, not on recordings.
-- **recordings** also has `hub_job_id` (integer, the in-flight hub job).
+- **recordings** also has `hub_job_id` (integer, the in-flight hub job) and `hub_job_key`
+  (string, the hub Idempotency-Key of the current submission attempt; persisted before
+  `POST /v1/jobs`, kept by stale recovery, cleared on `done`/`error`).
 - **documents**: `id, user_created, date_created, date_updated, title, file (→
   directus_files), status (pending|processing|done|error), error_message, markdown,
-  pages (json), hub_job_id`.
+  pages (json), hub_job_id, hub_job_key`.
 
 The live path stamps the transcripts row's `engine` (`web-speech` / hub engine /
 `hub-live`, `+<correction engine>` when corrected); the manual-save path writes it

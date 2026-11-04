@@ -14,6 +14,7 @@ export interface Recording {
 	// whether the user is still editing the text or has marked it ready.
 	review_status?: "editing" | "ready";
 	hub_job_id?: number | null;
+	hub_job_key?: string | null;
 }
 export interface Transcript {
 	id: string;
@@ -37,6 +38,7 @@ export interface ResonaDocument {
 	markdown?: string | null;
 	pages?: unknown[] | null;
 	hub_job_id?: number | null;
+	hub_job_key?: string | null;
 }
 export interface Schema {
 	recordings: Recording[];
