@@ -58,7 +58,6 @@ services:
       # Browser origin of the PWA — it calls this API directly (live WebSocket
       # /v1/listen and REST), so CORS must name it.
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      RESONA_API_KEY: ${RESONA_API_KEY:-}
       LOGLEVEL: ${LOGLEVEL:-info}
     depends_on:
       engine-faster-whisper:
@@ -72,9 +71,51 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Outbound-only pull worker for queued jobs (execution profile `cpu-private`).
+  # Off until prepared and approved; enable with COMPOSE_PROFILES=worker.
+  # Host networking because the worker accepts plain http only for loopback:
+  # it reaches the api on the host-published port. One-off setup, from this
+  # file's directory (docs/server/cpu-standalone.md):
+  #   docker compose -f docker-compose.cpu-standalone.yml --profile worker \
+  #     run --rm worker prepare --profile cpu-private --out /state/capabilities.json
+  worker:
+    profiles: [worker]
+    build:
+      context: .
+      dockerfile: apps/resona-worker/Dockerfile
+    command:
+      - run
+      - --hub
+      - http://127.0.0.1:${API_PORT:-7710}
+      - --token-file
+      - /run/secrets/resona-worker-token
+      - --capabilities-file
+      - /state/capabilities.json
+      - --work-dir
+      - /work
+    network_mode: host
+    volumes:
+      - worker-models:/models
+      - worker-state:/state
+      # mode 0600, owned by UID 1000 (the image's `resona` user)
+      - type: bind
+        source: ${RESONA_WORKER_TOKEN_FILE:-/etc/resona/worker.token}
+        target: /run/secrets/resona-worker-token
+        read_only: true
+    tmpfs:
+      - /work:size=4g,mode=0700,uid=1000,gid=1000
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+    restart: unless-stopped
+
 volumes:
   resona-audio:
   resona-md:
   resona-db:
   resona-profiles:
   hf-cache:
+  worker-models:
+  worker-state:
