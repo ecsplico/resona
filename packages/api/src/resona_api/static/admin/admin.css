@@ -239,7 +239,7 @@ tr.inactive td {
 }
 
 td .actions {
-  flex-wrap: nowrap;
+  min-width: 9rem;
 }
 
 .dot {

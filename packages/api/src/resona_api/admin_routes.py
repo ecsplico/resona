@@ -7,10 +7,11 @@ caller's reach, so foreign ids are indistinguishable from missing ones.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -18,11 +19,20 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from . import clock
-from .admin import AdminError, create_organization
-from .auth import ROLE_HUB_OPERATOR, Principal, manager_principal
-from .db.models import Organization
+from .admin import (
+    AdminError,
+    approve_worker,
+    create_organization,
+    issue_credential,
+    revoke_credential,
+    revoke_worker,
+)
+from .auth import ROLE_CLIENT, ROLE_HUB_OPERATOR, ROLE_ORG_ADMIN, ROLE_WORKER, Principal, manager_principal
+from .db.models import ApprovedReleaseTuple, Baseline, Credential, Evaluation, Organization, Worker
 from .deps import get_db_session
 from .errors import api_error
+from .jobs_routes import DEFAULT_PAGE_SIZE, WORKER_ONLINE_WINDOW, jobs_page
+from .settings_store import current_settings
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +124,257 @@ def post_organization(
         raise _conflict(exc) from exc
     logger.info("created organization %s", org.id)
     return _organization_item(org)
+
+
+def _capabilities(raw: Optional[str]) -> list[dict[str, Any]]:
+    return json.loads(raw or "[]")
+
+
+def _worker_item(worker: Worker, now: datetime) -> dict[str, Any]:
+    revoked = worker.revoked_at is not None
+    online = (
+        not revoked
+        and worker.last_seen is not None
+        and clock.as_utc(worker.last_seen) >= now - WORKER_ONLINE_WINDOW
+    )
+    return {
+        "id": worker.id,
+        "name": worker.name,
+        "approved": worker.approved,
+        "approved_private": worker.approved_private,
+        "online": online,
+        "last_seen": _iso(worker.last_seen),
+        "runtime_version": worker.runtime_version,
+        "revoked": revoked,
+        "reported_capabilities": _capabilities(worker.reported_capabilities),
+        "approved_capabilities": _capabilities(worker.approved_capabilities),
+    }
+
+
+def _org_worker(session: Session, org: Organization, worker_id: str) -> Worker:
+    """The organization's worker ``worker_id``; another organization's worker is 404 too."""
+    worker = session.get(Worker, worker_id)
+    if worker is None or worker.organization_id != org.id:
+        raise api_error(404, "worker_not_found", "no such worker")
+    return worker
+
+
+@router.get("/organizations/{org_id}/workers")
+def list_workers(
+    org_id: str,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """The organization's workers: active ones first, then by name."""
+    org = _target_org(session, principal, org_id)
+    workers = session.exec(select(Worker).where(Worker.organization_id == org.id)).all()
+    now = clock.now()
+    ordered = sorted(workers, key=lambda w: (w.revoked_at is not None, w.name, w.id))
+    return {"items": [_worker_item(worker, now) for worker in ordered]}
+
+
+class WorkerApproval(BaseModel):
+    private: bool
+
+
+@router.post("/organizations/{org_id}/workers/{worker_id}/approve")
+def post_worker_approval(
+    org_id: str,
+    worker_id: str,
+    body: WorkerApproval,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Approve a worker with exactly the capabilities it last reported."""
+    org = _target_org(session, principal, org_id)
+    worker = _org_worker(session, org, worker_id)
+    reported = _capabilities(worker.reported_capabilities)
+    if not reported:
+        raise api_error(
+            409,
+            "no_reported_capabilities",
+            "the worker has not reported capabilities; run it once after `resona-worker prepare`",
+        )
+    try:
+        worker = approve_worker(session, worker.id, private=body.private, capabilities=reported)
+    except AdminError as exc:
+        raise _conflict(exc) from exc
+    logger.info("approved worker %s private %s", worker.id, body.private)
+    return _worker_item(worker, clock.now())
+
+
+@router.post("/organizations/{org_id}/workers/{worker_id}/revoke")
+def post_worker_revocation(
+    org_id: str,
+    worker_id: str,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Revoke a worker and its credential; revoking again changes nothing."""
+    org = _target_org(session, principal, org_id)
+    worker = _org_worker(session, org, worker_id)
+    try:
+        revoke_worker(session, worker.id)
+    except AdminError as exc:
+        raise _conflict(exc) from exc
+    session.refresh(worker)
+    logger.info("revoked worker %s", worker.id)
+    return _worker_item(worker, clock.now())
+
+
+def _credential_item(cred: Credential) -> dict[str, Any]:
+    return {
+        "id": cred.id,
+        "role": cred.role,
+        "worker_id": cred.worker_id,
+        "created_at": _iso(cred.created_at),
+        "revoked_at": _iso(cred.revoked_at),
+    }
+
+
+@router.get("/organizations/{org_id}/credentials")
+def list_credentials(
+    org_id: str,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """The organization's credentials, newest first; never their secret hashes."""
+    org = _target_org(session, principal, org_id)
+    creds = session.exec(
+        select(Credential)
+        .where(Credential.organization_id == org.id)
+        .order_by(Credential.created_at.desc(), Credential.id.desc())
+    ).all()
+    return {"items": [_credential_item(cred) for cred in creds]}
+
+
+class CredentialIssue(BaseModel):
+    role: Literal["client", "org_admin"]
+
+
+@router.post("/organizations/{org_id}/credentials", status_code=201)
+def post_credential(
+    org_id: str,
+    body: CredentialIssue,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Issue a client or org_admin token; the token appears only in this response."""
+    org = _target_org(session, principal, org_id)
+    role = ROLE_CLIENT if body.role == "client" else ROLE_ORG_ADMIN
+    try:
+        cred_id, token = issue_credential(session, org.id, role)
+    except AdminError as exc:
+        raise _conflict(exc) from exc
+    logger.info("issued credential %s role %s", cred_id, role)
+    return {"id": cred_id, "role": role, "token": token}
+
+
+@router.post("/organizations/{org_id}/credentials/{cred_id}/revoke")
+def post_credential_revocation(
+    org_id: str,
+    cred_id: str,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Revoke a client or org_admin credential; worker credentials go through worker revoke."""
+    org = _target_org(session, principal, org_id)
+    cred = session.get(Credential, cred_id)
+    if cred is None or cred.organization_id != org.id:
+        raise api_error(404, "credential_not_found", "no such credential")
+    if cred.id == principal.credential_id:
+        raise api_error(409, "cannot_revoke_self", "you cannot revoke the credential you are signed in with")
+    if cred.role == ROLE_WORKER:
+        raise api_error(409, "use_worker_revoke", "revoke the worker instead of its credential")
+    try:
+        revoke_credential(session, cred.id)
+    except AdminError as exc:
+        raise _conflict(exc) from exc
+    session.refresh(cred)
+    logger.info("revoked credential %s", cred.id)
+    return _credential_item(cred)
+
+
+@router.get("/organizations/{org_id}/jobs")
+def list_org_jobs(
+    org_id: str,
+    cursor: Optional[str] = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """One page of the organization's job metadata, same shape as ``GET /v1/jobs``."""
+    org = _target_org(session, principal, org_id)
+    return jobs_page(session, org.id, cursor, limit)
+
+
+@router.get("/organizations/{org_id}/settings")
+def get_org_settings(
+    org_id: str,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """The organization's current settings revision (read-only)."""
+    org = _target_org(session, principal, org_id)
+    try:
+        revision, settings = current_settings(session, org.id)
+    except LookupError as exc:
+        raise api_error(404, "settings_not_found", "the organization has no settings") from exc
+    return {"revision": revision, "settings": settings.model_dump(mode="json")}
+
+
+@router.get("/organizations/{org_id}/baselines")
+def list_baselines(
+    org_id: str,
+    principal: Principal = Depends(manager_principal),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """The current baseline per (execution profile, platform) and the approved releases."""
+    org = _target_org(session, principal, org_id)
+    rows = session.exec(
+        select(Baseline, Evaluation)
+        .join(Evaluation, Evaluation.id == Baseline.evaluation_id)
+        .where(Baseline.organization_id == org.id)
+        .order_by(Baseline.execution_profile, Baseline.platform, Baseline.revision.desc())
+    ).all()
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for baseline, evaluation in rows:
+        key = (baseline.execution_profile, baseline.platform)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({
+            "execution_profile": baseline.execution_profile,
+            "platform": baseline.platform,
+            "revision": baseline.revision,
+            "evaluation_id": baseline.evaluation_id,
+            "release_id": evaluation.release_id,
+            "corpus_sha256": evaluation.corpus_sha256,
+            "created_at": _iso(baseline.created_at),
+        })
+    approved = session.exec(
+        select(ApprovedReleaseTuple)
+        .where(ApprovedReleaseTuple.organization_id == org.id)
+        .order_by(
+            ApprovedReleaseTuple.execution_profile,
+            ApprovedReleaseTuple.platform,
+            ApprovedReleaseTuple.approved_at,
+        )
+    ).all()
+    return {
+        "items": items,
+        "approved_releases": [
+            {
+                "execution_profile": row.execution_profile,
+                "platform": row.platform,
+                "release_id": row.release_id,
+                "evaluation_id": row.evaluation_id,
+                "approved_at": _iso(row.approved_at),
+            }
+            for row in approved
+        ],
+    }
 
 
 def _static(path: Path, media_type: str) -> FileResponse:

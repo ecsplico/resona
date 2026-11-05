@@ -16,7 +16,7 @@ Issue tokens on the hub host with `resona-admin`. Each token is printed once; th
 
 ```bash
 resona-admin organization create acme
-resona-admin credential issue --organization acme --role client     # or org_admin
+resona-admin credential issue --organization acme --role client     # or org_admin, hub_operator
 resona-admin credential revoke <credential-id>
 resona-admin worker enroll mac-studio --organization acme           # worker token, unapproved
 resona-admin worker approve <worker-id> --private --capabilities-file caps.json
@@ -24,7 +24,9 @@ resona-admin worker revoke <worker-id>
 resona-admin restore <backup.sqlite>                                # hub stopped; see docs/server/coolify.md
 ```
 
-Roles: `client` (submit and read jobs, read settings), `org_admin` (also change settings and profiles), `worker` (worker routes only).
+Roles: `client` (submit and read jobs, read settings), `org_admin` (also change settings and profiles, manage its own organization through `/v1/admin`), `hub_operator` (manages every organization through `/v1/admin` and `/admin`; no job content, settings writes or promotion), `worker` (worker routes only).
+
+Hub operator credentials are issued only with `resona-admin` on the server, never over HTTP. They still need `--organization` (a home organization); the role itself grants cross-organization access.
 
 Error bodies have the form `{"error": "<code>", "message": "<safe text>"}`.
 
@@ -187,6 +189,39 @@ A call with an expired or replaced lease, or on a cancelled or deleted job, retu
 GET /v1/settings      → {organization_id, revision, settings} + ETag
 PUT /v1/settings      (org_admin, If-Match: <revision>)
 ```
+
+---
+
+### Management (`/v1/admin`, roles `org_admin`, `hub_operator`)
+
+An org admin manages only its own organization: any other `{org}` returns `404 organization_not_found`. A hub operator manages every organization. Worker and credential IDs of another organization return `404` (`worker_not_found`, `credential_not_found`), never `403`. Other roles get `403`.
+
+```
+GET  /v1/admin/me                                        → {role, organization_id, credential_id}
+GET  /v1/admin/organizations                             → {items: [{id, created_at}]}  (org admin: own only)
+POST /v1/admin/organizations          {id}               → 201 {id, created_at}  (hub_operator only; 409 conflict if it exists)
+GET  /v1/admin/organizations/{org}/workers              → {items: [Worker]}  (active first, then by name)
+POST /v1/admin/organizations/{org}/workers/{id}/approve {private: bool} → Worker
+POST /v1/admin/organizations/{org}/workers/{id}/revoke  → Worker  (idempotent)
+GET  /v1/admin/organizations/{org}/credentials          → {items: [{id, role, worker_id, created_at, revoked_at}]}  (newest first)
+POST /v1/admin/organizations/{org}/credentials  {role: "client"|"org_admin"} → 201 {id, role, token}
+POST /v1/admin/organizations/{org}/credentials/{id}/revoke → credential item
+GET  /v1/admin/organizations/{org}/jobs?cursor=&limit=  → same page as GET /v1/jobs (metadata only)
+GET  /v1/admin/organizations/{org}/settings             → {revision, settings}  (read-only)
+GET  /v1/admin/organizations/{org}/baselines            → {items: [...], approved_releases: [...]}
+```
+
+Worker fields: `id`, `name`, `approved`, `approved_private`, `online` (seen within 90 s and not revoked), `last_seen`, `runtime_version`, `revoked`, `reported_capabilities`, `approved_capabilities`. Approval grants exactly the worker's reported capabilities: none reported → `409 no_reported_capabilities` (run the worker once after `resona-worker prepare`); a revoked worker → `409 conflict`. Partial approval stays with `resona-admin worker approve --capabilities-file`.
+
+An issued token appears only in the `201` response; listings never contain tokens or hashes. Any other role in the body (including `hub_operator`) → `422`. Revoking your own credential → `409 cannot_revoke_self`; a worker credential → `409 use_worker_revoke` (revoke the worker instead).
+
+Baselines: one item per (execution profile, platform) with its highest revision, `{execution_profile, platform, revision, evaluation_id, release_id, corpus_sha256, created_at}`; `approved_releases` items are `{execution_profile, platform, release_id, evaluation_id, approved_at}`.
+
+There are no admin routes for job results, cancel or delete: org admins cancel and delete through `/v1/jobs/...`; operators see job metadata only.
+
+#### Web page
+
+`GET /admin` serves a static management page (no build step, no external assets). Sign in with an org admin or hub operator token; the page keeps it in `sessionStorage` (`resona-admin-token`), so it is gone when the tab closes. Tabs: Workers, Credentials, Jobs, Settings & baselines. Responses carry a strict `Content-Security-Policy` (`default-src 'none'`, same-origin scripts, styles and requests only), `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`. Only `/admin`, `/admin/admin.js` and `/admin/admin.css` exist; any other `/admin/…` path → `404`.
 
 ---
 
