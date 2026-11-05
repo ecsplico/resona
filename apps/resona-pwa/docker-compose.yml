@@ -1,0 +1,109 @@
+# PWA data layer: Directus (auth/data/files) + the project-worker (recordings and
+# documents → durable hub jobs → results back into Directus).
+# Resona (api + engines) runs as a SEPARATE stack from the resona monorepo and is
+# reached over the network via RESONA_API_URL below.
+services:
+  directus:
+    image: directus/directus:11
+    ports:
+      - "7700:8055"
+    volumes:
+      - directus-db:/directus/database
+      - directus-uploads:/directus/uploads
+      # writable: `directus schema snapshot` (directus/bootstrap.md §4) exports here
+      - ./directus/schema-snapshot.yaml:/directus/schema-snapshot.yaml
+    environment:
+      SECRET: ${DIRECTUS_SECRET:-change-me-in-env}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-change-me}
+      DB_CLIENT: sqlite3
+      DB_FILENAME: /directus/database/data.db
+      WEBSOCKETS_ENABLED: "true"
+      # CORS so the browser PWA origin may call Directus directly.
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: ${PWA_ORIGIN:-http://localhost:3000}
+    healthcheck:
+      # 127.0.0.1, not localhost: inside the container `localhost` resolves to ::1
+      # (IPv6) first, but Directus binds IPv4 0.0.0.0 — wget to ::1 is refused and
+      # the container would never report healthy, blocking the worker's depends_on.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8055/server/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # One-shot: brings a blank Directus up to the schema/roles/worker-token state
+  # in directus/bootstrap.md. Idempotent — re-runs harmlessly on every `up`.
+  directus-bootstrap:
+    image: node:24-alpine
+    volumes:
+      - ./directus/bootstrap.mjs:/bootstrap.mjs:ro
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-change-me}
+      # Pinned as the worker's static token, so DIRECTUS_TOKEN below just works.
+      DIRECTUS_TOKEN: ${DIRECTUS_TOKEN:?set DIRECTUS_TOKEN in .env (e.g. openssl rand -hex 24)}
+    command: ["node", "/bootstrap.mjs"]
+    depends_on:
+      directus:
+        condition: service_healthy
+    restart: "no"
+
+  pwa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time — must be browser-reachable
+        # host URLs (not compose service names). Override in .env for external access.
+        NUXT_PUBLIC_DIRECTUS_URL: ${NUXT_PUBLIC_DIRECTUS_URL:-http://localhost:7700}
+        NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL:-http://localhost:7710}
+        NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
+        NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}
+        NUXT_PUBLIC_CALENDAR_ENABLED: ${NUXT_PUBLIC_CALENDAR_ENABLED:-false}
+        NUXT_PUBLIC_DATA_MODE: ${NUXT_PUBLIC_DATA_MODE:-directus}
+    ports:
+      - "${PWA_PORT:-7730}:3000"
+    environment:
+      # Server-only secrets — never baked into the bundle, read at runtime by Nitro.
+      NUXT_GOOGLE_CLIENT_ID: ${NUXT_GOOGLE_CLIENT_ID:-}
+      NUXT_GOOGLE_CLIENT_SECRET: ${NUXT_GOOGLE_CLIENT_SECRET:-}
+      NUXT_GOOGLE_REDIRECT_URI: ${NUXT_GOOGLE_REDIRECT_URI:-}
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-}
+    depends_on:
+      directus-bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  project-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      DIRECTUS_TOKEN: ${DIRECTUS_TOKEN}
+      # The Resona hub runs externally — point this at its reachable URL.
+      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7710}
+      # Hub client token (org-bound); required.
+      RESONA_API_KEY: ${RESONA_API_KEY:-}
+      # Audio engine requested per job; empty = hub default.
+      WORKER_ENGINE: ${WORKER_ENGINE:-}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-5}
+      WORKER_BATCH: ${WORKER_BATCH:-5}
+      WORKER_STALE_MINUTES: ${WORKER_STALE_MINUTES:-15}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    extra_hosts:
+      # lets the container reach a resona-api running on the docker host (Linux)
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      directus:
+        condition: service_healthy
+      directus-bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  directus-db:
+  directus-uploads:

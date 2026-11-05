@@ -1,0 +1,77 @@
+# PWA data layer only — Directus + the project-worker, NO PWA service.
+# Use this when running the frontend with `bun run dev` (or any external process)
+# and you only need the backing services.
+#
+# The Resona hub runs externally (resona monorepo or Coolify) and is reached over
+# the network via RESONA_API_URL below, authenticated with RESONA_API_KEY.
+#
+# Usage:
+#   cp .env.stack.example .env  # set DIRECTUS_TOKEN, etc.
+#   docker compose -f docker-compose.backend.yml up -d
+services:
+  directus:
+    image: directus/directus:11
+    ports:
+      - "7700:8055"
+    volumes:
+      - directus-db:/directus/database
+      - directus-uploads:/directus/uploads
+      - ./directus/schema-snapshot.yaml:/directus/schema-snapshot.yaml
+    environment:
+      SECRET: ${DIRECTUS_SECRET:-change-me-in-env}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-change-me}
+      DB_CLIENT: sqlite3
+      DB_FILENAME: /directus/database/data.db
+      WEBSOCKETS_ENABLED: "true"
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: ${PWA_ORIGIN:-http://localhost:3000}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8055/server/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  directus-bootstrap:
+    image: node:24-alpine
+    volumes:
+      - ./directus/bootstrap.mjs:/bootstrap.mjs:ro
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-change-me}
+      DIRECTUS_TOKEN: ${DIRECTUS_TOKEN:?set DIRECTUS_TOKEN in .env (e.g. openssl rand -hex 24)}
+    command: ["node", "/bootstrap.mjs"]
+    depends_on:
+      directus:
+        condition: service_healthy
+    restart: "no"
+
+  project-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      DIRECTUS_TOKEN: ${DIRECTUS_TOKEN}
+      RESONA_API_URL: ${RESONA_API_URL:-http://host.docker.internal:7710}
+      RESONA_API_KEY: ${RESONA_API_KEY:-}
+      WORKER_ENGINE: ${WORKER_ENGINE:-}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-5}
+      WORKER_BATCH: ${WORKER_BATCH:-5}
+      WORKER_STALE_MINUTES: ${WORKER_STALE_MINUTES:-15}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      directus:
+        condition: service_healthy
+      directus-bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  directus-db:
+  directus-uploads:

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+@theme {
+  --color-cream: #FBF5EC;
+  --color-tomato: #D96846;
+  --color-olive: #6B8E4E;
+  --color-butter: #E8A838;
+  --color-ink: #2A1E16;
+}
+
+html, body { background: var(--bg); color: var(--fg1); font-family: var(--font-body); }
+.font-display { font-family: var(--font-display); }
+.font-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Browser surfaces: selection, caret, focus, scrollbars, native controls. */
+@layer base {
+  :root {
+    accent-color: var(--accent);
+    scrollbar-color: var(--crust-soft) transparent;
+  }
+  ::selection { background: var(--tomato-soft); color: var(--fg1); }
+  input, textarea, [contenteditable] { caret-color: var(--accent); }
+  :focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+}
+
+@layer components {
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+
+  /* One white grouped surface; rows are divided, never individually shadowed. */
+  .h-list {
+    display: flex; flex-direction: column;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+  .h-list > * + * { border-top: 1px solid var(--border); }
+
+  /* Underline tab bar: header sections and the settings drawer. */
+  .h-tabs {
+    display: flex; gap: 20px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .h-tabs::-webkit-scrollbar { display: none; }
+  .h-tab {
+    appearance: none; background: none; border: 0;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    padding: 10px 2px;
+    font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600; line-height: 1.2;
+    color: var(--fg3); text-decoration: none; white-space: nowrap; cursor: pointer;
+    transition: color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease);
+  }
+  .h-tab:hover { color: var(--fg1); }
+  .h-tab:active { color: var(--accent-ink); }
+  .h-tab:focus-visible { outline-offset: -3px; border-radius: var(--r-xs); }
+  .h-tab:disabled { color: var(--fg3); opacity: 0.5; cursor: not-allowed; }
+  .h-tab--active, .h-tab[aria-current="page"], .h-tab[aria-selected="true"] {
+    color: var(--fg1); border-bottom-color: var(--accent);
+  }
+}

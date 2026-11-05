@@ -1,0 +1,22 @@
+default:
+    @just --list
+
+# Start the data layer (Directus + worker, no PWA container)
+backend:
+    docker compose -f docker-compose.backend.yml up -d
+
+# Start the frontend dev server locally, exposed on the network
+pwa:
+    bun run dev -- --host
+
+# Start the PWA docker container (assumes backend is already up)
+pwa-docker:
+    docker compose up -d pwa
+
+# Start the full stack (data layer + PWA container) against an external hub; generates secrets on first run
+full:
+    bun run setup
+
+# Run the test suite
+test:
+    bun run test
