@@ -174,15 +174,20 @@ onMounted(() => {
 				Noch keine Dokumente
 			</p>
 
-			<HListRow
-				v-for="doc in items"
-				:key="doc.id"
-				:title="doc.title"
-				:meta="formatDate(doc.date_created)"
-				:status="chipStatus(doc.status)"
-				:data-testid="`doc-row-${doc.id}`"
-				@select="openDocument(doc)"
-			/>
+			<div
+				v-if="items.length > 0"
+				class="h-list"
+			>
+				<HListRow
+					v-for="doc in items"
+					:key="doc.id"
+					:title="doc.title"
+					:meta="formatDate(doc.date_created)"
+					:status="chipStatus(doc.status)"
+					:data-testid="`doc-row-${doc.id}`"
+					@select="openDocument(doc)"
+				/>
+			</div>
 		</div>
 	</div>
 </template>

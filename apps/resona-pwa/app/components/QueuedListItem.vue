@@ -23,32 +23,26 @@ const meta = computed(() => {
 </script>
 
 <template>
-	<HCard
+	<div
 		class="queued-row"
 		data-testid="queued-item"
 	>
-		<div class="queued-row__top">
-			<div class="queued-row__main">
-				<div class="queued-row__title">
-					{{ item.title || "Aufnahme" }}
-				</div>
-				<div
-					v-if="meta"
-					class="queued-row__meta"
-				>
-					{{ meta }}
-				</div>
-			</div>
-			<HChip tone="warning">
-				Wartet (offline)
-			</HChip>
+		<div class="queued-row__main">
+			<span class="queued-row__title">{{ item.title || "Aufnahme" }}</span>
+			<span
+				v-if="meta"
+				class="queued-row__meta"
+			>{{ meta }}</span>
 		</div>
-	</HCard>
+		<HChip tone="warning">
+			Wartet (offline)
+		</HChip>
+	</div>
 </template>
 
 <style scoped>
-.queued-row__top { display:flex; align-items:flex-start; }
-.queued-row__main { flex:1; min-width:0; }
-.queued-row__title { font-family:var(--font-display); font-size:17px; font-weight:600; color:var(--fg1); line-height:1.2; }
-.queued-row__meta { font-family:var(--font-mono); font-size:12px; color:var(--fg3); margin-top:5px; }
+.queued-row { display:flex; align-items:center; gap:8px; min-height:60px; padding:12px 16px; background:var(--bg-raised); }
+.queued-row__main { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.queued-row__title { font-family:var(--font-display); font-size:var(--fs-md); font-weight:600; line-height:1.25; color:var(--fg1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.queued-row__meta { font-family:var(--font-mono); font-size:var(--fs-xs); font-variant-numeric:tabular-nums; line-height:1.4; color:var(--fg3); }
 </style>

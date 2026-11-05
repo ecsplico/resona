@@ -15,20 +15,40 @@ const sample: Recording = {
 };
 
 describe("RecordingListItem", () => {
-	it("renders the title and status label", async () => {
+	it("renders the title and no chip for a transcribed recording", async () => {
 		const w = await mountSuspended(RecordingListItem, {
 			props: { recording: sample },
 		});
 		expect(w.text()).toContain("Erstgespräch");
-		expect(w.text()).toContain("Fertig");
+		expect(w.find(".h-chip").exists()).toBe(false);
 	});
 
-	it("renders a copy button and emits copy on click without emitting open", async () => {
+	it.each([
+		["pending", "Wartet"],
+		["transcribing", "Transkribiert…"],
+		["error", "Fehler"],
+	] as const)("shows a status chip for a %s recording", async (status, label) => {
+		const w = await mountSuspended(RecordingListItem, {
+			props: { recording: { ...sample, status } },
+		});
+		expect(w.find(".h-chip").exists()).toBe(true);
+		expect(w.text()).toContain(label);
+	});
+
+	it("passes the selected state to the row", async () => {
+		const w = await mountSuspended(RecordingListItem, {
+			props: { recording: sample, selected: true },
+		});
+		expect(w.find(".h-listrow--selected").exists()).toBe(true);
+	});
+
+	it("renders a labelled copy button and emits copy on click without emitting open", async () => {
 		const w = await mountSuspended(RecordingListItem, {
 			props: { recording: sample },
 		});
 		const copyBtn = w.find("[data-testid=\"copy-action\"]");
 		expect(copyBtn.exists()).toBe(true);
+		expect(copyBtn.attributes("aria-label")).toBe("Kopieren");
 		await copyBtn.trigger("click");
 		expect(w.emitted("copy")).toBeTruthy();
 		expect(w.emitted("open")).toBeFalsy();

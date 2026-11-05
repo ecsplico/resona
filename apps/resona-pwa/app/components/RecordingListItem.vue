@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Recording } from "~/types/directus";
 
-const props = defineProps<{ recording: Recording }>();
+const props = defineProps<{ recording: Recording; selected?: boolean }>();
 
 defineEmits<{ open: []; copy: [] }>();
 
@@ -43,18 +43,21 @@ const meta = computed(() => formatMeta(props.recording));
 		:title="recording.title || 'Aufnahme'"
 		:meta="meta"
 		:status="recording.status"
+		:selected="selected"
 		@select="$emit('open')"
 	>
 		<template #actions>
-			<HIconButton
-				:size="30"
-				tone="cream"
+			<button
+				type="button"
+				class="row-copy"
+				aria-label="Kopieren"
+				title="Kopieren"
 				data-testid="copy-action"
 				@click.stop="$emit('copy')"
 			>
 				<svg
-					width="14"
-					height="14"
+					width="16"
+					height="16"
 					viewBox="0 0 24 24"
 					fill="none"
 					stroke="currentColor"
@@ -72,7 +75,14 @@ const meta = computed(() => formatMeta(props.recording));
 					/>
 					<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
 				</svg>
-			</HIconButton>
+			</button>
 		</template>
 	</HListRow>
 </template>
+
+<style scoped>
+.row-copy { width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:var(--r-full); background:transparent; color:var(--fg3); cursor:pointer; transition:background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); }
+.row-copy:hover { background:var(--bg-sunken); color:var(--fg1); }
+.row-copy:active { background:var(--crust-soft); }
+.row-copy:disabled { opacity:0.4; cursor:not-allowed; }
+</style>

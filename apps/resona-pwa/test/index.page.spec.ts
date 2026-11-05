@@ -5,6 +5,7 @@ import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import IndexPage from "~/pages/index.vue";
 import type { Recording } from "~/types/directus";
 import { useHubSettings } from "~/composables/useHubSettings";
+import { useSettingsDrawer } from "~/composables/useShell";
 
 const recA: Recording = {
 	id: "rec-a",
@@ -63,24 +64,36 @@ describe("index (recordings list) page", () => {
 		error.value = null;
 	});
 
-	it("renders a list item per recording with title and status", async () => {
+	it("renders the rows in one grouped list, with a chip only for rows that need attention", async () => {
 		const w = await mountSuspended(IndexPage);
-		const rows = w.findAllComponents({ name: "RecordingListItem" });
-		expect(rows.length).toBe(2);
+		const rowList = w.find("[data-testid=\"recordings-list\"]");
+		expect(rowList.classes()).toContain("h-list");
+		expect(rowList.findAllComponents({ name: "RecordingListItem" }).length).toBe(2);
 		expect(w.text()).toContain("Visite Station 3");
 		expect(w.text()).toContain("Telefonat Reha");
-		expect(w.text()).toContain("Fertig");
 		expect(w.text()).toContain("Wartet");
+		expect(w.text()).not.toContain("Fertig");
 	});
 
-	it("renders a search field", async () => {
+	it("filters by search text and start date", async () => {
 		const w = await mountSuspended(IndexPage);
-		expect(w.findComponent({ name: "HField" }).exists()).toBe(true);
+		list.mockClear();
+		const search = w.find("[data-testid=\"search\"]");
+		expect(search.attributes("placeholder")).toBe("Suchen");
+		await search.setValue("Visite");
+		expect(list).toHaveBeenLastCalledWith({ search: "Visite", since: "" });
+		await w.find("[data-testid=\"since\"]").setValue("2026-06-01");
+		expect(list).toHaveBeenLastCalledWith({ search: "Visite", since: "2026-06-01" });
 	});
 
-	it("renders the record FAB", async () => {
+	it("offers upload, record and live in the capture dock", async () => {
 		const w = await mountSuspended(IndexPage);
-		expect(w.find("[data-testid=\"record-fab\"]").exists()).toBe(true);
+		const dock = w.find("[data-testid=\"capture-dock\"]");
+		expect(dock.find("[data-testid=\"upload-trigger\"]").text()).toBe("Hochladen");
+		expect(dock.find("[data-testid=\"record-fab\"]").text()).toBe("Aufnehmen");
+		const live = dock.find("[data-testid=\"nav-live\"]");
+		expect(live.text()).toBe("Live");
+		expect(live.attributes("href")).toBe("/live");
 	});
 
 	it("closes the recording sheet and shows the error when the mic cannot start", async () => {
@@ -177,61 +190,38 @@ describe("index (recordings list) page", () => {
 	it("shows the empty state when there are no recordings", async () => {
 		items.value = [];
 		const w = await mountSuspended(IndexPage);
-		expect(w.text()).toContain("Noch keine Aufnahmen");
+		expect(w.find("[data-testid=\"list-empty\"]").text()).toBe("Noch keine Aufnahmen – nimm etwas auf oder lade eine Datei hoch.");
+		expect(w.find("[data-testid=\"list-skeleton\"]").exists()).toBe(false);
 	});
 
-	it("keeps the rows steady without a loading hint while refreshing existing recordings", async () => {
+	it("keeps the rows steady without skeletons while refreshing existing recordings", async () => {
 		pending.value = true;
 		const w = await mountSuspended(IndexPage);
-		expect(w.text()).not.toContain("Lädt…");
+		expect(w.find("[data-testid=\"list-skeleton\"]").exists()).toBe(false);
 		expect(w.findAllComponents({ name: "RecordingListItem" }).length).toBe(2);
 	});
 
-	it("shows the loading hint while loading with no recordings yet", async () => {
+	it("shows three skeleton rows while loading with no recordings yet", async () => {
 		items.value = [];
 		pending.value = true;
 		const w = await mountSuspended(IndexPage);
-		expect(w.text()).toContain("Lädt…");
-		expect(w.text()).not.toContain("Noch keine Aufnahmen");
+		expect(w.findAll("[data-testid=\"skeleton-row\"]").length).toBe(3);
+		expect(w.find("[data-testid=\"list-empty\"]").exists()).toBe(false);
 	});
 
-	it("shows the no-token notice only while the hub token is empty", async () => {
+	it("shows the no-token notice only while the hub token is empty, with a way into the settings", async () => {
 		useHubSettings().token = "";
+		const drawer = useSettingsDrawer();
+		drawer.hide();
 		const w = await mountSuspended(IndexPage);
-		expect(w.find("[data-testid=\"hub-token-missing\"]").text()).toBe("Kein Hub-Token – Transkription, Diktat und Live brauchen einen Token (Einstellungen → Verbindung).");
+		const notice = w.find("[data-testid=\"hub-token-missing\"]");
+		expect(notice.text()).toContain("Kein Hub-Token – Transkription, Diktat und Live brauchen einen Token.");
+		await notice.find("[data-testid=\"hub-token-open-settings\"]").trigger("click");
+		expect(drawer.open.value).toBe(true);
+		drawer.hide();
 		useHubSettings().token = "tok";
 		const w2 = await mountSuspended(IndexPage);
 		expect(w2.find("[data-testid=\"hub-token-missing\"]").exists()).toBe(false);
 		useHubSettings().token = "";
-	});
-
-	it("hides the calendar link while the calendar flag is off", async () => {
-		const cfg = useRuntimeConfig().public;
-		const original = cfg.calendarEnabled;
-		cfg.calendarEnabled = false;
-		try {
-			const w = await mountSuspended(IndexPage);
-			expect(w.find("[data-testid=\"nav-documents\"]").exists()).toBe(true);
-			expect(w.find("[data-testid=\"nav-calendar\"]").exists()).toBe(false);
-		}
-		finally {
-			cfg.calendarEnabled = original;
-		}
-	});
-
-	it("links to the documents page before the calendar link when the flag is on", async () => {
-		const cfg = useRuntimeConfig().public;
-		const original = cfg.calendarEnabled;
-		cfg.calendarEnabled = true;
-		const w = await mountSuspended(IndexPage).finally(() => {
-			cfg.calendarEnabled = original;
-		});
-		const docs = w.find("[data-testid=\"nav-documents\"]");
-		expect(docs.exists()).toBe(true);
-		expect(docs.text()).toBe("Dokumente");
-		expect(docs.attributes("href")).toBe("/documents");
-		const html = w.html();
-		expect(html.indexOf("nav-calendar")).toBeGreaterThan(-1);
-		expect(html.indexOf("nav-documents")).toBeLessThan(html.indexOf("nav-calendar"));
 	});
 });

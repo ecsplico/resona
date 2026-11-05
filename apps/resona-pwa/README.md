@@ -137,7 +137,7 @@ There are **two transcription paths**:
   recording to `done`, and deletes the hub job. Uploaded **documents** (PDF/images)
   take the same path into `documents.markdown`/`pages`. The PWA polls the recording until it reaches a
   terminal state (`done`/`error`). The **Dokumente** page (`/documents`, linked from the
-  home app bar) uploads PDFs/images, lists them with status, and shows the resulting
+  app header) uploads PDFs/images, lists them with status, and shows the resulting
   markdown (copy, `.md` download, retry, delete) in both Directus and standalone mode.
 - **Live**: the PWA opens a WebSocket to the hub `/v1/listen`, streams 16 kHz PCM
   from the microphone, and renders rolling partial/final text. On stop it writes the
@@ -226,10 +226,10 @@ Verbindung).
 ```
 app/
 ├── app.vue
-├── layouts/default.vue
+├── layouts/default.vue              # shell: header, page, settings drawer
 ├── middleware/auth.global.ts        # redirects unauthenticated users to /login
 ├── pages/
-│   ├── index.vue                    # recordings history + search/date filter, record FAB
+│   ├── index.vue                    # recordings list (RecordingsPane): filters, capture dock
 │   ├── login.vue                    # Directus email/password login
 │   ├── live.vue                     # live transcription
 │   └── recording/[id].vue           # detail: player, transcript edit, export
@@ -246,6 +246,7 @@ app/
 │   └── useOfflineQueue.ts           # IndexedDB queue + auto-sync
 ├── components/
 │   ├── hearth/                      # Hearth design-system primitives (HButton, HCard, ...)
+│   ├── AppHeader.vue, RecordingsPane.vue
 │   ├── RecordingListItem.vue, QueuedListItem.vue, SaveSheet.vue, StatusChip.vue
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── types/directus.ts                # Recording / Transcript / Schema

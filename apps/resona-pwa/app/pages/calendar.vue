@@ -14,7 +14,6 @@ definePageMeta({
 });
 
 const cal = useCalendar("google");
-const showSettings = ref(false);
 
 const connected = computed(() => cal.status.value?.connected ?? false);
 const configured = computed(() => cal.status.value?.configured ?? false);
@@ -55,55 +54,18 @@ onMounted(async () => {
 
 <template>
 	<div class="cal">
-		<HAppBar
-			tone="light"
-			title="Kalender"
+		<div
+			v-if="connected"
+			class="cal__status"
 		>
-			<template #leading>
-				<NuxtLink
-					class="cal__back"
-					to="/"
-				>
-					‹ Zurück
-				</NuxtLink>
-			</template>
-			<template #trailing>
-				<HChip
-					v-if="connected"
-					tone="success"
-					dot
-					data-testid="cal-connected"
-				>
-					Verbunden
-				</HChip>
-				<button
-					class="cal__cog"
-					type="button"
-					aria-label="Einstellungen"
-					data-testid="nav-settings"
-					@click="showSettings = true"
-				>
-					<svg
-						width="22"
-						height="22"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<circle
-							cx="12"
-							cy="12"
-							r="3"
-						/>
-						<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-					</svg>
-				</button>
-			</template>
-		</HAppBar>
+			<HChip
+				tone="success"
+				dot
+				data-testid="cal-connected"
+			>
+				Verbunden
+			</HChip>
+		</div>
 
 		<!-- Not configured on the server -->
 		<div
@@ -273,18 +235,12 @@ onMounted(async () => {
 		>
 			Lädt…
 		</p>
-
-		<SettingsDrawer
-			v-if="showSettings"
-			@close="showSettings = false"
-		/>
 	</div>
 </template>
 
 <style scoped>
 .cal { min-height:100vh; background:var(--bg); padding-bottom:40px; }
-.cal__back { color:var(--accent); font-weight:600; font-size:15px; text-decoration:none; }
-.cal__cog { border:none; background:none; color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; padding:2px; }
+.cal__status { display:flex; justify-content:flex-end; padding:12px 20px 0; }
 .cal__notice { margin:20px; padding:16px; border-radius:12px; background:var(--butter-soft); color:#8B6200; font-size:14px; line-height:1.5; }
 .cal__notice code { font-family:var(--font-mono); font-size:12px; }
 .cal__connect { margin:24px 20px; display:flex; flex-direction:column; gap:16px; align-items:flex-start; }

@@ -6,13 +6,6 @@ import type { HealthState } from "~/composables/useServerHealth";
 // on mount and left running (the loop self-guards against a double interval).
 const health = useServerHealth();
 
-const TONE: Record<HealthState, "success" | "warning" | "neutral" | "danger"> = {
-	up: "success",
-	partial: "warning",
-	down: "danger",
-	unknown: "neutral",
-};
-
 const LABEL: Record<HealthState, string> = {
 	up: "Online",
 	partial: "Teilweise",
@@ -20,7 +13,6 @@ const LABEL: Record<HealthState, string> = {
 	unknown: "…",
 };
 
-const tone = computed(() => TONE[health.overall.value]);
 const label = computed(() => LABEL[health.overall.value]);
 
 function reach(value: boolean | null): string {
@@ -54,15 +46,22 @@ onMounted(() => health.start());
 		:data-state="health.overall.value"
 		@click="health.check()"
 	>
-		<HChip
-			:tone="tone"
-			dot
-		>
-			{{ label }}
-		</HChip>
+		<span
+			class="server-status__dot"
+			aria-hidden="true"
+		/>
+		<span class="server-status__label">{{ label }}</span>
 	</button>
 </template>
 
 <style scoped>
-.server-status { border:none; background:none; padding:0; cursor:pointer; display:inline-flex; }
+/* Compact indicator: coloured dot + label, no chip surface (it sits in the header). */
+.server-status { display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:4px 8px; border:none; border-radius:var(--r-full); background:none; color:var(--fg3); font-family:var(--font-body); font-size:12px; font-weight:600; cursor:pointer; transition:background-color 150ms ease-out; }
+.server-status:hover { background:var(--cream-deep); }
+.server-status:active { background:var(--crust-soft); }
+.server-status__dot { width:8px; height:8px; border-radius:50%; background:var(--crust); flex-shrink:0; }
+.server-status[data-state="up"] .server-status__dot { background:var(--olive); }
+.server-status[data-state="partial"] .server-status__dot { background:var(--butter-deep); }
+.server-status[data-state="down"] .server-status__dot { background:var(--tomato-deep); }
+.server-status[data-state="down"] { color:var(--tomato-deep); }
 </style>

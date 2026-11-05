@@ -28,7 +28,7 @@ describe("documents list page", () => {
 		vi.useRealTimers();
 	});
 
-	it("renders a row per document with title, de-DE date and mapped status chip", async () => {
+	it("renders a row per document with title, de-DE date and a chip only for unfinished ones", async () => {
 		const w = await mountSuspended(DocumentsPage);
 		await flushPromises();
 		const rows = w.findAllComponents({ name: "HListRow" });
@@ -36,7 +36,7 @@ describe("documents list page", () => {
 		expect(rows[0]!.props("title")).toBe("Arztbrief");
 		expect(rows[0]!.props("meta")).toBe(new Date(docA.date_created!).toLocaleString("de-DE"));
 		expect(rows.map(r => r.props("status"))).toEqual(["done", "transcribing", "error"]);
-		expect(w.text()).toContain("Fertig");
+		expect(w.find("[data-testid=\"doc-row-doc-a\"]").find(".h-chip").exists()).toBe(false);
 		expect(w.text()).toContain("Transkribiert…");
 		expect(w.text()).toContain("Fehler");
 		expect(w.text()).toContain("Dokumente");

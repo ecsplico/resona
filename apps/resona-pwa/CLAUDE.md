@@ -153,10 +153,11 @@ token (no token → nothing is processed).
 
 ```
 app/
-├── app.vue, layouts/default.vue
+├── app.vue                          # VitePwaManifest + layout; no phone frame
+├── layouts/default.vue              # shell: AppHeader + page + SettingsDrawer; provides useShell
 ├── middleware/auth.global.ts        # redirect unauthenticated → /login
 ├── pages/
-│   ├── index.vue                    # history list + search/date filter + record FAB
+│   ├── index.vue                    # renders RecordingsPane (phone / no layout pane)
 │   ├── login.vue                    # Directus email/password login
 │   ├── live.vue                     # live transcription (reads ?title= to preset name)
 │   ├── calendar.vue                 # Google Calendar: connect, filter, start dictation
@@ -167,6 +168,8 @@ app/
 │   │                                #   useRecorder, useUpload, useProfiles, useLive,
 │   │                                #   useCalendar, useTranscriptEdit, useExport,
 │   │                                #   useOfflineQueue
+│   │                                # useShell: shell context (wide ≥ 960 px, paneInLayout) +
+│   │                                #   useSettingsDrawer (drawer state owned by the layout)
 │   │                                # useHub: the only hub HTTP client (token, engines, jobs)
 │   │                                # useHubSettings: per-device hub token (localStorage)
 │   │                                # useDataStore: picks directusStore | localStore by data mode
@@ -183,6 +186,8 @@ app/
 ├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
 │   ├── hearth/                      # HButton, HCard, HChip, HField, ... (design system)
+│   ├── AppHeader                    # wordmark, ServerStatus, section tabs, settings cog
+│   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
