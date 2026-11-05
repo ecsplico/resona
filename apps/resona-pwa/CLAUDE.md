@@ -104,6 +104,17 @@ it via `docker compose` (the `project-worker` service).
   (`live__block--corrected`/`--pending`), save awaits `finish()` (≤90 s, prompt shows
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
+- **Continue recording** (`useContinueRecording`, own `useRecorder`): a new part of an
+  existing recording is transcribed on its own as a hub job (upload → `createJob` with a
+  per-attempt `continue:recordings:<id>:<uuid>` key → `getJob` every 2 s, no timeout →
+  `getResult` → `deleteJob`), reusing `localProcessor.ts`'s exported job-status helpers;
+  the caller appends the returned text. Then the stored audio + the part are merged
+  (`utils/audioMerge.ts` `mergeToWav`: OfflineAudioContext decode, mono, 16 kHz, PCM16
+  WAV, ~2 MB/min) and saved via `DataStore.replaceAudio` (Directus keeps the old file:
+  no `directus_files` delete permission; the local store deletes the old blob). A failed
+  transcription keeps the part for `retry`; a failed merge still returns the text
+  (`audioMerged:false`, `mergeError`). Works in both data modes, needs the page open
+  (`beforeunload` guard while recording/transcribing/merging).
 
 ### Live WebSocket contract (hub `/v1/listen`)
 
@@ -163,6 +174,7 @@ app/
 │   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
 │   │                                # useDeviceSpeech: on-device Web Speech live source
 │   │                                # useLiveCorrection: re-transcribes live blocks via the hub
+│   │                                # useContinueRecording: record more onto a recording
 ├── data/
 │   ├── types.ts                     # DataStore interface shared by both backends
 │   ├── directusStore.ts             # DataStore over Directus (directus mode)
@@ -173,6 +185,7 @@ app/
 │   ├── hearth/                      # HButton, HCard, HChip, HField, ... (design system)
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
+├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css
 
@@ -186,6 +199,11 @@ Component auto-import is `pathPrefix: false` — components resolve by filename
 (`<HButton>`, `<QueuedListItem>`), regardless of subdirectory.
 
 ### Calendar integration (Google + pluggable)
+
+Off unless `NUXT_PUBLIC_CALENDAR_ENABLED` is `true` (`isCalendarEnabled` in
+`shared/calendarEnabled.ts`): no Kalender link or settings tab, `/calendar`
+aborts with a fatal 404 and `/api/calendar` returns 404
+(`server/utils/calendar/enabled.ts`). The code stays.
 
 `server/utils/calendar/` mirrors the Python repo's provider pattern: a
 `CalendarProvider` interface (`types.ts`) + a `registry.ts` + one module per
@@ -239,7 +257,7 @@ URLs. No token or engine is configured at build time — the hub token is per de
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
 | `NUXT_PUBLIC_DATA_MODE` | `directus` | data backend: `directus` \| `standalone` |
-| `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | show the calendar entry point |
+| `NUXT_PUBLIC_CALENDAR_ENABLED` | `false` | enable the calendar integration (nav link, settings tab, `/calendar`, `/api/calendar`) |
 
 The Google Calendar OAuth layer adds **server-only** (non-`public`) keys, read on
 the server via `useRuntimeConfig(event)` — these never reach the browser:

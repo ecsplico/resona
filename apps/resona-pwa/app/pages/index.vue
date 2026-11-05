@@ -2,6 +2,9 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
+import { isCalendarEnabled } from "#shared/calendarEnabled";
+
+const calendarEnabled = isCalendarEnabled(useRuntimeConfig().public.calendarEnabled);
 
 const { items, pending, error, list, refresh } = useRecordings();
 const recorder = useRecorder();
@@ -191,6 +194,7 @@ onMounted(() => {
 					Dokumente
 				</NuxtLink>
 				<NuxtLink
+					v-if="calendarEnabled"
 					class="home__live"
 					to="/calendar"
 					data-testid="nav-calendar"

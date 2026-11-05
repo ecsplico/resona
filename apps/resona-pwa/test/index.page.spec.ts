@@ -205,13 +205,33 @@ describe("index (recordings list) page", () => {
 		useHubSettings().token = "";
 	});
 
-	it("links to the documents page before the calendar link", async () => {
-		const w = await mountSuspended(IndexPage);
+	it("hides the calendar link while the calendar flag is off", async () => {
+		const cfg = useRuntimeConfig().public;
+		const original = cfg.calendarEnabled;
+		cfg.calendarEnabled = false;
+		try {
+			const w = await mountSuspended(IndexPage);
+			expect(w.find("[data-testid=\"nav-documents\"]").exists()).toBe(true);
+			expect(w.find("[data-testid=\"nav-calendar\"]").exists()).toBe(false);
+		}
+		finally {
+			cfg.calendarEnabled = original;
+		}
+	});
+
+	it("links to the documents page before the calendar link when the flag is on", async () => {
+		const cfg = useRuntimeConfig().public;
+		const original = cfg.calendarEnabled;
+		cfg.calendarEnabled = true;
+		const w = await mountSuspended(IndexPage).finally(() => {
+			cfg.calendarEnabled = original;
+		});
 		const docs = w.find("[data-testid=\"nav-documents\"]");
 		expect(docs.exists()).toBe(true);
 		expect(docs.text()).toBe("Dokumente");
 		expect(docs.attributes("href")).toBe("/documents");
 		const html = w.html();
+		expect(html.indexOf("nav-calendar")).toBeGreaterThan(-1);
 		expect(html.indexOf("nav-documents")).toBeLessThan(html.indexOf("nav-calendar"));
 	});
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ref, reactive } from "vue";
 import { flushPromises } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
@@ -9,6 +9,7 @@ const listListenEngines = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => vi.fn());
 const installPack = vi.hoisted(() => vi.fn());
 const listEngines = vi.hoisted(() => vi.fn());
+const listCalendars = vi.hoisted(() => vi.fn(async () => []));
 
 mockNuxtImport("useHub", () => () => ({
 	listListenEngines,
@@ -21,7 +22,7 @@ mockNuxtImport("useCalendar", () => () => ({
 	status: ref(null),
 	settings: reactive({ calendarId: "", query: "", daysBack: 0, daysAhead: 30 }),
 	connectUrl: "/api/calendar?provider=google&action=connect",
-	listCalendars: vi.fn(async () => []),
+	listCalendars,
 }));
 
 async function openLive() {
@@ -168,5 +169,41 @@ describe("SettingsDrawer – Live tab", () => {
 		await flushPromises();
 		expect(useLiveSettings().chunkSeconds).toBe(expected);
 		expect((chunk.element as HTMLInputElement).value).toBe(String(expected));
+	});
+});
+
+// Real runtimeConfig, flag set and restored per test (see useDataStore.spec.ts).
+describe("SettingsDrawer – calendar flag", () => {
+	let original: unknown;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		original = useRuntimeConfig().public.calendarEnabled;
+	});
+
+	afterEach(() => {
+		useRuntimeConfig().public.calendarEnabled = original as boolean;
+	});
+
+	it("hides the Kalender tab and never lists calendars when off", async () => {
+		useRuntimeConfig().public.calendarEnabled = false;
+		const wrapper = await mountSuspended(SettingsDrawer);
+		expect(wrapper.find("[data-testid=settings-tab-calendar]").exists()).toBe(false);
+		await wrapper.find("[data-testid=settings-tab-live]").trigger("click");
+		await flushPromises();
+		expect(listCalendars).not.toHaveBeenCalled();
+	});
+
+	it("shows the Kalender tab and loads calendars once when on", async () => {
+		useRuntimeConfig().public.calendarEnabled = "true" as unknown as boolean;
+		const wrapper = await mountSuspended(SettingsDrawer);
+		const calTab = wrapper.find("[data-testid=settings-tab-calendar]");
+		expect(calTab.exists()).toBe(true);
+		await calTab.trigger("click");
+		await flushPromises();
+		await wrapper.find("[data-testid=settings-tab-hub]").trigger("click");
+		await wrapper.find("[data-testid=settings-tab-calendar]").trigger("click");
+		await flushPromises();
+		expect(listCalendars).toHaveBeenCalledTimes(1);
 	});
 });

@@ -32,7 +32,7 @@ export default defineNuxtConfig({
 			resonaApiUrl: "http://localhost:7710",
 			defaultLanguage: "de",
 			defaultProfile: "default",
-			calendarEnabled: true,
+			calendarEnabled: false,
 			dataMode: "directus",
 		},
 	},

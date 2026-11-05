@@ -205,7 +205,7 @@ Verbindung).
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | Default transcription language. |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | Default postprocessing profile name. |
 | `NUXT_PUBLIC_DATA_MODE` | `directus` | Data backend: `directus` \| `standalone`. |
-| `NUXT_PUBLIC_CALENDAR_ENABLED` | `true` | Show the calendar entry point. |
+| `NUXT_PUBLIC_CALENDAR_ENABLED` | `false` | Enable the calendar integration (nav link, settings tab, `/calendar`, `/api/calendar`; all 404 when off). Needs the `NUXT_GOOGLE_*` keys and `NUXT_SESSION_PASSWORD`. |
 
 ## Commands
 

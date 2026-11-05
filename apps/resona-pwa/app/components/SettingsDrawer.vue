@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { CalendarOption } from "#shared/calendar";
+import { isCalendarEnabled } from "#shared/calendarEnabled";
 import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHub";
 import { CHUNK_SECONDS_MAX, CHUNK_SECONDS_MIN, clampChunkSeconds } from "~/composables/useLiveSettings";
 import type { DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 
 const emit = defineEmits<{ close: [] }>();
 
-const TABS = [
+const ALL_TABS = [
 	{ key: "hub", label: "Verbindung" },
 	{ key: "live", label: "Live" },
 	{ key: "calendar", label: "Kalender" },
 ] as const;
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = (typeof ALL_TABS)[number]["key"];
+const calendarEnabled = isCalendarEnabled(useRuntimeConfig().public.calendarEnabled);
+const TABS = ALL_TABS.filter(t => t.key !== "calendar" || calendarEnabled);
 const tab = ref<TabKey>("hub");
 
 // ── Verbindung: per-device hub token ───────────────────────────────────────
@@ -163,7 +166,7 @@ function done(): void {
 let calendarsRequested = false;
 let liveRequested = false;
 watch(tab, (value) => {
-	if (value === "calendar" && !calendarsRequested) {
+	if (value === "calendar" && calendarEnabled && !calendarsRequested) {
 		calendarsRequested = true;
 		void loadCalendars();
 	}

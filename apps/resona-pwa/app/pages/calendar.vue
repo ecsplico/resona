@@ -2,6 +2,16 @@
 import { computed, onMounted, ref } from "vue";
 import { eventDisplayTitle, formatEventWhen, germanDateToIso, isoDateToGerman } from "#shared/calendar";
 import type { CalendarEvent } from "#shared/calendar";
+import { isCalendarEnabled } from "#shared/calendarEnabled";
+
+// Off by default (NUXT_PUBLIC_CALENDAR_ENABLED): 404 before any calendar state exists.
+definePageMeta({
+	middleware: () => {
+		if (!isCalendarEnabled(useRuntimeConfig().public.calendarEnabled)) {
+			return abortNavigation(createError({ statusCode: 404, statusMessage: "Seite nicht gefunden", fatal: true }));
+		}
+	},
+});
 
 const cal = useCalendar("google");
 const showSettings = ref(false);
