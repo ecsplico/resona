@@ -116,7 +116,11 @@ def _point_ref(snapshot: Path, ref: str, commit: str) -> None:
 def ensure_pinned_snapshot(repo: str, ref: str | None, pin: str, *, offline: bool) -> Path:
     """Make ``repo`` at ``ref`` (what the engine loads; default ``main``) resolve to commit ``pin``.
 
-    The pinned commit is taken from the local cache, else downloaded unless ``offline``.
+    Online, the pinned commit is always fetched through ``snapshot_download``: it checks
+    the repo's file list, resumes ``.incomplete`` blobs and transfers nothing when the
+    snapshot is complete. The cache alone cannot tell a complete snapshot from one an
+    interrupted download left behind (small files present, ``model.bin`` missing), so it
+    is trusted only ``offline``.
     A branch or tag ``ref`` is then pointed at the pinned commit, so an engine asking for
     ``main`` offline loads exactly the release's weights. Never accepts another commit.
     """
@@ -125,10 +129,11 @@ def ensure_pinned_snapshot(repo: str, ref: str | None, pin: str, *, offline: boo
     ref = ref or "main"
     if is_commit(ref) and ref != pin:
         raise WeightsError(f"{repo} is loaded at {ref}, the release pins {pin}")
-    snapshot = local_snapshot(repo, pin)
-    if snapshot is None:
-        if offline:
+    if offline:
+        snapshot = local_snapshot(repo, pin)
+        if snapshot is None:
             raise WeightsError(f"{repo}@{pin} is not in the local HuggingFace cache and --offline forbids downloading it")
+    else:
         snapshot = download_snapshot(repo, pin)
     if not is_commit(ref):
         _point_ref(snapshot, ref, pin)

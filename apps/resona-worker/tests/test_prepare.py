@@ -84,7 +84,6 @@ def test_prepare_records_tested_tuples_with_pinned_revisions_memory_and_stage_de
     assert audio.seconds > 0
     assert [(w.repo, w.revision) for w in document.weights] == [(LAYOUT, LAYOUT_PIN), (TABLE, TABLE_PIN)]
     assert document.stage_accelerators == {"layout:docling-layout": "metal", "ocr:ocrmac": "metal"}
-    assert downloads == []
 
 
 def test_default_pins_are_the_installed_releases_packaged_pins(prepare_executor: Path, cached) -> None:
@@ -122,6 +121,25 @@ def test_cached_main_on_another_commit_is_never_used(prepare_executor: Path, hf_
     assert downloads == [(AUDIO.model, SNAPSHOT_HASH)]
     assert _ref(hf_cache, AUDIO.model, "main") == SNAPSHOT_HASH
     assert [(w.repo, w.revision) for w in manifest.tested[0].weights] == [(AUDIO.model, SNAPSHOT_HASH)]
+
+
+def test_cached_pinned_snapshot_is_still_verified_online(prepare_executor: Path, cached, downloads) -> None:
+    """A cached snapshot may be one an interrupted download left without its weights file:
+    online, every pin goes through ``snapshot_download``, which resumes or completes it."""
+    prepare(_settings([AUDIO], [DOC]), "mac-private", executor=(sys.executable, str(prepare_executor)), model_pins=PINS)
+
+    assert downloads == [(AUDIO.model, SNAPSHOT_HASH), (LAYOUT, LAYOUT_PIN), (TABLE, TABLE_PIN)]
+
+
+def test_offline_uses_the_cached_pins_without_downloading(prepare_executor: Path, cached, downloads) -> None:
+    manifest = prepare(
+        _settings([AUDIO], [DOC]), "mac-private", executor=(sys.executable, str(prepare_executor)),
+        model_pins=PINS, offline=True,
+    )
+
+    assert len(manifest.tested) == 2
+    assert downloads == []
+
 
 
 def test_offline_names_the_missing_repo_at_its_pinned_revision(hf_cache, downloads) -> None:
