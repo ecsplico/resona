@@ -189,9 +189,17 @@ watch(tab, (value) => {
 			data-testid="settings-scrim"
 			@click="emit('close')"
 		/>
-		<aside class="drawer__panel">
+		<aside
+			class="drawer__panel"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="settings-title"
+		>
 			<header class="drawer__head">
-				<h2 class="drawer__title">
+				<h2
+					id="settings-title"
+					class="drawer__title"
+				>
 					Einstellungen
 				</h2>
 				<button
@@ -201,26 +209,60 @@ watch(tab, (value) => {
 					data-testid="settings-close"
 					@click="emit('close')"
 				>
-					✕
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<line
+							x1="18"
+							y1="6"
+							x2="6"
+							y2="18"
+						/>
+						<line
+							x1="6"
+							y1="6"
+							x2="18"
+							y2="18"
+						/>
+					</svg>
 				</button>
 			</header>
 
-			<nav class="drawer__tabs">
+			<div
+				class="h-tabs drawer__tabs"
+				role="tablist"
+				aria-label="Einstellungen"
+			>
 				<button
 					v-for="t in TABS"
+					:id="`settings-tab-${t.key}`"
 					:key="t.key"
-					class="drawer__tab"
-					:class="{ 'drawer__tab--active': tab === t.key }"
+					class="h-tab"
+					:class="{ 'h-tab--active': tab === t.key }"
 					type="button"
+					role="tab"
+					:aria-selected="tab === t.key"
+					aria-controls="settings-panel"
 					:data-testid="`settings-tab-${t.key}`"
 					@click="tab = t.key"
 				>
 					{{ t.label }}
 				</button>
-			</nav>
+			</div>
 			<section
 				v-if="tab === 'hub'"
+				id="settings-panel"
 				class="drawer__body"
+				role="tabpanel"
+				aria-labelledby="settings-tab-hub"
 			>
 				<label class="drawer__field">
 					<span class="drawer__label">Hub-Token</span>
@@ -266,7 +308,10 @@ watch(tab, (value) => {
 
 			<section
 				v-else-if="tab === 'calendar'"
+				id="settings-panel"
 				class="drawer__body"
+				role="tabpanel"
+				aria-labelledby="settings-tab-calendar"
 			>
 				<!-- Server has no OAuth client configured -->
 				<p
@@ -385,7 +430,10 @@ watch(tab, (value) => {
 
 			<section
 				v-else
+				id="settings-panel"
 				class="drawer__body"
+				role="tabpanel"
+				aria-labelledby="settings-tab-live"
 			>
 				<div
 					class="drawer__field"
@@ -536,30 +584,45 @@ watch(tab, (value) => {
 </template>
 
 <style scoped>
+/* Right-side panel at every width; 24 px edges, 20 px between groups. */
 .drawer { position:fixed; inset:0; z-index:60; display:flex; justify-content:flex-end; }
-.drawer__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); }
-.drawer__panel { position:relative; width:min(420px, 92vw); height:100%; background:var(--white); display:flex; flex-direction:column; box-shadow:var(--shadow-lift); }
-.drawer__head { display:flex; align-items:center; justify-content:space-between; padding:20px 22px 12px; }
-.drawer__title { margin:0; font-family:var(--font-display); font-weight:600; font-size:20px; color:var(--fg1); }
-.drawer__close { border:none; background:none; font-size:18px; color:var(--fg3); cursor:pointer; padding:6px; line-height:1; }
-.drawer__tabs { display:flex; gap:4px; padding:0 22px; border-bottom:1.5px solid var(--border-strong); }
-.drawer__tab { border:none; background:none; padding:10px 4px 12px; margin-right:14px; font-size:15px; font-weight:600; color:var(--fg3); cursor:pointer; border-bottom:2px solid transparent; }
-.drawer__tab--active { color:var(--accent); border-bottom-color:var(--accent); }
-.drawer__body { flex:1; overflow-y:auto; padding:20px 22px; display:flex; flex-direction:column; gap:18px; }
-.drawer__notice { margin:0; padding:14px; border-radius:12px; background:var(--butter-soft); color:#8B6200; font-size:14px; line-height:1.5; }
-.drawer__connect { display:flex; flex-direction:column; gap:14px; align-items:flex-start; }
-.drawer__hint { margin:0; font-size:15px; line-height:1.6; color:var(--fg1); }
-.drawer__connect-btn { display:inline-block; background:var(--accent); color:var(--fg-on-accent); font-weight:600; font-size:15px; padding:12px 16px; border-radius:10px; text-decoration:none; }
-.drawer__field { display:flex; flex-direction:column; flex:1; }
-.drawer__field--row { flex-direction:row; align-items:center; justify-content:space-between; gap:12px; }
-.drawer__label { font-size:13px; font-weight:600; color:var(--crust-deep); margin-bottom:7px; }
-.drawer__input { border:1.5px solid var(--border-strong); border-radius:8px; padding:12px 14px; background:var(--white); font-family:var(--font-body); font-size:15px; color:var(--fg1); }
+.drawer__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); animation:drawer-fade var(--motion-base) var(--motion-ease); }
+.drawer__panel { position:relative; width:min(420px, 92vw); height:100%; background:var(--white); display:flex; flex-direction:column; box-shadow:var(--shadow-deep); animation:drawer-in var(--motion-base) var(--motion-ease); }
+@keyframes drawer-fade { from { opacity:0; } }
+@keyframes drawer-in { from { transform:translateX(24px); opacity:0; } }
+@media (prefers-reduced-motion:reduce) { .drawer__scrim, .drawer__panel { animation:none; } }
+
+.drawer__head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:calc(16px + env(safe-area-inset-top)) 16px 4px 24px; }
+.drawer__title { margin:0; font-family:var(--font-display); font-weight:600; font-size:var(--fs-lg); line-height:1.2; color:var(--fg1); }
+.drawer__close { width:40px; height:40px; flex:0 0 auto; border:none; border-radius:var(--r-full); background:none; color:var(--fg2); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); }
+.drawer__close:hover { background:var(--cream-deep); color:var(--fg1); }
+.drawer__close:active { background:var(--crust-soft); }
+.drawer__tabs { padding:0 24px; }
+
+.drawer__body { flex:1; overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:20px; }
+.drawer__notice { margin:0; padding:12px 14px; border-radius:var(--r-md); background:var(--butter-soft); color:#6E4E00; font-size:var(--fs-sm); line-height:1.5; }
+.drawer__connect { display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+.drawer__hint { margin:0; font-size:var(--fs-sm); line-height:1.5; color:var(--fg1); }
+.drawer__connect-btn { display:inline-flex; align-items:center; min-height:44px; padding:0 16px; border-radius:var(--r-sm); background:var(--accent); color:var(--fg-on-accent); font-weight:600; font-size:var(--fs-sm); text-decoration:none; transition:background-color var(--motion-fast) var(--motion-ease); }
+.drawer__connect-btn:hover { background:var(--accent-hover); }
+
+/* Fields keep their natural height; only side-by-side fields share a row. */
+.drawer__field { display:flex; flex-direction:column; gap:8px; }
 .drawer__row { display:flex; gap:12px; }
-.drawer__sub { font-size:13px; color:var(--fg3); margin:0; }
-.drawer__readonly { font-size:15px; color:var(--fg2); word-break:break-all; }
-.drawer__link { color:var(--accent); font-weight:600; font-size:15px; text-decoration:none; margin-top:4px; }
-.drawer__foot { padding:14px 22px 22px; border-top:1.5px solid var(--border-strong); display:flex; flex-direction:column; gap:10px; }
+.drawer__row > .drawer__field { flex:1; min-width:0; }
+.drawer__field--row { flex-direction:row; align-items:center; justify-content:space-between; gap:12px; }
+.drawer__field + .drawer__sub { margin-top:-12px; }
+.drawer__label { font-size:var(--fs-sm); font-weight:600; color:var(--fg2); }
+.drawer__input { width:100%; min-height:44px; box-sizing:border-box; border:1.5px solid var(--border-strong); border-radius:var(--r-sm); padding:10px 12px; background:var(--white); font-family:var(--font-body); font-size:var(--fs-md); color:var(--fg1); transition:border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease); }
+.drawer__input:hover { border-color:var(--crust); }
+.drawer__input:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--focus-ring); }
+.drawer__sub { margin:0; font-size:var(--fs-xs); line-height:1.5; color:var(--fg3); }
+.drawer__readonly { font-size:var(--fs-sm); color:var(--fg2); word-break:break-all; }
+.drawer__link { color:var(--accent-ink); font-weight:600; font-size:var(--fs-sm); text-decoration:none; border-radius:var(--r-xs); }
+.drawer__link:hover { text-decoration:underline; text-underline-offset:3px; }
+.drawer__radio { display:flex; align-items:center; gap:10px; min-height:32px; font-size:var(--fs-md); color:var(--fg1); cursor:pointer; }
+
+.drawer__foot { padding:16px 24px calc(20px + env(safe-area-inset-bottom)); border-top:1px solid var(--border); display:flex; flex-direction:column; gap:12px; }
 .drawer__foot > * { width:100%; }
-.drawer__diag-link { text-align:center; font-size:13px; }
-.drawer__radio { display:flex; align-items:center; gap:8px; font-size:15px; color:var(--fg1); padding:4px 0; }
+.drawer__diag-link { text-align:center; font-size:var(--fs-xs); }
 </style>

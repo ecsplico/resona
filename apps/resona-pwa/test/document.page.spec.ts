@@ -33,12 +33,13 @@ describe("document detail page", () => {
 		vi.useRealTimers();
 	});
 
-	it("renders title, status chip and markdown in a pre", async () => {
+	it("renders the full title, no chip for a finished document and markdown in a pre", async () => {
 		const w = await mountSuspended(DocumentPage);
 		await flushPromises();
 		expect(store.getDocument).toHaveBeenCalledWith("doc-1");
 		expect(w.find("[data-testid=\"doc-title\"]").text()).toBe("Arztbrief Müller");
-		expect(w.findComponent({ name: "StatusChip" }).props("status")).toBe("done");
+		expect(w.find("[data-testid=\"doc-bar-title\"]").text()).toBe("Arztbrief Müller");
+		expect(w.findComponent({ name: "StatusChip" }).exists()).toBe(false);
 		const pre = w.find("pre.doc__markdown");
 		expect(pre.exists()).toBe(true);
 		expect(pre.text()).toBe("## Befund\n\nAlles **gut**.");
@@ -108,7 +109,7 @@ describe("document detail page", () => {
 		const w = await mountSuspended(DocumentPage);
 		await flushPromises();
 		const btn = w.find("[data-testid=\"doc-download\"]");
-		expect(btn.text()).toBe("Als .md laden");
+		expect(btn.attributes("aria-label")).toBe("Als .md laden");
 		await btn.trigger("click");
 		expect(exportFns.downloadDocumentMarkdown).toHaveBeenCalledWith(doneDoc);
 	});

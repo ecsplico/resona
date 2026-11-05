@@ -72,9 +72,19 @@ describe("documents list page", () => {
 	it("passes the search text as filter", async () => {
 		const w = await mountSuspended(DocumentsPage);
 		await flushPromises();
-		w.findComponent({ name: "HField" }).vm.$emit("update:modelValue", "Brief");
+		await w.find("[data-testid=\"docs-search\"]").setValue("Brief");
 		await flushPromises();
 		expect(store.listDocuments).toHaveBeenLastCalledWith({ search: "Brief" });
+	});
+
+	it("teaches how to start when empty and names the search when it finds nothing", async () => {
+		store.listDocuments.mockResolvedValue([]);
+		const w = await mountSuspended(DocumentsPage);
+		await flushPromises();
+		expect(w.find("[data-testid=\"docs-empty\"]").text()).toBe("Noch keine Dokumente – lade ein PDF oder ein Foto hoch, Resona macht Text daraus.");
+		await w.find("[data-testid=\"docs-search\"]").setValue("Brief");
+		await flushPromises();
+		expect(w.find("[data-testid=\"docs-empty\"]").text()).toBe("Keine Dokumente zu „Brief“.");
 	});
 
 	it("polls every 4 s while a row is pending/processing and stops when all are terminal", async () => {

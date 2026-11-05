@@ -253,6 +253,13 @@ describe("live transcription page", () => {
 		expect(liveStart).toHaveBeenCalled();
 	});
 
+	it("offers a way back to the recordings", async () => {
+		const w = await mountLive();
+		const back = w.find("[data-testid=\"live-back\"]");
+		expect(back.text()).toBe("Zurück");
+		expect(back.attributes("href")).toBe("/");
+	});
+
 	it("shows the rolling transcript with final and partial text", async () => {
 		const w = await mountLive();
 		final.value = "Der Patient";

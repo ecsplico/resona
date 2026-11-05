@@ -84,6 +84,7 @@ async function submit(): Promise<void> {
 			<p
 				v-if="error"
 				class="login__error"
+				role="alert"
 			>
 				{{ error }}
 			</p>
@@ -102,13 +103,16 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
-.login { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:var(--bg); }
-@media (min-width:768px) { .login { min-height:100%; } }
-.login__card { display:flex; flex-direction:column; align-items:center; gap:14px; width:100%; max-width:380px; }
-.login__icon { width:78px; height:78px; border-radius:20px; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-lift); }
-.login__title { font-family:var(--font-display); font-size:34px; font-weight:600; color:var(--fg1); margin:6px 0 0; }
-.login__subtitle { font-size:15px; color:var(--fg3); margin:0 0 8px; text-align:center; }
+/* One centered card on the cream page at every width. */
+.login { min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:24px 16px calc(24px + env(safe-area-inset-bottom)); background:var(--bg); }
+.login__card { display:flex; flex-direction:column; align-items:center; gap:16px; width:100%; max-width:400px; box-sizing:border-box; padding:32px 24px 28px; border:1px solid var(--border); border-radius:var(--r-lg); background:var(--bg-raised); }
+.login__icon { width:56px; height:56px; border-radius:var(--r-md); background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; }
+.login__icon svg { width:28px; height:28px; }
+.login__title { margin:4px 0 0; font-family:var(--font-display); font-size:var(--fs-2xl); font-weight:600; line-height:1.2; color:var(--fg1); }
+.login__subtitle { margin:-8px 0 8px; font-size:var(--fs-sm); color:var(--fg3); text-align:center; }
 .login__field { width:100%; }
-.login__error { color:var(--danger); font-size:14px; margin:0; align-self:flex-start; }
-.login__submit { width:100%; margin-top:6px; }
+.login__error { margin:0; align-self:stretch; padding:10px 12px; border-radius:var(--r-sm); background:var(--tomato-tint); color:var(--danger); font-size:var(--fs-sm); }
+.login__submit { width:100%; min-height:48px; margin-top:8px; transition:background-color var(--motion-fast) var(--motion-ease); }
+.login__submit:hover:not(:disabled) { background:var(--accent-hover); }
+@media (min-width:600px) { .login__card { padding:40px 36px 32px; } }
 </style>

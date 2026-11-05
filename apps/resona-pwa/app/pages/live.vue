@@ -258,10 +258,31 @@ onMounted(async () => {
 
 <template>
 	<div class="live">
-		<HAppBar
-			tone="dark"
-			title="Live"
-		/>
+		<header class="live__bar">
+			<NuxtLink
+				class="live__back"
+				to="/"
+				data-testid="live-back"
+			>
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<polyline points="15 18 9 12 15 6" />
+				</svg>
+				Zurück
+			</NuxtLink>
+			<h1 class="live__title">
+				Live
+			</h1>
+		</header>
 
 		<div
 			v-if="sessionActive && sourceError"
@@ -280,67 +301,70 @@ onMounted(async () => {
 		</div>
 
 		<div class="live__body">
-			<div
-				v-if="rollingText"
-				class="live__toolbar"
-			>
-				<HIconButton
-					tone="glass"
-					aria-label="Kopieren"
-					data-testid="copy-live"
-					@click="copyTranscript"
+			<div class="live__column">
+				<div
+					v-if="rollingText"
+					class="live__toolbar"
 				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
+					<HIconButton
+						tone="glass"
+						aria-label="Kopieren"
+						title="Kopieren"
+						data-testid="copy-live"
+						@click="copyTranscript"
 					>
-						<rect
-							x="9"
-							y="9"
-							width="13"
-							height="13"
-							rx="2"
-						/>
-						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-					</svg>
-				</HIconButton>
-			</div>
-			<p
-				class="live__transcript"
-				data-testid="transcript"
-			>
-				<template v-if="correctionActive">
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<rect
+								x="9"
+								y="9"
+								width="13"
+								height="13"
+								rx="2"
+							/>
+							<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+						</svg>
+					</HIconButton>
+				</div>
+				<p
+					class="live__transcript"
+					data-testid="transcript"
+				>
+					<template v-if="correctionActive">
+						<span
+							v-for="(block, i) in correction.blocks.value"
+							:key="block.id"
+							class="live__final live__block"
+							:class="{
+								'live__block--corrected': block.state === 'corrected',
+								'live__block--pending': block.state === 'correcting' || block.state === 'queued',
+							}"
+							data-testid="live-block"
+						>{{ i > 0 ? " " : "" }}{{ block.correctedText ?? block.liveText }}</span>
+					</template>
 					<span
-						v-for="(block, i) in correction.blocks.value"
-						:key="block.id"
-						class="live__final live__block"
-						:class="{
-							'live__block--corrected': block.state === 'corrected',
-							'live__block--pending': block.state === 'correcting' || block.state === 'queued',
-						}"
-						data-testid="live-block"
-					>{{ i > 0 ? " " : "" }}{{ block.correctedText ?? block.liveText }}</span>
-				</template>
-				<span
-					v-else
-					class="live__final"
-				>{{ source.final.value }}</span>
-				<span
-					v-if="source.partial.value"
-					class="live__partial"
-				>{{ (correctionActive ? correction.text.value : source.final.value) ? " " : "" }}{{ source.partial.value }}</span>
-				<span
-					v-if="!rollingText"
-					class="live__hint"
-				>Sprich jetzt…</span>
-			</p>
+						v-else
+						class="live__final"
+					>{{ source.final.value }}</span>
+					<span
+						v-if="source.partial.value"
+						class="live__partial"
+					>{{ (correctionActive ? correction.text.value : source.final.value) ? " " : "" }}{{ source.partial.value }}</span>
+					<span
+						v-if="!rollingText"
+						class="live__hint"
+					>Sprich jetzt…</span>
+				</p>
+			</div>
 		</div>
 
 		<p
@@ -455,22 +479,42 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.live { min-height:100vh; display:flex; flex-direction:column; background:var(--crust-deep, #1a1410); color:var(--white, #fff); }
-.live__reconnect { background:var(--tomato-deep, #7a2718); color:var(--white, #fff); padding:10px 20px; font-family:var(--font-body); font-size:14px; font-weight:600; text-align:center; }
+/* The surface goes dark whenever the microphone is live. It fills the shell's page
+   container (flex column); on phones the shell header is hidden on /live. */
+.live { flex:1; min-height:100dvh; display:flex; flex-direction:column; background:var(--night); color:var(--on-night); color-scheme:dark; }
+@media (min-width:960px) { .live { min-height:0; } }
+.live :deep(:focus-visible) { outline-color:var(--tomato); }
+
+.live__bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; min-height:56px; padding:env(safe-area-inset-top) 8px 0; border-bottom:1px solid rgba(251,245,236,0.10); }
+.live__back { justify-self:start; display:inline-flex; align-items:center; gap:4px; min-height:40px; padding:0 12px 0 6px; border-radius:var(--r-full); color:var(--on-night); font-size:var(--fs-sm); font-weight:600; text-decoration:none; transition:background-color var(--motion-fast) var(--motion-ease); }
+.live__back:hover { background:var(--night-raised); }
+.live__back:active { background:rgba(251,245,236,0.14); }
+.live__title { margin:0; font-family:var(--font-display); font-size:var(--fs-lg); font-weight:600; line-height:1.2; color:var(--on-night); }
+
+.live__reconnect { background:var(--tomato-deep); color:var(--white); padding:10px 20px; font-size:var(--fs-sm); font-weight:600; text-align:center; }
 .live__body { flex:1; padding:24px 20px; overflow-y:auto; }
+.live__column { max-width:72ch; margin:0 auto; }
 .live__toolbar { display:flex; justify-content:flex-end; margin-bottom:12px; }
-.live__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:20px; line-height:1.6; margin:0; }
-.live__final { color:var(--white, #fff); }
-.live__partial { color:var(--fg3, #9a8f86); }
-.live__block--corrected { color:var(--white, #fff); }
-.live__block--pending { color:var(--fg2, #c9bfb6); }
-.live__pending { color:var(--fg3, #9a8f86); font-family:var(--font-body); font-size:14px; margin:0; }
-.live__hint { color:var(--fg3, #9a8f86); font-style:italic; }
-.live__controls { display:flex; justify-content:center; padding:28px 0 40px; }
-.live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent, #e0563a); color:var(--white, #fff); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-lift); }
-.live__save { display:flex; flex-direction:column; gap:14px; padding:20px; background:var(--crust, #241c16); }
-.live__stop:disabled { opacity:.4; cursor:not-allowed; }
-.live__notice { margin:0 20px 12px; padding:10px 14px; border-radius:10px; background:var(--crust, #241c16); color:var(--white, #fff); font-family:var(--font-body); font-size:14px; }
-.live__error { color:var(--danger); font-size:14px; margin:0; }
+.live__transcript { white-space:pre-wrap; font-size:20px; line-height:1.6; margin:0; }
+.live__final, .live__block--corrected { color:var(--on-night); }
+.live__partial, .live__block--pending, .live__hint { color:var(--on-night-mute); }
+.live__hint { font-style:italic; }
+
+.live__notice { width:calc(100% - 40px); max-width:72ch; margin:0 auto 12px; padding:12px 14px; border:1px solid rgba(232,168,56,0.45); border-radius:var(--r-md); background:var(--night-raised); color:var(--on-night); font-size:var(--fs-sm); line-height:1.5; }
+
+.live__controls { display:flex; justify-content:center; padding:28px 0 calc(40px + env(safe-area-inset-bottom)); }
+.live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,0.35); transition:background-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
+.live__stop:hover { background:var(--accent-hover); }
+.live__stop:active { transform:scale(0.96); }
+.live__stop:disabled { opacity:.4; cursor:not-allowed; transform:none; background:var(--accent); }
+
+/* Save panel: raised night surface; shared field/button restyled to stay legible. */
+.live__save { display:flex; flex-direction:column; gap:16px; padding:20px 20px calc(20px + env(safe-area-inset-bottom)); background:var(--night-raised); border-top:1px solid rgba(251,245,236,0.10); }
+.live__save > * { width:100%; max-width:72ch; margin:0 auto; }
+.live__save :deep(.h-field__label) { color:var(--on-night-mute); }
+.live__save :deep(.h-btn--secondary) { color:var(--on-night); border-color:rgba(251,245,236,0.32); }
+.live__save :deep(.h-btn--secondary:hover) { background:rgba(251,245,236,0.08); }
+.live__pending { color:var(--on-night-mute); font-size:var(--fs-sm); margin:0; }
+.live__error { color:var(--tomato-soft); font-size:var(--fs-sm); margin:0; }
 .live__save-actions { display:flex; gap:10px; justify-content:flex-end; }
 </style>
