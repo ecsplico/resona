@@ -12,7 +12,7 @@ resona/
 ├── uv.lock
 ├── docker-compose.resona.yml
 ├── docker-compose.coolify.yml ← public hub on Coolify (hub + hosted MCP, Caddy labels, /data volume); docs/server/coolify.md
-├── docker-compose.cpu-standalone.yml ← self-contained CPU-only api + faster-whisper for a single host deployed from one compose path
+├── docker-compose.cpu-standalone.yml ← CPU-only single host from one compose path: hub + faster-whisper (live) + opt-in cpu-private worker (profile `worker`); docs/server/cpu-standalone.md
 ├── docker-compose.mac.yml  ← Apple Silicon single host: dockerized api + native engine (scripts/run-native-engine.sh); docs/server/mac-stack.md
 ├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member; scores via resona-eval)
 ├── eval/                   ← evaluation corpus (eval/corpus, synthetic, CC0) + promoted baselines (eval/baselines.json)

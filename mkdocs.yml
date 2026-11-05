@@ -76,6 +76,7 @@ nav:
     - Docker Deployment: server/docker.md
     - Full-Stack (uv): server/full-stack.md
     - Mac Single-Host Stack (Apple Silicon): server/mac-stack.md
+    - CPU Single-Host Stack (Linux, no GPU): server/cpu-standalone.md
     - Mac Worker (Apple Silicon): server/mac-worker.md
     - Linux Worker (NVIDIA, Docker): server/linux-worker.md
     - Coolify Deployment (public hub): server/coolify.md
