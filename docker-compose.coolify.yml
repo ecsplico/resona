@@ -11,7 +11,7 @@
 # Image: the released hub image from GHCR, pinned by digest (never a mutable tag).
 # The release workflow pushes ghcr.io/ecsplico/resona-hub; bump both `image:` lines
 # to the digest from that release's release-manifest.json (docs/server/coolify.md).
-# Current: sha256:44cbb8eb… = ghcr.io/ecsplico/resona-hub:0.1.0-248561f (linux/amd64, commit 248561f).
+# Current: sha256:bf59e671… = ghcr.io/ecsplico/resona-hub:0.1.0-d226774 (linux/amd64, commit d226774).
 # The package is private: the host pulls with a read:packages-only token (docs/server/coolify.md).
 #
 # No variable is required: defaults serve https://resona.ecsplico.de.
@@ -30,7 +30,7 @@ x-hardening: &hardening
 services:
   hub:
     <<: *hardening
-    image: ghcr.io/ecsplico/resona-hub@sha256:44cbb8eb2ddd30eea4c9ef14b3dc65fe30dc53af58eb96db6cfb4644060f2688
+    image: ghcr.io/ecsplico/resona-hub@sha256:bf59e671db7cc808649ce739ac6bb7839e9590e6dfaf47897e080e5d6ab86cc4
     restart: unless-stopped
     stop_grace_period: 30s
     expose: ['7000']
@@ -57,7 +57,7 @@ services:
 
   mcp:
     <<: *hardening
-    image: ghcr.io/ecsplico/resona-hub@sha256:44cbb8eb2ddd30eea4c9ef14b3dc65fe30dc53af58eb96db6cfb4644060f2688
+    image: ghcr.io/ecsplico/resona-hub@sha256:bf59e671db7cc808649ce739ac6bb7839e9590e6dfaf47897e080e5d6ab86cc4
     command: ['resona-mcp', 'http', '--host', '0.0.0.0', '--port', '7010']
     restart: unless-stopped
     depends_on:
