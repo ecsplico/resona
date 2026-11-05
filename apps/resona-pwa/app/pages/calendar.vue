@@ -239,7 +239,8 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.cal { min-height:100vh; background:var(--bg); padding-bottom:40px; }
+/* List page: full width under the header, content in a centered ~960 px column. */
+.cal { width:100%; max-width:960px; margin:0 auto; padding-bottom:40px; }
 .cal__status { display:flex; justify-content:flex-end; padding:12px 20px 0; }
 .cal__notice { margin:20px; padding:16px; border-radius:12px; background:var(--butter-soft); color:#8B6200; font-size:14px; line-height:1.5; }
 .cal__notice code { font-family:var(--font-mono); font-size:12px; }

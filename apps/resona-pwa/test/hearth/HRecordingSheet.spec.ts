@@ -1,8 +1,39 @@
-import { describe, it, expect } from "vitest";
-import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { computed, ref } from "vue";
+import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import HRecordingSheet from "~/components/hearth/HRecordingSheet.vue";
 
+// `wide` normally comes from the layout's media query; drive it directly here.
+const viewport = vi.hoisted(() => ({ wide: false }));
+mockNuxtImport("useShell", () => () => ({ wide: ref(viewport.wide), paneInLayout: computed(() => false) }));
+
 describe("HRecordingSheet", () => {
+	beforeEach(() => {
+		viewport.wide = false;
+	});
+
+	it("is a modal dialog that puts keyboard focus on stop on wide screens", async () => {
+		viewport.wide = true;
+		const w = await mountSuspended(HRecordingSheet, {
+			props: { elapsed: 0, levels: [] },
+			attachTo: document.body,
+		});
+		const dialog = w.find("[role=\"dialog\"]");
+		expect(dialog.attributes("aria-modal")).toBe("true");
+		expect(dialog.attributes("aria-labelledby")).toBeTruthy();
+		expect(document.activeElement).toBe(w.find("[data-testid=\"stop\"]").element);
+		w.unmount();
+	});
+
+	it("leaves focus alone on phones", async () => {
+		const w = await mountSuspended(HRecordingSheet, {
+			props: { elapsed: 0, levels: [] },
+			attachTo: document.body,
+		});
+		expect(document.activeElement).not.toBe(w.find("[data-testid=\"stop\"]").element);
+		w.unmount();
+	});
+
 	it("renders the elapsed time formatted as MM:SS", async () => {
 		const w = await mountSuspended(HRecordingSheet, {
 			props: { elapsed: 65, levels: [] },

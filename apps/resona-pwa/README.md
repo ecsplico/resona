@@ -226,10 +226,10 @@ Verbindung).
 ```
 app/
 ├── app.vue
-├── layouts/default.vue              # shell: header, page, settings drawer
+├── layouts/default.vue              # shell: header, page, settings drawer; desktop: recordings aside + detail pane
 ├── middleware/auth.global.ts        # redirects unauthenticated users to /login
 ├── pages/
-│   ├── index.vue                    # recordings list (RecordingsPane): filters, capture dock
+│   ├── index.vue                    # phone: recordings list (RecordingsPane); desktop: empty detail pane
 │   ├── login.vue                    # Directus email/password login
 │   ├── live.vue                     # live transcription
 │   └── recording/[id].vue           # detail: player, transcript edit, export

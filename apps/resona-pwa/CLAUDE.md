@@ -154,10 +154,10 @@ token (no token → nothing is processed).
 ```
 app/
 ├── app.vue                          # VitePwaManifest + layout; no phone frame
-├── layouts/default.vue              # shell: AppHeader + page + SettingsDrawer; provides useShell
+├── layouts/default.vue              # shell: AppHeader + page + SettingsDrawer; provides useShell; ≥960px on / and /recording/:id: RecordingsPane in the left aside, page in the right pane
 ├── middleware/auth.global.ts        # redirect unauthenticated → /login
 ├── pages/
-│   ├── index.vue                    # renders RecordingsPane (phone / no layout pane)
+│   ├── index.vue                    # phone: RecordingsPane; desktop pane: empty right-pane state
 │   ├── login.vue                    # Directus email/password login
 │   ├── live.vue                     # live transcription (reads ?title= to preset name)
 │   ├── calendar.vue                 # Google Calendar: connect, filter, start dictation

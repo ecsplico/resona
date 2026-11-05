@@ -24,7 +24,15 @@ const languageOptions = ["de", "en"];
 
 const { list } = useProfiles();
 
+// Wide screens: a centered dialog instead of a bottom sheet.
+const { wide } = useShell();
+const sheet = ref<HTMLElement | null>(null);
+
 onMounted(async () => {
+	if (wide.value) {
+		// Keyboard users start in the title field; on phones this would pop the keyboard.
+		sheet.value?.querySelector<HTMLInputElement>("[data-testid=\"title\"] input")?.focus();
+	}
 	const names = await list();
 	if (names.length > 0) {
 		profileOptions.value = names;
@@ -48,10 +56,22 @@ function submit(): void {
 </script>
 
 <template>
-	<div class="save-sheet">
+	<div
+		class="save-sheet"
+		:class="{ 'save-sheet--dialog': wide }"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="save-sheet-title"
+	>
 		<div class="save-sheet__scrim" />
-		<div class="save-sheet__sheet">
-			<p class="save-sheet__eyebrow">
+		<div
+			ref="sheet"
+			class="save-sheet__sheet"
+		>
+			<p
+				id="save-sheet-title"
+				class="save-sheet__eyebrow"
+			>
 				AUFNAHME SPEICHERN
 			</p>
 
@@ -131,6 +151,11 @@ function submit(): void {
 .save-sheet { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; justify-content:flex-end; }
 .save-sheet__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); }
 .save-sheet__sheet { position:relative; background:var(--white); border-radius:var(--r-lg) var(--r-lg) 0 0; padding:28px 24px 36px; display:flex; flex-direction:column; gap:18px; }
+/* Wide: centered dialog, max 480 px, rises in on open. */
+.save-sheet--dialog { justify-content:center; align-items:center; padding:24px; }
+.save-sheet--dialog .save-sheet__sheet { width:100%; max-width:480px; border-radius:var(--r-lg); box-shadow:var(--shadow-deep); animation:save-sheet-in var(--motion-base) var(--motion-ease); }
+@keyframes save-sheet-in { from { opacity:0; transform:translateY(8px); } }
+@media (prefers-reduced-motion:reduce) { .save-sheet--dialog .save-sheet__sheet { animation:none; } }
 .save-sheet__eyebrow { margin:0; font-family:var(--font-body); font-weight:600; font-size:12px; letter-spacing:0.16em; color:var(--crust-deep); }
 .save-sheet__row { display:flex; align-items:center; justify-content:space-between; }
 .save-sheet__toggle-label { font-size:15px; font-weight:600; color:var(--fg1); }

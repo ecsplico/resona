@@ -10,9 +10,16 @@ export interface Shell {
 
 const SHELL_KEY: InjectionKey<Shell> = Symbol("resona-shell");
 
+/** Routes the desktop workspace shows next to the recordings pane. */
+const PANE_ROUTE = /^\/(?:recording\/[^/]+\/?)?$/;
+
 /** Called by the default layout only. */
 export function provideShell(wide: Ref<boolean>): Shell {
-	const shell: Shell = { wide, paneInLayout: computed(() => false) };
+	const route = useRoute();
+	const shell: Shell = {
+		wide,
+		paneInLayout: computed(() => wide.value && PANE_ROUTE.test(route.path)),
+	};
 	provide(SHELL_KEY, shell);
 	return shell;
 }

@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { computed, ref } from "vue";
+import { flushPromises } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import SaveSheet from "~/components/SaveSheet.vue";
+
+// `wide` normally comes from the layout's media query; drive it directly here.
+const viewport = vi.hoisted(() => ({ wide: false }));
+mockNuxtImport("useShell", () => () => ({ wide: ref(viewport.wide), paneInLayout: computed(() => false) }));
 
 const list = vi.hoisted(() => vi.fn(async () => ["default", "medical"]));
 
@@ -12,6 +18,25 @@ describe("SaveSheet", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		list.mockResolvedValue(["default", "medical"]);
+		viewport.wide = false;
+	});
+
+	it("is a modal dialog that starts in the title field on wide screens", async () => {
+		viewport.wide = true;
+		const w = await mountSuspended(SaveSheet, { attachTo: document.body });
+		await flushPromises();
+		const dialog = w.find("[role=\"dialog\"]");
+		expect(dialog.attributes("aria-modal")).toBe("true");
+		expect(dialog.attributes("aria-labelledby")).toBeTruthy();
+		expect(document.activeElement).toBe(w.find("[data-testid=\"title\"] input").element);
+		w.unmount();
+	});
+
+	it("does not focus the title on phones (no keyboard popping up)", async () => {
+		const w = await mountSuspended(SaveSheet, { attachTo: document.body });
+		await flushPromises();
+		expect(document.activeElement).not.toBe(w.find("[data-testid=\"title\"] input").element);
+		w.unmount();
 	});
 
 	it("renders title, language, profile pickers and a transcribe toggle", async () => {

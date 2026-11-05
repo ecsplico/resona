@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
 
@@ -12,6 +12,14 @@ const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
 const settings = useSettingsDrawer();
 const hubSettings = useHubSettings();
+const { wide, paneInLayout } = useShell();
+const route = useRoute();
+
+// In the desktop workspace the open recording is highlighted in the list.
+const selectedId = computed(() => {
+	const match = /^\/recording\/([^/]+)/.exec(route.path);
+	return match ? decodeURIComponent(match[1]!) : null;
+});
 
 async function refreshQueued(): Promise<void> {
 	queued.value = await queue.pending();
@@ -125,7 +133,7 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	if (!blob) {
 		return;
 	}
-	await saveRecording({
+	const created = await saveRecording({
 		blob,
 		title: payload.title,
 		language: payload.language,
@@ -137,6 +145,10 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	showSave.value = false;
 	await refresh();
 	await refreshQueued();
+	// Desktop: open the new recording in the right pane next to the list.
+	if (wide.value) {
+		await navigateTo(`/recording/${created.id}`);
+	}
 }
 
 function onDiscard(): void {
@@ -174,7 +186,10 @@ onMounted(() => {
 </script>
 
 <template>
-	<div class="pane">
+	<div
+		class="pane"
+		:class="{ 'pane--aside': paneInLayout }"
+	>
 		<div
 			v-if="!hubSettings.token"
 			class="pane__notice"
@@ -312,6 +327,7 @@ onMounted(() => {
 					v-for="recording in items"
 					:key="recording.id"
 					:recording="recording"
+					:selected="recording.id === selectedId"
 					@open="openRecording(recording)"
 					@copy="void copyRecording(recording)"
 				/>
@@ -445,7 +461,12 @@ onMounted(() => {
 
 <style scoped>
 /* Bottom padding = dock height + safe area, so the dock never covers the last row. */
-.pane { --dock-h:84px; padding-bottom:calc(var(--dock-h) + env(safe-area-inset-bottom) + 24px); }
+.pane { --dock-h:84px; width:100%; max-width:960px; margin:0 auto; padding-bottom:calc(var(--dock-h) + env(safe-area-inset-bottom) + 24px); }
+/* Desktop aside: the pane fills the aside's height and the dock sticks to its bottom
+   edge instead of the viewport's, so it never covers the right pane. */
+.pane--aside { display:flex; flex-direction:column; min-height:100%; max-width:none; padding-bottom:0; }
+.pane--aside .pane__body { flex:1; padding-bottom:24px; }
+.pane--aside .dock { position:sticky; background:var(--bg-panel); padding-bottom:0; }
 
 .pane__notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin:12px 16px 0; padding:12px 14px; border-radius:var(--r-md); background:var(--butter-soft); color:#6E4E00; font-size:var(--fs-sm); line-height:1.5; }
 .pane__notice-text { flex:1 1 200px; margin:0; }

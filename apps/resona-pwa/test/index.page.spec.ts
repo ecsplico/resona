@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ref } from "vue";
+import { defineComponent, h, reactive, ref } from "vue";
+import type { Component } from "vue";
 import { flushPromises } from "@vue/test-utils";
+import type { VueWrapper } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import IndexPage from "~/pages/index.vue";
+import RecordingsPane from "~/components/RecordingsPane.vue";
 import type { Recording } from "~/types/directus";
 import { useHubSettings } from "~/composables/useHubSettings";
-import { useSettingsDrawer } from "~/composables/useShell";
+import { provideShell, useSettingsDrawer } from "~/composables/useShell";
 
 const recA: Recording = {
 	id: "rec-a",
@@ -56,12 +59,87 @@ mockNuxtImport("useOfflineQueue", () => () => ({
 	pendingCount: ref(0),
 }));
 
+const route = vi.hoisted(() => ({ path: "/" }));
+mockNuxtImport("useRoute", () => () => reactive(route));
+
+const saveRecording = vi.hoisted(() => vi.fn());
+mockNuxtImport("useUpload", () => () => ({ saveRecording, uploading: ref(false), error: ref(null) }));
+
+mockNuxtImport("useProfiles", () => () => ({ list: vi.fn(async () => ["default"]) }));
+
+/** Mounts `child` under the shell the default layout provides, at the given width. */
+function inShell(child: Component, wide: boolean): Component {
+	return defineComponent({
+		setup() {
+			provideShell(ref(wide));
+			return () => h(child);
+		},
+	});
+}
+
+/** Picks a file in the hidden upload input and saves it through the save sheet. */
+async function saveUploadedFile(w: VueWrapper): Promise<void> {
+	const input = w.find("[data-testid=\"upload-input\"]");
+	Object.defineProperty(input.element, "files", {
+		value: [new File(["audio"], "Diktat.webm", { type: "audio/webm" })],
+		configurable: true,
+	});
+	await input.trigger("change");
+	w.findComponent({ name: "SaveSheet" }).vm.$emit("save", { title: "Diktat", language: "de", profile: "default", transcribe: true });
+	await flushPromises();
+}
+
 describe("index (recordings list) page", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		items.value = [recA, recB];
 		pending.value = false;
 		error.value = null;
+		route.path = "/";
+		saveRecording.mockResolvedValue({ ...recA, id: "rec-new", title: "Diktat" });
+	});
+
+	it("shows the recordings pane on phones and the empty detail when the layout holds the pane", async () => {
+		const phone = await mountSuspended(IndexPage);
+		expect(phone.findComponent({ name: "RecordingsPane" }).exists()).toBe(true);
+		expect(phone.find("[data-testid=\"detail-empty\"]").exists()).toBe(false);
+
+		const desk = await mountSuspended(inShell(IndexPage, true));
+		expect(desk.findComponent({ name: "RecordingsPane" }).exists()).toBe(false);
+		const empty = desk.find("[data-testid=\"detail-empty\"]");
+		expect(empty.text()).toContain("Wähle links eine Aufnahme aus");
+		expect(empty.text()).toContain("Aufnehmen");
+		expect(empty.text()).toContain("hochladen");
+		expect(empty.text()).toContain("Live");
+	});
+
+	it("highlights the row of the recording open in the right pane", async () => {
+		route.path = "/recording/rec-b";
+		const w = await mountSuspended(inShell(RecordingsPane, true));
+		const rows = w.findAllComponents({ name: "RecordingListItem" });
+		expect(rows.map(r => r.props("selected"))).toEqual([false, true]);
+
+		// Navigate within the workspace: same pane instance, selection follows the route.
+		reactive(route).path = "/recording/rec-a";
+		await w.vm.$nextTick();
+		expect(rows.map(r => r.props("selected"))).toEqual([true, false]);
+	});
+
+	it("opens a newly saved recording in the right pane on desktop", async () => {
+		const w = await mountSuspended(inShell(RecordingsPane, true));
+		await saveUploadedFile(w);
+		expect(saveRecording).toHaveBeenCalledWith(expect.objectContaining({ title: "Diktat" }));
+		expect(refresh).toHaveBeenCalled();
+		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-new");
+	});
+
+	it("stays on the list after saving a new recording on phones", async () => {
+		const w = await mountSuspended(IndexPage);
+		await saveUploadedFile(w);
+		expect(saveRecording).toHaveBeenCalled();
+		expect(refresh).toHaveBeenCalled();
+		expect(navigateTo).not.toHaveBeenCalled();
+		expect(w.findComponent({ name: "SaveSheet" }).exists()).toBe(false);
 	});
 
 	it("renders the rows in one grouped list, with a chip only for rows that need attention", async () => {

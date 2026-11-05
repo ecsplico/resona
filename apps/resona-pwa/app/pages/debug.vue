@@ -453,8 +453,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.debug { min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }
-.debug__body { flex:1; display:flex; flex-direction:column; gap:14px; padding:20px; }
+.debug { flex:1; display:flex; flex-direction:column; background:var(--bg); }
+/* Diagnostics read like text: a centered ~72ch column under the full-width bar. */
+.debug__body { flex:1; display:flex; flex-direction:column; gap:14px; width:100%; max-width:calc(72ch + 40px); margin:0 auto; padding:20px; }
 .debug__title { margin:0 0 10px; font-family:var(--font-display); font-weight:600; font-size:16px; color:var(--fg1); }
 .debug__head-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:2px; }
 .debug__head-row .debug__title { margin-bottom:0; }
