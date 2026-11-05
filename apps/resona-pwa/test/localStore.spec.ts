@@ -176,6 +176,34 @@ describe("createLocalStore", () => {
 			expect(await readFile(keep.audio_file!)).not.toBeNull();
 			expect((await store.listRecordings({})).map(r => r.id)).toEqual([keep.id]);
 		});
+
+		it("replaceAudio stores the new file, patches the row and deletes the old file", async () => {
+			const rec = await store.createRecording(input("Visite", { duration_seconds: 12 }), audio("old"), "Visite.webm");
+			const other = await store.createRecording(input("Bleibt"), audio("keep"), "Bleibt.webm");
+
+			const res = await store.replaceAudio(rec.id, new Blob(["merged"], { type: "audio/wav" }), "Visite.wav", 18.5);
+
+			expect(res.audio_file).not.toBe(rec.audio_file);
+			expect(res.duration_seconds).toBe(18.5);
+			expect(await store.getRecording(rec.id)).toMatchObject({ audio_file: res.audio_file, duration_seconds: 18.5 });
+			const stored = await readFile(res.audio_file);
+			expect(stored!.type).toBe("audio/wav");
+			expect((stored as File).name).toBe("Visite.wav");
+			expect(await stored!.text()).toBe("merged");
+			expect(await readFile(rec.audio_file!)).toBeNull();
+			expect(await readFile(other.audio_file!)).not.toBeNull();
+		});
+
+		it("replaceAudio gives a recording without audio its first file", async () => {
+			const rec = await store.createRecording(input("Live", { source: "live", status: "done" }), null, "Live.webm");
+			const res = await store.replaceAudio(rec.id, new Blob(["new"], { type: "audio/wav" }), "Live.wav", 6);
+			expect(await store.getRecording(rec.id)).toMatchObject({ audio_file: res.audio_file, duration_seconds: 6 });
+		});
+
+		it("replaceAudio on an unknown id rejects and leaves no file behind", async () => {
+			await expect(store.replaceAudio("missing", audio(), "x.wav", 1)).rejects.toThrow("Aufnahme nicht gefunden");
+			expect(await values(rawStore("files"))).toEqual([]);
+		});
 	});
 
 	describe("transcripts", () => {

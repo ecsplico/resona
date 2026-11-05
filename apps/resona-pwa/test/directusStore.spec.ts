@@ -78,6 +78,23 @@ describe("createDirectusStore", () => {
 		expect(state.readItems).toHaveBeenCalledWith("transcripts", { filter: { recording: { _eq: "rec-1" } }, limit: 1 });
 	});
 
+	it("replaceAudio uploads the new file then patches audio_file and duration_seconds", async () => {
+		state.request.mockResolvedValueOnce({ id: "file-2" }).mockResolvedValueOnce(undefined);
+		const res = await createDirectusStore().replaceAudio("rec-1", new Blob(["wav"], { type: "audio/wav" }), "Visite.wav", 48.5);
+		expect(res).toEqual({ audio_file: "file-2", duration_seconds: 48.5 });
+		const fd = state.uploadFiles.mock.calls[0]![0] as FormData;
+		expect((fd.get("file") as File).name).toBe("Visite.wav");
+		expect((fd.get("file") as File).type).toBe("audio/wav");
+		expect(state.request).toHaveBeenLastCalledWith({
+			kind: "update",
+			collection: "recordings",
+			id: "rec-1",
+			patch: { audio_file: "file-2", duration_seconds: 48.5 },
+		});
+		// The old file stays: the user role has no directus_files delete permission.
+		expect(state.request).toHaveBeenCalledTimes(2);
+	});
+
 	it("createDocument uploads then creates with status pending", async () => {
 		state.request.mockResolvedValueOnce({ id: "file-9" }).mockResolvedValueOnce({ id: "doc-1" });
 		const doc = await createDirectusStore().createDocument({ title: "Brief" }, new Blob(["pdf"]), "brief.pdf");

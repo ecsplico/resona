@@ -69,6 +69,15 @@ export function createDirectusStore(): DataStore {
 			await client.request(updateItem("recordings", id, patch));
 		},
 
+		// The previous file stays in directus_files: the `user` role has no delete
+		// permission there (same as deleteRecording).
+		async replaceAudio(id, audio, filename, durationSeconds) {
+			const fileId = await uploadFile(audio, filename);
+			const { client } = useDirectus();
+			await client.request(updateItem("recordings", id, { audio_file: fileId, duration_seconds: durationSeconds }));
+			return { audio_file: fileId, duration_seconds: durationSeconds };
+		},
+
 		async deleteRecording(id) {
 			const { client } = useDirectus();
 			await client.request(deleteItem("recordings", id));

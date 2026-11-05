@@ -203,6 +203,21 @@ export function createLocalStore(): DataStore {
 			await patchRow<LocalRecording>(db().recordings, id, patch, "Aufnahme nicht gefunden");
 		},
 
+		async replaceAudio(id, audio, filename, durationSeconds) {
+			const row = await get<LocalRecording>(id, db().recordings);
+			if (!row) throw new Error("Aufnahme nicht gefunden");
+			const fileId = await storeFile(audio, filename);
+			try {
+				await patchRow<LocalRecording>(db().recordings, id, { audio_file: fileId, duration_seconds: durationSeconds }, "Aufnahme nicht gefunden");
+			}
+			catch (err) {
+				await deleteFile(fileId);
+				throw err;
+			}
+			await deleteFile(row.audio_file);
+			return { audio_file: fileId, duration_seconds: durationSeconds };
+		},
+
 		async deleteRecording(id) {
 			const row = await get<LocalRecording>(id, db().recordings);
 			for (const t of await transcriptsOf(id)) {

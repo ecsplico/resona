@@ -1,5 +1,5 @@
 import type { Recording, ResonaDocument } from "~/types/directus";
-import { HubError } from "~/composables/useHub";
+import { HubError, type HubJob } from "~/composables/useHub";
 import {
 	listByStatus,
 	patchDocumentInternal,
@@ -50,8 +50,37 @@ const SPECS: Spec[] = [
 // Same transient set as the Python worker: offline, rate-limited, gateway errors.
 const TRANSIENT_STATUSES = new Set([0, 429, 502, 503, 504]);
 
-function isTransient(err: unknown): boolean {
+/** Hub errors worth retrying later: offline, rate-limited, gateway errors. */
+export function isTransient(err: unknown): boolean {
 	return err instanceof HubError && TRANSIENT_STATUSES.has(err.status);
+}
+
+/** German message for a job that ended without a result; null while it runs or once it completed. */
+export function jobFailureMessage(job: HubJob): string | null {
+	if (job.status !== "failed" && job.status !== "cancelled") return null;
+	return `Verarbeitung fehlgeschlagen: ${job.error?.message ?? job.error?.code ?? job.status}`;
+}
+
+/**
+ * German message for a permanent hub error while reading a job (`getJob`) or its
+ * result (`getResult`); null for anything that is not a `HubError`. Check
+ * `isTransient` first: transient errors are retried, not mapped.
+ */
+export function jobReadErrorMessage(err: unknown, step: "job" | "result"): string | null {
+	if (!(err instanceof HubError)) return null;
+	if (step === "result" && err.status === 410) return "Ergebnis auf dem Hub abgelaufen";
+	if (err.status === 404) return "Hub-Job nicht gefunden";
+	return err.message;
+}
+
+/** Deletes a finished hub job; the hub expires jobs on its own, so a failed cleanup is not an error. */
+export async function deleteJobQuietly(hub: { deleteJob(id: number): Promise<void> }, jobId: number): Promise<void> {
+	try {
+		await hub.deleteJob(jobId);
+	}
+	catch {
+		// ignored, see above
+	}
 }
 
 async function fail(spec: Spec, id: string, message: string): Promise<void> {
@@ -92,18 +121,14 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 	}
 	catch (err) {
 		if (isTransient(err)) return;
-		if (err instanceof HubError && err.status === 404) {
-			await fail(spec, row.id, "Hub-Job nicht gefunden");
-			return;
-		}
-		if (err instanceof HubError) {
-			await fail(spec, row.id, err.message);
-			return;
-		}
-		throw err;
+		const message = jobReadErrorMessage(err, "job");
+		if (message === null) throw err;
+		await fail(spec, row.id, message);
+		return;
 	}
-	if (job.status === "failed" || job.status === "cancelled") {
-		await fail(spec, row.id, `Verarbeitung fehlgeschlagen: ${job.error?.message ?? job.error?.code ?? job.status}`);
+	const failure = jobFailureMessage(job);
+	if (failure !== null) {
+		await fail(spec, row.id, failure);
 		return;
 	}
 	if (job.status !== "completed") return;
@@ -113,19 +138,10 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 	}
 	catch (err) {
 		if (isTransient(err)) return;
-		if (err instanceof HubError && err.status === 410) {
-			await fail(spec, row.id, "Ergebnis auf dem Hub abgelaufen");
-			return;
-		}
-		if (err instanceof HubError && err.status === 404) {
-			await fail(spec, row.id, "Hub-Job nicht gefunden");
-			return;
-		}
-		if (err instanceof HubError) {
-			await fail(spec, row.id, err.message);
-			return;
-		}
-		throw err;
+		const message = jobReadErrorMessage(err, "result");
+		if (message === null) throw err;
+		await fail(spec, row.id, message);
+		return;
 	}
 	if (spec.kind === "audio") {
 		await upsertTranscript(row.id, {
@@ -139,12 +155,7 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 	else {
 		await spec.patch(row.id, { markdown: result.markdown, pages: result.pages, status: "done", hub_job_id: null, hub_job_key: null });
 	}
-	try {
-		await hub.deleteJob(jobId);
-	}
-	catch {
-		// The hub expires jobs on its own; a failed cleanup is not an error.
-	}
+	await deleteJobQuietly(hub, jobId);
 }
 
 async function isolated(work: () => Promise<void>): Promise<void> {

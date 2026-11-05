@@ -9,6 +9,8 @@ export interface DataStore {
 	getTranscript(recordingId: string): Promise<Transcript | null>;
 	createRecording(input: NewRecording, audio: Blob | null, filename: string): Promise<Recording>;
 	updateRecording(id: string, patch: RecordingPatch): Promise<void>;
+	/** Makes `audio` the recording's audio file and sets its duration (continue recording). */
+	replaceAudio(id: string, audio: Blob, filename: string, durationSeconds: number): Promise<{ audio_file: string; duration_seconds: number }>;
 	deleteRecording(id: string): Promise<void>;
 	createTranscript(recordingId: string, input: { text: string; engine?: string }): Promise<Transcript>;
 	updateTranscript(id: string, patch: { text: string }): Promise<void>;
