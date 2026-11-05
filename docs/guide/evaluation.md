@@ -120,7 +120,7 @@ A successful promotion approves the `(execution profile, platform, release)` tup
 
 ## Releases
 
-A worker's release is its installed `resona-worker` version, reported in its heartbeat. The hub's own release (`RESONA_RELEASE_ID`, else the `resona-api` version) is approved for every tuple. Any other release must first be staged on the hub:
+A worker's release is its installed `resona-worker` version, reported in its heartbeat. The hub's own release (`RESONA_RELEASE_ID`, else the `resona-api` version) is known without staging, but like every release it runs production jobs for a tuple only after an evaluation of that tuple has been promoted; a fresh hub therefore queues production jobs (`queue_reason: release_not_approved`) until its first promotion. Any other release must first be staged on the hub:
 
 ```bash
 resona-admin release stage --manifest release-manifest.json

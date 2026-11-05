@@ -64,6 +64,18 @@ curl -s -X PUT -H "$H" -H "Content-Type: application/json" \
   -H "If-Match: \"$(jq -r .revision settings.json)\"" --data @body.json http://127.0.0.1:7710/v1/settings
 ```
 
+## 5. Evaluate and promote the CPU tuple
+
+Until an evaluation of `(cpu-private, cpu, <release>)` is promoted on this hub, production jobs stay `pending` with `queue_reason: release_not_approved`. From any machine with a checkout and the org_admin token:
+
+```bash
+export RESONA_API_URL=<hub URL> RESONA_API_KEY=<org_admin token>
+resona eval --profile cpu-private --platform cpu --remote --output-dir /tmp/resona-eval-cpu
+resona eval promote <evaluation-id> --report /tmp/resona-eval-cpu/report.json
+```
+
+The first promotion on a hub needs only the absolute checks; see [Evaluation & Baselines](../guide/evaluation.md).
+
 ## Add the PWA data layer
 
 Directus and the project worker live in `apps/resona-pwa` (`docker-compose.backend.yml`). Point `RESONA_API_URL` at the hub (`http://host.docker.internal:7710` from that compose) and set `RESONA_API_KEY` to the client token. Each PWA device enters a client token under Einstellungen → Verbindung.
