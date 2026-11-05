@@ -941,6 +941,8 @@
       
         
       
+        
+      
     
     
     
@@ -1032,6 +1034,34 @@
     
   
     Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mac-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Single-Host Stack (Apple Silicon)
   
 
     
@@ -2220,7 +2250,7 @@
 <p>There are no models, GPUs, Docker socket mounts, privileges or published ports. Both containers run as UID 1000 with a read-only root filesystem, all capabilities dropped and <code>no-new-privileges</code>. SQLite and the transient job payloads live on the named volume <code>resona-data</code> (<code>/data</code>); the database is never exposed. Inference runs on approved pull workers that connect outbound over HTTPS (<a href="../mac-worker/">Mac worker</a>, <a href="../full-stack/">Linux CUDA worker</a>). When no worker is online, jobs wait in the queue.</p>
 <p>TLS ends at Coolify's Caddy proxy. In raw mode Coolify adds no labels or networks, so the compose file declares the Caddy labels and the external <code>coolify</code> network itself.</p>
 <h2 id="image">Image<a class="headerlink" href="#image" title="Permanent link">&para;</a></h2>
-<p>Both services run the released hub image <code>ghcr.io/ecsplico/resona-hub</code>, pinned by digest; the compose file has no <code>build:</code>, so Coolify only pulls. The GHCR package is <strong>private</strong>. The Coolify host (<code><user>@<coolify-host></code>) holds a GitHub token with the single scope <code>read:packages</code> in <code>/root/.docker/config.json</code> (check with <code>curl -sI -H "Authorization: token &lt;t&gt;" https://api.github.com/user | grep x-oauth-scopes</code>), which Coolify's <code>docker compose pull</code> uses. Never put a token with wider scopes there. Should that token be revoked, pull the pinned digest from your own logged-in machine through the remote daemon instead of logging the server in: <code>docker --host ssh://<user>@<coolify-host> pull ghcr.io/ecsplico/resona-hub@sha256:&lt;digest&gt;</code> (the client sends the credential per request; nothing is stored on the server) and add <code>pull_policy: missing</code> to both services so Compose skips the pull of a digest that is already present.</p>
+<p>Both services run the released hub image <code>ghcr.io/ecsplico/resona-hub</code>, pinned by digest; the compose file has no <code>build:</code>, so Coolify only pulls. The GHCR package is <strong>private</strong>. The Coolify host (<code>&lt;user&gt;@&lt;coolify-host&gt;</code>) holds a GitHub token with the single scope <code>read:packages</code> in <code>/root/.docker/config.json</code> (check with <code>curl -sI -H "Authorization: token &lt;t&gt;" https://api.github.com/user | grep x-oauth-scopes</code>), which Coolify's <code>docker compose pull</code> uses. Never put a token with wider scopes there. Should that token be revoked, pull the pinned digest from your own logged-in machine through the remote daemon instead of logging the server in: <code>docker --host ssh://&lt;user&gt;@&lt;coolify-host&gt; pull ghcr.io/ecsplico/resona-hub@sha256:&lt;digest&gt;</code> (the client sends the credential per request; nothing is stored on the server) and add <code>pull_policy: missing</code> to both services so Compose skips the pull of a digest that is already present.</p>
 <p>Bump per release:</p>
 <ol>
 <li>The release workflow (<a href="../releases/">Releases</a>) pushes <code>ghcr.io/ecsplico/resona-hub:&lt;version&gt;</code> and records its digest in <code>release-manifest.json</code> (<code>images[].name == "ghcr.io/ecsplico/resona-hub"</code>).</li>
@@ -2297,7 +2327,7 @@
 </code></pre></div>
 <p>Queued jobs are claimed as soon as the promotion lands. <code>resona-admin worker approve</code> on the hub, <code>/ready</code>, and <code>GET /v1/baselines?execution_profile=private-auto&amp;platform=mac-metal</code> show the state (404 <code>baseline_required</code> until promoted).</p>
 <h2 id="provision-credentials">Provision credentials<a class="headerlink" href="#provision-credentials" title="Permanent link">&para;</a></h2>
-<p><code>resona-admin</code> runs inside the <code>hub</code> container: <code>ssh <user>@<coolify-host> docker exec -i &lt;app-uuid&gt;-hub-1 resona-admin ...</code>. Without SSH, use a Coolify scheduled task on the hub container (<code>&lt;app-uuid&gt;-hub-1</code>), execute it once, then delete it. The container's root filesystem is read-only; <code>/tmp</code> is a tmpfs. Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:</p>
+<p><code>resona-admin</code> runs inside the <code>hub</code> container: <code>ssh &lt;user&gt;@&lt;coolify-host&gt; docker exec -i &lt;app-uuid&gt;-hub-1 resona-admin ...</code>. Without SSH, use a Coolify scheduled task on the hub container (<code>&lt;app-uuid&gt;-hub-1</code>), execute it once, then delete it. The container's root filesystem is read-only; <code>/tmp</code> is a tmpfs. Generate tokens on your own machine and register only their SHA-256 hash, so the tokens never reach the server or its logs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># on your machine</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;import secrets; print(secrets.token_urlsafe(32))&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>~/.resona/hub-client.token<span class="o">)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>&lt;<span class="w"> </span>&lt;<span class="o">(</span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;\n&#39;</span><span class="w"> </span>&lt;<span class="w"> </span>~/.resona/hub-client.token<span class="o">)</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cut<span class="w"> </span>-d<span class="s1">&#39; &#39;</span><span class="w"> </span>-f1
