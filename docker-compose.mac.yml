@@ -20,14 +20,12 @@ services:
     ports:
       - "7710:7000"
     volumes:
-      - resona-audio:/app/data/files
-      - resona-md:/app/data/md
-      - resona-db:/app/data/db
-      - resona-profiles:/app/data/profiles
+      # /data is owned by the image's non-root user; see docker-compose.resona.yml.
+      - resona-data:/data
     environment:
       # Native host engine first (GPU MLX), dockerized CPU engine as fallback.
       RESONA_ENGINE_URLS: ${RESONA_ENGINE_URLS:-http://host.docker.internal:7720,http://engine-faster-whisper:7001}
-      DATA_PATH: /app/data
+      DATA_PATH: /data
       LOGLEVEL: ${LOGLEVEL:-info}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -62,7 +60,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  resona-audio:
-  resona-md:
-  resona-db:
-  resona-profiles:
+  resona-data:

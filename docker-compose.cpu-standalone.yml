@@ -48,13 +48,11 @@ services:
     ports:
       - "${API_PORT:-7710}:7000"
     volumes:
-      - resona-audio:/app/data/files
-      - resona-md:/app/data/md
-      - resona-db:/app/data/db
-      - resona-profiles:/app/data/profiles
+      # /data is owned by the image's non-root user; see docker-compose.resona.yml.
+      - resona-data:/data
     environment:
       RESONA_ENGINE_URLS: http://engine-faster-whisper:7001
-      DATA_PATH: /app/data
+      DATA_PATH: /data
       # Browser origin of the PWA — it calls this API directly (live WebSocket
       # /v1/listen and REST), so CORS must name it.
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
@@ -112,10 +110,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  resona-audio:
-  resona-md:
-  resona-db:
-  resona-profiles:
+  resona-data:
   hf-cache:
   worker-models:
   worker-state:
