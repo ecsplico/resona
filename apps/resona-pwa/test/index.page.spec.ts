@@ -8,7 +8,7 @@ import IndexPage from "~/pages/index.vue";
 import RecordingsPane from "~/components/RecordingsPane.vue";
 import type { Recording } from "~/types/directus";
 import { useHubSettings } from "~/composables/useHubSettings";
-import { provideShell, useSettingsDrawer } from "~/composables/useShell";
+import { provideShell, useRecordingsRefresh, useSettingsDrawer } from "~/composables/useShell";
 
 const recA: Recording = {
 	id: "rec-a",
@@ -131,6 +131,15 @@ describe("index (recordings list) page", () => {
 		expect(saveRecording).toHaveBeenCalledWith(expect.objectContaining({ title: "Diktat" }));
 		expect(refresh).toHaveBeenCalled();
 		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-new");
+	});
+
+	it("reloads the list when another view requests a refresh", async () => {
+		const w = await mountSuspended(inShell(RecordingsPane, true));
+		expect(refresh).not.toHaveBeenCalled();
+		useRecordingsRefresh().request();
+		await w.vm.$nextTick();
+		// Panes mounted by earlier tests in this file listen too, so only presence is checked.
+		expect(refresh).toHaveBeenCalled();
 	});
 
 	it("stays on the list after saving a new recording on phones", async () => {

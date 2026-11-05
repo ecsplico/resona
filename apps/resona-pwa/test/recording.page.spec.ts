@@ -7,6 +7,7 @@ import type { Recording, Transcript } from "~/types/directus";
 import type { ContinuePhase, ContinueResult } from "~/composables/useContinueRecording";
 import { useHubSettings } from "~/composables/useHubSettings";
 import { usePttDiagnostics } from "~/composables/usePttDiagnostics";
+import { useRecordingsRefresh } from "~/composables/useShell";
 
 // ProseMirror/TipTap doesn't render meaningfully under happy-dom, so the page's
 // editor is stubbed with a plain textarea that honours the same v-model +
@@ -152,6 +153,11 @@ async function recordPart(w: VueWrapper): Promise<void> {
 	await w.find("[data-testid=\"stop\"]").trigger("click");
 }
 
+// How often the page asked the (desktop) recordings list to reload.
+function listReloads(): number {
+	return useRecordingsRefresh().signal.value;
+}
+
 function baseRecording(over: Partial<Recording> = {}): Recording {
 	return {
 		id: "rec-1",
@@ -233,16 +239,30 @@ describe("recording detail page", () => {
 		expect(w.text()).toContain("Boom kaputt");
 	});
 
-	it("delete asks for confirmation then deletes and navigates home", async () => {
+	it("delete asks for confirmation then deletes, reloads the list and navigates home", async () => {
 		const w = await mountSuspended(RecordingPage);
 		await w.find("[data-testid=\"delete\"]").trigger("click");
 		expect(w.find("[data-testid=\"confirm-delete\"]").exists()).toBe(true);
 		expect(store.deleteRecording).not.toHaveBeenCalled();
 
+		const reloads = listReloads();
 		await w.find("[data-testid=\"confirm-delete\"]").trigger("click");
 		await w.vm.$nextTick();
 		expect(store.deleteRecording).toHaveBeenCalledWith("rec-1");
 		expect(navigateTo).toHaveBeenCalledWith("/");
+		expect(listReloads()).toBe(reloads + 1);
+	});
+
+	it("Neu transkribieren resets the recording to pending, reloads the list and polls", async () => {
+		recording.value = baseRecording({ status: "error", error_message: "Boom" });
+		transcript.value = null;
+		const w = await mountSuspended(RecordingPage);
+		startPolling.mockClear();
+		const reloads = listReloads();
+		await w.find("[data-testid=\"restart-transcription\"]").trigger("click");
+		await vi.waitFor(() => expect(listReloads()).toBe(reloads + 1));
+		expect(store.updateRecording).toHaveBeenCalledWith("rec-1", { status: "pending", error_message: null });
+		expect(startPolling).toHaveBeenCalledOnce();
 	});
 
 	it("cancel hides the confirm UI without deleting", async () => {
@@ -435,6 +455,28 @@ describe("recording detail page", () => {
 				expect(w.findComponent({ name: "HPlayerDock" }).props("src")).toBe("http://directus/assets/file-2"),
 			);
 			expect(w.findComponent({ name: "HPlayerDock" }).props("fallbackDuration")).toBe(70);
+		});
+
+		it("asks the recordings list to reload once the new part is saved", async () => {
+			const w = await mountSuspended(RecordingPage);
+			const reloads = listReloads();
+			await recordPart(w);
+			await vi.waitFor(() => expect(listReloads()).toBe(reloads + 1));
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt\nNeuer Teil" });
+		});
+
+		it("leaves the list alone when the continuation was cancelled", async () => {
+			cont.finish.mockImplementation(async () => {
+				cont.phase!.value = "idle";
+				return null;
+			});
+			const w = await mountSuspended(RecordingPage);
+			const reloads = listReloads();
+			await recordPart(w);
+			await vi.waitFor(() => expect(cont.finish).toHaveBeenCalledOnce());
+			await nextTick();
+			expect(listReloads()).toBe(reloads);
+			expect(store.updateTranscript).not.toHaveBeenCalled();
 		});
 
 		it("keeps the old audio and shows a notice when the merge failed", async () => {

@@ -35,9 +35,18 @@ export interface ContinueRecording {
 
 const POLL_MS = 2000;
 const NO_TOKEN = "Kein Hub-Token – in Einstellungen → Verbindung eintragen, dann erneut versuchen.";
+const UNREACHABLE = "Hub nicht erreichbar – Verbindung prüfen und erneut versuchen.";
 
 function errorText(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
+}
+
+/** German message for a failed transcription attempt. */
+function transcribeErrorMessage(err: unknown): string {
+	// useHub turns a failed fetch into status 0; a body read cut off mid-response
+	// still rejects with the browser's raw TypeError.
+	if ((err instanceof HubError && err.status === 0) || err instanceof TypeError) return UNREACHABLE;
+	return err instanceof HubError ? `Transkription fehlgeschlagen: ${err.message}` : errorText(err);
 }
 
 /** Upload name for a recorded part, extension from its MIME type. */
@@ -129,7 +138,9 @@ export function useContinueRecording(): ContinueRecording {
 			}
 			catch (err) {
 				if (isTransient(err)) continue;
-				throw new Error(jobReadErrorMessage(err, "job") ?? errorText(err), { cause: err });
+				const message = jobReadErrorMessage(err, "job");
+				if (message === null) throw err;
+				throw new Error(message, { cause: err });
 			}
 			const failure = jobFailureMessage(job);
 			if (failure !== null) throw new Error(failure);
@@ -140,10 +151,13 @@ export function useContinueRecording(): ContinueRecording {
 			}
 			catch (err) {
 				if (isTransient(err)) continue;
-				throw new Error(jobReadErrorMessage(err, "result") ?? errorText(err), { cause: err });
+				const message = jobReadErrorMessage(err, "result");
+				if (message === null) throw err;
+				throw new Error(message, { cause: err });
 			}
 			await deleteJobQuietly(hub, jobId);
-			return markdown.trim();
+			// Cancelled while the result or the cleanup was in flight: drop the text.
+			return stale() ? null : markdown.trim();
 		}
 	}
 
@@ -202,17 +216,19 @@ export function useContinueRecording(): ContinueRecording {
 			text = await transcribe(blob, recording, current);
 		}
 		catch (err) {
-			if (current === attempt) {
-				fail(err instanceof HubError ? `Transkription fehlgeschlagen: ${err.message}` : errorText(err));
-			}
+			if (current === attempt) fail(transcribeErrorMessage(err));
 			return null;
 		}
-		if (text === null) return null;
+		if (text === null || current !== attempt) return null;
 
 		setPhase("merging");
 		const merged = await mergeAudio(recording, blob);
-		part.value = null;
-		setPhase("idle");
+		// The audio is stored either way; a stale attempt (scope disposed) must not
+		// touch the shared part/phase/unload guard.
+		if (current === attempt) {
+			part.value = null;
+			setPhase("idle");
+		}
 		const oldSeconds = recording.duration_seconds ?? 0;
 		return typeof merged === "string"
 			? { text, audio_file: null, duration_seconds: oldSeconds, audioMerged: false, mergeError: merged }

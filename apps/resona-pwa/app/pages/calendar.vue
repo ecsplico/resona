@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { eventDisplayTitle, formatEventWhen, germanDateToIso, isoDateToGerman } from "#shared/calendar";
 import type { CalendarEvent } from "#shared/calendar";
 import { isCalendarEnabled } from "#shared/calendarEnabled";
@@ -46,6 +46,19 @@ function startFromEvent(event: CalendarEvent): void {
 	// it as the recording name on save.
 	void navigateTo({ path: "/live", query: { title: eventDisplayTitle(event) } });
 }
+
+// Settings persist live; when the drawer closes, re-seed the window/query and
+// the chosen calendar from them so the list reflects any change.
+const drawer = useSettingsDrawer();
+watch(drawer.open, (open) => {
+	if (open) {
+		return;
+	}
+	cal.resetFilter();
+	fromText.value = isoDateToGerman(cal.filter.from);
+	toText.value = isoDateToGerman(cal.filter.to);
+	void cal.refresh();
+});
 
 onMounted(async () => {
 	await cal.refresh();

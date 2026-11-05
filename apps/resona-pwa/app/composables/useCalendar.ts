@@ -35,11 +35,15 @@ export function useCalendar(provider = "google") {
 
 	// Default window + query seeded from the saved settings (today−daysBack →
 	// today+daysAhead). The date inputs in the UI bind to this for ad-hoc tweaks.
-	const filter = reactive<CalendarFilter & { from: string; to: string }>({
-		from: toDateInput(isoAtMidnight(-settings.daysBack)),
-		to: toDateInput(isoAtMidnight(settings.daysAhead)),
-		query: settings.query,
-	});
+	const filter = reactive<CalendarFilter & { from: string; to: string }>({ from: "", to: "", query: "" });
+
+	/** Re-seed the window + query from the saved settings (after they changed). */
+	function resetFilter(): void {
+		filter.from = toDateInput(isoAtMidnight(-settings.daysBack));
+		filter.to = toDateInput(isoAtMidnight(settings.daysAhead));
+		filter.query = settings.query;
+	}
+	resetFilter();
 
 	/** Full-page link that kicks off the OAuth flow (used as an `<a href>`). */
 	const connectUrl = `/api/calendar?provider=${encodeURIComponent(provider)}&action=connect`;
@@ -129,6 +133,7 @@ export function useCalendar(provider = "google") {
 		settings,
 		connectUrl,
 		refresh,
+		resetFilter,
 		listCalendars,
 		disconnect,
 	};

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useEventListener } from "@vueuse/core";
 import type { CalendarOption } from "#shared/calendar";
 import { isCalendarEnabled } from "#shared/calendarEnabled";
 import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHub";
@@ -153,13 +154,42 @@ function setDaysAhead(value: string): void {
 	settings.daysAhead = Math.max(1, Math.min(365, Math.trunc(Number(value) || 0)));
 }
 
-// Settings persist live to localStorage; "Fertig" applies them by reloading so
-// the calendar view re-seeds its window/query and reads from the chosen calendar.
-function done(): void {
-	emit("close");
-	if (typeof window !== "undefined") {
-		window.location.reload();
+// ── Modal behaviour: focus moves in on open and back to the opener on close ──
+const closeButton = ref<HTMLButtonElement | null>(null);
+let opener: HTMLElement | null = null;
+
+onMounted(() => {
+	opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+	void nextTick(() => closeButton.value?.focus());
+});
+
+onBeforeUnmount(() => {
+	if (opener?.isConnected) {
+		opener.focus();
 	}
+});
+
+useEventListener(document, "keydown", (e: KeyboardEvent) => {
+	if (e.key === "Escape") {
+		e.preventDefault();
+		emit("close");
+	}
+});
+
+// Tabs: roving tabindex; arrows/Home/End select and focus the neighbouring tab.
+const tabKeys = TABS.map(t => t.key);
+
+function onTabKey(e: KeyboardEvent): void {
+	const i = tabKeys.indexOf(tab.value);
+	const last = tabKeys.length - 1;
+	const targets: Record<string, number> = { ArrowLeft: i <= 0 ? last : i - 1, ArrowRight: i >= last ? 0 : i + 1, Home: 0, End: last };
+	const next = targets[e.key];
+	if (next === undefined) {
+		return;
+	}
+	e.preventDefault();
+	tab.value = tabKeys[next]!;
+	(e.currentTarget as HTMLElement).querySelector<HTMLElement>(`#settings-tab-${tab.value}`)?.focus();
 }
 
 // Calendars / live engines load only once their tab is first opened.
@@ -203,6 +233,7 @@ watch(tab, (value) => {
 					Einstellungen
 				</h2>
 				<button
+					ref="closeButton"
 					class="drawer__close"
 					type="button"
 					aria-label="Schließen"
@@ -240,6 +271,7 @@ watch(tab, (value) => {
 				class="h-tabs drawer__tabs"
 				role="tablist"
 				aria-label="Einstellungen"
+				@keydown="onTabKey"
 			>
 				<button
 					v-for="t in TABS"
@@ -248,6 +280,7 @@ watch(tab, (value) => {
 					class="h-tab"
 					:class="{ 'h-tab--active': tab === t.key }"
 					type="button"
+					:tabindex="tab === t.key ? 0 : -1"
 					role="tab"
 					:aria-selected="tab === t.key"
 					aria-controls="settings-panel"
@@ -574,7 +607,7 @@ watch(tab, (value) => {
 				<HButton
 					variant="primary"
 					data-testid="settings-done"
-					@click="done"
+					@click="emit('close')"
 				>
 					Fertig
 				</HButton>
@@ -600,7 +633,7 @@ watch(tab, (value) => {
 .drawer__tabs { padding:0 24px; }
 
 .drawer__body { flex:1; overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:20px; }
-.drawer__notice { margin:0; padding:12px 14px; border-radius:var(--r-md); background:var(--butter-soft); color:#6E4E00; font-size:var(--fs-sm); line-height:1.5; }
+.drawer__notice { margin:0; padding:12px 14px; border-radius:var(--r-md); background:var(--butter-soft); color:var(--butter-ink); font-size:var(--fs-sm); line-height:1.5; }
 .drawer__connect { display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
 .drawer__hint { margin:0; font-size:var(--fs-sm); line-height:1.5; color:var(--fg1); }
 .drawer__connect-btn { display:inline-flex; align-items:center; min-height:44px; padding:0 16px; border-radius:var(--r-sm); background:var(--accent); color:var(--fg-on-accent); font-weight:600; font-size:var(--fs-sm); text-decoration:none; transition:background-color var(--motion-fast) var(--motion-ease); }

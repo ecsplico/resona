@@ -12,6 +12,8 @@ const cfg = useRuntimeConfig().public;
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
 const store = useDataStore();
 const { paneInLayout } = useShell();
+// The desktop list stays mounted beside this page: ask it to reload after a change it shows.
+const recordingsList = useRecordingsRefresh();
 
 function formatDuration(seconds?: number): string {
 	if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "";
@@ -326,6 +328,7 @@ async function applyContinueResult(result: ContinueResult | null): Promise<void>
 		// Saves the user's unsaved edits together with the new part.
 		await saveTranscript();
 	}
+	if (result.text || result.audioMerged) recordingsList.request();
 	const missing = result.text ? null : "Im neuen Teil wurde kein Text erkannt.";
 	const merge = result.mergeError
 		? `${result.text ? "Text angehängt, " : ""}Audio konnte nicht zusammengeführt werden: ${result.mergeError}`
@@ -351,6 +354,7 @@ async function restartTranscription(): Promise<void> {
 		// Allow the editor to re-seed from the freshly produced transcript.
 		seeded.value = false;
 		await store.updateRecording(id, { status: "pending", error_message: null });
+		recordingsList.request();
 		startPolling();
 	}
 	finally {
@@ -398,6 +402,7 @@ async function confirmDelete(): Promise<void> {
 	deleting.value = true;
 	try {
 		await store.deleteRecording(id);
+		recordingsList.request();
 		void navigateTo("/");
 	}
 	finally {

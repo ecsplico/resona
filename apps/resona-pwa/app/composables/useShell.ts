@@ -45,3 +45,17 @@ export function useSettingsDrawer(): { open: Ref<boolean>; show: () => void; hid
 		},
 	};
 }
+
+/**
+ * Cross-component request to reload the recordings list (e.g. after the detail
+ * page changed a recording); `RecordingsPane` watches `signal`.
+ */
+export function useRecordingsRefresh(): { signal: Readonly<Ref<number>>; request: () => void } {
+	const signal = useState<number>("recordings-refresh", () => 0);
+	return {
+		signal,
+		request: () => {
+			signal.value++;
+		},
+	};
+}

@@ -168,12 +168,29 @@ describe("useContinueRecording", () => {
 		expect(cont.hasRetainedPart.value).toBe(false);
 	});
 
-	it("keeps the part when the upload fails", async () => {
+	it("keeps the part when the upload fails and names an unreachable hub in German", async () => {
 		hub.upload.mockRejectedValueOnce(new HubError(0, "network", "Failed to fetch"));
 		const cont = setup();
 		expect(await recordAndFinish(cont)).toBeNull();
 		expect(cont.phase.value).toBe("error");
-		expect(cont.error.value).toContain("Failed to fetch");
+		expect(cont.error.value).toBe("Hub nicht erreichbar – Verbindung prüfen und erneut versuchen.");
+		expect(cont.hasRetainedPart.value).toBe(true);
+	});
+
+	it("maps a raw fetch TypeError to the German unreachable message and keeps the part", async () => {
+		hub.upload.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+		const cont = setup();
+		expect(await recordAndFinish(cont)).toBeNull();
+		expect(cont.phase.value).toBe("error");
+		expect(cont.error.value).toBe("Hub nicht erreichbar – Verbindung prüfen und erneut versuchen.");
+		expect(cont.hasRetainedPart.value).toBe(true);
+	});
+
+	it("prefixes other hub errors with the failed step", async () => {
+		hub.createJob.mockRejectedValueOnce(new HubError(422, "invalid", "Profil unbekannt"));
+		const cont = setup();
+		expect(await recordAndFinish(cont)).toBeNull();
+		expect(cont.error.value).toBe("Transkription fehlgeschlagen: Profil unbekannt");
 		expect(cont.hasRetainedPart.value).toBe(true);
 	});
 
@@ -278,6 +295,51 @@ describe("useContinueRecording", () => {
 		expect(hub.deleteJob).toHaveBeenCalledWith(42);
 		expect(cont.phase.value).toBe("idle");
 		expect(cont.hasRetainedPart.value).toBe(false);
+	});
+
+	it("cancel while the result is loading drops the text and never merges", async () => {
+		const result = Promise.withResolvers<typeof RESULT>();
+		hub.getResult.mockReturnValueOnce(result.promise);
+		const cont = setup();
+		const done = recordAndFinish(cont);
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(hub.getResult).toHaveBeenCalledOnce();
+
+		await cont.cancel();
+		expect(cont.phase.value).toBe("idle");
+		result.resolve(RESULT);
+
+		expect(await done).toBeNull();
+		expect(hub.deleteJob).toHaveBeenCalledWith(42);
+		expect(merge.mergeToWav).not.toHaveBeenCalled();
+		expect(store.replaceAudio).not.toHaveBeenCalled();
+		expect(cont.phase.value).toBe("idle");
+		expect(cont.hasRetainedPart.value).toBe(false);
+		expect(unloadBlocked()).toBe(false);
+	});
+
+	it("a cancelled attempt finishing late does not disturb the next take", async () => {
+		const result = Promise.withResolvers<typeof RESULT>();
+		hub.getResult.mockReturnValueOnce(result.promise);
+		const cont = setup();
+		const first = recordAndFinish(cont);
+		await vi.advanceTimersByTimeAsync(2000);
+		await cont.cancel();
+
+		await cont.start();
+		expect(cont.phase.value).toBe("recording");
+		result.resolve(RESULT);
+		expect(await first).toBeNull();
+		expect(cont.phase.value).toBe("recording");
+		expect(unloadBlocked()).toBe(true);
+		expect(store.replaceAudio).not.toHaveBeenCalled();
+
+		const second = cont.finish(rec());
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(await second).toMatchObject({ text: "Neuer Teil.", audio_file: "f-new", audioMerged: true });
+		expect(store.replaceAudio).toHaveBeenCalledOnce();
+		expect(cont.phase.value).toBe("idle");
+		expect(unloadBlocked()).toBe(false);
 	});
 
 	it("cancel while recording discards the recording", async () => {

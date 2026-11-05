@@ -98,4 +98,25 @@ describe("useCalendar", () => {
 		expect(cal.events.value).toHaveLength(0);
 		expect(cal.status.value?.connected).toBe(false);
 	});
+
+	it("resetFilter re-seeds the window and query from changed settings", () => {
+		const settings = useCalendarSettings();
+		const saved = { daysBack: settings.daysBack, daysAhead: settings.daysAhead, query: settings.query };
+		const cal = useCalendar();
+		cal.filter.from = "2020-01-01";
+		settings.daysBack = 0;
+		settings.daysAhead = 1;
+		settings.query = "Visite";
+		cal.resetFilter();
+
+		const day = (offset: number) => {
+			const d = new Date();
+			d.setDate(d.getDate() + offset);
+			return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+		};
+		expect(cal.filter.from).toBe(day(0));
+		expect(cal.filter.to).toBe(day(1));
+		expect(cal.filter.query).toBe("Visite");
+		Object.assign(settings, saved);
+	});
 });

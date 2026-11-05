@@ -5,6 +5,7 @@
   --tomato:#D96846; --tomato-deep:#B85032; --tomato-soft:#F3D1BE; --tomato-tint:#FCEFE8;
   --olive:#6B8E4E; --olive-deep:#4E6B38; --olive-soft:#C8D8B4;
   --butter:#E8A838; --butter-deep:#C48A1E; --butter-soft:#F5D88F;
+  --butter-ink:#6E4E00;    /* notice text on --butter-soft, 5.5:1 */
   --crust:#B8916A; --crust-deep:#8B6944; --crust-soft:#E2D2BE;
   /* night: the surface whenever the microphone is live */
   --night:#231911; --night-raised:#2E2219;

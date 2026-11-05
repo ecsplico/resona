@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
 
@@ -155,6 +155,11 @@ function onDiscard(): void {
 	pendingBlob.value = null;
 	showSave.value = false;
 }
+
+// Other views (the detail page) ask for a reload after changing a recording.
+watch(useRecordingsRefresh().signal, () => {
+	void refresh();
+});
 
 onBeforeUnmount(() => {
 	if (pollTimer) {
@@ -468,7 +473,7 @@ onMounted(() => {
 .pane--aside .pane__body { flex:1; padding-bottom:24px; }
 .pane--aside .dock { position:sticky; background:var(--bg-panel); padding-bottom:0; }
 
-.pane__notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin:12px 16px 0; padding:12px 14px; border-radius:var(--r-md); background:var(--butter-soft); color:#6E4E00; font-size:var(--fs-sm); line-height:1.5; }
+.pane__notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin:12px 16px 0; padding:12px 14px; border-radius:var(--r-md); background:var(--butter-soft); color:var(--butter-ink); font-size:var(--fs-sm); line-height:1.5; }
 .pane__notice-text { flex:1 1 200px; margin:0; }
 .pane__notice-action { flex-shrink:0; min-height:36px; padding:6px 12px; border:1.5px solid currentColor; border-radius:var(--r-sm); background:none; color:inherit; font-family:var(--font-body); font-size:var(--fs-sm); font-weight:600; cursor:pointer; transition:background-color var(--motion-fast) var(--motion-ease); }
 .pane__notice-action:hover { background:rgba(255,255,255,0.45); }

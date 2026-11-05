@@ -485,10 +485,10 @@ onMounted(async () => {
 @media (min-width:960px) { .live { min-height:0; } }
 .live :deep(:focus-visible) { outline-color:var(--tomato); }
 
-.live__bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; min-height:56px; padding:env(safe-area-inset-top) 8px 0; border-bottom:1px solid rgba(251,245,236,0.10); }
+.live__bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; min-height:56px; padding:env(safe-area-inset-top) 8px 0; border-bottom:1px solid color-mix(in srgb, var(--on-night) 10%, transparent); }
 .live__back { justify-self:start; display:inline-flex; align-items:center; gap:4px; min-height:40px; padding:0 12px 0 6px; border-radius:var(--r-full); color:var(--on-night); font-size:var(--fs-sm); font-weight:600; text-decoration:none; transition:background-color var(--motion-fast) var(--motion-ease); }
 .live__back:hover { background:var(--night-raised); }
-.live__back:active { background:rgba(251,245,236,0.14); }
+.live__back:active { background:color-mix(in srgb, var(--on-night) 14%, transparent); }
 .live__title { margin:0; font-family:var(--font-display); font-size:var(--fs-lg); font-weight:600; line-height:1.2; color:var(--on-night); }
 
 .live__reconnect { background:var(--tomato-deep); color:var(--white); padding:10px 20px; font-size:var(--fs-sm); font-weight:600; text-align:center; }
@@ -500,20 +500,20 @@ onMounted(async () => {
 .live__partial, .live__block--pending, .live__hint { color:var(--on-night-mute); }
 .live__hint { font-style:italic; }
 
-.live__notice { width:calc(100% - 40px); max-width:72ch; margin:0 auto 12px; padding:12px 14px; border:1px solid rgba(232,168,56,0.45); border-radius:var(--r-md); background:var(--night-raised); color:var(--on-night); font-size:var(--fs-sm); line-height:1.5; }
+.live__notice { width:calc(100% - 40px); max-width:72ch; margin:0 auto 12px; padding:12px 14px; border:1px solid color-mix(in srgb, var(--warning) 45%, transparent); border-radius:var(--r-md); background:var(--night-raised); color:var(--on-night); font-size:var(--fs-sm); line-height:1.5; }
 
 .live__controls { display:flex; justify-content:center; padding:28px 0 calc(40px + env(safe-area-inset-bottom)); }
-.live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,0.35); transition:background-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
+.live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-deep); transition:background-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
 .live__stop:hover { background:var(--accent-hover); }
 .live__stop:active { transform:scale(0.96); }
 .live__stop:disabled { opacity:.4; cursor:not-allowed; transform:none; background:var(--accent); }
 
 /* Save panel: raised night surface; shared field/button restyled to stay legible. */
-.live__save { display:flex; flex-direction:column; gap:16px; padding:20px 20px calc(20px + env(safe-area-inset-bottom)); background:var(--night-raised); border-top:1px solid rgba(251,245,236,0.10); }
+.live__save { display:flex; flex-direction:column; gap:16px; padding:20px 20px calc(20px + env(safe-area-inset-bottom)); background:var(--night-raised); border-top:1px solid color-mix(in srgb, var(--on-night) 10%, transparent); }
 .live__save > * { width:100%; max-width:72ch; margin:0 auto; }
 .live__save :deep(.h-field__label) { color:var(--on-night-mute); }
-.live__save :deep(.h-btn--secondary) { color:var(--on-night); border-color:rgba(251,245,236,0.32); }
-.live__save :deep(.h-btn--secondary:hover) { background:rgba(251,245,236,0.08); }
+.live__save :deep(.h-btn--secondary) { color:var(--on-night); border-color:color-mix(in srgb, var(--on-night) 32%, transparent); }
+.live__save :deep(.h-btn--secondary:hover) { background:color-mix(in srgb, var(--on-night) 8%, transparent); }
 .live__pending { color:var(--on-night-mute); font-size:var(--fs-sm); margin:0; }
 .live__error { color:var(--tomato-soft); font-size:var(--fs-sm); margin:0; }
 .live__save-actions { display:flex; gap:10px; justify-content:flex-end; }

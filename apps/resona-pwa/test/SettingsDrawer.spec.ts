@@ -207,3 +207,65 @@ describe("SettingsDrawer – calendar flag", () => {
 		expect(listCalendars).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("SettingsDrawer – modal behaviour", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listListenEngines.mockResolvedValue({ engines: [], default: null });
+		availability.mockResolvedValue("available");
+		listEngines.mockResolvedValue({ engines: [], default: null });
+	});
+
+	it("closes on Fertig without reloading the page", async () => {
+		const reload = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+		const wrapper = await mountSuspended(SettingsDrawer);
+		await wrapper.find("[data-testid=settings-done]").trigger("click");
+		expect(wrapper.emitted("close")).toHaveLength(1);
+		expect(reload).not.toHaveBeenCalled();
+		reload.mockRestore();
+	});
+
+	it("closes on Escape", async () => {
+		const wrapper = await mountSuspended(SettingsDrawer);
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		expect(wrapper.emitted("close")).toHaveLength(1);
+	});
+
+	it("moves focus into the drawer on open and back to the opener on close", async () => {
+		const opener = document.createElement("button");
+		document.body.appendChild(opener);
+		opener.focus();
+		const wrapper = await mountSuspended(SettingsDrawer, { attachTo: document.body });
+		await flushPromises();
+		expect(document.activeElement).toBe(wrapper.find("[data-testid=settings-close]").element);
+		wrapper.unmount();
+		expect(document.activeElement).toBe(opener);
+		opener.remove();
+	});
+
+	it("moves the selected tab with the arrow keys, Home and End", async () => {
+		const wrapper = await mountSuspended(SettingsDrawer, { attachTo: document.body });
+		const selected = () => wrapper.find("[role=tab][aria-selected=true]");
+		const tablist = wrapper.find("[role=tablist]");
+		expect(selected().attributes("data-testid")).toBe("settings-tab-hub");
+		expect(wrapper.find("[data-testid=settings-tab-live]").attributes("tabindex")).toBe("-1");
+
+		await tablist.trigger("keydown", { key: "ArrowRight" });
+		expect(selected().attributes("data-testid")).toBe("settings-tab-live");
+		expect(selected().attributes("tabindex")).toBe("0");
+		expect(document.activeElement).toBe(selected().element);
+
+		await tablist.trigger("keydown", { key: "ArrowLeft" });
+		expect(selected().attributes("data-testid")).toBe("settings-tab-hub");
+
+		await tablist.trigger("keydown", { key: "ArrowLeft" });
+		const tabs = wrapper.findAll("[role=tab]");
+		expect(selected().element).toBe(tabs[tabs.length - 1]!.element);
+
+		await tablist.trigger("keydown", { key: "Home" });
+		expect(selected().attributes("data-testid")).toBe("settings-tab-hub");
+		await tablist.trigger("keydown", { key: "End" });
+		expect(selected().element).toBe(tabs[tabs.length - 1]!.element);
+		wrapper.unmount();
+	});
+});
