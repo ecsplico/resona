@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { h, nextTick, ref, type Ref } from "vue";
+import { computed, h, nextTick, ref, type Ref } from "vue";
+import type { VueWrapper } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport, mockComponent } from "@nuxt/test-utils/runtime";
 import RecordingPage from "~/pages/recording/[id].vue";
 import type { Recording, Transcript } from "~/types/directus";
+import type { ContinuePhase, ContinueResult } from "~/composables/useContinueRecording";
 import { useHubSettings } from "~/composables/useHubSettings";
 import { usePttDiagnostics } from "~/composables/usePttDiagnostics";
 
@@ -95,6 +97,60 @@ const exporter = vi.hoisted(() => ({
 	downloadMarkdown: vi.fn(),
 }));
 mockNuxtImport("useExport", () => () => exporter);
+
+// Continue-recording engine: specs drive the phase/error refs and resolve
+// finish/retry with a result; the page reacts like it would to the real engine.
+const cont = vi.hoisted(() => ({
+	phase: null as Ref<ContinuePhase> | null,
+	error: null as Ref<string | null> | null,
+	retained: null as Ref<boolean> | null,
+	start: vi.fn(async () => {}),
+	cancel: vi.fn(async () => {}),
+	finish: vi.fn(async (): Promise<ContinueResult | null> => null),
+	retry: vi.fn(async (): Promise<ContinueResult | null> => null),
+	discard: vi.fn(),
+}));
+
+mockNuxtImport("useContinueRecording", () => () => {
+	cont.phase = ref<ContinuePhase>("idle");
+	cont.error = ref<string | null>(null);
+	cont.retained = ref(false);
+	const retained = cont.retained;
+	return {
+		recorder: {
+			recording: ref(false),
+			paused: ref(false),
+			elapsed: ref(0),
+			levels: ref([] as number[]),
+			start: vi.fn(),
+			stop: vi.fn(),
+			pause: vi.fn(),
+			resume: vi.fn(),
+		},
+		phase: cont.phase,
+		error: cont.error,
+		hasRetainedPart: computed(() => retained.value),
+		start: cont.start,
+		cancel: cont.cancel,
+		finish: cont.finish,
+		retry: cont.retry,
+		discard: cont.discard,
+	};
+});
+
+function continueResult(over: Partial<ContinueResult> = {}): ContinueResult {
+	return { text: "Neuer Teil", audio_file: "file-2", duration_seconds: 70, audioMerged: true, mergeError: null, ...over };
+}
+
+// Record a part through the sheet: start → phase recording → stop → finish.
+async function recordPart(w: VueWrapper): Promise<void> {
+	await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+	expect(cont.start).toHaveBeenCalledTimes(1);
+	cont.phase!.value = "recording";
+	await nextTick();
+	expect(w.find("#h-rec-title").text()).toBe("Weiter aufnehmen");
+	await w.find("[data-testid=\"stop\"]").trigger("click");
+}
 
 function baseRecording(over: Partial<Recording> = {}): Recording {
 	return {
@@ -330,5 +386,159 @@ describe("recording detail page", () => {
 		expect(globalThis.fetch).not.toHaveBeenCalled();
 		const fail = usePttDiagnostics().entries.value.find(e => !e.ok);
 		expect(fail?.detail).toBe("Kein Hub-Token – in Einstellungen → Verbindung eintragen");
+	});
+
+	describe("continue recording", () => {
+		beforeEach(() => {
+			cont.finish.mockImplementation(async () => {
+				cont.phase!.value = "idle";
+				return continueResult();
+			});
+		});
+
+		it("appends the new part as a paragraph after unsaved edits and saves once", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+			await recordPart(w);
+
+			await vi.waitFor(() => expect(store.updateTranscript).toHaveBeenCalledTimes(1));
+			expect(cont.finish).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1" }));
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt, geändert\nNeuer Teil" });
+			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+			expect(area.value).toBe("Hallo Welt, geändert\nNeuer Teil");
+			await nextTick();
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+			expect(w.find("[data-testid=\"continue-notice\"]").exists()).toBe(false);
+		});
+
+		it("adds no separator when the text already ends with a newline", async () => {
+			transcript.value = { id: "t-1", recording: "rec-1", text: "Erster Absatz\n" };
+			const w = await mountSuspended(RecordingPage);
+			await recordPart(w);
+			await vi.waitFor(() => expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Erster Absatz\nNeuer Teil" }));
+		});
+
+		it("creates the transcript row with just the new text when there was none", async () => {
+			transcript.value = null;
+			store.createTranscript.mockResolvedValueOnce({ id: "t-new", recording: "rec-1", text: "Neuer Teil" });
+			const w = await mountSuspended(RecordingPage);
+			await recordPart(w);
+			await vi.waitFor(() => expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Neuer Teil" }));
+			expect(store.createTranscript).toHaveBeenCalledTimes(1);
+		});
+
+		it("switches the player to the merged audio file", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await vi.waitFor(() => expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(true));
+			await recordPart(w);
+			await vi.waitFor(() =>
+				expect(w.findComponent({ name: "HPlayerDock" }).props("src")).toBe("http://directus/assets/file-2"),
+			);
+			expect(w.findComponent({ name: "HPlayerDock" }).props("fallbackDuration")).toBe(70);
+		});
+
+		it("keeps the old audio and shows a notice when the merge failed", async () => {
+			cont.finish.mockImplementation(async () => {
+				cont.phase!.value = "idle";
+				return continueResult({ audio_file: null, duration_seconds: 0, audioMerged: false, mergeError: "Decoder kaputt" });
+			});
+			const w = await mountSuspended(RecordingPage);
+			await vi.waitFor(() => expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(true));
+			await recordPart(w);
+			await vi.waitFor(() => expect(w.find("[data-testid=\"continue-notice\"]").exists()).toBe(true));
+			expect(w.find("[data-testid=\"continue-notice\"]").text())
+				.toBe("Text angehängt, Audio konnte nicht zusammengeführt werden: Decoder kaputt");
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt\nNeuer Teil" });
+			expect(w.findComponent({ name: "HPlayerDock" }).props("src")).toBe("http://directus/assets/file-1");
+		});
+
+		it("cancel in the sheet cancels the continuation", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+			cont.phase!.value = "recording";
+			await nextTick();
+			await w.find("[data-testid=\"cancel\"]").trigger("click");
+			expect(cont.cancel).toHaveBeenCalledTimes(1);
+			expect(cont.finish).not.toHaveBeenCalled();
+		});
+
+		it("while transcribing shows the banner with Abbrechen and disables save, dictation and continue", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+			cont.phase!.value = "transcribing";
+			await nextTick();
+
+			const banner = w.find("[data-testid=\"continue-banner\"]");
+			expect(banner.text()).toContain("Neuer Teil wird transkribiert – Seite bitte geöffnet lassen.");
+			expect(w.find("[data-testid=\"continue-recording\"]").attributes("disabled")).toBeDefined();
+			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeDefined();
+			expect(w.find("[data-testid=\"push-to-talk\"]").attributes("disabled")).toBeDefined();
+			expect(w.find("[data-testid=\"transcript-edit\"]").exists()).toBe(true);
+
+			await w.find("[data-testid=\"continue-cancel\"]").trigger("click");
+			expect(cont.cancel).toHaveBeenCalledTimes(1);
+		});
+
+		it("while merging shows the merge banner without Abbrechen", async () => {
+			const w = await mountSuspended(RecordingPage);
+			cont.phase!.value = "merging";
+			await nextTick();
+			expect(w.find("[data-testid=\"continue-banner\"]").text()).toContain("Audio wird zusammengeführt…");
+			expect(w.find("[data-testid=\"continue-cancel\"]").exists()).toBe(false);
+			expect(w.find("[data-testid=\"continue-recording\"]").attributes("disabled")).toBeDefined();
+		});
+
+		it("error banner retries without re-recording and then appends", async () => {
+			cont.retry.mockImplementation(async () => {
+				cont.phase!.value = "idle";
+				cont.retained!.value = false;
+				return continueResult({ text: "Nachgereicht" });
+			});
+			const w = await mountSuspended(RecordingPage);
+			cont.error!.value = "Transkription fehlgeschlagen: Hub weg";
+			cont.retained!.value = true;
+			cont.phase!.value = "error";
+			await nextTick();
+
+			expect(w.find("[data-testid=\"continue-banner\"]").text()).toContain("Transkription fehlgeschlagen: Hub weg");
+			expect(w.find("[data-testid=\"continue-recording\"]").attributes("disabled")).toBeDefined();
+			await w.find("[data-testid=\"continue-retry\"]").trigger("click");
+
+			expect(cont.retry).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1" }));
+			expect(cont.start).not.toHaveBeenCalled();
+			await vi.waitFor(() => expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt\nNachgereicht" }));
+			expect(w.find("[data-testid=\"continue-banner\"]").exists()).toBe(false);
+		});
+
+		it("error banner discard drops the part", async () => {
+			const w = await mountSuspended(RecordingPage);
+			cont.error!.value = "Kein Hub-Token";
+			cont.retained!.value = true;
+			cont.phase!.value = "error";
+			await nextTick();
+			await w.find("[data-testid=\"continue-discard\"]").trigger("click");
+			expect(cont.discard).toHaveBeenCalledTimes(1);
+			expect(store.updateTranscript).not.toHaveBeenCalled();
+		});
+
+		it("shows a microphone failure inline in the toolbar and allows another try", async () => {
+			cont.start.mockImplementationOnce(async () => {
+				cont.error!.value = "Mikrofon nicht verfügbar";
+				cont.phase!.value = "error";
+			});
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+			await nextTick();
+			expect(w.find("[data-testid=\"continue-error\"]").text()).toBe("Mikrofon nicht verfügbar");
+			expect(w.find("[data-testid=\"continue-banner\"]").exists()).toBe(false);
+			expect(w.find("[data-testid=\"continue-recording\"]").attributes("disabled")).toBeUndefined();
+		});
+
+		it("is not offered while the recording is still transcribing", async () => {
+			recording.value = baseRecording({ status: "pending" });
+			transcript.value = null;
+			const w = await mountSuspended(RecordingPage);
+			expect(w.find("[data-testid=\"continue-recording\"]").exists()).toBe(false);
+		});
 	});
 });

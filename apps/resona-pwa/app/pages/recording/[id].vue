@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
+import type { ContinueResult } from "~/composables/useContinueRecording";
 import type { Recording, Transcript } from "~/types/directus";
 
 const route = useRoute();
@@ -172,7 +173,7 @@ const pttKeyCode = "ControlLeft";
 const pttKeyLabel = isMac ? "ctrl" : "Strg";
 
 async function startDictation(): Promise<void> {
-	if (pttState.value !== "idle") return;
+	if (pttState.value !== "idle" || contActive.value) return;
 	pttError.value = null;
 	pttRange = editorRef.value?.insertPlaceholder() ?? null;
 	try {
@@ -275,7 +276,7 @@ function onPttUp(e: PointerEvent): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle") {
+	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !contActive.value) {
 		e.preventDefault();
 		void startDictation();
 	}
@@ -286,6 +287,60 @@ function onKeyUp(e: KeyboardEvent): void {
 		e.preventDefault();
 		void stopDictation();
 	}
+}
+
+// ── Continue recording (record more, append the new part's text) ──────────
+const cont = useContinueRecording();
+// Mic open or the new part's job/merge running: dictation and saving wait.
+const contActive = computed(() => ["recording", "transcribing", "merging"].includes(cont.phase.value));
+const contWorking = computed(() => cont.phase.value === "transcribing" || cont.phase.value === "merging");
+// A recorded part whose transcription failed: banner with retry/discard.
+const contRetained = computed(() => cont.phase.value === "error" && cont.hasRetainedPart.value);
+// Failure before a part exists (mic refused, empty recording): shown in the toolbar.
+const contStartError = computed(() =>
+	cont.phase.value === "error" && !cont.hasRetainedPart.value ? cont.error.value : null,
+);
+const contNotice = ref<string | null>(null);
+
+async function startContinue(): Promise<void> {
+	contNotice.value = null;
+	await cont.start();
+}
+
+// The editor maps one `\n` to one paragraph, so a single newline starts a new one.
+function appendParagraph(text: string): void {
+	const current = edit.text.value;
+	const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+	edit.text.value = current + separator + text;
+}
+
+async function applyContinueResult(result: ContinueResult | null): Promise<void> {
+	if (!result) return;
+	if (result.audioMerged && result.audio_file && recording.value) {
+		// The audio watcher re-resolves the player source from the new file id.
+		recording.value.audio_file = result.audio_file;
+		recording.value.duration_seconds = result.duration_seconds;
+	}
+	if (result.text) {
+		appendParagraph(result.text);
+		// Saves the user's unsaved edits together with the new part.
+		await saveTranscript();
+	}
+	const missing = result.text ? null : "Im neuen Teil wurde kein Text erkannt.";
+	const merge = result.mergeError
+		? `${result.text ? "Text angehängt, " : ""}Audio konnte nicht zusammengeführt werden: ${result.mergeError}`
+		: null;
+	contNotice.value = [missing, merge].filter(Boolean).join(" ") || null;
+}
+
+async function finishContinue(): Promise<void> {
+	if (!recording.value) return;
+	await applyContinueResult(await cont.finish(recording.value));
+}
+
+async function retryContinue(): Promise<void> {
+	if (!recording.value) return;
+	await applyContinueResult(await cont.retry(recording.value));
 }
 
 const restarting = ref(false);
@@ -627,7 +682,7 @@ onUnmounted(() => {
 									'detail__ptt--active': pttState === 'recording',
 									'detail__ptt--busy': pttState === 'transcribing',
 								}"
-								:disabled="pttState === 'transcribing'"
+								:disabled="pttState === 'transcribing' || contActive"
 								data-testid="push-to-talk"
 								:aria-pressed="pttState === 'recording'"
 								:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
@@ -667,6 +722,44 @@ onUnmounted(() => {
 										: `Diktieren (${pttKeyLabel} halten)`
 								}}</span>
 							</button>
+							<button
+								type="button"
+								class="detail__ptt"
+								:disabled="pttState !== 'idle' || contActive || contRetained"
+								data-testid="continue-recording"
+								@click="startContinue"
+							>
+								<svg
+									width="18"
+									height="18"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"
+								>
+									<circle
+										cx="12"
+										cy="12"
+										r="9"
+									/>
+									<circle
+										cx="12"
+										cy="12"
+										r="3.5"
+										fill="currentColor"
+									/>
+								</svg>
+								<span>Weiter aufnehmen</span>
+							</button>
+							<span
+								v-if="contStartError"
+								class="detail__tool-error"
+								role="alert"
+								data-testid="continue-error"
+							>{{ contStartError }}</span>
 						</div>
 						<div class="detail__save">
 							<span
@@ -677,7 +770,7 @@ onUnmounted(() => {
 							>{{ dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
 							<HButton
 								variant="primary"
-								:disabled="edit.saving.value || pttState !== 'idle' || !dirty"
+								:disabled="edit.saving.value || pttState !== 'idle' || contWorking || !dirty"
 								data-testid="save-transcript"
 								@click="saveTranscript"
 							>
@@ -700,6 +793,66 @@ onUnmounted(() => {
 						{{ edit.error.value }}
 					</p>
 
+					<div
+						v-if="contWorking"
+						class="detail__banner detail__banner--progress"
+						role="status"
+						data-testid="continue-banner"
+					>
+						<span
+							class="detail__spinner"
+							aria-hidden="true"
+						/>
+						<span class="detail__banner-text">{{
+							cont.phase.value === "transcribing"
+								? "Neuer Teil wird transkribiert – Seite bitte geöffnet lassen."
+								: "Audio wird zusammengeführt…"
+						}}</span>
+						<HButton
+							v-if="cont.phase.value === 'transcribing'"
+							variant="secondary"
+							data-testid="continue-cancel"
+							@click="cont.cancel()"
+						>
+							Abbrechen
+						</HButton>
+					</div>
+
+					<div
+						v-else-if="contRetained"
+						class="detail__banner"
+						role="alert"
+						data-testid="continue-banner"
+					>
+						<div class="detail__banner-text">
+							{{ cont.error.value }}
+							<span class="detail__banner-hint">Der neue Teil ist noch da – erneut versuchen oder verwerfen.</span>
+						</div>
+						<HButton
+							variant="secondary"
+							data-testid="continue-discard"
+							@click="cont.discard()"
+						>
+							Verwerfen
+						</HButton>
+						<HButton
+							variant="primary"
+							data-testid="continue-retry"
+							@click="retryContinue"
+						>
+							Erneut versuchen
+						</HButton>
+					</div>
+
+					<p
+						v-if="contNotice"
+						class="detail__banner detail__banner--notice"
+						role="status"
+						data-testid="continue-notice"
+					>
+						{{ contNotice }}
+					</p>
+
 					<div class="detail__surface">
 						<TranscriptEditor
 							ref="editorRef"
@@ -717,6 +870,18 @@ onUnmounted(() => {
 			class="detail__dock"
 			:src="audioSrc"
 			:fallback-duration="recording.duration_seconds ?? undefined"
+		/>
+
+		<HRecordingSheet
+			v-if="cont.phase.value === 'recording'"
+			label="Weiter aufnehmen"
+			:elapsed="cont.recorder.elapsed.value"
+			:levels="cont.recorder.levels.value"
+			:paused="cont.recorder.paused.value"
+			@pause="cont.recorder.pause()"
+			@resume="cont.recorder.resume()"
+			@stop="finishContinue"
+			@cancel="cont.cancel()"
 		/>
 	</div>
 </template>
@@ -745,11 +910,17 @@ onUnmounted(() => {
 .detail__error { color:var(--danger); font-size:14px; margin:0; }
 .detail__banner { display:flex; align-items:center; flex-wrap:wrap; gap:12px; background:var(--tomato-soft); color:var(--tomato-deep); border-radius:12px; padding:12px 14px; font-family:var(--font-body); font-size:14px; }
 .detail__banner--offline { background:var(--butter-soft); color:#8B6200; }
+.detail__banner--notice { margin:0; background:var(--butter-soft); color:#8B6200; }
+.detail__banner--progress { background:var(--bg-sunken); color:var(--fg1); }
+.detail__spinner { flex-shrink:0; width:16px; height:16px; border-radius:50%; border:2px solid var(--border-strong); border-top-color:var(--accent); animation:detail-spin 0.9s linear infinite; }
+@keyframes detail-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .detail__spinner { animation-duration:2.4s; } }
 .detail__banner-icon { flex-shrink:0; align-self:flex-start; margin-top:1px; }
 .detail__banner-text { flex:1; min-width:180px; display:flex; flex-direction:column; gap:4px; }
 .detail__banner-hint { font-size:13px; opacity:0.85; }
 .detail__toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 .detail__tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.detail__tool-error { flex-basis:100%; color:var(--danger); font-family:var(--font-body); font-size:13px; }
 .detail__save { display:flex; align-items:center; gap:12px; margin-left:auto; }
 .detail__save-state { font-family:var(--font-body); font-size:13px; color:var(--fg3); }
 .detail__save-state--dirty { color:var(--accent-ink,var(--accent)); font-weight:600; }
@@ -759,5 +930,6 @@ onUnmounted(() => {
 .detail__ptt:hover:not(:disabled) { border-color:var(--accent); }
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
 .detail__ptt--busy { opacity:0.65; cursor:default; }
+.detail__ptt:disabled:not(.detail__ptt--busy) { opacity:0.5; cursor:default; }
 .detail__dock { position:sticky; bottom:0; z-index:5; }
 </style>

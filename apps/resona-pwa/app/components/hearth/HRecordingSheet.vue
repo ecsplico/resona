@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 
-const props = defineProps<{ elapsed: number; levels: number[]; paused?: boolean }>();
+// `label` replaces the default heading, e.g. "Weiter aufnehmen" when continuing a recording.
+const props = defineProps<{ elapsed: number; levels: number[]; paused?: boolean; label?: string }>();
 
 const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: [] }>();
 
@@ -51,7 +52,7 @@ function togglePause(): void {
 				id="h-rec-title"
 				class="h-rec__eyebrow"
 			>
-				AUFNAHME LÄUFT
+				{{ label ?? "AUFNAHME LÄUFT" }}
 			</p>
 
 			<div
@@ -163,7 +164,7 @@ function togglePause(): void {
 .h-rec--dialog .h-rec__sheet { width:100%; max-width:480px; border-radius:var(--r-lg); box-shadow:var(--shadow-deep); animation:h-rec-in var(--motion-base) var(--motion-ease); }
 @keyframes h-rec-in { from { opacity:0; transform:translateY(8px); } }
 @media (prefers-reduced-motion:reduce) { .h-rec--dialog .h-rec__sheet { animation:none; } }
-.h-rec__eyebrow { margin:0; font-family:var(--font-body); font-weight:600; font-size:12px; letter-spacing:0.16em; color:var(--accent-soft); }
+.h-rec__eyebrow { margin:0; font-family:var(--font-body); font-weight:600; font-size:12px; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent-soft); }
 .h-rec__wave { display:flex; align-items:center; justify-content:center; gap:3px; height:72px; width:100%; }
 .h-rec__wave.is-paused { opacity:.5; }
 .h-rec__bar { flex:0 0 auto; width:4px; min-height:4px; border-radius:999px; background:var(--accent); }
