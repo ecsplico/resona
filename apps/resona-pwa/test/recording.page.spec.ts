@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { computed, h, nextTick, ref, type Ref } from "vue";
-import type { VueWrapper } from "@vue/test-utils";
+import { flushPromises, type VueWrapper } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport, mockComponent } from "@nuxt/test-utils/runtime";
 import RecordingPage from "~/pages/recording/[id].vue";
 import type { Recording, Transcript } from "~/types/directus";
@@ -31,6 +31,11 @@ mockComponent("TranscriptEditor", () => ({
 			replaceBetween: (from: number, to: number, text: string) => {
 				const cur = props.modelValue ?? "";
 				emit("update:modelValue", cur.slice(0, from) + text + cur.slice(to));
+			},
+			appendParagraph: (text: string) => {
+				const cur = props.modelValue ?? "";
+				const separator = cur.length === 0 || cur.endsWith("\n") ? "" : "\n";
+				emit("update:modelValue", cur + separator + text);
 			},
 			focus: () => {},
 		});
@@ -77,6 +82,16 @@ mockNuxtImport("navigateTo", () => navigateTo);
 
 mockNuxtImport("useRoute", () => () => ({ params: { id: "rec-1" } }));
 
+// The page's route guards, so specs can run them like the router would.
+type Guard = (to: { params: Record<string, string> }, from: { params: Record<string, string> }) => unknown;
+const guards = vi.hoisted(() => ({ leave: null as Guard | null, update: null as Guard | null }));
+mockNuxtImport("onBeforeRouteLeave", () => (guard: Guard) => {
+	guards.leave = guard;
+});
+mockNuxtImport("onBeforeRouteUpdate", () => (guard: Guard) => {
+	guards.update = guard;
+});
+
 const recorderStart = vi.hoisted(() => vi.fn(async () => {}));
 const recorderStop = vi.hoisted(() => vi.fn(async () => new Blob(["audio"], { type: "audio/webm;codecs=opus" })));
 
@@ -105,6 +120,7 @@ const cont = vi.hoisted(() => ({
 	phase: null as Ref<ContinuePhase> | null,
 	error: null as Ref<string | null> | null,
 	retained: null as Ref<boolean> | null,
+	micOpen: null as Ref<boolean> | null,
 	start: vi.fn(async () => {}),
 	cancel: vi.fn(async () => {}),
 	finish: vi.fn(async (): Promise<ContinueResult | null> => null),
@@ -116,10 +132,11 @@ mockNuxtImport("useContinueRecording", () => () => {
 	cont.phase = ref<ContinuePhase>("idle");
 	cont.error = ref<string | null>(null);
 	cont.retained = ref(false);
+	cont.micOpen = ref(false);
 	const retained = cont.retained;
 	return {
 		recorder: {
-			recording: ref(false),
+			recording: cont.micOpen,
 			paused: ref(false),
 			elapsed: ref(0),
 			levels: ref([] as number[]),
@@ -143,12 +160,18 @@ function continueResult(over: Partial<ContinueResult> = {}): ContinueResult {
 	return { text: "Neuer Teil", audio_file: "file-2", duration_seconds: 70, audioMerged: true, mergeError: null, ...over };
 }
 
+// The engine opened the microphone: phase recording with a running recorder.
+async function micOpened(): Promise<void> {
+	cont.phase!.value = "recording";
+	cont.micOpen!.value = true;
+	await nextTick();
+}
+
 // Record a part through the sheet: start → phase recording → stop → finish.
 async function recordPart(w: VueWrapper): Promise<void> {
 	await w.find("[data-testid=\"continue-recording\"]").trigger("click");
 	expect(cont.start).toHaveBeenCalledTimes(1);
-	cont.phase!.value = "recording";
-	await nextTick();
+	await micOpened();
 	expect(w.find("#h-rec-title").text()).toBe("Weiter aufnehmen");
 	await w.find("[data-testid=\"stop\"]").trigger("click");
 }
@@ -421,14 +444,46 @@ describe("recording detail page", () => {
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
 			await recordPart(w);
 
-			await vi.waitFor(() => expect(store.updateTranscript).toHaveBeenCalledTimes(1));
+			await flushPromises();
+			expect(store.updateTranscript).toHaveBeenCalledTimes(1);
 			expect(cont.finish).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1" }));
 			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt, geändert\nNeuer Teil" });
 			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
 			expect(area.value).toBe("Hallo Welt, geändert\nNeuer Teil");
-			await nextTick();
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
 			expect(w.find("[data-testid=\"continue-notice\"]").exists()).toBe(false);
+		});
+
+		it("a failed save after appending keeps old text, edits and new part and asks to save", async () => {
+			store.updateTranscript.mockRejectedValueOnce(new Error("offline"));
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+			await recordPart(w);
+			await flushPromises();
+
+			expect(store.updateTranscript).toHaveBeenCalledTimes(1);
+			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+			expect(area.value).toBe("Hallo Welt, geändert\nNeuer Teil");
+			expect(w.find("[data-testid=\"continue-notice\"]").text())
+				.toBe("Text angehängt, aber nicht gespeichert – bitte Speichern.");
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
+			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeUndefined();
+		});
+
+		it("a failed transcript creation after appending keeps the new part in the editor", async () => {
+			transcript.value = null;
+			store.createTranscript.mockRejectedValueOnce(new Error("offline"));
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("Notiz");
+			await recordPart(w);
+			await flushPromises();
+
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Notiz\nNeuer Teil" });
+			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+			expect(area.value).toBe("Notiz\nNeuer Teil");
+			expect(w.find("[data-testid=\"continue-notice\"]").text())
+				.toBe("Text angehängt, aber nicht gespeichert – bitte Speichern.");
+			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeUndefined();
 		});
 
 		it("adds no separator when the text already ends with a newline", async () => {
@@ -497,11 +552,107 @@ describe("recording detail page", () => {
 		it("cancel in the sheet cancels the continuation", async () => {
 			const w = await mountSuspended(RecordingPage);
 			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			cont.phase!.value = "recording";
-			await nextTick();
+			await micOpened();
 			await w.find("[data-testid=\"cancel\"]").trigger("click");
 			expect(cont.cancel).toHaveBeenCalledTimes(1);
 			expect(cont.finish).not.toHaveBeenCalled();
+		});
+
+		it("shows the sheet only once the microphone is recording", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+			cont.phase!.value = "recording";
+			await nextTick();
+			expect(w.find("#h-rec-title").exists()).toBe(false);
+			cont.micOpen!.value = true;
+			await nextTick();
+			expect(w.find("#h-rec-title").exists()).toBe(true);
+		});
+
+		it("left Ctrl does not start dictation while recording or transcribing a new part", async () => {
+			// Pages mounted by earlier specs still listen on window, so judge this
+			// page by its own editor: dictation starts by inserting the "[…]" marker.
+			const w = await mountSuspended(RecordingPage);
+			const area = () => (w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement).value;
+			const ctrl = async () => {
+				window.dispatchEvent(new KeyboardEvent("keydown", { code: "ControlLeft" }));
+				await flushPromises();
+			};
+			await micOpened();
+			await ctrl();
+			cont.phase!.value = "transcribing";
+			await nextTick();
+			await ctrl();
+			expect(area()).toBe("Hallo Welt");
+			expect(w.find("[data-testid=\"push-to-talk\"]").attributes("aria-pressed")).toBe("false");
+
+			cont.phase!.value = "idle";
+			await nextTick();
+			await ctrl();
+			expect(area()).toContain("[…]");
+			w.unmount();
+		});
+
+		it("keeps the continuation status in one polite live region, Abbrechen outside it", async () => {
+			const w = await mountSuspended(RecordingPage);
+			const live = () => w.find("[data-testid=\"continue-live\"]");
+			expect(live().attributes("role")).toBe("status");
+			expect(live().attributes("aria-live")).toBe("polite");
+			expect(live().text()).toBe("");
+			const region = live().element;
+
+			cont.phase!.value = "transcribing";
+			await nextTick();
+			expect(live().element).toBe(region);
+			expect(live().find("[data-testid=\"continue-banner\"]").exists()).toBe(true);
+			expect(live().find("[data-testid=\"continue-cancel\"]").exists()).toBe(false);
+			expect(w.find("[data-testid=\"continue-cancel\"]").exists()).toBe(true);
+		});
+
+		it("disables Neu transkribieren while a new part is in flight or kept after an error", async () => {
+			recording.value = baseRecording({ status: "error", error_message: "Boom" });
+			transcript.value = null;
+			const w = await mountSuspended(RecordingPage);
+			const restart = () => w.find("[data-testid=\"restart-transcription\"]");
+			expect(restart().attributes("disabled")).toBeUndefined();
+
+			cont.phase!.value = "transcribing";
+			await nextTick();
+			expect(restart().attributes("disabled")).toBeDefined();
+
+			cont.error!.value = "Hub weg";
+			cont.retained!.value = true;
+			cont.phase!.value = "error";
+			await nextTick();
+			expect(restart().attributes("disabled")).toBeDefined();
+		});
+
+		it("asks before leaving while a new part would be lost", async () => {
+			// happy-dom has no window.confirm.
+			const confirm = vi.fn((_message?: string) => true);
+			Object.defineProperty(window, "confirm", { value: confirm, configurable: true, writable: true });
+			await mountSuspended(RecordingPage);
+			const here = { params: { id: "rec-1" } };
+			const other = { params: { id: "rec-2" } };
+
+			expect(guards.leave!(other, here)).toBe(true);
+			expect(confirm).not.toHaveBeenCalled();
+
+			cont.phase!.value = "transcribing";
+			confirm.mockReturnValueOnce(false);
+			expect(guards.leave!(other, here)).toBe(false);
+			expect(confirm).toHaveBeenCalledWith("Der neue Teil geht verloren. Trotzdem verlassen?");
+			confirm.mockReturnValueOnce(true);
+			expect(guards.leave!(other, here)).toBe(true);
+
+			// Switching to another recording in the desktop list reuses the route record.
+			cont.phase!.value = "error";
+			cont.retained!.value = true;
+			confirm.mockReturnValueOnce(false);
+			expect(guards.update!(other, here)).toBe(false);
+			expect(guards.update!(here, here)).toBe(true);
+			expect(confirm).toHaveBeenCalledTimes(3);
+			Reflect.deleteProperty(window, "confirm");
 		});
 
 		it("while transcribing shows the banner with Abbrechen and disables save, dictation and continue", async () => {

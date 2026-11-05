@@ -241,7 +241,7 @@ app/
 │   ├── useUpload.ts                 # upload blob + create recording (batch)
 │   ├── useProfiles.ts               # postprocessing profiles
 │   ├── useLive.ts                   # live WS streaming to /v1/listen
-│   ├── useTranscriptEdit.ts         # optimistic transcript editing
+│   ├── useTranscriptEdit.ts         # transcript editing + save (keeps text on failure)
 │   ├── useExport.ts                 # TXT/MD export + clipboard copy
 │   └── useOfflineQueue.ts           # IndexedDB queue + auto-sync
 ├── components/

@@ -92,7 +92,21 @@ function replaceBetween(from: number, to: number, text: string): void {
 	}
 }
 
-defineExpose({ insertText, insertPlaceholder, replaceBetween, focus });
+// Append `text` as a new paragraph at the end of the document without moving
+// the caret or the selection; it is one undoable step and reaches the v-model
+// through onUpdate. An empty last paragraph (empty document or a trailing line
+// break) is filled instead of leaving a blank line before the text.
+function appendParagraph(text: string): void {
+	const e = editor.value;
+	if (!e) return;
+	const { doc } = e.state;
+	const end = doc.content.size;
+	const last = doc.lastChild;
+	const from = last && last.type.name === "paragraph" && last.content.size === 0 ? end - last.nodeSize : end;
+	e.commands.insertContentAt({ from, to: end }, toContent(text).content ?? [], { updateSelection: false });
+}
+
+defineExpose({ insertText, insertPlaceholder, replaceBetween, appendParagraph, focus });
 </script>
 
 <template>

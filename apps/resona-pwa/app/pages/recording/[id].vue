@@ -70,7 +70,6 @@ const offlineError = computed(() => isServiceUnreachable(recording.value?.error_
 
 const edit = useTranscriptEdit("");
 const seeded = ref(false);
-const savedText = ref("");
 
 const { toText, copy, downloadText, downloadMarkdown } = useExport();
 
@@ -99,35 +98,30 @@ watch([recording, transcript], ([, t]) => {
 		return;
 	}
 	if (t) {
-		edit.text.value = t.text ?? "";
-		savedText.value = t.text ?? "";
+		edit.seed(t.text ?? "");
 		seeded.value = true;
 	}
 	else if (canEdit.value) {
-		edit.text.value = "";
-		savedText.value = "";
+		edit.seed("");
 		seeded.value = true;
 	}
 }, { immediate: true });
 
-const dirty = computed(() => seeded.value && edit.text.value !== savedText.value);
+const dirty = computed(() => seeded.value && edit.text.value !== edit.committed.value);
 
-async function saveTranscript(): Promise<void> {
+/** Persists the editor text; false when the save failed (the text stays in the editor). */
+async function saveTranscript(): Promise<boolean> {
 	const target = edit.text.value;
 	if (transcript.value) {
 		await edit.saveEdit(transcript.value.id, target);
-		if (!edit.error.value) {
-			savedText.value = target;
-		}
-		return;
+		return !edit.error.value;
 	}
 	// No transcript row yet -> create one for this recording.
 	const created = await edit.createTranscript(id, target);
-	if (created) {
-		transcript.value = created;
-		savedText.value = target;
-		seeded.value = true;
-	}
+	if (!created) return false;
+	transcript.value = created;
+	seeded.value = true;
+	return true;
 }
 
 // ── Review status (editing / ready) ────────────────────────────────────────
@@ -153,6 +147,7 @@ type PttEditorRef = {
 	insertText: (text: string) => void;
 	insertPlaceholder: () => { from: number; to: number } | null;
 	replaceBetween: (from: number, to: number, text: string) => void;
+	appendParagraph: (text: string) => void;
 	focus: () => void;
 } | null;
 
@@ -309,8 +304,14 @@ async function startContinue(): Promise<void> {
 	await cont.start();
 }
 
-// The editor maps one `\n` to one paragraph, so a single newline starts a new one.
+// Through the editor so the caret, selection and undo history stay where they
+// are. Without a mounted editor: one `\n` is one paragraph, so a single
+// newline starts a new one (none when the text is empty or already ends in one).
 function appendParagraph(text: string): void {
+	if (editorRef.value) {
+		editorRef.value.appendParagraph(text);
+		return;
+	}
 	const current = edit.text.value;
 	const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
 	edit.text.value = current + separator + text;
@@ -323,17 +324,20 @@ async function applyContinueResult(result: ContinueResult | null): Promise<void>
 		recording.value.audio_file = result.audio_file;
 		recording.value.duration_seconds = result.duration_seconds;
 	}
+	// Saves the user's unsaved edits together with the new part.
+	let saved = true;
 	if (result.text) {
 		appendParagraph(result.text);
-		// Saves the user's unsaved edits together with the new part.
-		await saveTranscript();
+		saved = await saveTranscript();
 	}
 	if (result.text || result.audioMerged) recordingsList.request();
-	const missing = result.text ? null : "Im neuen Teil wurde kein Text erkannt.";
+	const textNotice = !result.text
+		? "Im neuen Teil wurde kein Text erkannt."
+		: saved ? null : "Text angehängt, aber nicht gespeichert – bitte Speichern.";
 	const merge = result.mergeError
-		? `${result.text ? "Text angehängt, " : ""}Audio konnte nicht zusammengeführt werden: ${result.mergeError}`
+		? `${result.text && saved ? "Text angehängt, " : ""}Audio konnte nicht zusammengeführt werden: ${result.mergeError}`
 		: null;
-	contNotice.value = [missing, merge].filter(Boolean).join(" ") || null;
+	contNotice.value = [textNotice, merge].filter(Boolean).join(" ") || null;
 }
 
 async function finishContinue(): Promise<void> {
@@ -345,6 +349,20 @@ async function retryContinue(): Promise<void> {
 	if (!recording.value) return;
 	await applyContinueResult(await cont.retry(recording.value));
 }
+
+// The new part lives only in this page (mic, hub job or a part kept for retry):
+// leaving drops it, so ask first. Nuxt keys the page by id, so switching to
+// another recording (desktop list) is a route update on this same record.
+const CONTINUE_LEAVE = "Der neue Teil geht verloren. Trotzdem verlassen?";
+
+function confirmLeave(): boolean {
+	if (!contActive.value && !contRetained.value) return true;
+	return window.confirm(CONTINUE_LEAVE);
+}
+
+onBeforeRouteLeave(() => confirmLeave());
+onBeforeRouteUpdate((to, from) =>
+	(to.params as { id?: string }).id === (from.params as { id?: string }).id || confirmLeave());
 
 const restarting = ref(false);
 
@@ -662,7 +680,7 @@ onUnmounted(() => {
 					</div>
 					<HButton
 						variant="secondary"
-						:disabled="restarting"
+						:disabled="restarting || contActive || contRetained"
 						data-testid="restart-transcription"
 						@click="restartTranscription"
 					>
@@ -798,21 +816,37 @@ onUnmounted(() => {
 						{{ edit.error.value }}
 					</p>
 
+					<!-- One live region, always in the DOM, so screen readers announce the
+						progress text and the notice when they appear; Abbrechen stays outside. -->
 					<div
-						v-if="contWorking"
-						class="detail__banner detail__banner--progress"
-						role="status"
-						data-testid="continue-banner"
+						:class="contWorking
+							? 'detail__banner detail__banner--progress'
+							: contNotice ? 'detail__banner detail__banner--notice' : 'sr-only'"
 					>
 						<span
+							v-if="contWorking"
 							class="detail__spinner"
 							aria-hidden="true"
 						/>
-						<span class="detail__banner-text">{{
-							cont.phase.value === "transcribing"
-								? "Neuer Teil wird transkribiert – Seite bitte geöffnet lassen."
-								: "Audio wird zusammengeführt…"
-						}}</span>
+						<div
+							class="detail__banner-text"
+							role="status"
+							aria-live="polite"
+							data-testid="continue-live"
+						>
+							<span
+								v-if="contWorking"
+								data-testid="continue-banner"
+							>{{
+								cont.phase.value === "transcribing"
+									? "Neuer Teil wird transkribiert – Seite bitte geöffnet lassen."
+									: "Audio wird zusammengeführt…"
+							}}</span>
+							<span
+								v-else-if="contNotice"
+								data-testid="continue-notice"
+							>{{ contNotice }}</span>
+						</div>
 						<HButton
 							v-if="cont.phase.value === 'transcribing'"
 							variant="secondary"
@@ -824,7 +858,7 @@ onUnmounted(() => {
 					</div>
 
 					<div
-						v-else-if="contRetained"
+						v-if="contRetained"
 						class="detail__banner"
 						role="alert"
 						data-testid="continue-banner"
@@ -849,15 +883,6 @@ onUnmounted(() => {
 						</HButton>
 					</div>
 
-					<p
-						v-if="contNotice"
-						class="detail__banner detail__banner--notice"
-						role="status"
-						data-testid="continue-notice"
-					>
-						{{ contNotice }}
-					</p>
-
 					<div class="detail__surface">
 						<TranscriptEditor
 							ref="editorRef"
@@ -878,7 +903,7 @@ onUnmounted(() => {
 		/>
 
 		<HRecordingSheet
-			v-if="cont.phase.value === 'recording'"
+			v-if="cont.phase.value === 'recording' && cont.recorder.recording.value"
 			label="Weiter aufnehmen"
 			:elapsed="cont.recorder.elapsed.value"
 			:levels="cont.recorder.levels.value"

@@ -5,29 +5,33 @@ import { humanizeError } from "#shared/errors";
 
 export function useTranscriptEdit(initialText = "") {
 	const text: Ref<string> = ref(initialText);
+	// The last value known to be persisted; `text !== committed` means unsaved changes.
+	const committed: Ref<string> = ref(initialText);
 	const saving: Ref<boolean> = ref(false);
 	const error: Ref<string | null> = ref(null);
 
-	// The last value known to be persisted. A failed save reverts to this,
-	// not to the original initial value across multiple saves.
-	let committed = initialText;
+	// Load a persisted text (e.g. the transcript fetched from the store) as both
+	// the editor content and the committed baseline.
+	function seed(value: string): void {
+		text.value = value;
+		committed.value = value;
+		error.value = null;
+	}
 
-	// Shared optimistic-write wrapper: apply `newText`, run the request, commit on
-	// success, roll back to the last committed value on failure. Returns the
+	// Shared write wrapper: apply `newText`, run the request, commit on success.
+	// A failure keeps the text as it is (it may hold edits that exist nowhere
+	// else) and only reports the error, so the user can save again. Returns the
 	// request result (or null on failure) so callers can pick up e.g. a created row.
 	async function persist<T>(newText: string, run: () => Promise<T>): Promise<T | null> {
-		const previous = committed;
 		saving.value = true;
 		error.value = null;
-		text.value = newText; // optimistic
+		text.value = newText;
 		try {
 			const result = await run();
-			committed = newText;
+			committed.value = newText;
 			return result;
 		}
 		catch (err) {
-			text.value = previous;
-			committed = previous;
 			error.value = humanizeError(err, "Speichern fehlgeschlagen.");
 			return null;
 		}
@@ -49,8 +53,10 @@ export function useTranscriptEdit(initialText = "") {
 
 	return {
 		text,
+		committed,
 		saving,
 		error,
+		seed,
 		saveEdit,
 		createTranscript,
 	};

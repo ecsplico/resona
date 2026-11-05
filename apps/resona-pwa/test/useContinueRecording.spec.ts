@@ -351,6 +351,38 @@ describe("useContinueRecording", () => {
 		expect(hub.upload).not.toHaveBeenCalled();
 	});
 
+	it("cancel while the microphone is still opening stops the recorder once it starts", async () => {
+		const mic = Promise.withResolvers<undefined>();
+		recorder.start.mockReturnValueOnce(mic.promise);
+		const cont = setup();
+		const started = cont.start();
+		expect(cont.phase.value).toBe("recording");
+
+		await cont.cancel();
+		expect(cont.phase.value).toBe("idle");
+		const stopsBefore = recorder.stop.mock.calls.length;
+
+		mic.resolve(undefined);
+		await started;
+		expect(recorder.stop).toHaveBeenCalledTimes(stopsBefore + 1);
+		expect(cont.phase.value).toBe("idle");
+		expect(cont.error.value).toBeNull();
+		expect(unloadBlocked()).toBe(false);
+		expect(hub.upload).not.toHaveBeenCalled();
+	});
+
+	it("a microphone failure after cancel leaves the engine idle", async () => {
+		const mic = Promise.withResolvers<undefined>();
+		recorder.start.mockReturnValueOnce(mic.promise);
+		const cont = setup();
+		const started = cont.start();
+		await cont.cancel();
+		mic.reject(new Error("Mikrofonzugriff wurde verweigert."));
+		await started;
+		expect(cont.phase.value).toBe("idle");
+		expect(cont.error.value).toBeNull();
+	});
+
 	it("discard drops a retained part", async () => {
 		hub.hasToken.mockReturnValue(false);
 		const cont = setup();

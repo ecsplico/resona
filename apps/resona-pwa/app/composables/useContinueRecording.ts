@@ -238,20 +238,27 @@ export function useContinueRecording(): ContinueRecording {
 	async function start(): Promise<void> {
 		const ready = phase.value === "idle" || (phase.value === "error" && part.value === null);
 		if (!ready) return;
+		attempt += 1;
+		const current = attempt;
 		error.value = null;
 		setPhase("recording");
 		try {
 			await recorder.start();
 		}
 		catch (err) {
-			fail(errorText(err));
+			if (current === attempt && phase.value === "recording") fail(errorText(err));
+			return;
 		}
+		// Cancelled or finished while the microphone was still being opened: the
+		// recorder only started now, so close it again and drop what it captured.
+		if (current !== attempt || phase.value !== "recording") await recorder.stop();
 	}
 
 	async function cancel(): Promise<void> {
 		if (phase.value === "recording") {
-			await recorder.stop();
+			abortAttempt();
 			setPhase("idle");
+			await recorder.stop();
 			return;
 		}
 		if (phase.value === "transcribing") {

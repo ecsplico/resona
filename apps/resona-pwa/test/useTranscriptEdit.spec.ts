@@ -29,30 +29,45 @@ describe("useTranscriptEdit", () => {
 		expect(edit.saving.value).toBe(false);
 	});
 
-	it("rolls back to the previous text and surfaces an error on failure", async () => {
+	it("keeps the text on failure, reports the error and leaves the committed text alone", async () => {
 		state.updateTranscript.mockRejectedValueOnce(new Error("boom"));
 
 		const edit = useTranscriptEdit("alt");
 		await edit.saveEdit("t-1", "neu");
 
-		expect(edit.text.value).toBe("alt");
+		expect(edit.text.value).toBe("neu");
+		expect(edit.committed.value).toBe("alt");
 		expect(edit.error.value).toBeTypeOf("string");
 		expect(edit.error.value).toBeTruthy();
 		expect(edit.saving.value).toBe(false);
 	});
 
-	it("rolls back to the last committed value, not the initial value", async () => {
+	it("commits on success and clears the error on the next successful save", async () => {
 		state.updateTranscript
-			.mockResolvedValueOnce(undefined)
-			.mockRejectedValueOnce(new Error("boom"));
+			.mockRejectedValueOnce(new Error("boom"))
+			.mockResolvedValueOnce(undefined);
 
 		const edit = useTranscriptEdit("a");
-		await edit.saveEdit("t-1", "b"); // commits "b"
-		expect(edit.text.value).toBe("b");
-
-		await edit.saveEdit("t-1", "c"); // fails -> revert to "b", not "a"
-		expect(edit.text.value).toBe("b");
+		await edit.saveEdit("t-1", "b");
 		expect(edit.error.value).toBeTruthy();
+
+		await edit.saveEdit("t-1", "b");
+		expect(edit.text.value).toBe("b");
+		expect(edit.committed.value).toBe("b");
+		expect(edit.error.value).toBeNull();
+	});
+
+	it("seed loads a persisted text as both editor text and committed baseline", async () => {
+		state.updateTranscript.mockRejectedValueOnce(new Error("boom"));
+
+		const edit = useTranscriptEdit("");
+		edit.seed("geladen");
+		expect(edit.text.value).toBe("geladen");
+		expect(edit.committed.value).toBe("geladen");
+
+		await edit.saveEdit("t-1", "geladen und mehr");
+		expect(edit.text.value).toBe("geladen und mehr");
+		expect(edit.committed.value).toBe("geladen");
 	});
 
 	it("createTranscript creates a row and returns it, applying the text", async () => {
@@ -68,14 +83,15 @@ describe("useTranscriptEdit", () => {
 		expect(edit.error.value).toBeNull();
 	});
 
-	it("createTranscript rolls back the text and reports an error on failure", async () => {
+	it("createTranscript keeps the text and reports an error on failure", async () => {
 		state.createTranscript.mockRejectedValueOnce(new Error("nope"));
 
 		const edit = useTranscriptEdit("alt");
 		const row = await edit.createTranscript("rec-1", "neu");
 
 		expect(row).toBeNull();
-		expect(edit.text.value).toBe("alt");
+		expect(edit.text.value).toBe("neu");
+		expect(edit.committed.value).toBe("alt");
 		expect(edit.error.value).toBeTruthy();
 	});
 });

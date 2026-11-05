@@ -114,7 +114,10 @@ it via `docker compose` (the `project-worker` service).
   no `directus_files` delete permission; the local store deletes the old blob). A failed
   transcription keeps the part for `retry`; a failed merge still returns the text
   (`audioMerged:false`, `mergeError`). Works in both data modes, needs the page open
-  (`beforeunload` guard while recording/transcribing/merging).
+  (`beforeunload` guard while recording/transcribing/merging; the detail page adds a
+  route-leave/update `confirm` while a part is in flight or kept for retry). The page
+  appends via `TranscriptEditor.appendParagraph` (caret and undo stay) and saves; a
+  failed save keeps the text in the editor (`useTranscriptEdit` never rolls back).
 
 ### Live WebSocket contract (hub `/v1/listen`)
 
