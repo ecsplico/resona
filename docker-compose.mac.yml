@@ -1,0 +1,68 @@
+# Single-host Resona backend for an Apple Silicon Mac.
+#
+# The ASR engine runs NATIVELY on the Apple GPU (MLX/Metal) because Docker on
+# macOS has no GPU passthrough; only the api runs in Docker and reaches the
+# native engine on the host via host.docker.internal.
+#
+#   1. Native engine (GPU, large-v3):  scripts/run-native-engine.sh            → host :7720
+#   2. api:                            docker compose -f docker-compose.mac.yml up -d  → host :7710
+#
+# CPU fallback (no native engine): add `--profile cpu-engine` — slow at large-v3.
+# The PWA data layer (Directus + project worker) targets this api on :7710 by
+# default: see apps/resona-pwa/docker-compose.backend.yml.
+# Docs: docs/server/mac-stack.md
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    ports:
+      - "7710:7000"
+    volumes:
+      - resona-audio:/app/data/files
+      - resona-md:/app/data/md
+      - resona-db:/app/data/db
+      - resona-profiles:/app/data/profiles
+    environment:
+      # Native host engine first (GPU MLX), dockerized CPU engine as fallback.
+      RESONA_ENGINE_URLS: ${RESONA_ENGINE_URLS:-http://host.docker.internal:7720,http://engine-faster-whisper:7001}
+      DATA_PATH: /app/data
+      LOGLEVEL: ${LOGLEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Opt-in CPU engine, only for hosts without a usable native GPU engine.
+  engine-faster-whisper:
+    profiles: ["cpu-engine"]
+    build:
+      context: .
+      dockerfile: packages/engine-faster-whisper/Dockerfile
+    ports:
+      - "7720:7001"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      RESONA_ENGINE: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: ${FASTWHISPER_MODEL:-large-v3}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    restart: unless-stopped
+
+volumes:
+  resona-audio:
+  resona-md:
+  resona-db:
+  resona-profiles:

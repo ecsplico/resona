@@ -75,6 +75,7 @@ nav:
   - Server Setup:
     - Docker Deployment: server/docker.md
     - Full-Stack (uv): server/full-stack.md
+    - Mac Single-Host Stack (Apple Silicon): server/mac-stack.md
     - Mac Worker (Apple Silicon): server/mac-worker.md
     - Linux Worker (NVIDIA, Docker): server/linux-worker.md
     - Coolify Deployment (public hub): server/coolify.md
@@ -100,11 +101,9 @@ nav:
     - Adding an Engine: development/adding-engine.md
     - Testing: development/testing.md
 
-not_in_nav: |
-  superpowers/**
-
+# Agent workflow config (issue tracker, labels, domain docs) is not site content.
 exclude_docs: |
-  superpowers/**
+  agents/**
 
 markdown_extensions:
   - admonition
