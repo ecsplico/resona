@@ -837,6 +837,26 @@ def _decode_cursor(cursor: str) -> int:
     return value
 
 
+def jobs_page(session: Session, organization_id: str, cursor: Optional[str], limit: int) -> dict[str, Any]:
+    """One page of an organization's jobs, newest first, with an opaque cursor."""
+    if not 1 <= limit <= MAX_PAGE_SIZE:
+        raise api_error(422, "invalid_limit", f"limit must be between 1 and {MAX_PAGE_SIZE}")
+    query = select(Job).where(
+        Job.organization_id == organization_id,
+        or_(Job.error_code.is_(None), Job.error_code != JOB_DELETED),
+    )
+    if cursor is not None:
+        query = query.where(Job.id < _decode_cursor(cursor))
+    rows = session.exec(query.order_by(Job.id.desc()).limit(limit + 1)).all()
+    page = rows[:limit]
+    now = clock.now()
+    ctx = _queue_context(session, organization_id, now)
+    return {
+        "items": [_view(job, ctx, now) for job in page],
+        "next_cursor": _encode_cursor(page[-1].id) if len(rows) > limit else None,
+    }
+
+
 @router.get("/v1/jobs")
 def list_jobs(
     cursor: Optional[str] = None,
@@ -845,22 +865,7 @@ def list_jobs(
     session: Session = Depends(get_db_session),
 ) -> dict[str, Any]:
     """The organization's jobs, newest first, with an opaque cursor."""
-    if not 1 <= limit <= MAX_PAGE_SIZE:
-        raise api_error(422, "invalid_limit", f"limit must be between 1 and {MAX_PAGE_SIZE}")
-    query = select(Job).where(
-        Job.organization_id == principal.organization_id,
-        or_(Job.error_code.is_(None), Job.error_code != JOB_DELETED),
-    )
-    if cursor is not None:
-        query = query.where(Job.id < _decode_cursor(cursor))
-    rows = session.exec(query.order_by(Job.id.desc()).limit(limit + 1)).all()
-    page = rows[:limit]
-    now = clock.now()
-    ctx = _queue_context(session, principal.organization_id, now)
-    return {
-        "items": [_view(job, ctx, now) for job in page],
-        "next_cursor": _encode_cursor(page[-1].id) if len(rows) > limit else None,
-    }
+    return jobs_page(session, principal.organization_id, cursor, limit)
 
 
 @router.get("/v1/jobs/{job_id}")

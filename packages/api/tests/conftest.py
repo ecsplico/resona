@@ -174,6 +174,20 @@ def admin_headers():
 
 
 @pytest.fixture
+def operator_headers():
+    """Factory: ``operator_headers(org_id)`` returns Bearer headers for a fresh hub_operator token."""
+    from resona_api.admin import issue_credential
+    from resona_api.db.engine import engine
+
+    def make(organization_id: str) -> dict[str, str]:
+        with Session(engine) as session:
+            _, token = issue_credential(session, organization_id, "hub_operator")
+            session.commit()
+        return {"Authorization": f"Bearer {token}"}
+    return make
+
+
+@pytest.fixture
 def worker_headers():
     """Factory: ``worker_headers(org_id)`` enrolls a new (unapproved) worker and returns its token."""
     from resona_api.admin import enroll_worker
@@ -189,13 +203,14 @@ def worker_headers():
 
 @pytest.fixture(scope="session")
 def test_app():
-    """Minimal FastAPI app with the job, worker, audio, profile, settings and evaluation routers (no lifespan)."""
+    """Minimal FastAPI app with the job, worker, audio, profile, settings, evaluation and admin routers (no lifespan)."""
     from resona_api.jobs_routes import router as jobs_router
     from resona_api.worker_routes import router as worker_router
     from resona_api.audio_routes import router as audio_router
     from resona_api.profiles_routes import router as profiles_router
     from resona_api.settings_routes import router as settings_router
     from resona_api.evaluations_routes import router as evaluations_router
+    from resona_api.admin_routes import router as admin_router, static_router as admin_static_router
     app = FastAPI()
     app.include_router(jobs_router)
     app.include_router(worker_router)
@@ -203,6 +218,8 @@ def test_app():
     app.include_router(profiles_router)
     app.include_router(settings_router)
     app.include_router(evaluations_router)
+    app.include_router(admin_router)
+    app.include_router(admin_static_router)
     return app
 
 

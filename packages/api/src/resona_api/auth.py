@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 ROLE_CLIENT = "client"
 ROLE_ORG_ADMIN = "org_admin"
 ROLE_WORKER = "worker"
+ROLE_HUB_OPERATOR = "hub_operator"
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,10 @@ def require_roles(*roles: str) -> Callable[..., Principal]:
 client_principal = require_roles(ROLE_CLIENT, ROLE_ORG_ADMIN)
 admin_principal = require_roles(ROLE_ORG_ADMIN)
 worker_principal = require_roles(ROLE_WORKER)
+# Admin API only: an org_admin manages its own organization, a hub_operator every
+# organization. The operator is deliberately absent from client/admin principals, so it
+# never submits jobs, reads results or changes settings through the other routes.
+manager_principal = require_roles(ROLE_ORG_ADMIN, ROLE_HUB_OPERATOR)
 
 
 def _ws_candidates(websocket) -> list[str]:

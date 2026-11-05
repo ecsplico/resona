@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Resona hub admin</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script src="/admin/admin.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Resona hub admin</h1>
+    <div id="session-info" class="session-info" hidden>
+      <span>Role: <strong id="me-role"></strong></span>
+      <span>Organization: <strong id="me-org"></strong></span>
+      <button type="button" id="sign-out" class="secondary">Sign out</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden>
+    <span id="banner-text"></span>
+    <button type="button" id="banner-close" class="banner-close" aria-label="Dismiss">&times;</button>
+  </div>
+
+  <main>
+    <section id="login" class="card login" hidden>
+      <h2>Sign in</h2>
+      <form id="login-form" autocomplete="off">
+        <label for="login-token">Organization or operator token</label>
+        <input type="password" id="login-token" name="token" required spellcheck="false" autocomplete="off">
+        <button type="submit">Sign in</button>
+      </form>
+      <p id="login-message" class="muted" hidden></p>
+    </section>
+
+    <section id="app" hidden>
+      <div class="card org-bar">
+        <label for="org-select">Organization</label>
+        <select id="org-select"></select>
+        <form id="new-org-form" class="inline-form" autocomplete="off" hidden>
+          <label for="new-org-id">New organization</label>
+          <input type="text" id="new-org-id" name="id" required spellcheck="false" placeholder="organization id">
+          <button type="submit">Create</button>
+        </form>
+      </div>
+
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab" data-tab="workers" aria-selected="true">Workers</button>
+        <button type="button" role="tab" class="tab" data-tab="credentials" aria-selected="false">Credentials</button>
+        <button type="button" role="tab" class="tab" data-tab="jobs" aria-selected="false">Jobs</button>
+        <button type="button" role="tab" class="tab" data-tab="settings" aria-selected="false">Settings &amp; baselines</button>
+      </nav>
+
+      <section id="panel-workers" class="panel card" role="tabpanel">
+        <div class="panel-head">
+          <h2>Workers</h2>
+          <button type="button" class="secondary" data-refresh="workers">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Last seen</th>
+                <th>Runtime</th>
+                <th>Approved</th>
+                <th>Private</th>
+                <th>Revoked</th>
+                <th>Capabilities</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="workers-body"></tbody>
+          </table>
+        </div>
+        <p id="workers-empty" class="muted" hidden>No workers have enrolled in this organization.</p>
+      </section>
+
+      <section id="panel-credentials" class="panel card" role="tabpanel" hidden>
+        <div class="panel-head">
+          <h2>Credentials</h2>
+          <div class="actions">
+            <button type="button" id="issue-client">Issue client token</button>
+            <button type="button" id="issue-admin">Issue admin token</button>
+            <button type="button" class="secondary" data-refresh="credentials">Refresh</button>
+          </div>
+        </div>
+        <div id="issued" class="issued" hidden>
+          <p><strong>New <span id="issued-role"></span> token <span id="issued-id"></span>.</strong> Shown once. Store it now.</p>
+          <div class="issued-row">
+            <input type="text" id="issued-token" readonly spellcheck="false" aria-label="Issued token">
+            <button type="button" id="issued-copy">Copy</button>
+            <button type="button" id="issued-close" class="secondary">Done</button>
+          </div>
+          <p id="issued-copied" class="muted" hidden>Copied to clipboard.</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Role</th>
+                <th>Worker</th>
+                <th>Created</th>
+                <th>Revoked</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="credentials-body"></tbody>
+          </table>
+        </div>
+        <p id="credentials-empty" class="muted" hidden>No credentials.</p>
+      </section>
+
+      <section id="panel-jobs" class="panel card" role="tabpanel" hidden>
+        <div class="panel-head">
+          <h2>Jobs</h2>
+          <button type="button" class="secondary" data-refresh="jobs">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Kind</th>
+                <th>Status</th>
+                <th>Queue reason</th>
+                <th>Private</th>
+                <th>Profile</th>
+                <th>Candidate</th>
+                <th>Attempt</th>
+                <th>Error</th>
+                <th>Result</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th>Deadline</th>
+                <th id="jobs-actions-head">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="jobs-body"></tbody>
+          </table>
+        </div>
+        <p id="jobs-empty" class="muted" hidden>No jobs.</p>
+        <button type="button" id="jobs-more" class="secondary" hidden>Load more</button>
+      </section>
+
+      <section id="panel-settings" class="panel card" role="tabpanel" hidden>
+        <div class="panel-head">
+          <h2>Settings</h2>
+          <button type="button" class="secondary" data-refresh="settings">Refresh</button>
+        </div>
+        <p>Revision: <strong id="settings-revision"></strong></p>
+        <pre id="settings-json" class="json"></pre>
+
+        <h2>Baselines</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Execution profile</th>
+                <th>Platform</th>
+                <th>Revision</th>
+                <th>Evaluation</th>
+                <th>Release</th>
+                <th>Corpus SHA-256</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="baselines-body"></tbody>
+          </table>
+        </div>
+        <p id="baselines-empty" class="muted" hidden>No baselines promoted yet.</p>
+
+        <h2>Approved releases</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Execution profile</th>
+                <th>Platform</th>
+                <th>Release</th>
+                <th>Evaluation</th>
+                <th>Approved</th>
+              </tr>
+            </thead>
+            <tbody id="releases-body"></tbody>
+          </table>
+        </div>
+        <p id="releases-empty" class="muted" hidden>No approved releases.</p>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

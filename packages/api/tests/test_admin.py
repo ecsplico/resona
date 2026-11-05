@@ -64,6 +64,19 @@ def test_cli_issue_prints_token_once_and_it_authenticates(capsys, anon_client, f
     assert resp.status_code == 200
 
 
+def test_cli_issues_hub_operator_token_for_the_admin_api_only(capsys, anon_client, fresh_org):
+    assert main(["credential", "issue", "--organization", fresh_org, "--role", "hub_operator"]) == 0
+
+    out = capsys.readouterr().out
+    token = next(line for line in out.splitlines() if line.startswith("token: ")).removeprefix("token: ")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    me = anon_client.get("/v1/admin/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["role"] == "hub_operator"
+    assert anon_client.get("/v1/settings", headers=headers).status_code == 403
+
+
 def test_cli_rejects_unknown_organization(capsys):
     assert main(["credential", "issue", "--organization", "no-such-org", "--role", "client"]) == 1
     assert "unknown organization" in capsys.readouterr().err

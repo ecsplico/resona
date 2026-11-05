@@ -23,7 +23,7 @@ from sqlmodel import Session, select
 from resona_job_core import Candidate, default_settings
 
 from . import releases
-from .auth import ROLE_CLIENT, ROLE_ORG_ADMIN, ROLE_WORKER, hash_token
+from .auth import ROLE_CLIENT, ROLE_HUB_OPERATOR, ROLE_ORG_ADMIN, ROLE_WORKER, hash_token
 from .db.engine import create_db_and_tables, engine
 from .db.models import ApprovedReleaseTuple, Credential, Organization, Release, SettingsRevision, Worker
 
@@ -81,12 +81,14 @@ def _require_organization(session: Session, org_id: str) -> None:
 def issue_credential(
     session: Session, organization_id: str, role: str, *, token_sha256: str | None = None
 ) -> tuple[str, str | None]:
-    """Issue a client or org_admin credential. Returns ``(credential_id, token)``.
+    """Issue a client, org_admin or hub_operator credential. Returns ``(credential_id, token)``.
 
-    With ``token_sha256`` the credential is registered by that hash and no token is returned.
+    A hub_operator credential's organization is only its home; the role manages every
+    organization through the admin API. With ``token_sha256`` the credential is registered
+    by that hash and no token is returned.
     """
-    if role not in (ROLE_CLIENT, ROLE_ORG_ADMIN):
-        raise AdminError("role must be 'client' or 'org_admin'")
+    if role not in (ROLE_CLIENT, ROLE_ORG_ADMIN, ROLE_HUB_OPERATOR):
+        raise AdminError("role must be 'client', 'org_admin' or 'hub_operator'")
     _require_organization(session, organization_id)
     secret_hash, token = _secret_hash(token_sha256)
     if session.exec(select(Credential).where(Credential.secret_hash == secret_hash)).first() is not None:
@@ -219,7 +221,7 @@ def _build_parser() -> argparse.ArgumentParser:
     cred = top.add_parser("credential").add_subparsers(dest="action", required=True)
     cred_issue = cred.add_parser("issue")
     cred_issue.add_argument("--organization", required=True)
-    cred_issue.add_argument("--role", required=True, choices=[ROLE_CLIENT, ROLE_ORG_ADMIN])
+    cred_issue.add_argument("--role", required=True, choices=[ROLE_CLIENT, ROLE_ORG_ADMIN, ROLE_HUB_OPERATOR])
     cred_issue.add_argument(
         "--token-sha256", help="register a token generated elsewhere by its SHA-256 hex digest (no token printed)"
     )
