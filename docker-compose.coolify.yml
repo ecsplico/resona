@@ -11,7 +11,8 @@
 # Image: the released hub image from GHCR, pinned by digest (never a mutable tag).
 # The release workflow pushes ghcr.io/ecsplico/resona-hub; bump both `image:` lines
 # to the digest from that release's release-manifest.json (docs/server/coolify.md).
-# Current: sha256:bf59e671… = ghcr.io/ecsplico/resona-hub:0.1.0-d226774 (linux/amd64, commit d226774).
+# Current: sha256:bf59e671… = ghcr.io/ecsplico/resona-hub:0.1.0-d226774 (linux/amd64), built from
+# pre-rewrite commit d226774; same hub code as a6c1afc (history rewrite changed author emails only).
 # The package is private: the host pulls with a read:packages-only token (docs/server/coolify.md).
 #
 # No variable is required: defaults serve https://resona.ecsplico.de.
