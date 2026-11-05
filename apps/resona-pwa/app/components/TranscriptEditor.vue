@@ -102,9 +102,10 @@ defineExpose({ insertText, insertPlaceholder, replaceBetween, focus });
 </template>
 
 <style scoped>
-.tt-editor { width:100%; box-sizing:border-box; background:var(--surface,transparent); border:1.5px solid var(--border-strong); border-radius:var(--r-md); }
+.tt-editor { width:100%; box-sizing:border-box; display:flex; flex-direction:column; background:var(--white); border:1px solid var(--border); border-radius:12px; transition:border-color var(--motion-fast) var(--motion-ease); }
+.tt-editor > :deep(div) { flex:1; display:flex; flex-direction:column; }
 .tt-editor:focus-within { border-color:var(--accent); }
-.tt-editor :deep(.ProseMirror) { min-height:240px; box-sizing:border-box; padding:12px 14px; outline:none; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); }
+.tt-editor :deep(.ProseMirror) { flex:1; min-height:240px; box-sizing:border-box; padding:16px 18px; outline:none; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); }
 .tt-editor :deep(.ProseMirror p) { margin:0 0 0.6em; }
 .tt-editor :deep(.ProseMirror p:last-child) { margin-bottom:0; }
 .tt-editor :deep(.ProseMirror p.is-editor-empty:first-child::before) { content:attr(data-placeholder); float:left; height:0; pointer-events:none; color:var(--fg3); }

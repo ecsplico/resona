@@ -88,6 +88,14 @@ mockNuxtImport("useRecorder", () => () => ({
 	resume: vi.fn(),
 }));
 
+const exporter = vi.hoisted(() => ({
+	toText: vi.fn(() => "text"),
+	copy: vi.fn(async () => {}),
+	downloadText: vi.fn(),
+	downloadMarkdown: vi.fn(),
+}));
+mockNuxtImport("useExport", () => () => exporter);
+
 function baseRecording(over: Partial<Recording> = {}): Recording {
 	return {
 		id: "rec-1",
@@ -218,11 +226,53 @@ describe("recording detail page", () => {
 		expect(w.find("[data-testid=\"transcript-edit\"]").exists()).toBe(true);
 	});
 
-	it("marks the review status ready via the data store", async () => {
+	it("review switch is a radiogroup that sets the review state via the data store", async () => {
 		const w = await mountSuspended(RecordingPage);
-		await w.find("[data-testid=\"review-ready\"]").trigger("click");
-		await w.vm.$nextTick();
-		expect(store.updateRecording).toHaveBeenCalledWith("rec-1", { review_status: "ready" });
+		expect(w.find("[role=\"radiogroup\"]").exists()).toBe(true);
+		const editing = w.find("[data-testid=\"review-editing\"]");
+		const ready = w.find("[data-testid=\"review-ready\"]");
+		expect(editing.attributes("aria-checked")).toBe("true");
+		expect(ready.text()).toBe("Freigegeben");
+		expect(w.text()).not.toContain("Fertig");
+		await ready.trigger("click");
+		await vi.waitFor(() => expect(store.updateRecording).toHaveBeenCalledWith("rec-1", { review_status: "ready" }));
+		await nextTick();
+		expect(w.find("[data-testid=\"review-ready\"]").attributes("aria-checked")).toBe("true");
+	});
+
+	it("export menu opens and both items export, Escape closes it", async () => {
+		const w = await mountSuspended(RecordingPage, { attachTo: document.body });
+		expect(w.find("[data-testid=\"export-txt\"]").exists()).toBe(false);
+		await w.find("[data-testid=\"export-menu\"]").trigger("click");
+		await w.find("[data-testid=\"export-txt\"]").trigger("click");
+		expect(exporter.downloadText).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1" }), expect.objectContaining({ text: "Hallo Welt" }));
+		expect(w.find("[data-testid=\"export-txt\"]").exists()).toBe(false);
+
+		await w.find("[data-testid=\"export-menu\"]").trigger("click");
+		await w.find("[data-testid=\"export-md\"]").trigger("click");
+		expect(exporter.downloadMarkdown).toHaveBeenCalledTimes(1);
+
+		await w.find("[data-testid=\"export-menu\"]").trigger("click");
+		await w.find("[role=\"menu\"]").trigger("keydown", { key: "Escape" });
+		expect(w.find("[role=\"menu\"]").exists()).toBe(false);
+		expect(document.activeElement).toBe(w.find("[data-testid=\"export-menu\"]").element);
+		w.unmount();
+	});
+
+	it("save button is disabled when clean and enabled when dirty", async () => {
+		const w = await mountSuspended(RecordingPage);
+		const save = () => w.find("[data-testid=\"save-transcript\"]");
+		expect(save().attributes("disabled")).toBeDefined();
+		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+		await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+		expect(save().attributes("disabled")).toBeUndefined();
+		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
+	});
+
+	it("shows the back button and no state chip for a transcribed recording on phones", async () => {
+		const w = await mountSuspended(RecordingPage);
+		expect(w.find("[data-testid=\"back\"]").exists()).toBe(true);
+		expect(w.text()).not.toContain("Transkribiert…");
 	});
 
 	it("push-to-talk: inserts placeholder on press, records, transcribes via REST, replaces placeholder", async () => {

@@ -10,6 +10,31 @@ const cfg = useRuntimeConfig().public;
 
 const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
 const store = useDataStore();
+const { paneInLayout } = useShell();
+
+function formatDuration(seconds?: number): string {
+	if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "";
+	const total = Math.round(seconds);
+	return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, "0")}`;
+}
+
+function formatDate(iso?: string): string {
+	if (!iso) return "";
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return "";
+	return date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+const metaLine = computed(() => {
+	const r = recording.value;
+	if (!r) return "";
+	return [
+		formatDate(r.date_created),
+		formatDuration(r.duration_seconds),
+		r.language ? r.language.toUpperCase() : "",
+		r.profile ?? "",
+	].filter(part => part.length > 0).join(" · ");
+});
 
 // Player source resolves asynchronously through the data store (Directus asset
 // URL or a local object URL); refresh it only when the recording's audio
@@ -343,37 +368,44 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="detail">
-		<HAppBar
-			tone="light"
-			:title="recording?.title ?? 'Aufnahme'"
-		>
-			<template #leading>
-				<HIconButton
-					tone="cream"
-					aria-label="Zurück"
-					data-testid="back"
-					@click="goBack"
+	<div
+		class="detail"
+		:class="{ 'detail--pane': paneInLayout }"
+	>
+		<header class="detail__bar">
+			<button
+				v-if="!paneInLayout"
+				type="button"
+				class="detail__icon"
+				aria-label="Zurück"
+				title="Zurück"
+				data-testid="back"
+				@click="goBack"
+			>
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
 				>
-					<svg
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M15 18l-6-6 6-6" />
-					</svg>
-				</HIconButton>
-			</template>
-			<template #trailing>
-				<HIconButton
-					tone="cream"
+					<path d="M15 18l-6-6 6-6" />
+				</svg>
+			</button>
+			<span
+				class="detail__bar-title"
+				data-testid="bar-title"
+			>{{ recording?.title || "Aufnahme" }}</span>
+			<div class="detail__actions">
+				<button
+					type="button"
+					class="detail__icon"
 					aria-label="Kopieren"
+					title="Kopieren"
 					data-testid="copy"
 					@click="copyTranscript"
 				>
@@ -397,65 +429,16 @@ onUnmounted(() => {
 						/>
 						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
 					</svg>
-				</HIconButton>
-				<HIconButton
-					tone="cream"
-					aria-label="Als TXT exportieren"
-					data-testid="export-txt"
-					@click="exportTxt"
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-						<polyline points="14 2 14 8 20 8" />
-						<line
-							x1="9"
-							y1="13"
-							x2="15"
-							y2="13"
-						/>
-						<line
-							x1="9"
-							y1="17"
-							x2="13"
-							y2="17"
-						/>
-					</svg>
-				</HIconButton>
-				<HIconButton
-					tone="cream"
-					aria-label="Als Markdown exportieren"
-					data-testid="export-md"
-					@click="exportMd"
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-						<polyline points="14 2 14 8 20 8" />
-						<polyline points="8 18 8 13 10 15 12 13 12 18" />
-					</svg>
-				</HIconButton>
-				<HIconButton
-					tone="cream"
+				</button>
+				<ExportMenu
+					@txt="exportTxt"
+					@md="exportMd"
+				/>
+				<button
+					type="button"
+					class="detail__icon detail__icon--danger"
 					aria-label="Löschen"
+					title="Löschen"
 					data-testid="delete"
 					@click="askDelete"
 				>
@@ -486,13 +469,14 @@ onUnmounted(() => {
 							y2="17"
 						/>
 					</svg>
-				</HIconButton>
-			</template>
-		</HAppBar>
+				</button>
+			</div>
+		</header>
 
 		<div
 			v-if="confirmingDelete"
 			class="detail__confirm"
+			role="alert"
 			data-testid="confirm-bar"
 		>
 			<span class="detail__confirm-text">Diese Aufnahme löschen?</span>
@@ -531,25 +515,42 @@ onUnmounted(() => {
 			</p>
 
 			<template v-else-if="recording">
-				<div class="detail__chips">
-					<StatusChip :status="recording.status" />
-					<HChip
-						v-if="canEdit"
-						:tone="reviewStatus === 'ready' ? 'success' : 'neutral'"
-						data-testid="review-chip"
+				<section class="detail__meta">
+					<h1 class="detail__title">
+						{{ recording.title || "Aufnahme" }}
+					</h1>
+					<p
+						v-if="metaLine"
+						class="detail__metaline tabular"
+						data-testid="meta-line"
 					>
-						{{ reviewStatus === "ready" ? "Freigegeben" : "In Bearbeitung" }}
-					</HChip>
-				</div>
+						{{ metaLine }}
+					</p>
+					<div
+						v-if="recording.status !== 'done' || canEdit"
+						class="detail__state"
+					>
+						<StatusChip
+							v-if="recording.status !== 'done'"
+							:status="recording.status"
+						/>
+						<ReviewSwitch
+							v-if="canEdit"
+							:model-value="reviewStatus ?? 'editing'"
+							:disabled="settingStatus"
+							@update:model-value="setReviewStatus"
+						/>
+					</div>
+				</section>
 
 				<div
 					v-if="recording.status === 'error'"
 					class="detail__banner"
 					:class="{ 'detail__banner--offline': offlineError }"
+					role="alert"
 					data-testid="error-banner"
 				>
 					<svg
-						v-if="offlineError"
 						class="detail__banner-icon"
 						width="20"
 						height="20"
@@ -561,13 +562,34 @@ onUnmounted(() => {
 						stroke-linejoin="round"
 						aria-hidden="true"
 					>
-						<path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3" />
-						<line
-							x1="1"
-							y1="1"
-							x2="23"
-							y2="23"
-						/>
+						<template v-if="offlineError">
+							<path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3" />
+							<line
+								x1="1"
+								y1="1"
+								x2="23"
+								y2="23"
+							/>
+						</template>
+						<template v-else>
+							<circle
+								cx="12"
+								cy="12"
+								r="10"
+							/>
+							<line
+								x1="12"
+								y1="8"
+								x2="12"
+								y2="12"
+							/>
+							<line
+								x1="12"
+								y1="16"
+								x2="12.01"
+								y2="16"
+							/>
+						</template>
 					</svg>
 					<div class="detail__banner-text">
 						{{ recording.error_message ?? "Bei der Transkription ist ein Fehler aufgetreten." }}
@@ -596,69 +618,80 @@ onUnmounted(() => {
 				</p>
 
 				<template v-if="canEdit">
-					<div class="detail__dictate">
-						<button
-							type="button"
-							class="detail__ptt"
-							:class="{
-								'detail__ptt--active': pttState === 'recording',
-								'detail__ptt--busy': pttState === 'transcribing',
-							}"
-							:disabled="pttState === 'transcribing'"
-							data-testid="push-to-talk"
-							:aria-pressed="pttState === 'recording'"
-							:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
-							@pointerdown.prevent="onPttDown"
-							@pointerup="onPttUp"
-							@pointercancel="onPttUp"
-						>
-							<svg
-								width="18"
-								height="18"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								aria-hidden="true"
+					<div class="detail__toolbar">
+						<div class="detail__tools">
+							<button
+								type="button"
+								class="detail__ptt"
+								:class="{
+									'detail__ptt--active': pttState === 'recording',
+									'detail__ptt--busy': pttState === 'transcribing',
+								}"
+								:disabled="pttState === 'transcribing'"
+								data-testid="push-to-talk"
+								:aria-pressed="pttState === 'recording'"
+								:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
+								@pointerdown.prevent="onPttDown"
+								@pointerup="onPttUp"
+								@pointercancel="onPttUp"
 							>
-								<rect
-									x="9"
-									y="2"
-									width="6"
-									height="12"
-									rx="3"
-								/>
-								<path d="M5 10a7 7 0 0 0 14 0" />
-								<line
-									x1="12"
-									y1="17"
-									x2="12"
-									y2="21"
-								/>
-							</svg>
-							<span>{{
-								pttState === "recording" ? "Aufnahme… loslassen zum Transkribieren"
-								: pttState === "transcribing" ? "Transkribiert…"
-									: `Diktieren (${pttKeyLabel} halten)`
-							}}</span>
-						</button>
-						<p
-							v-if="pttError"
-							class="detail__error"
-							data-testid="dictate-error"
-						>
-							{{ pttError }}
-						</p>
+								<svg
+									width="18"
+									height="18"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"
+								>
+									<rect
+										x="9"
+										y="2"
+										width="6"
+										height="12"
+										rx="3"
+									/>
+									<path d="M5 10a7 7 0 0 0 14 0" />
+									<line
+										x1="12"
+										y1="17"
+										x2="12"
+										y2="21"
+									/>
+								</svg>
+								<span>{{
+									pttState === "recording" ? "Aufnahme… loslassen zum Transkribieren"
+									: pttState === "transcribing" ? "Transkribiert…"
+										: `Diktieren (${pttKeyLabel} halten)`
+								}}</span>
+							</button>
+						</div>
+						<div class="detail__save">
+							<span
+								class="detail__save-state"
+								:class="{ 'detail__save-state--dirty': dirty }"
+								aria-live="polite"
+								data-testid="save-state"
+							>{{ dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
+							<HButton
+								variant="primary"
+								:disabled="edit.saving.value || pttState !== 'idle' || !dirty"
+								data-testid="save-transcript"
+								@click="saveTranscript"
+							>
+								{{ edit.saving.value ? "Speichert…" : "Speichern" }}
+							</HButton>
+						</div>
 					</div>
-
-					<TranscriptEditor
-						ref="editorRef"
-						v-model="edit.text.value"
-						data-testid="transcript-edit"
-						placeholder="Noch kein Transkript – hier tippen oder diktieren."
-					/>
+					<p
+						v-if="pttError"
+						class="detail__error"
+						data-testid="dictate-error"
+					>
+						{{ pttError }}
+					</p>
 					<p
 						v-if="edit.error.value"
 						class="detail__error"
@@ -666,37 +699,14 @@ onUnmounted(() => {
 					>
 						{{ edit.error.value }}
 					</p>
-					<div class="detail__edit-actions">
-						<div
-							class="detail__review"
-							role="group"
-							aria-label="Status"
-						>
-							<HButton
-								variant="secondary"
-								:disabled="settingStatus || reviewStatus === 'editing'"
-								data-testid="review-editing"
-								@click="setReviewStatus('editing')"
-							>
-								In Bearbeitung
-							</HButton>
-							<HButton
-								variant="secondary"
-								:disabled="settingStatus || reviewStatus === 'ready'"
-								data-testid="review-ready"
-								@click="setReviewStatus('ready')"
-							>
-								Fertig
-							</HButton>
-						</div>
-						<HButton
-							variant="primary"
-							:disabled="edit.saving.value || pttState !== 'idle' || !dirty"
-							data-testid="save-transcript"
-							@click="saveTranscript"
-						>
-							{{ edit.saving.value ? "Speichert…" : "Speichern" }}
-						</HButton>
+
+					<div class="detail__surface">
+						<TranscriptEditor
+							ref="editorRef"
+							v-model="edit.text.value"
+							data-testid="transcript-edit"
+							placeholder="Noch kein Transkript – hier tippen oder diktieren."
+						/>
 					</div>
 				</template>
 			</template>
@@ -704,6 +714,7 @@ onUnmounted(() => {
 
 		<HPlayerDock
 			v-if="recording?.audio_file && audioSrc"
+			class="detail__dock"
 			:src="audioSrc"
 			:fallback-duration="recording.duration_seconds ?? undefined"
 		/>
@@ -711,24 +722,42 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.detail { min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }
+/* Phone: the page owns the viewport (no shell header on this route). Desktop pane:
+   the page fills the scrolling right pane (a flex column); the dock is sticky to it. */
+.detail { min-height:100dvh; display:flex; flex-direction:column; background:var(--bg); }
+.detail--pane { min-height:0; flex:1 0 auto; }
+.detail__bar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:10px 12px 10px 16px; background:var(--bg); border-bottom:1px solid var(--border); }
+.detail__bar-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-body); font-size:var(--fs-md); font-weight:600; color:var(--fg1); }
+.detail__actions { display:flex; align-items:center; gap:2px; }
+.detail__icon { width:38px; height:38px; flex:0 0 auto; border:none; border-radius:50%; background:transparent; color:var(--crust-deep); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background var(--motion-fast) var(--motion-ease); }
+.detail__icon:hover { background:var(--cream-deep); }
+.detail__icon:active { background:var(--crust-soft); }
+.detail__icon--danger:hover { background:var(--tomato-soft); color:var(--tomato-deep); }
 .detail__confirm { display:flex; align-items:center; gap:12px; padding:12px 20px; background:var(--tomato-soft); }
 .detail__confirm-text { flex:1; font-family:var(--font-body); font-size:14px; font-weight:600; color:var(--tomato-deep); }
 .detail__confirm-actions { display:flex; gap:8px; }
-.detail__body { flex:1; display:flex; flex-direction:column; gap:14px; padding:20px; }
+.detail__body { flex:1; width:100%; max-width:72ch; margin:0 auto; box-sizing:border-box; display:flex; flex-direction:column; gap:16px; padding:20px 20px 24px; }
+.detail__meta { display:flex; flex-direction:column; gap:6px; }
+.detail__title { margin:0; font-family:var(--font-display); font-size:var(--fs-xl,22px); font-weight:600; line-height:1.25; color:var(--fg1); overflow-wrap:anywhere; }
+.detail__metaline { margin:0; font-family:var(--font-mono); font-size:12px; color:var(--fg3); font-variant-numeric:tabular-nums; }
+.detail__state { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px; }
 .detail__hint { color:var(--fg3); font-size:15px; margin:0; }
 .detail__error { color:var(--danger); font-size:14px; margin:0; }
-.detail__banner { display:flex; align-items:flex-start; gap:10px; background:var(--tomato-soft); color:var(--tomato-deep); border-radius:var(--r-md); padding:14px 16px; font-family:var(--font-body); font-size:14px; }
+.detail__banner { display:flex; align-items:center; flex-wrap:wrap; gap:12px; background:var(--tomato-soft); color:var(--tomato-deep); border-radius:12px; padding:12px 14px; font-family:var(--font-body); font-size:14px; }
 .detail__banner--offline { background:var(--butter-soft); color:#8B6200; }
-.detail__banner-icon { flex-shrink:0; margin-top:1px; }
-.detail__banner-text { flex:1; display:flex; flex-direction:column; gap:4px; }
+.detail__banner-icon { flex-shrink:0; align-self:flex-start; margin-top:1px; }
+.detail__banner-text { flex:1; min-width:180px; display:flex; flex-direction:column; gap:4px; }
 .detail__banner-hint { font-size:13px; opacity:0.85; }
-.detail__transcript { white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); margin:0; }
-.detail__edit-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
-.detail__review { display:flex; gap:8px; margin-right:auto; }
-.detail__chips { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.detail__dictate { display:flex; flex-direction:column; gap:8px; }
-.detail__ptt { display:inline-flex; align-items:center; gap:8px; align-self:flex-start; padding:10px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--surface,transparent); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; }
+.detail__toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.detail__tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.detail__save { display:flex; align-items:center; gap:12px; margin-left:auto; }
+.detail__save-state { font-family:var(--font-body); font-size:13px; color:var(--fg3); }
+.detail__save-state--dirty { color:var(--accent-ink,var(--accent)); font-weight:600; }
+.detail__surface { flex:1; display:flex; flex-direction:column; min-height:240px; }
+.detail__surface > :deep(*) { flex:1; }
+.detail__ptt { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--white); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; transition:background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
+.detail__ptt:hover:not(:disabled) { border-color:var(--accent); }
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
 .detail__ptt--busy { opacity:0.65; cursor:default; }
+.detail__dock { position:sticky; bottom:0; z-index:5; }
 </style>
