@@ -1,21 +1,32 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { nextTick } from "vue";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import TranscriptEditor from "~/components/TranscriptEditor.vue";
 
+// Every editor must be destroyed before the file's DOM environment is torn down:
+// ProseMirror's DOMObserver flushes on a timer, and a live editor whose timer fires
+// after teardown throws `document is not defined` and fails the run.
+const mounted: { unmount: () => void }[] = [];
+
+async function mountEditor(modelValue: string) {
+	const w = await mountSuspended(TranscriptEditor, { props: { modelValue } });
+	mounted.push(w);
+	return w;
+}
+
+afterEach(() => {
+	for (const w of mounted.splice(0)) w.unmount();
+});
+
 describe("TranscriptEditor (TipTap)", () => {
 	it("renders the initial plain text into the editor", async () => {
-		const w = await mountSuspended(TranscriptEditor, {
-			props: { modelValue: "Hallo Welt" },
-		});
+		const w = await mountEditor("Hallo Welt");
 		await nextTick();
 		expect(w.text()).toContain("Hallo Welt");
 	});
 
 	it("emits plain text (one paragraph per line) when the document changes", async () => {
-		const w = await mountSuspended(TranscriptEditor, {
-			props: { modelValue: "erste zeile\nzweite zeile" },
-		});
+		const w = await mountEditor("erste zeile\nzweite zeile");
 		await nextTick();
 		const vm = w.vm as unknown as { insertText: (t: string) => void };
 		vm.insertText("dazu");
@@ -37,9 +48,7 @@ describe("TranscriptEditor (TipTap)", () => {
 	}
 
 	it("appendParagraph adds a paragraph at the end and keeps the caret where it was", async () => {
-		const w = await mountSuspended(TranscriptEditor, {
-			props: { modelValue: "erste zeile\nzweite zeile" },
-		});
+		const w = await mountEditor("erste zeile\nzweite zeile");
 		await nextTick();
 		const vm = w.vm as unknown as EditorApi;
 		vm.appendParagraph("neuer teil");
@@ -53,13 +62,13 @@ describe("TranscriptEditor (TipTap)", () => {
 	});
 
 	it("appendParagraph fills an empty document or a trailing empty line without a blank paragraph", async () => {
-		const empty = await mountSuspended(TranscriptEditor, { props: { modelValue: "" } });
+		const empty = await mountEditor("");
 		await nextTick();
 		(empty.vm as unknown as EditorApi).appendParagraph("neuer teil");
 		await nextTick();
 		expect(lastEmit(empty)).toBe("neuer teil");
 
-		const trailing = await mountSuspended(TranscriptEditor, { props: { modelValue: "erster absatz\n" } });
+		const trailing = await mountEditor("erster absatz\n");
 		await nextTick();
 		(trailing.vm as unknown as EditorApi).appendParagraph("neuer teil");
 		await nextTick();
