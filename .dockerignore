@@ -34,3 +34,7 @@ Thumbs.db
 
 # uv cache
 .cache/
+
+# The PWA builds from its own context (apps/resona-pwa); keep its
+# node_modules/.nuxt/.output out of the root build context.
+apps/resona-pwa/

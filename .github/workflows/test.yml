@@ -3,7 +3,10 @@ name: Test
 on:
   push:
     branches: [main]
+    # PWA-only changes run in pwa.yml.
+    paths-ignore: ['apps/resona-pwa/**']
   pull_request:
+    paths-ignore: ['apps/resona-pwa/**']
 
 jobs:
   pytest:

@@ -1,0 +1,61 @@
+name: PWA
+
+# apps/resona-pwa has its own toolchain (bun + Nuxt, and a uv-managed worker),
+# so it gets its own workflow, scoped to its directory.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/resona-pwa/**'
+      - '.github/workflows/pwa.yml'
+  pull_request:
+    paths:
+      - 'apps/resona-pwa/**'
+      - '.github/workflows/pwa.yml'
+
+defaults:
+  run:
+    working-directory: apps/resona-pwa
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+  worker:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/resona-pwa/worker
+    steps:
+      - uses: actions/checkout@v5
+
+      # setup-uv dropped moving major tags in v8 — pin a specific version.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/resona-pwa/worker/uv.lock
+
+      - name: Test
+        run: uv run --python 3.12 pytest -q

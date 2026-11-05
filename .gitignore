@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.*.example
 
 # ── Runtime data (per-deployment; resona-api creates these on demand) ──
 data/
@@ -11,6 +12,8 @@ md/
 inbox/
 # ...but never the resona-api db package (schema.py, models.py)
 !packages/api/src/resona_api/db/
+# ...nor the PWA's client-side data layer (app/data/*.ts)
+!apps/resona-pwa/app/data/
 
 # ── Model weights / benchmark artifacts ─────────────────────────────
 # lightning-whisper-mlx downloads here when LIGHTNING_MLX_MODELS_DIR is unset
@@ -42,6 +45,8 @@ site/
 .ruff_cache/
 .cache/
 .worktrees/
+# Local agent scratch (plan autosave, drafts). Tickets live on GitHub.
+.scratch/
 
 # ── Model caches (kept out of repo even if a user drops them in) ────
 models/
@@ -70,3 +75,6 @@ Thumbs.db
 # .gitignore at build time. An `src/` rule produces empty wheels.
 whisper-*
 .claude/settings.local.json
+
+# ── omp plan-mode autosave (session drafts; durable plans are epic issues) ──
+.omp/plans/

@@ -1,6 +1,10 @@
 default:
     @just --list
 
+# Install JS dependencies (runs `nuxt prepare`)
+install:
+    bun install
+
 # Start the data layer (Directus + worker, no PWA container)
 backend:
     docker compose -f docker-compose.backend.yml up -d
@@ -17,6 +21,15 @@ pwa-docker:
 full:
     bun run setup
 
-# Run the test suite
+# Run the frontend test suite
 test:
     bun run test
+
+# Run the project worker's tests (own uv environment in worker/)
+test-worker:
+    cd worker && uv run pytest -q
+
+# Lint and type-check the frontend
+check:
+    bun run lint
+    bun run typecheck

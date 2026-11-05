@@ -12,13 +12,17 @@ resona/
 ├── uv.lock
 ├── docker-compose.resona.yml
 ├── docker-compose.coolify.yml ← public hub on Coolify (hub + hosted MCP, Caddy labels, /data volume); docs/server/coolify.md
+├── docker-compose.cpu-standalone.yml ← self-contained CPU-only api + faster-whisper for a single host deployed from one compose path
+├── docker-compose.mac.yml  ← Apple Silicon single host: dockerized api + native engine (scripts/run-native-engine.sh); docs/server/mac-stack.md
 ├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member; scores via resona-eval)
 ├── eval/                   ← evaluation corpus (eval/corpus, synthetic, CC0) + promoted baselines (eval/baselines.json)
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
-│   └── resona-mcp/         ← resona-mcp: MCP server (stdio + hosted Streamable HTTP /mcp) over the hub job API
-│                             (no bundled web UI; browser use goes through the Resona PWA standalone mode)
+│   ├── resona-mcp/         ← resona-mcp: MCP server (stdio + hosted Streamable HTTP /mcp) over the hub job API
+│   │                         (no bundled web UI; browser use goes through the Resona PWA standalone mode)
+│   └── resona-pwa/         ← Resona PWA: Nuxt 4 SPA (bun) + Directus data layer + resona-project-worker. Own toolchain,
+│                             own CLAUDE.md; NOT a uv workspace member
 └── packages/
     ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
     ├── engine-server/      ← resona-engine-server: FastAPI HTTP/WS app, :7001. Depends on asr-core.
@@ -40,11 +44,11 @@ resona/
     └── client/             ← resona-client: httpx client library
 ```
 
-- `apps/` contains end-user applications (CLI tool, web front-end).
+- `apps/` contains end-user applications (CLI tool, worker, MCP server, PWA).
 - `packages/` contains the services and libraries they depend on.
 - Each Python package follows src-layout: `<root>/src/<module>/`.
 
-Directus and the transcribe worker live in the separate `resona-pwa` repo; resona exposes only resona-api + engines.
+`apps/resona-pwa/` is a self-contained JS/TS app with its own lockfile (`bun.lock`), compose files and Python worker (`worker/`, own `uv.lock`, excluded from the uv workspace and from root pytest). It talks to resona-api over HTTP only: never import `packages/*` from it, and never import it from Python. Its conventions live in `apps/resona-pwa/CLAUDE.md`. Directus and the project worker live there; the Python side exposes only resona-api + engines.
 
 ## The stateless engine contract
 
@@ -463,7 +467,11 @@ uv run pytest apps/resona-mcp/tests/               # mcp server
 uv run pytest packages/postprocess/tests/          # postprocess
 uv run pytest packages/tts-local/tests/            # local TTS engines
 uv run pytest -k test_transcribe                   # one test
+just pwa test                                      # PWA (vitest, from apps/resona-pwa)
+just pwa test-worker                               # PWA project worker (own uv env)
 ```
+
+Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the PWA and its worker run through `just pwa …` or from `apps/resona-pwa/`.
 
 Mocking strategy:
 - resona-engine-server: mock the transcriber at `resona_engine_server.app.get_transcriber`
@@ -535,3 +543,17 @@ See [docs/configuration/environment.md](docs/configuration/environment.md) for t
 - Do not add `ScanInboxTask` back — inbox scanning is done by `resona watch`
 - Do not add a synchronous `/asr` endpoint to resona-api — the engine owns direct transcription
 - Do not use `os.environ[]` — use `config()` from python-decouple
+
+## Agent skills
+
+### Issue tracker
+
+Issues, plans and tickets live as GitHub issues on `ecsplico/resona` (one tracker for the whole monorepo, `gh` CLI); nothing is tracked in the filesystem. An approved plan becomes an `epic` issue titled `<XXX>: …`; its `i-<xxx>-…` tickets are native sub-issues with native `blocked_by` dependencies. The repo is public: no hosts, credentials or patient data in issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default triage labels, plus `epic` and at least one `area:*` label per issue. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the root, created lazily. See `docs/agents/domain.md`.

@@ -1,5 +1,8 @@
-# whisper-server task runner
+# Resona monorepo task runner
 # https://github.com/casey/just
+
+# PWA recipes (apps/resona-pwa/justfile): `just pwa test`, `just pwa backend`, …
+mod pwa 'apps/resona-pwa'
 
 # Show available recipes
 default:
@@ -151,6 +154,20 @@ up-voxtral:
 up-cpu:
     docker compose -f docker-compose.resona.yml -f docker-compose.cpu.yml \
         --profile faster-whisper up -d
+
+# ── Mac single-host stack (docs/server/mac-stack.md) ──────────────────
+
+# Native MLX engine on the Apple GPU, :7720 (run in its own terminal)
+mac-engine:
+    scripts/run-native-engine.sh
+
+# Dockerized api on :7710 talking to the native engine
+mac-up:
+    docker compose -f docker-compose.mac.yml up -d --build
+
+# Stop the Mac stack (incl. the optional CPU engine)
+mac-down:
+    docker compose -f docker-compose.mac.yml --profile cpu-engine down
 
 # ── GHCR pre-built images ─────────────────────────────────────────────
 # Once a tagged release runs the release workflow, images are available at

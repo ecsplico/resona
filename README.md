@@ -1,6 +1,20 @@
 # Resona
 
-Resona is a modular audio transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation but usable for any language. Built as a uv workspace monorepo.
+Resona is a modular audio transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation but usable for any language.
+
+## Repository layout
+
+One monorepo, two toolchains:
+
+| Path | Toolchain | What |
+|------|-----------|------|
+| `packages/*` | uv workspace (Python) | engines, engine server, resona-api hub, postprocessing, client, eval |
+| `apps/resona-cli`, `apps/resona-worker`, `apps/resona-mcp` | uv workspace (Python) | CLI, pull worker, MCP server |
+| `apps/resona-pwa` | bun + Nuxt (own lockfile), `worker/` own uv env | browser PWA + Directus data layer; talks to resona-api over HTTP only |
+| `docker-compose.*.yml`, `scripts/` | Docker / shell | deployments (GPU, CPU, Coolify hub, Apple Silicon single host) |
+| `docs/`, `eval/`, `benchmarks/` | mkdocs / data | documentation site, evaluation corpus, benchmarks |
+
+`just --list` shows the Python recipes, `just pwa --list` the PWA ones. Issues and tickets live on [GitHub Issues](https://github.com/ecsplico/resona/issues), one `area:*` label per component.
 
 ## Architecture
 
@@ -73,6 +87,23 @@ export RESONA_API_KEY=<token>
 # queued jobs need an approved resona-worker; see docs/server/full-stack.md
 resona transcribe recording.mp3
 ```
+
+### Apple Silicon single host
+
+```bash
+just mac-engine   # terminal 1: native MLX engine on :7720 (GPU)
+just mac-up       # terminal 2: dockerized api on :7710
+```
+
+See [docs/server/mac-stack.md](docs/server/mac-stack.md).
+
+### PWA
+
+```bash
+cd apps/resona-pwa && bun install && bun run dev
+```
+
+See [apps/resona-pwa/README.md](apps/resona-pwa/README.md) for the Directus data layer and deployment.
 
 For end-user install (`uv tool install`), PyTorch extras, macOS, and per-persona variants see [Installation](https://ecsplico.github.io/resona/getting-started/installation/).
 

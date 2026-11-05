@@ -7,9 +7,13 @@ SPA (`ssr: false`) for medical dictation. Users record or upload audio, it gets
 transcribed by the backend, and they review/edit/export the result. Built on the Hearth
 design system (plain Vue + Tailwind v4 CSS tokens — no component library).
 
-**This repo is standalone.** It is NOT part of the Python monorepo. It talks to its
-backends over HTTP/WebSocket only. Never import from or reach into the Python monorepo —
-communicate over HTTP exclusively.
+**This app lives in the resona monorepo at `apps/resona-pwa/`, but it is a separate
+deployable with its own toolchain** (bun, own compose files, own uv env for `worker/`).
+It talks to its backends over HTTP/WebSocket only. Never import from `packages/*` or any
+other Python code in the monorepo, and nothing there imports from here — communicate over
+HTTP exclusively. Run every command below from `apps/resona-pwa/` (or `just pwa <recipe>`
+from the monorepo root). Issues and tickets live on GitHub (`ecsplico/resona`, label
+`area:pwa`); see the root `CLAUDE.md` → Agent skills.
 
 The frontend is otherwise a pure client-rendered SPA. The **one** sanctioned server-side
 exception is a thin Nitro layer (`server/api/**`) used **only** to hold confidential OAuth
@@ -26,17 +30,18 @@ Two stacks are involved. See **README.md → Quick start** for the canonical ste
 short:
 
 ```bash
-# Transcription: an EXTERNAL Resona hub (resona monorepo or Coolify
-# https://resona.ecsplico.de). This repo runs no engines.
+# Transcription: a Resona hub (resona-api from the monorepo root, e.g.
+# docker-compose.mac.yml on :7710, or Coolify https://resona.ecsplico.de).
+# This app runs no engines.
 
-# Data layer — from this repo (Directus + worker, no PWA container):
+# Data layer — from apps/resona-pwa (Directus + worker, no PWA container):
 cp .env.stack.example .env  # Directus + worker secrets (NOT the frontend .env)
 docker compose -f docker-compose.backend.yml up -d   #   directus :7700 · worker
 
 # Or bring up the full stack (PWA + data layer) in one command:
 # bun run setup   # generates secrets, runs docker-compose.yml
 
-# Frontend — from this repo:
+# Frontend — from apps/resona-pwa:
 bun install
 cp .env.example .env        # frontend NUXT_PUBLIC_* vars (NOT the stack .env)
 bun run dev                 # → http://localhost:3000
@@ -61,8 +66,9 @@ CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 ### Worker
 
 The `resona-project-worker` lives in `worker/` (package `resona_project_worker`) — a
-standalone Python service (`httpx` + `python-decouple`, no monorepo coupling). It bridges
-**this repo's** Directus → the external Resona hub: `pending` recordings and documents are
+standalone Python service (`httpx` + `python-decouple`, own `uv.lock`, not a member of the
+monorepo's uv workspace, no imports from `packages/*`). It bridges
+**this app's** Directus → the Resona hub: `pending` recordings and documents are
 uploaded and submitted as durable hub jobs (`POST /v1/uploads` + `POST /v1/jobs`, job id
 stored in `hub_job_id`), polled, and written back (recordings → `transcripts` row from the
 result `markdown`; documents → `markdown` + `pages`), then the hub job is deleted. Same
@@ -313,7 +319,7 @@ for PWA-manifest/service-worker changes).
 
 ## What NOT to do
 
-- Don't import from / reach into the Python monorepo — HTTP only.
+- Don't import from / reach into the monorepo's Python code (`packages/*`, other `apps/*`) — HTTP only.
 - Don't put server logic in the PWA beyond the one sanctioned thin Nitro OAuth layer
   (`server/api/**`, confidential Google token exchange/refresh only) — it's otherwise a
   pure SPA: no page rendering (`ssr: false`), no business logic server-side.

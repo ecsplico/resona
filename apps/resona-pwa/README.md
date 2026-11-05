@@ -9,11 +9,13 @@ logic of its own.
 
 ## Quick start
 
-The platform is split across **two stacks**:
+This app lives at `apps/resona-pwa/` in the resona monorepo; run the commands below from
+this directory. The platform is split across **two stacks**:
 
-1. **Resona hub** — **external**, from the resona monorepo (local) or Coolify
-   (`https://resona.ecsplico.de`). This repo runs no transcription engines.
-2. **PWA data layer** — lives in **this repo**: Directus + the `project-worker`
+1. **Resona hub** — resona-api from the monorepo root (e.g. `docker-compose.mac.yml`,
+   see `docs/server/mac-stack.md`) or Coolify (`https://resona.ecsplico.de`). This app
+   runs no transcription engines.
+2. **PWA data layer** — lives **here**: Directus + the `project-worker`
    (`resona-project-worker`), plus the Nuxt frontend.
 
 For **local development** you can bring up the data layer and the PWA container with
@@ -21,7 +23,7 @@ one command — see [Full local stack](#full-local-stack-one-command).
 
 ### 1. Resona hub (external)
 
-Run the hub from the resona monorepo (see its README) or use the Coolify deployment.
+Run the hub from the monorepo root (see its README) or use the Coolify deployment.
 Issue a client token for your organization there
 (`resona-admin credential issue --organization <org> --role client`). The hub's
 `CORS_ORIGINS` must allow the PWA origin (e.g. `http://localhost:3000`).
@@ -115,7 +117,8 @@ image runs the **Nitro server** (`nuxt build` → `node .output/server`), not st
 
 ## Architecture
 
-Resona PWA is a **standalone repository** (it is not part of the Python monorepo) and
+Resona PWA is a **separate deployable inside the resona monorepo** (`apps/resona-pwa/`,
+own toolchain, no imports from the Python packages) and
 communicates with two backend services over HTTP only:
 
 - **Directus** (`:7700`) — auth, data, and file storage via `@directus/sdk`. Holds the
@@ -171,13 +174,11 @@ while the app is open, and a hub device token (Einstellungen → Verbindung) is 
 
 The PWA requires both stacks running:
 
-1. **Directus** (this repo's compose stack) with the `recordings`, `transcripts` and
-   `documents` collections and the end-user role provisioned. See `directus/bootstrap.md` and the
-   platform design spec
-   `docs/superpowers/specs/2026-06-17-pwa-directus-platform-design.md`.
-2. **Resona hub** (external) — for push-to-talk and live transcription (and as the API
+1. **Directus** (this app's compose stack) with the `recordings`, `transcripts` and
+   `documents` collections and the end-user role provisioned. See `directus/bootstrap.md`.
+2. **Resona hub** — for push-to-talk and live transcription (and as the API
    the worker calls). Enter the device token under Einstellungen → Verbindung.
-3. **project-worker** (this repo's compose stack) — required for the **batch** and
+3. **project-worker** (this app's compose stack) — required for the **batch** and
    **document** paths; without it, uploaded/recorded files stay `pending` forever.
 
 In development, **CORS on both Directus and the hub must allow the PWA origin**
