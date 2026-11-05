@@ -28,6 +28,16 @@ uv run pytest -k test_transcribe
 uv run pytest -v packages/api/tests/test_endpoints.py
 ```
 
+Root `uv run pytest` collects only the uv workspace (`testpaths` in the root
+`pyproject.toml`). The PWA in `apps/resona-pwa` has its own toolchain and runs
+in its own CI workflow (`.github/workflows/pwa.yml`):
+
+```bash
+just pwa test          # vitest (bun run test)
+just pwa check         # eslint + nuxt typecheck
+just pwa test-worker   # project worker, own uv env in apps/resona-pwa/worker
+```
+
 ---
 
 ## Mocking strategy by package
