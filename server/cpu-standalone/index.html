@@ -1188,6 +1188,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#5-evaluate-and-promote-the-cpu-tuple" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Evaluate and promote the CPU tuple
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#add-the-pwa-data-layer" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2121,6 +2132,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#5-evaluate-and-promote-the-cpu-tuple" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Evaluate and promote the CPU tuple
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#add-the-pwa-data-layer" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2219,6 +2241,13 @@
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>PUT<span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$H</span><span class="s2">&quot;</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;If-Match: \&quot;</span><span class="k">$(</span>jq<span class="w"> </span>-r<span class="w"> </span>.revision<span class="w"> </span>settings.json<span class="k">)</span><span class="s2">\&quot;&quot;</span><span class="w"> </span>--data<span class="w"> </span>@body.json<span class="w"> </span>http://127.0.0.1:7710/v1/settings
 </code></pre></div>
+<h2 id="5-evaluate-and-promote-the-cpu-tuple">5. Evaluate and promote the CPU tuple<a class="headerlink" href="#5-evaluate-and-promote-the-cpu-tuple" title="Permanent link">&para;</a></h2>
+<p>Until an evaluation of <code>(cpu-private, cpu, &lt;release&gt;)</code> is promoted on this hub, production jobs stay <code>pending</code> with <code>queue_reason: release_not_approved</code>. From any machine with a checkout and the org_admin token:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">RESONA_API_URL</span><span class="o">=</span>&lt;hub<span class="w"> </span>URL&gt;<span class="w"> </span><span class="nv">RESONA_API_KEY</span><span class="o">=</span>&lt;org_admin<span class="w"> </span>token&gt;
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--profile<span class="w"> </span>cpu-private<span class="w"> </span>--platform<span class="w"> </span>cpu<span class="w"> </span>--remote<span class="w"> </span>--output-dir<span class="w"> </span>/tmp/resona-eval-cpu
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>promote<span class="w"> </span>&lt;evaluation-id&gt;<span class="w"> </span>--report<span class="w"> </span>/tmp/resona-eval-cpu/report.json
+</code></pre></div>
+<p>The first promotion on a hub needs only the absolute checks; see <a href="../../guide/evaluation/">Evaluation &amp; Baselines</a>.</p>
 <h2 id="add-the-pwa-data-layer">Add the PWA data layer<a class="headerlink" href="#add-the-pwa-data-layer" title="Permanent link">&para;</a></h2>
 <p>Directus and the project worker live in <code>apps/resona-pwa</code> (<code>docker-compose.backend.yml</code>). Point <code>RESONA_API_URL</code> at the hub (<code>http://host.docker.internal:7710</code> from that compose) and set <code>RESONA_API_KEY</code> to the client token. Each PWA device enters a client token under Einstellungen → Verbindung.</p>
 

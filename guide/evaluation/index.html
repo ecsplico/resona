@@ -2474,7 +2474,7 @@
 </ul>
 <p>A successful promotion approves the <code>(execution profile, platform, release)</code> tuple for production jobs. The CLI then pins the entry in <code>eval/baselines.json</code> under <code>&lt;execution_profile&gt;/&lt;platform&gt;</code>: corpus hash, release, runtime versions, normalization ids, model revisions and per-fixture metrics. Commit that file.</p>
 <h2 id="releases">Releases<a class="headerlink" href="#releases" title="Permanent link">&para;</a></h2>
-<p>A worker's release is its installed <code>resona-worker</code> version, reported in its heartbeat. The hub's own release (<code>RESONA_RELEASE_ID</code>, else the <code>resona-api</code> version) is approved for every tuple. Any other release must first be staged on the hub:</p>
+<p>A worker's release is its installed <code>resona-worker</code> version, reported in its heartbeat. The hub's own release (<code>RESONA_RELEASE_ID</code>, else the <code>resona-api</code> version) is known without staging, but like every release it runs production jobs for a tuple only after an evaluation of that tuple has been promoted; a fresh hub therefore queues production jobs (<code>queue_reason: release_not_approved</code>) until its first promotion. Any other release must first be staged on the hub:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>resona-admin<span class="w"> </span>release<span class="w"> </span>stage<span class="w"> </span>--manifest<span class="w"> </span>release-manifest.json
 </code></pre></div>
 <p>A staged release runs evaluation jobs only. It runs production jobs for a tuple after an evaluation of it has been promoted.</p>
