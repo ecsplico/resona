@@ -288,18 +288,10 @@ wa-badge {
   width: fit-content;
 }
 
-.cap-group {
-  display: grid;
-  gap: 6px;
-}
-
-.cap-group .caps {
-  font-size: 11px;
-}
-
 .cap-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
 }
 
@@ -320,7 +312,7 @@ wa-tag.cap-tag::part(content) {
   min-width: 0;
 }
 
-.cap-reported wa-tag.cap-tag {
+wa-tag.cap-reported {
   color: var(--carbon);
 }
 
@@ -924,7 +916,7 @@ wa-tab-panel {
 }
 
 .ledger td.actions-cell {
-  min-width: 11rem;
+  min-width: 9rem;
 }
 
 .actions .quiet {

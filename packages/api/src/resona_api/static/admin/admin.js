@@ -328,7 +328,7 @@ function stamp(text) {
 
 function actionButton(label, options) {
   const node = wa("wa-button", {
-    size: "s",
+    size: "xs",
     variant: options.variant || "neutral",
     appearance: options.appearance || "outlined",
     id: options.id,
@@ -362,27 +362,38 @@ function formatCandidate(candidate) {
   return text;
 }
 
-function capabilityGroup(label, candidates, kind) {
-  const wrap = el("div", "cap-group cap-" + kind);
-  wrap.appendChild(el("span", "caps", label + " (" + candidates.length + ")"));
-  if (candidates.length) {
-    const tags = el("div", "cap-tags");
-    candidates.forEach((candidate) => {
-      const tag = wa(
-        "wa-tag",
-        {
-          size: "s",
-          variant: kind === "approved" ? "success" : "neutral",
-          appearance: kind === "approved" ? "filled-outlined" : "outlined",
-        },
-        formatCandidate(candidate)
-      );
-      tag.classList.add("cap-tag");
-      tags.appendChild(tag);
-    });
-    wrap.appendChild(tags);
-  }
-  return wrap;
+// One tag per capability; colour carries the state: green = approved and reported,
+// outlined = reported but not approved, amber = approved but no longer reported.
+const CAPABILITY_STATES = {
+  approved: { variant: "success", appearance: "filled-outlined", title: "Approved" },
+  reported: { variant: "neutral", appearance: "outlined", title: "Reported, not approved" },
+  stale: { variant: "warning", appearance: "filled-outlined", title: "Approved, no longer reported" },
+};
+
+function capabilityKey(candidate) {
+  return JSON.stringify(
+    ["engine", "model", "model_revision", "accelerator", "ocr_engine"].map((field) =>
+      candidate && typeof candidate === "object" ? candidate[field] ?? null : candidate
+    )
+  );
+}
+
+function capabilityTags(reported, approved) {
+  const approvedKeys = new Set(approved.map(capabilityKey));
+  const reportedKeys = new Set(reported.map(capabilityKey));
+  const entries = reported
+    .map((candidate) => [candidate, approvedKeys.has(capabilityKey(candidate)) ? "approved" : "reported"])
+    .concat(approved.filter((candidate) => !reportedKeys.has(capabilityKey(candidate))).map((c) => [c, "stale"]));
+  const tags = el("div", "cap-tags");
+  entries.forEach(([candidate, kind]) => {
+    const state = CAPABILITY_STATES[kind];
+    const tag = wa("wa-tag", { size: "s", variant: state.variant, appearance: state.appearance }, formatCandidate(candidate));
+    tag.classList.add("cap-tag", "cap-" + kind);
+    tag.title = state.title;
+    tag.setAttribute("aria-label", formatCandidate(candidate) + " (" + state.title.toLowerCase() + ")");
+    tags.appendChild(tag);
+  });
+  return entries.length ? tags : "";
 }
 
 // Shows or hides a table and its empty note together.
@@ -769,15 +780,7 @@ function workerRow(worker) {
   row.appendChild(cell("Status", workerStatus(worker)));
   row.appendChild(cell("Runtime", mono(worker.runtime_version)));
   row.appendChild(cell("Approval", workerApproval(worker)));
-  row.appendChild(
-    cell(
-      "Capabilities",
-      stack(
-        capabilityGroup("Reported", worker.reported_capabilities || [], "reported"),
-        capabilityGroup("Approved", worker.approved_capabilities || [], "approved")
-      )
-    )
-  );
+  row.appendChild(cell("Capabilities", capabilityTags(worker.reported_capabilities || [], worker.approved_capabilities || [])));
 
   const actions = el("div", "actions");
   if (!worker.revoked) {
