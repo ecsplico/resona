@@ -112,6 +112,7 @@ def test_admin_page_is_served_with_strict_headers(anon_client):
     assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
     csp = resp.headers["content-security-policy"]
     assert "img-src 'self' data: blob:" in csp
+    assert "font-src 'self'" in csp
     assert "media-src blob:" in csp
     assert "frame-src" not in csp
     assert "unsafe-inline" not in csp
@@ -133,11 +134,12 @@ def test_unknown_admin_asset_is_not_found(anon_client):
 
 
 @pytest.mark.parametrize(("path", "media_type"), [
-    ("webawesome.loader.js", "text/javascript"),
-    ("styles/webawesome.css", "text/css"),
+    ("carbon.js", "text/javascript"),
+    ("carbon.css", "text/css"),
+    ("fonts/IBMPlexSans-Regular.woff2", "font/woff2"),
 ])
-def test_vendored_web_awesome_is_served_with_caching(anon_client, path, media_type):
-    resp = anon_client.get(f"/admin/vendor/webawesome/{path}")
+def test_vendored_carbon_is_served_with_caching(anon_client, path, media_type):
+    resp = anon_client.get(f"/admin/vendor/carbon/{path}")
 
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith(media_type)
@@ -146,22 +148,33 @@ def test_vendored_web_awesome_is_served_with_caching(anon_client, path, media_ty
     assert resp.headers["x-content-type-options"] == "nosniff"
 
 
+def test_vendored_script_is_gzipped_only_for_clients_that_accept_it(anon_client):
+    from resona_api.admin_routes import VENDOR_DIR
+
+    plain = (VENDOR_DIR / "carbon.js").read_bytes()
+    gzipped = anon_client.get("/admin/vendor/carbon/carbon.js", headers={"Accept-Encoding": "gzip"})
+    identity = anon_client.get("/admin/vendor/carbon/carbon.js", headers={"Accept-Encoding": "identity"})
+
+    assert gzipped.headers["content-encoding"] == "gzip"
+    assert gzipped.content == plain  # the client decodes the gzip twin
+    assert "content-encoding" not in identity.headers
+    assert identity.content == plain
+    assert gzipped.headers["vary"] == identity.headers["vary"] == "Accept-Encoding"
+
+
+
 @pytest.mark.parametrize("path", [
-    "/admin/vendor/webawesome/../../admin_routes.py",
-    "/admin/vendor/webawesome/%2e%2e/%2e%2e/admin_routes.py",
-    "/admin/vendor/webawesome/%2e%2e/%2e%2e/admin.js",
-    "/admin/vendor/webawesome/%2e%2e/%2e%2e/%2e%2e/%2e%2e/admin_routes.py",
-    "/admin/vendor/webawesome/does-not-exist.js",
-    "/admin/vendor/webawesome/components",
-    "/admin/vendor/webawesome/LICENSE.md",
+    "/admin/vendor/carbon/../../admin_routes.py",
+    "/admin/vendor/carbon/%2e%2e/%2e%2e/admin_routes.py",
+    "/admin/vendor/carbon/%2e%2e/%2e%2e/admin.js",
+    "/admin/vendor/carbon/%2e%2e/%2e%2e/%2e%2e/%2e%2e/admin_routes.py",
+    "/admin/vendor/carbon/does-not-exist.js",
+    "/admin/vendor/carbon/fonts",
+    "/admin/vendor/carbon/LICENSE-carbon",
+    "/admin/vendor/carbon/carbon.js.gz",
 ])
-def test_vendor_paths_outside_the_library_or_of_other_types_are_not_found(anon_client, path):
+def test_vendor_paths_outside_the_bundle_or_of_other_types_are_not_found(anon_client, path):
     assert anon_client.get(path).status_code == 404
-
-
-@pytest.mark.parametrize("name", ["does-not-exist.svg", "BAD_NAME.svg", "icon.js", "%2e%2e%2fadmin.js"])
-def test_unknown_or_malformed_icons_are_not_found(anon_client, name):
-    assert anon_client.get(f"/admin/icons/{name}").status_code == 404
 
 
 # ── Organization-scoped endpoints ────────────────────────────────────────────

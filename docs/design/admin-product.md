@@ -27,8 +27,8 @@ Privacy-first: jobs carry a privacy class, private jobs run only on approved pri
 ## Capabilities and Constraints
 
 - Static page served by the hub (`packages/api/src/resona_api/static/admin/`), no build step, vanilla JS.
-- Strict CSP: `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:`. No external assets; third-party code is vendored. No `innerHTML` with API data.
-- Component library: Web Awesome 3 (vendored), chosen by the owner as a showcase.
+- Strict CSP: `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src blob:`. No external assets; third-party code is vendored. No `innerHTML` with API data.
+- Component library: IBM Carbon web components (vendored bundle, g10/g100 themes), chosen for data-dense tables.
 - Terminology: organization, worker (approved / private / revoked, reported vs approved capabilities), credential (client, org_admin, hub_operator, worker), job (kind, status, queue reason, execution profile, candidate), settings revision, baseline (execution profile × platform, revision), approved release.
 
 ## Evidence on Hand

@@ -1,0 +1,21 @@
+// Page-level Carbon: reset, body type, theme tokens and zone classes.
+// Components carry their own styles in shadow DOM; they read these --cds-* tokens.
+@use '@carbon/styles/scss/config' with (
+  $prefix: 'cds',
+  $css--font-face: false,
+  $css--emit-type-custom-props: true
+);
+@use '@carbon/styles/scss/reset';
+@use '@carbon/styles/scss/themes';
+@use '@carbon/styles/scss/theme' with ($theme: themes.$g10);
+@use '@carbon/styles/scss/zone';
+@use '@carbon/styles/scss/type';
+@use '@carbon/styles/scss/layer';
+
+:root {
+  @include theme.theme();
+}
+
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/IBMPlexSans-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/IBMPlexSans-SemiBold.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/IBMPlexMono-Regular.woff2') format('woff2'); }

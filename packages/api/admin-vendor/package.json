@@ -1,0 +1,15 @@
+{
+  "name": "resona-admin-vendor",
+  "private": true,
+  "description": "Builds the vendored Carbon bundle served at /admin/vendor/carbon (see README.md).",
+  "dependencies": {
+    "@carbon/web-components": "2.67.0",
+    "@carbon/styles": "1.119.0",
+    "@carbon/icons": "11.92.0",
+    "@ibm/plex-sans": "1.1.0",
+    "@ibm/plex-mono": "1.1.0"
+  },
+  "devDependencies": {
+    "sass": "1.93.2"
+  }
+}

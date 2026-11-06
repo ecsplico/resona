@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -48,20 +47,19 @@ _ASSETS = {
 _STATIC_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
-        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; "
         "img-src 'self' data: blob:; media-src blob:; base-uri 'none'; form-action 'none'; "
         "frame-ancestors 'none'"
     ),
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
 }
-VENDOR_DIR = STATIC_DIR / "vendor" / "webawesome"
-ICONS_DIR = STATIC_DIR / "icons"
+VENDOR_DIR = STATIC_DIR / "vendor" / "carbon"
 _VENDOR_TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
 }
-_ICON_NAME = re.compile(r"^[a-z0-9-]+\.svg$")
 _CACHED_HEADERS = {**_STATIC_HEADERS, "Cache-Control": "public, max-age=86400"}
 
 
@@ -410,22 +408,22 @@ def admin_page() -> FileResponse:
     return _static(STATIC_DIR / "index.html", "text/html; charset=utf-8")
 
 
-@static_router.get("/admin/vendor/webawesome/{path:path}")
-def admin_vendor(path: str) -> FileResponse:
-    """The vendored Web Awesome component library (scripts and styles only)."""
+@static_router.get("/admin/vendor/carbon/{path:path}")
+def admin_vendor(path: str, accept_encoding: str = Header(default="")) -> FileResponse:
+    """The vendored Carbon bundle: script, theme stylesheet and IBM Plex fonts.
+
+    Scripts and styles have a gzip twin from the vendor build; clients that accept
+    gzip get it, the others the plain file.
+    """
     target = _contained_file(VENDOR_DIR, path)
     media_type = _VENDOR_TYPES.get(target.suffix)
     if media_type is None:
         raise api_error(404, "not_found", "no such asset")
-    return FileResponse(target, media_type=media_type, headers=_CACHED_HEADERS)
-
-
-@static_router.get("/admin/icons/{name}")
-def admin_icon(name: str) -> FileResponse:
-    """A local SVG icon used by the management page."""
-    if not _ICON_NAME.fullmatch(name):
-        raise api_error(404, "not_found", "no such icon")
-    return FileResponse(_contained_file(ICONS_DIR, name), media_type="image/svg+xml", headers=_CACHED_HEADERS)
+    headers = {**_CACHED_HEADERS, "Vary": "Accept-Encoding"}
+    gzipped = target.with_name(target.name + ".gz")
+    if "gzip" in accept_encoding.lower() and gzipped.is_file():
+        return FileResponse(gzipped, media_type=media_type, headers={**headers, "Content-Encoding": "gzip"})
+    return FileResponse(target, media_type=media_type, headers=headers)
 
 
 @static_router.get("/admin/{asset}")

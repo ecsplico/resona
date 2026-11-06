@@ -81,3 +81,6 @@ whisper-*
 
 # ── omp plan-mode autosave (session drafts; durable plans are epic issues) ──
 .omp/plans/
+
+# admin page vendor build (packages/api/admin-vendor/build.sh)
+packages/api/admin-vendor/node_modules/

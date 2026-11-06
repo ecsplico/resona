@@ -1,30 +1,33 @@
-import { registerIconLibrary } from "/admin/vendor/webawesome/webawesome.loader.js";
-
-// Icons resolve to the hub's own SVGs: the Font Awesome CDN is never contacted, and the
-// built-in `system` icons (data: URLs loaded with fetch, which `connect-src 'self'` blocks)
-// are swapped for local equivalents.
-const iconUrl = (name) => "/admin/icons/" + name + ".svg";
-const SYSTEM_ICONS = {
-  check: "check",
-  "chevron-down": "chevron-down",
-  "chevron-left": "chevron-left",
-  "chevron-right": "chevron-right",
-  "circle-xmark": "circle-x",
-  copy: "copy",
-  eye: "eye",
-  "eye-slash": "eye-off",
-  xmark: "x",
-};
-registerIconLibrary("default", {
-  resolver: (name) => (/^[a-z0-9-]+$/.test(name) ? iconUrl(name) : ""),
-});
-registerIconLibrary("system", {
-  resolver: (name) => iconUrl(SYSTEM_ICONS[name] || "help-circle"),
-});
+// Resona hub management page. ES module: importing the vendored Carbon bundle registers
+// every cds-* element before this module's body runs, and yields the icon descriptors.
+import {
+  Add16,
+  ArrowRight16,
+  ChartBar20,
+  Chemistry20,
+  Chip20,
+  Dashboard20,
+  Enterprise20,
+  List20,
+  Logout20,
+  OverflowMenuVertical16,
+  Password20,
+  Renew16,
+  Settings20,
+  Upload16,
+  UserAvatar20,
+} from "/admin/vendor/carbon/carbon.js";
 
 const TOKEN_KEY = "resona-admin-token";
 const ADMIN_API = "/v1/admin";
-const DAY_MS = 24 * 60 * 60 * 1000;
+const TESTBENCH_API = "/v1/testbench";
+const SETTINGS_API = "/v1/settings";
+const POLL_MS = 5000;
+const ITEMS_PAGE = 50;
+const MAX_RUN_CANDIDATES = 16;
+const DESKTOP_MIN_PX = 1056;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 const ROLE_LABELS = {
   org_admin: "Organization admin",
   hub_operator: "Hub operator",
@@ -36,22 +39,56 @@ const QUEUE_REASONS = {
   release_not_approved: "Release not approved",
   waiting_capacity: "Waiting for capacity",
 };
-const TABS = ["workers", "credentials", "jobs", "settings", "testbench"];
+const ITEM_STATUSES = {
+  awaiting_draft: { label: "Awaiting draft", type: "cool-gray" },
+  needs_correction: { label: "Needs correction", type: "purple" },
+  corrected: { label: "Corrected", type: "green" },
+};
+// Job and run states share one colour scheme.
+const STATUS_TAGS = {
+  pending: { label: "Pending", type: "purple" },
+  queued: { label: "Queued", type: "purple" },
+  processing: { label: "Processing", type: "blue" },
+  completed: { label: "Completed", type: "green" },
+  failed: { label: "Failed", type: "red" },
+  cancelled: { label: "Cancelled", type: "warm-gray" },
+};
+const FILE_EXTENSIONS = {
+  "application/pdf": "pdf",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/tiff": "tif",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/flac": "flac",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+};
+
+const SECTIONS = [
+  { name: "overview", label: "Overview", icon: Dashboard20 },
+  { name: "workers", label: "Workers", icon: Chip20 },
+  { name: "credentials", label: "Credentials", icon: Password20 },
+  { name: "jobs", label: "Jobs", icon: List20 },
+  { name: "settings", label: "Settings", icon: Settings20 },
+  { name: "baselines", label: "Baselines", icon: ChartBar20 },
+  { name: "testbench", label: "Testbench", icon: Chemistry20 },
+];
+const SECTION_NAMES = SECTIONS.map((section) => section.name);
 
 const state = {
   token: null,
   me: null,
   org: null,
-  tab: "workers",
+  section: "overview",
   jobsCursor: null,
-  // Jobs currently listed, by id; feeds the pending count in the summary strip.
-  jobs: new Map(),
   // Bumped whenever the view context changes; responses for an older context are dropped.
   seq: 0,
-  // Bumped whenever the selected organization changes; guards the summary strip.
+  // Bumped whenever the selected organization changes.
   orgSeq: 0,
-  // Latest load sequence per tab; the spinner stops only for the newest load.
-  loading: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -158,7 +195,8 @@ async function request(method, path, options) {
 }
 
 async function parseJson(response) {
-  const text = response.status === 204 ? "" : await response.text();
+  // Drained even for 204: an unread body leaves the request to be cancelled.
+  const text = await response.text();
   if (!text) {
     return null;
   }
@@ -194,191 +232,613 @@ function orgPath() {
   return ADMIN_API + "/organizations/" + encodeURIComponent(state.org);
 }
 
-// ── Error banner ───────────────────────────────────────────────────────────
-
-function showError(message) {
-  // Before sign-in completes the error belongs on the sign-in slip.
-  if ($("app").hidden) {
-    const note = $("login-message");
-    note.textContent = message;
-    note.hidden = false;
-    return;
-  }
-  $("banner-text").textContent = message;
-  $("banner").hidden = false;
-}
-
-function hideBanner() {
-  $("banner").hidden = true;
-  $("banner-text").textContent = "";
-}
-
-function report(error) {
-  if (error && error.handled) {
-    return;
-  }
-  showError(error && error.message ? error.message : String(error));
-}
-
 // ── DOM helpers ────────────────────────────────────────────────────────────
 
-function el(tag, className, text) {
+// Creates an element: `class` sets className, `on<event>` functions become listeners,
+// `true` sets a boolean attribute and false/null/undefined skip the attribute.
+function h(tag, attrs, ...children) {
   const node = document.createElement(tag);
-  if (className) {
-    node.className = className;
-  }
-  if (text !== undefined && text !== null) {
-    node.textContent = String(text);
-  }
+  Object.entries(attrs || {}).forEach(([name, value]) => {
+    if (value === undefined || value === null || value === false) {
+      return;
+    }
+    if (name === "class") {
+      node.className = value;
+    } else if (name.startsWith("on") && typeof value === "function") {
+      node.addEventListener(name.slice(2), value);
+    } else {
+      node.setAttribute(name, value === true ? "" : String(value));
+    }
+  });
+  append(node, children);
   return node;
 }
 
-// Creates a (Web Awesome) element from attributes; `true` sets a boolean attribute.
-function wa(tag, attrs, text) {
-  const node = document.createElement(tag);
-  Object.entries(attrs || {}).forEach(([name, value]) => {
-    if (value === true) {
-      node.setAttribute(name, "");
-    } else if (value !== false && value !== undefined && value !== null) {
-      node.setAttribute(name, String(value));
+function append(node, children) {
+  children.flat(Infinity).forEach((child) => {
+    if (child === undefined || child === null || child === false || child === "") {
+      return;
     }
+    node.appendChild(child instanceof Node ? child : document.createTextNode(String(child)));
   });
-  if (text !== undefined && text !== null) {
-    node.textContent = String(text);
-  }
   return node;
+}
+
+// Renders a @carbon/icons descriptor ({elem, attrs, content}) without innerHTML.
+function icon(descriptor, attrs) {
+  const build = (desc) => {
+    const node = document.createElementNS(SVG_NS, desc.elem);
+    Object.entries(desc.attrs || {}).forEach(([name, value]) => node.setAttribute(name, String(value)));
+    (desc.content || []).forEach((child) => node.appendChild(build(child)));
+    return node;
+  };
+  const svg = build(descriptor);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  Object.entries(attrs || {}).forEach(([name, value]) => svg.setAttribute(name, String(value)));
+  return svg;
 }
 
 function isBlank(value) {
   return value === undefined || value === null || value === "";
 }
 
+function muted(text) {
+  return h("span", { class: "muted" }, text);
+}
+
 function dash() {
-  return el("span", "quiet", "—");
-}
-
-// A table cell labelled for the stacked phone layout.
-function cell(label, content, className) {
-  const td = el("td", className);
-  td.dataset.label = label;
-  if (content instanceof Node) {
-    td.appendChild(content);
-  } else if (isBlank(content)) {
-    td.appendChild(dash());
-  } else {
-    td.textContent = String(content);
-  }
-  return td;
-}
-
-function stack(...nodes) {
-  const wrap = el("div", "stack");
-  nodes.filter(Boolean).forEach((node) => wrap.appendChild(node));
-  return wrap;
-}
-
-// Machine identifiers read as grouped tracking numbers (`wrk · f21e · 64ec …`) while
-// the element's text stays the raw id, so selecting and copying yields it unchanged.
-function trackingNumber(raw) {
-  const text = String(raw);
-  const node = el("span", "trk");
-  const match = /^([a-z]+)_([0-9a-f]{8,})$/i.exec(text);
-  if (!match) {
-    node.classList.add("trk-plain");
-    node.textContent = text;
-    return node;
-  }
-  node.appendChild(el("span", "trk-prefix", match[1]));
-  node.appendChild(el("span", "trk-joint", "_"));
-  for (let index = 0; index < match[2].length; index += 4) {
-    // <wbr> adds a line-break opportunity between groups without adding text.
-    node.appendChild(document.createElement("wbr"));
-    node.appendChild(el("span", "trk-group", match[2].slice(index, index + 4)));
-  }
-  return node;
-}
-
-function idWithCopy(raw, copyLabel) {
-  if (isBlank(raw)) {
-    return dash();
-  }
-  const wrap = el("span", "id-copy");
-  wrap.appendChild(trackingNumber(raw));
-  wrap.appendChild(
-    wa("wa-copy-button", {
-      value: String(raw),
-      "copy-label": copyLabel,
-      "success-label": "Copied",
-      "error-label": "Copy failed",
-    })
-  );
-  return wrap;
+  return muted("—");
 }
 
 function mono(text) {
-  return isBlank(text) ? dash() : el("span", "machine", text);
+  return isBlank(text) ? dash() : h("span", { class: "mono" }, String(text));
 }
 
-function numeral(value) {
-  return isBlank(value) ? dash() : el("span", "num", value);
+function num(text) {
+  return isBlank(text) ? dash() : h("span", { class: "num" }, String(text));
 }
 
-function absoluteTime(iso) {
-  return wa("wa-format-date", {
-    date: iso,
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function srOnly(text) {
+  return h("span", { class: "sr-only" }, text);
 }
 
-function relativeTime(iso) {
-  return wa("wa-relative-time", { date: iso, sync: true });
+function tag(text, type, title) {
+  return h("cds-tag", { type: type, size: "sm", title: title }, text);
 }
 
-// Absolute timestamp with its distance from now underneath.
-function timeNode(iso) {
-  if (!iso) {
+function statusTag(status) {
+  const known = STATUS_TAGS[status];
+  return known ? tag(known.label, known.type) : tag(String(status), "gray");
+}
+
+// An identifier you can copy by clicking it.
+function copyable(text, label) {
+  if (isBlank(text)) {
     return dash();
   }
-  const wrap = el("span", "when");
-  wrap.title = iso;
-  wrap.appendChild(absoluteTime(iso));
-  const rel = el("span", "when-rel");
-  rel.appendChild(relativeTime(iso));
-  wrap.appendChild(rel);
-  return wrap;
+  return h(
+    "cds-code-snippet",
+    { type: "inline", feedback: "Copied", "tooltip-content": label || "Copy to clipboard" },
+    String(text)
+  );
 }
 
-function badge(text, variant, appearance) {
-  return wa("wa-badge", { variant: variant, appearance: appearance || "filled-outlined" }, text);
-}
-
-// Red double-ruled rubber stamp: revoked tokens and workers, cancelled jobs.
-function stamp(text) {
-  return el("span", "stamp", text);
-}
-
-function actionButton(label, options) {
-  const node = wa("wa-button", {
-    size: "xs",
-    variant: options.variant || "neutral",
-    appearance: options.appearance || "outlined",
-    id: options.id,
+function button(label, options) {
+  const opts = options || {};
+  const node = h("cds-button", {
+    kind: opts.kind || "primary",
+    size: opts.size,
+    "tooltip-text": opts.iconOnly ? label : null,
+    "tooltip-position": opts.iconOnly ? "bottom" : null,
+    disabled: opts.disabled,
   });
-  if (options.icon) {
-    node.appendChild(wa("wa-icon", { slot: "start", name: options.icon }));
+  if (opts.icon) {
+    node.appendChild(icon(opts.icon, { slot: "icon" }));
   }
-  node.appendChild(document.createTextNode(label));
-  node.addEventListener("click", options.onClick);
+  if (!opts.iconOnly) {
+    node.appendChild(document.createTextNode(label));
+  }
+  if (opts.onClick) {
+    node.addEventListener("click", (event) => {
+      if (!node.disabled) {
+        opts.onClick(event);
+      }
+    });
+  }
   return node;
 }
 
-function tooltipFor(target, text) {
-  return wa("wa-tooltip", { for: target.id }, text);
+// Label/value pairs for expanded rows and detail blocks.
+function facts(pairs) {
+  const list = h("dl", { class: "facts" });
+  pairs.forEach(([label, value]) => {
+    if (value === undefined) {
+      return;
+    }
+    const dd = h("dd");
+    if (value instanceof Node) {
+      dd.appendChild(value);
+    } else if (isBlank(value)) {
+      dd.appendChild(dash());
+    } else {
+      dd.textContent = String(value);
+    }
+    list.appendChild(h("div", null, h("dt", null, label), dd));
+  });
+  return list;
 }
+
+function whenReady(node, callback) {
+  customElements
+    .whenDefined(node.localName)
+    .then(() => node.updateComplete)
+    .then(() => callback(node));
+}
+
+// ── Time and numbers ───────────────────────────────────────────────────────
+
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const RELATIVE_FORMAT = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+const RELATIVE_UNITS = [
+  ["year", 31536000],
+  ["month", 2592000],
+  ["week", 604800],
+  ["day", 86400],
+  ["hour", 3600],
+  ["minute", 60],
+  ["second", 1],
+];
+
+function absoluteText(iso) {
+  const time = Date.parse(iso);
+  return Number.isNaN(time) ? String(iso) : DATE_FORMAT.format(time);
+}
+
+function relativeText(iso) {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) {
+    return String(iso);
+  }
+  const seconds = (time - Date.now()) / 1000;
+  const size = Math.abs(seconds);
+  for (const [unit, length] of RELATIVE_UNITS) {
+    if (size >= length || unit === "second") {
+      return RELATIVE_FORMAT.format(Math.round(seconds / length), unit);
+    }
+  }
+  return "";
+}
+
+function durationText(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (seconds < 60) {
+    return seconds + " s";
+  }
+  if (minutes < 60) {
+    return minutes + " min";
+  }
+  if (hours < 48) {
+    return hours + " h " + (minutes % 60) + " min";
+  }
+  return days + " d " + (hours % 24) + " h";
+}
+
+function waitedSince(iso) {
+  const created = Date.parse(iso);
+  return Number.isNaN(created) ? null : Date.now() - created;
+}
+
+// Relative time in a table cell; the exact timestamp is in the title.
+function whenCell(iso) {
+  if (!iso) {
+    return dash();
+  }
+  return h("span", { title: absoluteText(iso) + " (" + iso + ")" }, relativeText(iso));
+}
+
+// Absolute time with its distance from now, for expanded rows.
+function whenFull(iso) {
+  if (!iso) {
+    return dash();
+  }
+  return h("span", { title: iso }, absoluteText(iso), " ", muted("(" + relativeText(iso) + ")"));
+}
+
+function formatBytes(value) {
+  const size = Number(value);
+  if (!Number.isFinite(size)) {
+    return "";
+  }
+  const units = ["B", "kB", "MB", "GB"];
+  let index = 0;
+  let scaled = size;
+  while (scaled >= 1000 && index < units.length - 1) {
+    scaled /= 1000;
+    index += 1;
+  }
+  return (index === 0 ? String(scaled) : scaled.toFixed(1)) + " " + units[index];
+}
+
+function percent(value) {
+  return isBlank(value) ? "" : (Number(value) * 100).toFixed(1) + " %";
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+function showError(error) {
+  const code = error instanceof ApiError ? error.code : "error";
+  const message = error && error.message ? error.message : String(error);
+  // Before sign-in completes the error belongs to the sign-in form.
+  if ($("app").hidden) {
+    showLoginMessage(message);
+    return;
+  }
+  const banner = $("banner");
+  banner.setAttribute("title", code);
+  banner.setAttribute("subtitle", message);
+  banner.hidden = false;
+  banner.open = true;
+}
+
+function hideBanner() {
+  const banner = $("banner");
+  banner.hidden = true;
+  banner.setAttribute("title", "");
+  banner.setAttribute("subtitle", "");
+}
+
+function report(error) {
+  if (error && error.handled) {
+    return;
+  }
+  showError(error instanceof ApiError ? error : new ApiError(0, "error", error && error.message ? error.message : String(error)));
+}
+
+function toast(title, subtitle, kind) {
+  const note = h("cds-toast-notification", {
+    kind: kind || "success",
+    title: title,
+    subtitle: subtitle || "",
+    timeout: 6000,
+    "low-contrast": true,
+  });
+  note.addEventListener("cds-notification-closed", () => note.remove());
+  $("toasts").appendChild(note);
+}
+
+// Runs an action triggered by a control: disables it while pending and reports errors.
+async function run(trigger, action) {
+  if (trigger) {
+    trigger.disabled = true;
+  }
+  hideBanner();
+  try {
+    await action();
+  } catch (error) {
+    report(error);
+  } finally {
+    if (trigger && trigger.isConnected) {
+      trigger.disabled = false;
+    }
+  }
+}
+
+// ── Modals ─────────────────────────────────────────────────────────────────
+
+let settleConfirmation = null;
+
+function confirmAction(options) {
+  if (settleConfirmation) {
+    settleConfirmation(false);
+  }
+  $("confirm-title").textContent = options.title;
+  $("confirm-text").textContent = options.message;
+  const ok = $("confirm-ok");
+  ok.textContent = options.confirmLabel;
+  ok.setAttribute("kind", options.danger === false ? "primary" : "danger");
+  $("confirm-cancel").textContent = options.dismissLabel || "Go back";
+  $("confirm").open = true;
+  return new Promise((resolve) => {
+    settleConfirmation = (value) => {
+      settleConfirmation = null;
+      resolve(value);
+    };
+  });
+}
+
+function closeConfirmation(value) {
+  if (settleConfirmation) {
+    settleConfirmation(value);
+  }
+  $("confirm").open = false;
+}
+
+function showIssued(issued) {
+  $("issued-role").textContent = (ROLE_LABELS[issued.role] || issued.role) + " token";
+  $("issued-id").textContent = issued.id;
+  $("issued-token").replaceChildren(
+    h(
+      "cds-code-snippet",
+      { type: "single", feedback: "Copied", "tooltip-content": "Copy token", "aria-label": "Issued token" },
+      issued.token
+    )
+  );
+  $("issued").open = true;
+}
+
+// Done: the token leaves the DOM and nothing keeps a reference to it.
+function clearIssued() {
+  $("issued-token").replaceChildren();
+  $("issued-id").textContent = "";
+  $("issued-role").textContent = "";
+  $("issued").open = false;
+}
+
+// ── Data tables ────────────────────────────────────────────────────────────
+
+// A Carbon data table driven by an array of rows. Sorting and the toolbar search act on
+// the loaded rows; the table's own DOM-based sort and filter are bypassed so a re-render
+// keeps the chosen order and filter.
+//
+// cfg: {title, description, size, columns: [{key, header, render(row), sort?(row),
+// secondary?}], rowId(row), expand?(row), actions?(row) -> [{label, danger, disabled,
+// onClick(menu)}], actionsLabel?, toolbar?: [nodes], onRefresh?, empty: string|nodes}
+function dataTable(cfg) {
+  const size = cfg.size || "md";
+  const view = { rows: [], sort: null, query: "", expanded: new Set(), loading: false };
+  const columnCount = cfg.columns.length + (cfg.actions ? 1 : 0);
+
+  const table = h("cds-table", { size: size, expandable: Boolean(cfg.expand) });
+  table.appendChild(h("cds-table-header-title", { slot: "title" }, cfg.title));
+  if (cfg.description) {
+    table.appendChild(h("cds-table-header-description", { slot: "description" }, cfg.description));
+  }
+
+  const search = h("cds-table-toolbar-search", {
+    persistent: true,
+    placeholder: "Filter loaded rows",
+    "label-text": "Filter " + cfg.title.toLowerCase(),
+    size: size === "md" ? "lg" : size,
+  });
+  search.addEventListener("cds-search-input", (event) => {
+    event.stopPropagation();
+    view.query = String((event.detail && event.detail.value) || "").trim();
+    applyFilter();
+  });
+  const toolButtonSize = size === "md" ? "lg" : size;
+  const tools = [search];
+  if (cfg.onRefresh) {
+    tools.push(button("Refresh", { kind: "ghost", icon: Renew16, iconOnly: true, size: toolButtonSize, onClick: cfg.onRefresh }));
+  }
+  (cfg.toolbar || []).forEach((node) => {
+    if (node.localName === "cds-button") {
+      node.setAttribute("size", toolButtonSize);
+    }
+    tools.push(node);
+  });
+  table.appendChild(h("cds-table-toolbar", { slot: "toolbar" }, h("cds-table-toolbar-content", null, tools)));
+
+  const headerRow = h("cds-table-header-row");
+  cfg.columns.forEach((column) => {
+    const cell = h(
+      "cds-table-header-cell",
+      {
+        class: column.secondary ? "col-secondary" : null,
+        "is-sortable": Boolean(column.sort),
+        "sort-direction": column.sort ? "none" : null,
+      },
+      column.header
+    );
+    cell.dataset.key = column.key;
+    headerRow.appendChild(cell);
+  });
+  if (cfg.actions) {
+    headerRow.appendChild(h("cds-table-header-cell", { class: "col-actions" }, srOnly("Actions")));
+  }
+  headerRow.addEventListener("cds-table-header-cell-sort", (event) => {
+    event.stopPropagation();
+    const cell = event.target;
+    const direction = event.detail && event.detail.sortDirection;
+    headerRow.querySelectorAll("cds-table-header-cell[is-sortable]").forEach((other) => {
+      if (other !== cell) {
+        other.setAttribute("sort-direction", "none");
+      }
+    });
+    view.sort = !direction || direction === "none" ? null : { key: cell.dataset.key, direction: direction };
+    render();
+  });
+
+  const body = h("cds-table-body");
+  table.appendChild(h("cds-table-head", null, headerRow));
+  table.appendChild(body);
+  table.addEventListener("cds-table-row-expando-toggled", (event) => {
+    const id = event.target && event.target.dataset ? event.target.dataset.id : undefined;
+    if (id === undefined) {
+      return;
+    }
+    if (event.detail && event.detail.expanded) {
+      view.expanded.add(id);
+    } else {
+      view.expanded.delete(id);
+    }
+  });
+
+  const skeleton = h("cds-table-skeleton", {
+    "row-count": 3,
+    "column-count": columnCount,
+    "show-header": true,
+    "show-toolbar": true,
+    hidden: true,
+  });
+  skeleton.headers = cfg.columns.map((column) => column.header).concat(cfg.actions ? [""] : []);
+  const empty = h("p", { class: "table-empty", hidden: true });
+  const footer = h("div", { class: "table-footer", hidden: true });
+  const root = h("div", { class: "table-block" }, table, skeleton, empty, footer);
+
+  function compare(a, b) {
+    if (typeof a === "number" && typeof b === "number") {
+      return a - b;
+    }
+    return String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true });
+  }
+
+  function render() {
+    const rows = view.rows.slice();
+    if (view.sort) {
+      const column = cfg.columns.find((entry) => entry.key === view.sort.key);
+      const factor = view.sort.direction === "descending" ? -1 : 1;
+      if (column && column.sort) {
+        rows.sort((a, b) => factor * compare(column.sort(a), column.sort(b)));
+      }
+    }
+    const nodes = [];
+    rows.forEach((row) => {
+      const id = String(cfg.rowId(row));
+      const tr = h("cds-table-row");
+      tr.dataset.id = id;
+      if (cfg.rowClass) {
+        const extra = cfg.rowClass(row);
+        if (extra) {
+          tr.className = extra;
+        }
+      }
+      cfg.columns.forEach((column) => {
+        const content = column.render(row);
+        tr.appendChild(
+          h("cds-table-cell", { class: column.secondary ? "col-secondary" : null }, isBlank(content) ? dash() : content)
+        );
+      });
+      if (cfg.actions) {
+        const label = cfg.actionsLabel ? cfg.actionsLabel(row) : "Actions";
+        tr.appendChild(h("cds-table-cell", { class: "col-actions" }, overflowMenu(label, cfg.actions(row), size)));
+      }
+      nodes.push(tr);
+      if (cfg.expand) {
+        const detail = h("cds-table-expanded-row", { colspan: columnCount + 1 }, h("div", { class: "row-detail" }, cfg.expand(row)));
+        nodes.push(detail);
+        if (view.expanded.has(id)) {
+          tr.expanded = true;
+          detail.expanded = true;
+        }
+      }
+    });
+    body.replaceChildren(...nodes);
+    applyFilter();
+  }
+
+  function applyFilter() {
+    const query = view.query.toLowerCase();
+    let visible = 0;
+    body.querySelectorAll("cds-table-row").forEach((tr) => {
+      const detail = tr.nextElementSibling && tr.nextElementSibling.localName === "cds-table-expanded-row" ? tr.nextElementSibling : null;
+      const text = (tr.textContent + " " + (detail ? detail.textContent : "")).toLowerCase();
+      const filtered = Boolean(query) && !text.includes(query);
+      tr.filtered = filtered;
+      if (detail) {
+        detail.filtered = filtered;
+      }
+      if (!filtered) {
+        visible += 1;
+      }
+    });
+    updateEmpty(visible);
+  }
+
+  function updateEmpty(visible) {
+    const showSkeleton = view.loading && view.rows.length === 0;
+    table.hidden = showSkeleton;
+    skeleton.hidden = !showSkeleton;
+    table.setAttribute("aria-busy", view.loading ? "true" : "false");
+    if (showSkeleton) {
+      empty.hidden = true;
+      return;
+    }
+    if (view.rows.length === 0) {
+      empty.replaceChildren();
+      append(empty, [cfg.empty]);
+      empty.hidden = false;
+    } else if (visible === 0) {
+      empty.textContent = "No loaded row matches “" + view.query + "”.";
+      empty.hidden = false;
+    } else {
+      empty.hidden = true;
+    }
+  }
+
+  return {
+    root: root,
+    table: table,
+    footer: footer,
+    get rows() {
+      return view.rows;
+    },
+    setRows(rows) {
+      view.rows = rows.slice();
+      const ids = new Set(view.rows.map((row) => String(cfg.rowId(row))));
+      Array.from(view.expanded).forEach((id) => {
+        if (!ids.has(id)) {
+          view.expanded.delete(id);
+        }
+      });
+      render();
+    },
+    rerender: render,
+    setLoading(on) {
+      view.loading = on;
+      applyFilter();
+    },
+    clear() {
+      view.rows = [];
+      view.expanded.clear();
+      body.replaceChildren();
+      footer.hidden = true;
+      applyFilter();
+    },
+    rowElement(id) {
+      return body.querySelector('cds-table-row[data-id="' + CSS.escape(String(id)) + '"]');
+    },
+  };
+}
+
+// Per-row actions in a Carbon overflow menu. Destructive items are `danger`; an action
+// that is not allowed stays visible, disabled, with the reason in its label.
+function overflowMenu(label, items, size) {
+  const menu = h(
+    "cds-overflow-menu",
+    { size: size === "md" ? "md" : "sm", flipped: true, "aria-label": label },
+    icon(OverflowMenuVertical16, { slot: "icon", class: "cds--overflow-menu__icon" }),
+    h("span", { slot: "tooltip-content" }, label)
+  );
+  const body = h("cds-overflow-menu-body", { flipped: true });
+  items.forEach((item) => {
+    const entry = h(
+      "cds-overflow-menu-item",
+      { danger: Boolean(item.danger) && !item.disabled, disabled: Boolean(item.disabled), divider: Boolean(item.divider) },
+      item.disabled && item.reason ? item.label + " (" + item.reason + ")" : item.label
+    );
+    entry.addEventListener("click", () => {
+      if (!item.disabled) {
+        menu.open = false;
+        item.onClick(menu);
+      }
+    });
+    body.appendChild(entry);
+  });
+  menu.appendChild(body);
+  return menu;
+}
+
+// ── Capabilities ───────────────────────────────────────────────────────────
 
 function formatCandidate(candidate) {
   if (!candidate || typeof candidate !== "object") {
@@ -397,14 +857,6 @@ function formatCandidate(candidate) {
   return text;
 }
 
-// One tag per capability; colour carries the state: green = approved and reported,
-// outlined = reported but not approved, amber = approved but no longer reported.
-const CAPABILITY_STATES = {
-  approved: { variant: "success", appearance: "filled-outlined", title: "Approved" },
-  reported: { variant: "neutral", appearance: "outlined", title: "Reported, not approved" },
-  stale: { variant: "warning", appearance: "filled-outlined", title: "Approved, no longer reported" },
-};
-
 function capabilityKey(candidate) {
   return JSON.stringify(
     ["engine", "model", "model_revision", "accelerator", "ocr_engine"].map((field) =>
@@ -413,208 +865,90 @@ function capabilityKey(candidate) {
   );
 }
 
-function capabilityTags(reported, approved) {
+// One entry per capability; colour carries the state and a visually hidden suffix
+// says it in words: green = approved and reported, gray = reported but not approved,
+// magenta = approved but no longer reported.
+const CAPABILITY_STATES = {
+  approved: { type: "green", text: "Approved and reported" },
+  reported: { type: "cool-gray", text: "Reported, not approved" },
+  stale: { type: "magenta", text: "Approved, no longer reported" },
+};
+
+function capabilityEntries(worker) {
+  const reported = worker.reported_capabilities || [];
+  const approved = worker.approved_capabilities || [];
   const approvedKeys = new Set(approved.map(capabilityKey));
   const reportedKeys = new Set(reported.map(capabilityKey));
-  const entries = reported
+  return reported
     .map((candidate) => [candidate, approvedKeys.has(capabilityKey(candidate)) ? "approved" : "reported"])
     .concat(approved.filter((candidate) => !reportedKeys.has(capabilityKey(candidate))).map((c) => [c, "stale"]));
-  const tags = el("div", "cap-tags");
+}
+
+function capabilityList(worker) {
+  const entries = capabilityEntries(worker);
+  if (!entries.length) {
+    return h("p", { class: "muted" }, "No capabilities reported or approved.");
+  }
+  const legend = h(
+    "p",
+    { class: "cap-legend", "aria-hidden": "true" },
+    Object.values(CAPABILITY_STATES).map((entry) => tag(entry.text, entry.type))
+  );
+  const list = h("ul", { class: "cap-list", "aria-label": "Capabilities" });
   entries.forEach(([candidate, kind]) => {
-    const state = CAPABILITY_STATES[kind];
-    const tag = wa("wa-tag", { size: "s", variant: state.variant, appearance: state.appearance }, formatCandidate(candidate));
-    tag.classList.add("cap-tag", "cap-" + kind);
-    tag.title = state.title;
-    tag.setAttribute("aria-label", formatCandidate(candidate) + " (" + state.title.toLowerCase() + ")");
-    tags.appendChild(tag);
+    const meta = CAPABILITY_STATES[kind];
+    list.appendChild(
+      h(
+        "li",
+        null,
+        h("cds-tag", { type: meta.type, size: "sm", title: meta.text }, h("span", { class: "mono" }, formatCandidate(candidate)), srOnly(" (" + meta.text.toLowerCase() + ")"))
+      )
+    );
   });
-  return entries.length ? tags : "";
+  return h("div", null, legend, list);
 }
 
-// Shows or hides a table and its empty note together.
-function setEmpty(name) {
-  const empty = $(name + "-body").children.length === 0;
-  $(name + "-wrap").hidden = empty;
-  $(name + "-empty").hidden = !empty;
-}
-
-function skeletonRows(body) {
-  const columns = Number(body.dataset.columns) || 1;
-  for (let index = 0; index < 3; index += 1) {
-    const row = el("tr", "skeleton-row");
-    const td = el("td");
-    td.colSpan = columns;
-    td.appendChild(wa("wa-skeleton", { effect: "sheen" }));
-    row.appendChild(td);
-    body.appendChild(row);
-  }
-}
-
-function setLoading(tab, seq, on) {
-  if (!on && state.loading[tab] !== seq) {
-    return;
-  }
-  state.loading[tab] = on ? seq : null;
-  const panel = $("panel-" + tab);
-  panel.querySelector("[data-spinner]").hidden = !on;
-  panel.querySelectorAll("tbody").forEach((body) => {
-    body.setAttribute("aria-busy", on ? "true" : "false");
-    if (on && body.children.length === 0) {
-      body.closest(".table-wrap").hidden = false;
-      skeletonRows(body);
-    }
-    if (!on) {
-      body.querySelectorAll(".skeleton-row").forEach((row) => row.remove());
-    }
+function capabilitySummary(worker) {
+  const counts = { approved: 0, reported: 0, stale: 0 };
+  capabilityEntries(worker).forEach(([, kind]) => {
+    counts[kind] += 1;
   });
-}
-
-// Runs an action triggered by a button: marks it busy while pending and reports errors.
-async function run(trigger, action) {
-  if (trigger) {
-    trigger.disabled = true;
-    if (trigger.localName === "wa-button") {
-      trigger.loading = true;
-    }
+  const parts = [];
+  if (counts.approved) {
+    parts.push(counts.approved + " approved");
   }
-  hideBanner();
-  try {
-    await action();
-  } catch (error) {
-    report(error);
-  } finally {
-    if (trigger && trigger.isConnected) {
-      trigger.disabled = false;
-      if (trigger.localName === "wa-button") {
-        trigger.loading = false;
-      }
-    }
+  if (counts.reported) {
+    parts.push(counts.reported + " not approved");
   }
-}
-
-// Runs `callback` once the component is defined and has rendered its shadow DOM, so
-// methods like focus() find their inner control.
-function whenReady(node, callback) {
-  customElements
-    .whenDefined(node.localName)
-    .then(() => node.updateComplete)
-    .then(() => callback(node));
-}
-
-// ── Confirmation dialog ────────────────────────────────────────────────────
-
-let settleConfirmation = null;
-
-function confirmAction(options) {
-  const dialog = $("confirm");
-  if (settleConfirmation) {
-    settleConfirmation(false);
+  if (counts.stale) {
+    parts.push(counts.stale + " no longer reported");
   }
-  dialog.label = options.title;
-  $("confirm-text").textContent = options.message;
-  $("confirm-ok").textContent = options.confirmLabel;
-  $("confirm-cancel").textContent = options.dismissLabel || "Go back";
-  dialog.open = true;
-  return new Promise((resolve) => {
-    settleConfirmation = (value) => {
-      settleConfirmation = null;
-      resolve(value);
-    };
-  });
-}
-
-function closeConfirmation(value) {
-  if (settleConfirmation) {
-    settleConfirmation(value);
-  }
-  $("confirm").open = false;
-}
-
-// ── Summary strip ──────────────────────────────────────────────────────────
-
-function setTally(id, text) {
-  $(id).textContent = text;
-}
-
-function resetTally() {
-  ["tally-online", "tally-workers", "tally-tokens", "tally-pending"].forEach((id) => setTally(id, "–"));
-}
-
-function tallyWorkers(items) {
-  const active = items.filter((worker) => !worker.revoked);
-  setTally("tally-online", String(active.filter((worker) => worker.online).length));
-  setTally("tally-workers", String(active.length));
-}
-
-function tallyCredentials(items) {
-  setTally("tally-tokens", String(items.filter((credential) => !credential.revoked_at).length));
-}
-
-function tallyJobs() {
-  let pending = 0;
-  state.jobs.forEach((job) => {
-    if (job.status === "pending") {
-      pending += 1;
-    }
-  });
-  // With more pages unread the count is a lower bound.
-  setTally("tally-pending", String(pending) + (state.jobsCursor ? "+" : ""));
-}
-
-async function loadSummary() {
-  const orgSeq = state.orgSeq;
-  const [workers, credentials, jobs] = await Promise.allSettled([
-    api("GET", orgPath() + "/workers"),
-    api("GET", orgPath() + "/credentials"),
-    api("GET", orgPath() + "/jobs"),
-  ]);
-  if (orgSeq !== state.orgSeq) {
-    return;
-  }
-  if (workers.status === "fulfilled") {
-    tallyWorkers((workers.value && workers.value.items) || []);
-  }
-  if (credentials.status === "fulfilled") {
-    tallyCredentials((credentials.value && credentials.value.items) || []);
-  }
-  // The jobs tab owns the pending count once it has loaded a page.
-  if (jobs.status === "fulfilled" && state.jobs.size === 0) {
-    const items = (jobs.value && jobs.value.items) || [];
-    const pending = items.filter((job) => job.status === "pending").length;
-    setTally("tally-pending", String(pending) + (jobs.value && jobs.value.next_cursor ? "+" : ""));
-  }
+  return parts.length ? parts.join(" · ") : "None";
 }
 
 // ── Session ────────────────────────────────────────────────────────────────
 
-function resetViews() {
-  hideIssued();
-  ["workers", "credentials", "jobs", "baselines", "releases", "items", "runs", "lb-audio", "lb-document"].forEach((name) => {
-    $(name + "-body").replaceChildren();
-    $(name + "-empty").hidden = true;
-    $(name + "-wrap").hidden = false;
-  });
-  $("settings-revision").textContent = "";
-  $("settings-json").textContent = "";
-  $("jobs-more").hidden = true;
-  state.jobsCursor = null;
-  state.jobs.clear();
-  resetTestbench();
-  resetTally();
-}
-
-function setMenu(open) {
-  $("rail").classList.toggle("is-open", open);
-  $("menu-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+function showLoginMessage(message) {
+  const note = $("login-message");
+  note.setAttribute("subtitle", message || "");
+  note.hidden = !message;
+  if (message) {
+    note.open = true;
+  }
 }
 
 function showLogin(message) {
   $("app").hidden = true;
   $("login").hidden = false;
-  const note = $("login-message");
-  note.textContent = message || "";
-  note.hidden = !message;
+  showLoginMessage(message);
   whenReady($("login-token"), (input) => input.focus());
+}
+
+function closePanels() {
+  ["org-panel", "account-panel"].forEach((id) => $(id).removeAttribute("expanded"));
+  ["org-action", "account-action"].forEach((id) => {
+    $(id).active = false;
+  });
 }
 
 function signOut(message) {
@@ -625,12 +959,13 @@ function signOut(message) {
   state.org = null;
   clearToken();
   closeConfirmation(false);
+  clearIssued();
+  $("new-org-modal").open = false;
+  $("contribute-modal").open = false;
+  closePanels();
   resetViews();
-  $("org-list").replaceChildren();
-  $("org-select").replaceChildren();
-  $("org-title").textContent = "";
-  $("new-org-form").hidden = true;
-  setMenu(false);
+  $("org-switcher").replaceChildren();
+  setOrgLabels("");
   hideBanner();
   showLogin(message);
 }
@@ -647,22 +982,42 @@ async function enter() {
       signOut("This token is not an organization admin or hub operator token.");
       return;
     }
-    showLogin();
-    report(error);
+    showLogin(error.message);
     return;
   }
   state.me = me;
-  $("me-role").textContent = ROLE_LABELS[me.role] || me.role;
+  const role = ROLE_LABELS[me.role] || me.role;
+  $("me-role").textContent = role;
   $("me-org").textContent = me.organization_id;
+  $("me-credential").textContent = me.credential_id || "";
+  $("account-action").setAttribute("tooltip-text", "Signed in: " + role);
+  $("account-action").setAttribute("aria-label", "Signed in: " + role);
+  const operator = me.role === "hub_operator";
+  $("org-action").hidden = !operator;
+  $("new-org").hidden = !operator;
   $("login").hidden = true;
-  $("login-message").hidden = true;
+  showLoginMessage("");
   $("app").hidden = false;
-  $("new-org-form").hidden = me.role !== "hub_operator";
   try {
     await loadOrganizations(null);
   } catch (error) {
     report(error);
   }
+}
+
+function submitLogin() {
+  const input = $("login-token");
+  const token = String(input.value || "").trim();
+  input.value = "";
+  if (!token) {
+    showLoginMessage("Paste a token to sign in.");
+    return;
+  }
+  hideBanner();
+  showLoginMessage("");
+  state.token = token;
+  saveToken(token);
+  enter();
 }
 
 // ── Organizations ──────────────────────────────────────────────────────────
@@ -672,28 +1027,6 @@ async function loadOrganizations(preferred) {
   const items = (data && data.items) || [];
   const ids = items.map((item) => item.id);
   const home = state.me.organization_id;
-
-  const list = $("org-list");
-  const select = $("org-select");
-  list.replaceChildren();
-  select.replaceChildren();
-  items.forEach((item) => {
-    const entry = el("li");
-    const choose = el("button", "org-item");
-    choose.type = "button";
-    choose.dataset.org = item.id;
-    choose.appendChild(el("span", "org-name", item.id));
-    if (item.id === home) {
-      choose.appendChild(el("span", "org-home caps", "Home"));
-    }
-    choose.addEventListener("click", () => chooseOrganization(item.id));
-    entry.appendChild(choose);
-    list.appendChild(entry);
-
-    const option = wa("wa-option", { value: item.id }, item.id === home ? item.id + " (yours)" : item.id);
-    select.appendChild(option);
-  });
-
   let chosen = null;
   for (const candidate of [preferred, state.org, home]) {
     if (candidate && ids.includes(candidate)) {
@@ -704,170 +1037,375 @@ async function loadOrganizations(preferred) {
   if (!chosen && ids.length) {
     chosen = ids[0];
   }
-  select.disabled = ids.length <= 1;
+  state.orgIds = ids;
   selectOrganization(chosen);
 }
 
+function renderOrgSwitcher() {
+  const switcher = $("org-switcher");
+  switcher.replaceChildren();
+  const home = state.me ? state.me.organization_id : null;
+  (state.orgIds || []).forEach((id) => {
+    const item = h("cds-switcher-item", { href: "#/" + state.section, selected: id === state.org }, id, id === home ? " (home)" : "");
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      closePanels();
+      chooseOrganization(id);
+    });
+    switcher.appendChild(item);
+  });
+}
+
+function setOrgLabels(orgId) {
+  document.querySelectorAll(".org-name").forEach((node) => {
+    node.textContent = orgId || "";
+  });
+  $("header-org").textContent = orgId || "";
+}
+
 function chooseOrganization(orgId) {
-  setMenu(false);
   if (orgId === state.org) {
-    loadTab();
+    loadSection();
     return;
   }
   selectOrganization(orgId);
+  toast("Organization switched", "Now showing " + orgId + ".", "info");
 }
 
 function selectOrganization(orgId) {
   state.org = orgId;
   state.orgSeq += 1;
   resetViews();
-  $("org-title").textContent = orgId || "No organization";
-  $("org-select").value = orgId || "";
-  document.querySelectorAll(".org-item").forEach((item) => {
-    if (item.dataset.org === orgId) {
-      item.setAttribute("aria-current", "page");
-    } else {
-      item.removeAttribute("aria-current");
-    }
-  });
-  if (orgId) {
-    loadSummary().catch(report);
-  }
-  loadTab();
+  setOrgLabels(orgId || "No organization");
+  renderOrgSwitcher();
+  route();
 }
 
-// ── Tabs ───────────────────────────────────────────────────────────────────
+async function createOrganization(trigger) {
+  const input = $("new-org-id");
+  const id = String(input.value || "").trim();
+  if (!id) {
+    input.setAttribute("invalid", "");
+    input.setAttribute("invalid-text", "Enter an organization ID.");
+    return;
+  }
+  input.removeAttribute("invalid");
+  await run(trigger, async () => {
+    const created = await api("POST", ADMIN_API + "/organizations", { id: id });
+    input.value = "";
+    $("new-org-modal").open = false;
+    const newId = created && created.id ? created.id : id;
+    await loadOrganizations(newId);
+    toast("Organization created", newId + " is selected.");
+  });
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+
+function buildNavigation() {
+  const items = $("side-nav-items");
+  SECTIONS.forEach((section) => {
+    const link = h("cds-side-nav-link", { href: "#/" + section.name }, section.label);
+    link.dataset.section = section.name;
+    link.prepend(icon(section.icon, { slot: "title-icon", width: 16, height: 16 }));
+    link.addEventListener("click", () => {
+      if (window.innerWidth < DESKTOP_MIN_PX) {
+        $("side-nav").expanded = false;
+      }
+    });
+    items.appendChild(link);
+  });
+  $("org-action").appendChild(icon(Enterprise20, { slot: "icon" }));
+  $("account-action").appendChild(icon(UserAvatar20, { slot: "icon" }));
+  $("sign-out").appendChild(icon(Logout20, { slot: "icon" }));
+}
+
+function sectionFromHash() {
+  const match = /^#\/([a-z]+)$/.exec(window.location.hash);
+  return match && SECTION_NAMES.includes(match[1]) ? match[1] : null;
+}
+
+function route() {
+  let name = sectionFromHash();
+  if (!name) {
+    name = "overview";
+    window.history.replaceState(null, "", "#/overview");
+  }
+  showSection(name);
+}
+
+function showSection(name) {
+  state.section = name;
+  SECTION_NAMES.forEach((section) => {
+    $("section-" + section).hidden = section !== name;
+  });
+  document.querySelectorAll("cds-side-nav-link").forEach((link) => {
+    link.active = link.dataset.section === name;
+  });
+  document.querySelectorAll("cds-switcher-item").forEach((item) => {
+    item.setAttribute("href", "#/" + name);
+  });
+  const label = SECTIONS.find((section) => section.name === name).label;
+  document.title = label + " · Resona hub";
+  syncPolling();
+  loadSection();
+}
 
 const loaders = {
+  overview: loadOverview,
   workers: loadWorkers,
   credentials: loadCredentials,
   jobs: (seq) => loadJobs(seq, false),
   settings: loadSettings,
+  baselines: loadBaselines,
   testbench: loadTestbench,
 };
 
-function setTab(name) {
-  if (!TABS.includes(name)) {
-    return;
-  }
-  state.tab = name;
-  syncPolling();
-  loadTab();
-}
-
-function loadTab() {
+function loadSection() {
   state.seq += 1;
   const seq = state.seq;
   if (!state.token || !state.org) {
     return;
   }
   hideBanner();
-  const tab = state.tab;
-  setLoading(tab, seq, true);
-  loaders[tab](seq)
-    .catch(report)
-    .finally(() => setLoading(tab, seq, false));
+  loaders[state.section](seq).catch(report);
+}
+
+// Marks tables as loading for the duration of `work` unless a newer load took over.
+async function withLoading(seq, tables, work) {
+  tables.forEach((table) => table.setLoading(true));
+  try {
+    await work();
+  } finally {
+    if (seq === state.seq) {
+      tables.forEach((table) => table.setLoading(false));
+    }
+  }
+}
+
+function resetViews() {
+  [workersTable, credentialsTable, jobsTable, baselinesTable, releasesTable, itemsTable, runsTable, lbAudioTable, lbDocumentTable].forEach(
+    (table) => table.clear()
+  );
+  $("overview-tiles").replaceChildren();
+  $("overview-attention").replaceChildren();
+  $("settings-keys").replaceChildren();
+  $("settings-json").replaceChildren();
+  $("settings-body").hidden = true;
+  $("settings-revision").hidden = true;
+  state.jobsCursor = null;
+  resetTestbench();
+}
+
+// ── Overview ───────────────────────────────────────────────────────────────
+
+function workerLabel(worker) {
+  return worker.name ? "“" + worker.name + "”" : worker.id;
+}
+
+function tile(href, label, value, detail) {
+  return h(
+    "cds-clickable-tile",
+    { href: href, class: "stat-tile" },
+    h("span", { class: "stat-label" }, label),
+    h("span", { class: "stat-value num" }, value),
+    h("span", { class: "stat-detail" }, detail),
+    icon(ArrowRight16, { class: "stat-arrow" })
+  );
+}
+
+async function loadOverview(seq) {
+  $("overview-tiles").replaceChildren(
+    ...[1, 2, 3, 4].map(() => h("div", { class: "stat-tile stat-skeleton" }, h("cds-skeleton-text", { lines: 3, paragraph: true })))
+  );
+  $("overview-attention").replaceChildren(h("cds-skeleton-text", { lines: 3, paragraph: true }));
+  const [workers, credentials, jobs, settings] = await Promise.allSettled([
+    api("GET", orgPath() + "/workers"),
+    api("GET", orgPath() + "/credentials"),
+    api("GET", orgPath() + "/jobs"),
+    api("GET", orgPath() + "/settings"),
+  ]);
+  if (seq !== state.seq) {
+    return;
+  }
+  const failed = [workers, credentials, jobs, settings].find((result) => result.status === "rejected");
+  if (failed) {
+    report(failed.reason);
+  }
+  const value = (result) => (result.status === "fulfilled" ? result.value || {} : null);
+  renderOverview(value(workers), value(credentials), value(jobs), value(settings));
+}
+
+function renderOverview(workersData, credentialsData, jobsData, settingsData) {
+  const tiles = [];
+  const workers = workersData ? workersData.items || [] : null;
+  const jobs = jobsData ? jobsData.items || [] : null;
+
+  if (workers) {
+    const active = workers.filter((worker) => !worker.revoked);
+    const online = active.filter((worker) => worker.online).length;
+    const approved = active.filter((worker) => worker.approved).length;
+    tiles.push(tile("#/workers", "Workers online", String(online), approved + " approved · " + active.length + " not revoked"));
+  } else {
+    tiles.push(tile("#/workers", "Workers online", "–", "Could not load workers"));
+  }
+
+  if (credentialsData) {
+    const live = (credentialsData.items || []).filter((credential) => !credential.revoked_at).length;
+    tiles.push(tile("#/credentials", "Live credentials", String(live), "Not revoked, every role"));
+  } else {
+    tiles.push(tile("#/credentials", "Live credentials", "–", "Could not load credentials"));
+  }
+
+  if (jobs) {
+    const pending = jobs.filter((job) => job.status === "pending");
+    const more = jobsData.next_cursor ? "+" : "";
+    const oldest = pending.reduce((max, job) => Math.max(max, waitedSince(job.created_at) || 0), 0);
+    const detail = pending.length ? "Oldest waiting " + durationText(oldest) : "None waiting";
+    tiles.push(tile("#/jobs", "Pending jobs", pending.length + more, detail + (more ? " (first page)" : "")));
+  } else {
+    tiles.push(tile("#/jobs", "Pending jobs", "–", "Could not load jobs"));
+  }
+
+  if (settingsData) {
+    tiles.push(tile("#/settings", "Settings revision", String(settingsData.revision), "Applies to new jobs"));
+  } else {
+    tiles.push(tile("#/settings", "Settings revision", "–", "Could not load settings"));
+  }
+  $("overview-tiles").replaceChildren(...tiles);
+
+  const findings = [];
+  (workers || [])
+    .filter((worker) => !worker.revoked)
+    .forEach((worker) => {
+      const entries = capabilityEntries(worker);
+      const reportedOnly = entries.filter(([, kind]) => kind === "reported").length;
+      const stale = entries.filter(([, kind]) => kind === "stale").length;
+      if (!worker.approved && (worker.reported_capabilities || []).length) {
+        findings.push(["Workers", "Worker " + workerLabel(worker) + " reports " + worker.reported_capabilities.length + " capabilities and is not approved.", "#/workers"]);
+      } else if (worker.approved && reportedOnly) {
+        findings.push(["Workers", "Worker " + workerLabel(worker) + " reports " + reportedOnly + " capabilities that are not approved.", "#/workers"]);
+      }
+      if (worker.approved && !worker.online) {
+        findings.push([
+          "Workers",
+          "Worker " + workerLabel(worker) + " is approved but offline" + (worker.last_seen ? ", last seen " + relativeText(worker.last_seen) + "." : ", never seen."),
+          "#/workers",
+        ]);
+      }
+      if (stale) {
+        findings.push(["Workers", "Worker " + workerLabel(worker) + " has " + stale + " approved capabilities it no longer reports.", "#/workers"]);
+      }
+    });
+  (jobs || [])
+    .filter((job) => job.status === "pending" && job.queue_reason)
+    .forEach((job) => {
+      const waited = waitedSince(job.created_at);
+      findings.push([
+        "Jobs",
+        "Job " + job.job_id + " is pending: " + (QUEUE_REASONS[job.queue_reason] || job.queue_reason) + (waited !== null ? " (waiting " + durationText(waited) + ")." : "."),
+        "#/jobs",
+      ]);
+    });
+
+  const box = $("overview-attention");
+  if (!findings.length) {
+    box.replaceChildren(h("p", { class: "empty-note" }, workers && jobs ? "Nothing needs attention." : "Some data could not be loaded, so this list may be incomplete."));
+    return;
+  }
+  const list = h("cds-structured-list", { condensed: true });
+  list.appendChild(
+    h(
+      "cds-structured-list-head",
+      null,
+      h(
+        "cds-structured-list-header-row",
+        null,
+        h("cds-structured-list-header-cell", null, "Section"),
+        h("cds-structured-list-header-cell", null, "Finding"),
+        h("cds-structured-list-header-cell", null, srOnly("Go to section"))
+      )
+    )
+  );
+  const listBody = h("cds-structured-list-body");
+  findings.forEach(([area, text, href]) => {
+    listBody.appendChild(
+      h(
+        "cds-structured-list-row",
+        null,
+        h("cds-structured-list-cell", null, area),
+        h("cds-structured-list-cell", null, text),
+        h("cds-structured-list-cell", null, h("cds-link", { href: href }, "Open " + area.toLowerCase()))
+      )
+    );
+  });
+  list.appendChild(listBody);
+  box.replaceChildren(list);
 }
 
 // ── Workers ────────────────────────────────────────────────────────────────
 
-async function loadWorkers(seq) {
-  const data = await api("GET", orgPath() + "/workers");
-  if (seq !== state.seq) {
-    return;
+function workerStatusTag(worker) {
+  if (worker.revoked) {
+    return tag("Revoked", "red");
   }
-  const items = (data && data.items) || [];
-  const body = $("workers-body");
-  body.replaceChildren();
-  items.forEach((worker) => body.appendChild(workerRow(worker)));
-  tallyWorkers(items);
-  setEmpty("workers");
+  return worker.online ? tag("Online", "green") : tag("Offline", "gray");
 }
 
-function workerStatus(worker) {
-  let mark;
-  if (worker.revoked) {
-    mark = stamp("Revoked");
-  } else if (worker.online) {
-    mark = badge("Online", "success");
-  } else {
-    mark = badge("Offline", "neutral", "outlined");
-  }
-  const seen = el("span", "when-rel");
-  if (worker.last_seen) {
-    seen.appendChild(document.createTextNode("Last seen "));
-    seen.appendChild(relativeTime(worker.last_seen));
-    seen.title = worker.last_seen;
-  } else {
-    seen.textContent = "Never seen";
-  }
-  return stack(mark, seen);
+function workerStatusRank(worker) {
+  return worker.revoked ? 2 : worker.online ? 0 : 1;
 }
 
 function workerApproval(worker) {
   if (!worker.approved) {
-    return badge("Not approved", "warning");
+    return tag("Not approved", "cool-gray");
   }
-  return badge(worker.approved_private ? "Approved private" : "Approved non-private", "success");
-}
-
-function workerRow(worker) {
-  const row = el("tr", worker.revoked ? "is-revoked" : null);
-  row.appendChild(cell("Name", worker.name ? el("span", "name", worker.name) : ""));
-  row.appendChild(cell("ID", idWithCopy(worker.id, "Copy worker ID")));
-  row.appendChild(cell("Status", workerStatus(worker)));
-  row.appendChild(cell("Runtime", mono(worker.runtime_version)));
-  row.appendChild(cell("Approval", workerApproval(worker)));
-  row.appendChild(cell("Capabilities", capabilityTags(worker.reported_capabilities || [], worker.approved_capabilities || [])));
-
-  const actions = el("div", "actions");
-  if (!worker.revoked) {
-    const privateButton = actionButton("Approve private", {
-      variant: "brand",
-      appearance: "accent",
-      icon: "check",
-      id: "approve-private-" + worker.id,
-      onClick: (event) => approveWorker(event.currentTarget, worker, true),
-    });
-    const publicButton = actionButton("Approve non-private", {
-      variant: "brand",
-      appearance: "outlined",
-      icon: "check",
-      id: "approve-public-" + worker.id,
-      onClick: (event) => approveWorker(event.currentTarget, worker, false),
-    });
-    actions.appendChild(privateButton);
-    actions.appendChild(tooltipFor(privateButton, "Accepts its reported capabilities; it then runs private jobs only."));
-    actions.appendChild(publicButton);
-    actions.appendChild(tooltipFor(publicButton, "Accepts its reported capabilities; it then runs non-private jobs only."));
-    actions.appendChild(
-      actionButton("Revoke", {
-        variant: "danger",
-        icon: "ban",
-        onClick: (event) => revokeWorker(event.currentTarget, worker),
-      })
-    );
-  }
-  row.appendChild(cell("Actions", actions.children.length ? actions : "", "actions-cell"));
-  return row;
+  return tag(worker.approved_private ? "Approved private" : "Approved non-private", "green");
 }
 
 function workerPath(worker) {
   return orgPath() + "/workers/" + encodeURIComponent(worker.id);
 }
 
+function workerActions(worker) {
+  const reported = (worker.reported_capabilities || []).length > 0;
+  const blocked = worker.revoked ? "worker revoked" : !reported ? "nothing reported" : null;
+  return [
+    {
+      label: "Approve private",
+      disabled: Boolean(blocked),
+      reason: blocked,
+      onClick: (menu) => approveWorker(menu, worker, true),
+    },
+    {
+      label: "Approve non-private",
+      disabled: Boolean(blocked),
+      reason: blocked,
+      onClick: (menu) => approveWorker(menu, worker, false),
+    },
+    {
+      label: "Revoke worker",
+      danger: true,
+      divider: true,
+      disabled: worker.revoked,
+      reason: worker.revoked ? "already revoked" : null,
+      onClick: (menu) => revokeWorker(menu, worker),
+    },
+  ];
+}
+
 function approveWorker(trigger, worker, isPrivate) {
   return run(trigger, async () => {
     await api("POST", workerPath(worker) + "/approve", { private: isPrivate });
-    loadTab();
+    toast("Worker approved", workerLabel(worker) + " now runs " + (isPrivate ? "private" : "non-private") + " jobs with its reported capabilities.");
+    loadSection();
   });
 }
 
 async function revokeWorker(trigger, worker) {
-  const label = worker.name ? '"' + worker.name + '"' : worker.id;
   const confirmed = await confirmAction({
-    title: "Revoke worker?",
-    message: "Revoke worker " + label + "? Its token stops working immediately.",
+    title: "Revoke worker " + workerLabel(worker) + "?",
+    message: "Its token stops working immediately and it claims no further jobs. This cannot be undone; the machine must be enrolled again.",
     confirmLabel: "Revoke worker",
     dismissLabel: "Keep worker",
   });
@@ -876,69 +1414,148 @@ async function revokeWorker(trigger, worker) {
   }
   await run(trigger, async () => {
     await api("POST", workerPath(worker) + "/revoke");
-    loadTab();
+    toast("Worker revoked", workerLabel(worker) + " can no longer connect.");
+    loadSection();
+  });
+}
+
+function workerDetail(worker) {
+  return h(
+    "div",
+    { class: "detail-stack" },
+    facts([
+      ["Worker ID", copyable(worker.id, "Copy worker ID")],
+      ["Runtime", mono(worker.runtime_version)],
+      ["Last seen", worker.last_seen ? whenFull(worker.last_seen) : "Never seen"],
+      ["Approval", workerApproval(worker)],
+    ]),
+    h("h3", { class: "detail-title" }, "Capabilities"),
+    capabilityList(worker)
+  );
+}
+
+const workersTable = dataTable({
+  title: "Workers",
+  description: "Pull workers enrolled in this organization. Expand a row for its capabilities.",
+  columns: [
+    { key: "name", header: "Name", sort: (w) => w.name || "", render: (w) => (w.name ? w.name : muted("Unnamed")) },
+    { key: "id", header: "ID", secondary: true, sort: (w) => w.id, render: (w) => mono(w.id) },
+    { key: "status", header: "Status", sort: workerStatusRank, render: workerStatusTag },
+    { key: "seen", header: "Last seen", secondary: true, sort: (w) => w.last_seen || "", render: (w) => (w.last_seen ? whenCell(w.last_seen) : muted("Never")) },
+    { key: "approval", header: "Approval", sort: (w) => (w.approved ? (w.approved_private ? 0 : 1) : 2), render: workerApproval },
+    { key: "caps", header: "Capabilities", secondary: true, render: capabilitySummary },
+    { key: "runtime", header: "Runtime", secondary: true, sort: (w) => w.runtime_version || "", render: (w) => mono(w.runtime_version) },
+  ],
+  rowId: (w) => w.id,
+  expand: workerDetail,
+  actions: workerActions,
+  actionsLabel: (w) => "Actions for worker " + (w.name || w.id),
+  onRefresh: () => loadSection(),
+  empty: ["No workers have enrolled in this organization. Enroll one on the hub host with ", h("span", { class: "mono" }, "resona-admin worker enroll"), "."],
+});
+
+async function loadWorkers(seq) {
+  await withLoading(seq, [workersTable], async () => {
+    const data = await api("GET", orgPath() + "/workers");
+    if (seq !== state.seq) {
+      return;
+    }
+    workersTable.setRows((data && data.items) || []);
   });
 }
 
 // ── Credentials ────────────────────────────────────────────────────────────
 
-async function loadCredentials(seq) {
-  const data = await api("GET", orgPath() + "/credentials");
-  if (seq !== state.seq) {
-    return;
-  }
-  const items = (data && data.items) || [];
-  const body = $("credentials-body");
-  body.replaceChildren();
-  items.forEach((credential) => body.appendChild(credentialRow(credential)));
-  tallyCredentials(items);
-  setEmpty("credentials");
+function isOwnCredential(credential) {
+  return Boolean(state.me && credential.id === state.me.credential_id);
 }
 
-function credentialRow(credential) {
-  const own = Boolean(state.me && credential.id === state.me.credential_id);
-  const row = el("tr", credential.revoked_at ? "is-revoked" : null);
-  row.appendChild(cell("Credential", idWithCopy(credential.id, "Copy credential ID")));
-  row.appendChild(cell("Role", ROLE_LABELS[credential.role] || credential.role));
-  row.appendChild(cell("Worker", credential.worker_id ? trackingNumber(credential.worker_id) : ""));
-  row.appendChild(cell("Issued", timeNode(credential.created_at)));
+function credentialState(credential) {
+  const nodes = [credential.revoked_at ? tag("Revoked", "red") : tag("Live", "green")];
+  if (isOwnCredential(credential)) {
+    nodes.push(tag("This session", "blue"));
+  }
+  return h("span", { class: "tag-row" }, nodes);
+}
 
-  let standing;
+function credentialActions(credential) {
+  let reason = null;
   if (credential.revoked_at) {
-    standing = stack(stamp("Revoked"), timeNode(credential.revoked_at));
-  } else {
-    standing = stack(badge("Live", "success"), own ? el("span", "when-rel", "This session") : null);
+    reason = "already revoked";
+  } else if (credential.role === "worker") {
+    reason = "revoke the worker instead";
+  } else if (isOwnCredential(credential)) {
+    reason = "you are signed in with it";
   }
-  row.appendChild(cell("State", standing));
+  return [
+    {
+      label: "Revoke token",
+      danger: true,
+      disabled: Boolean(reason),
+      reason: reason,
+      onClick: (menu) => revokeCredential(menu, credential),
+    },
+  ];
+}
 
-  const actions = el("div", "actions");
-  if (!credential.revoked_at) {
-    if (credential.role === "worker") {
-      actions.appendChild(el("span", "quiet", "Revoke the worker instead"));
-    } else {
-      const revoke = actionButton("Revoke", {
-        variant: "danger",
-        icon: "ban",
-        onClick: (event) => revokeCredential(event.currentTarget, credential),
-      });
-      if (own) {
-        revoke.disabled = true;
-        revoke.title = "You are signed in with this credential.";
-        actions.appendChild(revoke);
-        actions.appendChild(el("span", "quiet", "You are signed in with this credential."));
-      } else {
-        actions.appendChild(revoke);
-      }
-    }
+function credentialDetail(credential) {
+  let note = null;
+  if (!credential.revoked_at && credential.role === "worker") {
+    note = "Worker tokens are revoked together with their worker on the Workers page.";
+  } else if (!credential.revoked_at && isOwnCredential(credential)) {
+    note = "You are signed in with this credential, so it cannot be revoked from this session.";
   }
-  row.appendChild(cell("Actions", actions.children.length ? actions : "", "actions-cell"));
-  return row;
+  return h(
+    "div",
+    { class: "detail-stack" },
+    facts([
+      ["Credential ID", copyable(credential.id, "Copy credential ID")],
+      ["Role", ROLE_LABELS[credential.role] || credential.role],
+      ["Worker", credential.worker_id ? copyable(credential.worker_id, "Copy worker ID") : ""],
+      ["Issued", whenFull(credential.created_at)],
+      ["Revoked", credential.revoked_at ? whenFull(credential.revoked_at) : "Not revoked"],
+    ]),
+    note ? h("p", { class: "muted" }, note) : null
+  );
+}
+
+const credentialsTable = dataTable({
+  title: "Credentials",
+  description: "Tokens of this organization. Only a hash is stored; a token is shown once, at issue.",
+  columns: [
+    { key: "id", header: "Credential", sort: (c) => c.id, render: (c) => mono(c.id) },
+    { key: "role", header: "Role", sort: (c) => ROLE_LABELS[c.role] || c.role, render: (c) => ROLE_LABELS[c.role] || c.role },
+    { key: "state", header: "State", sort: (c) => (c.revoked_at ? 1 : 0), render: credentialState },
+    { key: "worker", header: "Worker", secondary: true, sort: (c) => c.worker_id || "", render: (c) => mono(c.worker_id) },
+    { key: "issued", header: "Issued", secondary: true, sort: (c) => c.created_at || "", render: (c) => whenCell(c.created_at) },
+  ],
+  rowId: (c) => c.id,
+  rowClass: (c) => (c.revoked_at ? "row-revoked" : null),
+  expand: credentialDetail,
+  actions: credentialActions,
+  actionsLabel: (c) => "Actions for credential " + c.id,
+  onRefresh: () => loadSection(),
+  toolbar: [
+    button("Issue admin token", { kind: "tertiary", onClick: (event) => issueCredential(event.currentTarget, "org_admin") }),
+    button("Issue client token", { kind: "primary", icon: Add16, onClick: (event) => issueCredential(event.currentTarget, "client") }),
+  ],
+  empty: "No credentials. Issue a client or admin token with the buttons above.",
+});
+
+async function loadCredentials(seq) {
+  await withLoading(seq, [credentialsTable], async () => {
+    const data = await api("GET", orgPath() + "/credentials");
+    if (seq !== state.seq) {
+      return;
+    }
+    credentialsTable.setRows((data && data.items) || []);
+  });
 }
 
 async function revokeCredential(trigger, credential) {
   const confirmed = await confirmAction({
-    title: "Revoke token?",
-    message: "Revoke credential " + credential.id + "? Anything using it stops working immediately.",
+    title: "Revoke credential " + credential.id + "?",
+    message: "Anything using this " + (ROLE_LABELS[credential.role] || credential.role).toLowerCase() + " token stops working immediately. This cannot be undone.",
     confirmLabel: "Revoke token",
     dismissLabel: "Keep token",
   });
@@ -947,7 +1564,8 @@ async function revokeCredential(trigger, credential) {
   }
   await run(trigger, async () => {
     await api("POST", orgPath() + "/credentials/" + encodeURIComponent(credential.id) + "/revoke");
-    loadTab();
+    toast("Token revoked", "Credential " + credential.id + " no longer authenticates.");
+    loadSection();
   });
 }
 
@@ -959,69 +1577,10 @@ function issueCredential(trigger, role) {
       return;
     }
     showIssued(issued);
-    if (state.tab === "credentials") {
-      loadTab();
+    if (state.section === "credentials") {
+      loadSection();
     }
   });
-}
-
-function showIssued(issued) {
-  const slip = $("issued");
-  slip.classList.remove("is-tearing");
-  $("issued-id").replaceChildren(trackingNumber(issued.id));
-  $("issued-role").textContent = ROLE_LABELS[issued.role] || issued.role;
-  $("issued-token").value = issued.token;
-  $("issued-copy").value = issued.token;
-  $("issued-copied").hidden = true;
-  slip.hidden = false;
-  whenReady($("issued-token"), (input) => {
-    input.focus();
-    input.select();
-  });
-}
-
-function hideIssued() {
-  const slip = $("issued");
-  slip.hidden = true;
-  slip.classList.remove("is-tearing");
-  $("issued-token").value = "";
-  $("issued-copy").value = "";
-  $("issued-role").textContent = "";
-  $("issued-id").replaceChildren();
-  $("issued-copied").hidden = true;
-}
-
-// The slip slides away before it is cleared; without motion it is cleared at once.
-function tearOffIssued() {
-  const slip = $("issued");
-  if (slip.hidden || slip.classList.contains("is-tearing")) {
-    return;
-  }
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    hideIssued();
-    $("issue-client").focus();
-    return;
-  }
-  slip.classList.add("is-tearing");
-  let done = false;
-  const finish = () => {
-    if (done) {
-      return;
-    }
-    done = true;
-    if (slip.classList.contains("is-tearing")) {
-      hideIssued();
-      $("issue-client").focus();
-    }
-  };
-  const onEnd = (event) => {
-    if (event.target === slip) {
-      slip.removeEventListener("animationend", onEnd);
-      finish();
-    }
-  };
-  slip.addEventListener("animationend", onEnd);
-  window.setTimeout(finish, 600);
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────────
@@ -1030,161 +1589,139 @@ function canManageJobs() {
   return Boolean(state.me && state.me.role === "org_admin" && state.org === state.me.organization_id);
 }
 
-async function loadJobs(seq, append) {
-  let path = orgPath() + "/jobs";
-  if (append && state.jobsCursor) {
-    path += "?cursor=" + encodeURIComponent(state.jobsCursor);
+function jobWaiting(job) {
+  if (job.status !== "pending") {
+    return job.status === "processing" && !isBlank(job.attempt) ? "Attempt " + job.attempt : "";
   }
-  const data = await api("GET", path);
-  if (seq !== state.seq) {
+  const waited = waitedSince(job.created_at);
+  const reason = job.queue_reason ? QUEUE_REASONS[job.queue_reason] || job.queue_reason : null;
+  return h(
+    "span",
+    { class: "cell-stack" },
+    waited !== null ? h("span", { class: "num" }, durationText(waited)) : null,
+    reason ? h("span", { class: "muted", title: job.queue_reason }, reason) : null
+  );
+}
+
+function jobDetail(job) {
+  const error = job.error ? h("span", { class: "cell-stack" }, mono(job.error.code), h("span", null, String(job.error.message))) : "None";
+  return h(
+    "div",
+    { class: "detail-stack" },
+    facts([
+      ["Job ID", copyable(String(job.job_id), "Copy job ID")],
+      ["Status", statusTag(job.status)],
+      ["Queue reason", job.queue_reason ? (QUEUE_REASONS[job.queue_reason] || job.queue_reason) + " (" + job.queue_reason + ")" : "None"],
+      ["Attempt", isBlank(job.attempt) ? "" : num(job.attempt)],
+      ["Privacy", job.private ? "Private" : "Non-private"],
+      ["Execution profile", mono(job.execution_profile)],
+      ["Candidate", job.candidate ? mono(formatCandidate(job.candidate)) : "Not assigned"],
+      ["Error", error],
+      ["Result", job.result_available ? tag("Available", "green") : "Not available"],
+      ["Created", whenFull(job.created_at)],
+      ["Updated", whenFull(job.updated_at)],
+      ["Deadline", whenFull(job.deadline_at)],
+    ])
+  );
+}
+
+function jobActions(job) {
+  const active = job.status === "pending" || job.status === "processing";
+  return [
+    {
+      label: "Cancel job",
+      danger: true,
+      disabled: !active,
+      reason: active ? null : "already " + job.status,
+      onClick: (menu) => cancelJob(menu, job),
+    },
+    { label: "Delete job", danger: true, divider: true, onClick: (menu) => deleteJob(menu, job) },
+  ];
+}
+
+function jobsTableConfig(withActions) {
+  return {
+    title: "Jobs",
+    description: withActions
+      ? "Newest first. Expand a row for its timeline, error and result."
+      : "Newest first, metadata only. Cancel and delete are open to this organization's own admins.",
+    columns: [
+      { key: "id", header: "Job", sort: (j) => Number(j.job_id), render: (j) => mono(j.job_id) },
+      { key: "kind", header: "Kind", sort: (j) => j.kind, render: (j) => j.kind },
+      { key: "status", header: "Status", sort: (j) => j.status, render: (j) => statusTag(j.status) },
+      { key: "waiting", header: "Waiting", sort: (j) => (j.status === "pending" ? waitedSince(j.created_at) || 0 : -1), render: jobWaiting },
+      { key: "profile", header: "Execution profile", secondary: true, sort: (j) => j.execution_profile || "", render: (j) => mono(j.execution_profile) },
+      { key: "privacy", header: "Privacy", secondary: true, sort: (j) => (j.private ? 0 : 1), render: (j) => (j.private ? "Private" : "Non-private") },
+      { key: "result", header: "Result", secondary: true, sort: (j) => (j.result_available ? 0 : 1), render: (j) => (j.result_available ? tag("Available", "green") : "") },
+      { key: "created", header: "Created", secondary: true, sort: (j) => j.created_at || "", render: (j) => whenCell(j.created_at) },
+    ],
+    rowId: (j) => j.job_id,
+    expand: jobDetail,
+    actions: withActions ? jobActions : null,
+    actionsLabel: (j) => "Actions for job " + j.job_id,
+    onRefresh: () => loadSection(),
+    empty: "No jobs in this organization yet. Jobs appear once a client submits audio or a document.",
+  };
+}
+
+// Two configurations of one table: with row actions (own org admin) or metadata only.
+let jobsTable = null;
+let jobsTableActions = null;
+const jobsMore = button("Load more", { kind: "tertiary", size: "sm", onClick: (event) => loadMoreJobs(event.currentTarget) });
+
+function mountJobsTable(withActions) {
+  if (jobsTable && jobsTableActions === withActions) {
     return;
   }
-  const body = $("jobs-body");
-  if (!append) {
-    body.replaceChildren();
-    state.jobs.clear();
-  }
-  $("jobs-actions-head").hidden = !canManageJobs();
-  ((data && data.items) || []).forEach((job) => {
-    state.jobs.set(job.job_id, job);
-    body.appendChild(jobRow(job));
-  });
-  state.jobsCursor = (data && data.next_cursor) || null;
-  $("jobs-more").hidden = !state.jobsCursor;
-  tallyJobs();
-  setEmpty("jobs");
+  jobsTable = dataTable(jobsTableConfig(withActions));
+  jobsTableActions = withActions;
+  jobsTable.footer.append(jobsMore, h("span", { class: "muted", id: "jobs-count" }));
+  $("jobs-table").replaceChildren(jobsTable.root);
 }
 
-function jobStatus(job) {
-  switch (job.status) {
-    case "pending":
-      return badge("Pending", "warning");
-    case "processing":
-      return badge("Processing", "warning", "outlined");
-    case "completed":
-      return badge("Completed", "success");
-    case "failed":
-      return badge("Failed", "neutral", "outlined");
-    case "cancelled":
-      return stamp("Cancelled");
-    default:
-      return badge(String(job.status), "neutral", "outlined");
+async function loadJobs(seq, appendPage) {
+  mountJobsTable(canManageJobs());
+  let path = orgPath() + "/jobs";
+  if (appendPage && state.jobsCursor) {
+    path += "?cursor=" + encodeURIComponent(state.jobsCursor);
   }
-}
-
-// Thin bar: time since creation, full at 24 hours.
-function waitBar(job) {
-  const created = Date.parse(job.created_at);
-  if (Number.isNaN(created)) {
-    return null;
-  }
-  const share = Math.min(Math.max((Date.now() - created) / DAY_MS, 0), 1);
-  const wrap = el("div", "wait");
-  const track = el("span", "wait-track");
-  track.setAttribute("aria-hidden", "true");
-  track.style.setProperty("--wait", String(Math.max(share, 0.02)));
-  track.appendChild(el("span", "wait-fill"));
-  const label = el("span", "wait-label");
-  label.title = "Bar is full at 24 hours.";
-  label.appendChild(document.createTextNode("Created "));
-  label.appendChild(relativeTime(job.created_at));
-  wrap.appendChild(track);
-  wrap.appendChild(label);
-  return wrap;
-}
-
-function jobTimeline(job) {
-  const list = el("dl", "timeline");
-  [
-    ["Created", job.created_at],
-    ["Updated", job.updated_at],
-    ["Deadline", job.deadline_at],
-  ].forEach(([label, iso]) => {
-    const item = el("div");
-    item.appendChild(el("dt", "caps", label));
-    const value = el("dd");
-    value.appendChild(iso ? absoluteTime(iso) : dash());
-    if (iso) {
-      value.title = iso;
+  const work = async () => {
+    const data = await api("GET", path);
+    if (seq !== state.seq) {
+      return;
     }
-    item.appendChild(value);
-    list.appendChild(item);
-  });
-  return list;
+    const items = (data && data.items) || [];
+    jobsTable.setRows(appendPage ? jobsTable.rows.concat(items) : items);
+    state.jobsCursor = (data && data.next_cursor) || null;
+    renderJobsFooter();
+  };
+  if (appendPage) {
+    await work();
+  } else {
+    await withLoading(seq, [jobsTable], work);
+  }
 }
 
-function jobRow(job) {
-  const waiting = job.status === "pending" || job.status === "processing";
-  const row = el("tr", job.status === "cancelled" ? "is-revoked" : null);
-  row.appendChild(cell("Job", idWithCopy(job.job_id, "Copy job ID")));
-  row.appendChild(
-    cell(
-      "Kind & profile",
-      stack(
-        el("span", "nowrap", job.kind),
-        el("span", "when-rel", job.private ? "Private" : "Non-private"),
-        mono(job.execution_profile)
-      )
-    )
-  );
+function renderJobsFooter() {
+  const count = jobsTable.rows.length;
+  jobsTable.footer.hidden = count === 0;
+  jobsMore.hidden = !state.jobsCursor;
+  $("jobs-count").textContent = count + (count === 1 ? " job loaded" : " jobs loaded") + (state.jobsCursor ? "; more on the hub" : "");
+}
 
-  const reason = job.queue_reason ? el("span", "reason", QUEUE_REASONS[job.queue_reason] || job.queue_reason) : null;
-  if (reason) {
-    reason.title = job.queue_reason;
-  }
-  const attempt = isBlank(job.attempt) ? null : el("span", "when-rel", "Attempt ");
-  if (attempt) {
-    attempt.appendChild(numeral(job.attempt));
-  }
-  row.appendChild(cell("Status", stack(jobStatus(job), reason, attempt, waiting ? waitBar(job) : null)));
-
-  let candidate = "";
-  if (job.candidate) {
-    candidate = mono(formatCandidate(job.candidate));
-    candidate.classList.add("machine-wrap");
-  }
-  row.appendChild(cell("Candidate", candidate));
-  row.appendChild(
-    cell(
-      "Error",
-      job.error ? stack(mono(String(job.error.code)), el("span", "error-text", String(job.error.message))) : ""
-    )
-  );
-  row.appendChild(cell("Result", job.result_available ? badge("Available", "success", "outlined") : ""));
-  row.appendChild(cell("Timeline", jobTimeline(job)));
-
-  if (canManageJobs()) {
-    const actions = el("div", "actions");
-    if (waiting) {
-      actions.appendChild(
-        actionButton("Cancel", {
-          variant: "danger",
-          icon: "x",
-          onClick: (event) => cancelJob(event.currentTarget, row, job),
-        })
-      );
-    }
-    actions.appendChild(
-      actionButton("Delete", {
-        variant: "danger",
-        appearance: "accent",
-        icon: "trash",
-        onClick: (event) => deleteJob(event.currentTarget, row, job),
-      })
-    );
-    row.appendChild(cell("Actions", actions, "actions-cell"));
-  }
-  return row;
+function loadMoreJobs(trigger) {
+  const seq = state.seq;
+  return run(trigger, () => loadJobs(seq, true));
 }
 
 function jobPath(job) {
   return "/v1/jobs/" + encodeURIComponent(job.job_id);
 }
 
-async function cancelJob(trigger, row, job) {
+async function cancelJob(trigger, job) {
   const confirmed = await confirmAction({
-    title: "Cancel job?",
-    message: "Cancel job " + job.job_id + "? This cannot be undone.",
+    title: "Cancel job " + job.job_id + "?",
+    message: "A pending job is removed from the queue; a processing job is stopped on its worker. This cannot be undone.",
     confirmLabel: "Cancel job",
     dismissLabel: "Keep job",
   });
@@ -1193,20 +1730,19 @@ async function cancelJob(trigger, row, job) {
   }
   await run(trigger, async () => {
     const updated = await api("POST", jobPath(job) + "/cancel");
-    if (row.isConnected && updated && updated.job_id !== undefined) {
-      state.jobs.set(updated.job_id, updated);
-      row.replaceWith(jobRow(updated));
-      tallyJobs();
+    if (updated && updated.job_id !== undefined) {
+      jobsTable.setRows(jobsTable.rows.map((row) => (row.job_id === updated.job_id ? updated : row)));
     } else {
-      loadTab();
+      loadSection();
     }
+    toast("Job cancelled", "Job " + job.job_id + " is " + (updated && updated.status ? updated.status : "cancelled") + ".");
   });
 }
 
-async function deleteJob(trigger, row, job) {
+async function deleteJob(trigger, job) {
   const confirmed = await confirmAction({
-    title: "Delete job?",
-    message: "Delete job " + job.job_id + "? Its upload and result are removed.",
+    title: "Delete job " + job.job_id + "?",
+    message: "Its upload and result are removed from the hub, and an active job is cancelled first. This cannot be undone.",
     confirmLabel: "Delete job",
     dismissLabel: "Keep job",
   });
@@ -1215,110 +1751,153 @@ async function deleteJob(trigger, row, job) {
   }
   await run(trigger, async () => {
     await api("DELETE", jobPath(job));
-    row.remove();
-    state.jobs.delete(job.job_id);
-    tallyJobs();
-    setEmpty("jobs");
+    jobsTable.setRows(jobsTable.rows.filter((row) => row.job_id !== job.job_id));
+    renderJobsFooter();
+    toast("Job deleted", "Job " + job.job_id + " and its files are gone.");
   });
 }
 
-function loadMoreJobs(trigger) {
-  const seq = state.seq;
-  return run(trigger, () => loadJobs(seq, true));
-}
+// ── Settings ───────────────────────────────────────────────────────────────
 
-// ── Settings & baselines ───────────────────────────────────────────────────
+function settingSummary(value) {
+  if (Array.isArray(value)) {
+    return value.length ? "List of " + value.length + (value.length === 1 ? " entry" : " entries") : "Empty list";
+  }
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value);
+    return keys.length ? keys.length + (keys.length === 1 ? " key: " : " keys: ") + keys.join(", ") : "Empty object";
+  }
+  return value === null ? "null" : String(value);
+}
 
 async function loadSettings(seq) {
-  const [settings, baselines] = await Promise.all([
-    api("GET", orgPath() + "/settings"),
-    api("GET", orgPath() + "/baselines"),
-  ]);
-  if (seq !== state.seq) {
-    return;
-  }
-  $("settings-revision").textContent = String(settings.revision);
-  $("settings-json").textContent = JSON.stringify(settings.settings, null, 2);
-
-  const baselineBody = $("baselines-body");
-  baselineBody.replaceChildren();
-  ((baselines && baselines.items) || []).forEach((baseline) => {
-    const row = el("tr");
-    row.appendChild(cell("Execution profile", mono(baseline.execution_profile)));
-    row.appendChild(cell("Platform", mono(baseline.platform)));
-    row.appendChild(cell("Revision", numeral(baseline.revision)));
-    row.appendChild(cell("Evaluation", baseline.evaluation_id ? trackingNumber(baseline.evaluation_id) : ""));
-    row.appendChild(cell("Release", baseline.release_id ? trackingNumber(baseline.release_id) : ""));
-    let sha = "";
-    if (baseline.corpus_sha256) {
-      sha = el("span", "id-copy");
-      const short = mono(String(baseline.corpus_sha256).slice(0, 12));
-      short.title = baseline.corpus_sha256;
-      sha.appendChild(short);
-      sha.appendChild(
-        wa("wa-copy-button", {
-          value: String(baseline.corpus_sha256),
-          "copy-label": "Copy full SHA-256",
-          "success-label": "Copied",
-          "error-label": "Copy failed",
-        })
-      );
+  $("settings-skeleton").hidden = false;
+  try {
+    const settings = await api("GET", orgPath() + "/settings");
+    if (seq !== state.seq) {
+      return;
     }
-    row.appendChild(cell("Corpus SHA-256", sha));
-    row.appendChild(cell("Created", timeNode(baseline.created_at)));
-    baselineBody.appendChild(row);
-  });
-  setEmpty("baselines");
+    const values = (settings && settings.settings) || {};
+    const revision = $("settings-revision");
+    revision.textContent = "Revision " + settings.revision;
+    revision.hidden = false;
 
-  const releaseBody = $("releases-body");
-  releaseBody.replaceChildren();
-  ((baselines && baselines.approved_releases) || []).forEach((release) => {
-    const row = el("tr");
-    row.appendChild(cell("Execution profile", mono(release.execution_profile)));
-    row.appendChild(cell("Platform", mono(release.platform)));
-    row.appendChild(cell("Release", release.release_id ? trackingNumber(release.release_id) : ""));
-    row.appendChild(cell("Evaluation", release.evaluation_id ? trackingNumber(release.evaluation_id) : ""));
-    row.appendChild(cell("Approved", timeNode(release.approved_at)));
-    releaseBody.appendChild(row);
+    const list = h("cds-structured-list", { condensed: true });
+    list.appendChild(
+      h(
+        "cds-structured-list-head",
+        null,
+        h("cds-structured-list-header-row", null, h("cds-structured-list-header-cell", null, "Key"), h("cds-structured-list-header-cell", null, "Value"))
+      )
+    );
+    const listBody = h("cds-structured-list-body");
+    Object.keys(values).forEach((key) => {
+      const value = values[key];
+      const scalar = value === null || typeof value !== "object";
+      listBody.appendChild(
+        h(
+          "cds-structured-list-row",
+          null,
+          h("cds-structured-list-cell", null, h("span", { class: "mono" }, key)),
+          h("cds-structured-list-cell", null, h("span", { class: scalar ? "mono" : null }, settingSummary(value)))
+        )
+      );
+    });
+    list.appendChild(listBody);
+    $("settings-keys").replaceChildren(list);
+    $("settings-json").replaceChildren(
+      h(
+        "cds-code-snippet",
+        { type: "multi", feedback: "Copied", "tooltip-content": "Copy settings JSON", "show-more-text": "Show more", "show-less-text": "Show less" },
+        JSON.stringify(values, null, 2)
+      )
+    );
+    $("settings-body").hidden = false;
+  } finally {
+    if (seq === state.seq) {
+      $("settings-skeleton").hidden = true;
+    }
+  }
+}
+
+// ── Baselines ──────────────────────────────────────────────────────────────
+
+function shortDigest(digest) {
+  return isBlank(digest) ? dash() : h("span", { class: "mono", title: String(digest) }, String(digest).slice(0, 12) + "…");
+}
+
+const baselinesTable = dataTable({
+  title: "Baselines",
+  description: "Highest promoted revision per execution profile and platform.",
+  columns: [
+    { key: "profile", header: "Execution profile", sort: (b) => b.execution_profile, render: (b) => mono(b.execution_profile) },
+    { key: "platform", header: "Platform", sort: (b) => b.platform, render: (b) => mono(b.platform) },
+    { key: "revision", header: "Revision", sort: (b) => Number(b.revision), render: (b) => num(b.revision) },
+    { key: "release", header: "Release", secondary: true, sort: (b) => b.release_id || "", render: (b) => mono(b.release_id) },
+    { key: "digest", header: "Corpus SHA-256", secondary: true, render: (b) => shortDigest(b.corpus_sha256) },
+    { key: "created", header: "Created", secondary: true, sort: (b) => b.created_at || "", render: (b) => whenCell(b.created_at) },
+  ],
+  rowId: (b) => b.execution_profile + "/" + b.platform,
+  expand: (b) =>
+    h(
+      "div",
+      { class: "detail-stack" },
+      facts([
+        ["Evaluation", copyable(b.evaluation_id, "Copy evaluation ID")],
+        ["Release", copyable(b.release_id, "Copy release ID")],
+        ["Created", whenFull(b.created_at)],
+      ]),
+      h("h3", { class: "detail-title" }, "Corpus SHA-256"),
+      isBlank(b.corpus_sha256)
+        ? dash()
+        : h("cds-code-snippet", { type: "single", feedback: "Copied", "tooltip-content": "Copy SHA-256" }, String(b.corpus_sha256))
+    ),
+  onRefresh: () => loadSection(),
+  empty: [
+    "No baselines promoted yet. Record an evaluation with ",
+    h("span", { class: "mono" }, "resona eval --remote"),
+    " and promote it with ",
+    h("span", { class: "mono" }, "resona eval promote"),
+    ".",
+  ],
+});
+
+const releasesTable = dataTable({
+  title: "Approved releases",
+  description: "Worker releases approved for production jobs by a promoted evaluation.",
+  size: "sm",
+  columns: [
+    { key: "profile", header: "Execution profile", sort: (r) => r.execution_profile, render: (r) => mono(r.execution_profile) },
+    { key: "platform", header: "Platform", sort: (r) => r.platform, render: (r) => mono(r.platform) },
+    { key: "release", header: "Release", sort: (r) => r.release_id || "", render: (r) => mono(r.release_id) },
+    { key: "evaluation", header: "Evaluation", secondary: true, sort: (r) => r.evaluation_id || "", render: (r) => mono(r.evaluation_id) },
+    { key: "approved", header: "Approved", secondary: true, sort: (r) => r.approved_at || "", render: (r) => whenCell(r.approved_at) },
+  ],
+  rowId: (r) => [r.execution_profile, r.platform, r.release_id].join("/"),
+  onRefresh: () => loadSection(),
+  empty: "No approved releases. Promoting an evaluation approves its release for that execution profile and platform.",
+});
+
+async function loadBaselines(seq) {
+  await withLoading(seq, [baselinesTable, releasesTable], async () => {
+    const data = await api("GET", orgPath() + "/baselines");
+    if (seq !== state.seq) {
+      return;
+    }
+    baselinesTable.setRows((data && data.items) || []);
+    releasesTable.setRows((data && data.approved_releases) || []);
   });
-  setEmpty("releases");
 }
 
 // ── Testbench ──────────────────────────────────────────────────────────────
-
-const TESTBENCH_API = "/v1/testbench";
-const SETTINGS_API = "/v1/settings";
-const POLL_MS = 5000;
-const ITEMS_PAGE = 50;
-const MAX_RUN_CANDIDATES = 16;
-const ITEM_STATUSES = {
-  awaiting_draft: { label: "Awaiting draft", variant: "neutral", appearance: "outlined" },
-  needs_correction: { label: "Needs correction", variant: "warning", appearance: "filled-outlined" },
-  corrected: { label: "Corrected", variant: "success", appearance: "filled-outlined" },
-};
-const FILE_EXTENSIONS = {
-  "application/pdf": "pdf",
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/tiff": "tif",
-  "audio/wav": "wav",
-  "audio/x-wav": "wav",
-  "audio/mpeg": "mp3",
-  "audio/mp4": "m4a",
-  "audio/x-m4a": "m4a",
-  "audio/flac": "flac",
-  "audio/ogg": "ogg",
-  "audio/webm": "webm",
-};
 
 const tb = {
   cursor: null,
   // Bumped per item-list load; older responses are dropped.
   listSeq: 0,
-  // Item id -> its table row.
-  rows: new Map(),
   created: null,
-  // The open item (inline detail section); null when closed.
+  file: null,
+  // The open item; null when none is open.
   openId: null,
   // Bumped whenever the detail opens or closes; responses for an older one are dropped.
   detailSeq: 0,
@@ -1346,14 +1925,14 @@ function itemPath(id) {
   return TESTBENCH_API + "/items/" + encodeURIComponent(id);
 }
 
-// Runs a testbench action; a switched-off testbench (403) sends the tab back to its status.
+// Runs a testbench action; a switched-off testbench (403) sends the section back to its status.
 function tbAction(trigger, action) {
   return run(trigger, async () => {
     try {
       await action();
     } catch (error) {
       if (error && error.code === "testbench_disabled") {
-        loadTab();
+        loadSection();
       }
       throw error;
     }
@@ -1361,8 +1940,9 @@ function tbAction(trigger, action) {
 }
 
 function showTestbenchView(mode, message) {
-  $("tb-forbidden").hidden = mode !== "forbidden";
-  $("tb-forbidden").textContent = mode === "forbidden" ? message || "" : "";
+  const forbidden = $("tb-forbidden");
+  forbidden.hidden = mode !== "forbidden";
+  forbidden.setAttribute("subtitle", mode === "forbidden" ? message || "" : "");
   $("tb-content").hidden = mode === "forbidden" || mode === "none";
   $("tb-off").hidden = mode !== "off";
   $("tb-main").hidden = mode !== "on";
@@ -1370,7 +1950,7 @@ function showTestbenchView(mode, message) {
 }
 
 function renderTestbenchStatus(status) {
-  $("tb-state").replaceChildren(status.enabled ? badge("Enabled", "success") : badge("Disabled", "neutral", "outlined"));
+  $("tb-state").replaceChildren(status.enabled ? tag("Enabled", "green") : tag("Disabled", "gray"));
   $("tb-count-items").textContent = String(status.items);
   $("tb-count-corrected").textContent = String(status.corrected);
   $("tb-count-runs").textContent = String(status.runs);
@@ -1405,7 +1985,11 @@ async function loadTestbench(seq) {
     closeDetail();
     return;
   }
-  await Promise.all([loadItems(seq, false), loadLeaderboard(seq)]);
+  const work = [loadItems(seq, false), loadLeaderboard(seq)];
+  if (tb.openId !== null) {
+    work.push(refreshDetail());
+  }
+  await Promise.all(work);
 }
 
 // Re-reads the counters and the leaderboard after something changed them.
@@ -1421,80 +2005,97 @@ function refreshAggregates() {
   loadLeaderboard(seq).catch(report);
 }
 
-function setTestbenchEnabled(trigger, enabled) {
-  return (async () => {
-    const confirmed = await confirmAction(
-      enabled
-        ? {
-            title: "Enable testbench?",
-            message:
-              "Recordings and scans contributed to the testbench are stored on the hub persistently, until you delete the item. Enable it for " +
-              state.org +
-              "?",
-            confirmLabel: "Enable testbench",
-            dismissLabel: "Keep it off",
-          }
-        : {
-            title: "Disable testbench?",
-            message:
-              "Existing items, references and runs are kept on the hub, but nothing can be added or read until the testbench is enabled again.",
-            confirmLabel: "Disable testbench",
-            dismissLabel: "Keep it on",
-          }
-    );
-    if (!confirmed) {
-      return;
-    }
-    await run(trigger, async () => {
-      const current = await apiWithEtag(SETTINGS_API);
-      if (!current.etag || !current.data || !current.data.settings) {
-        throw new ApiError(0, "settings_unreadable", "The hub did not return the organization settings.");
-      }
-      const settings = Object.assign({}, current.data.settings, { testbench_enabled: enabled });
-      try {
-        await request("PUT", SETTINGS_API, { json: settings, headers: { "If-Match": current.etag } });
-      } catch (error) {
-        if (error.status === 409) {
-          loadTab();
-          throw new ApiError(
-            409,
-            "revision_conflict",
-            "The settings changed in the meantime, so nothing was changed. The status below is up to date; try again."
-          );
+async function setTestbenchEnabled(trigger, enabled) {
+  const confirmed = await confirmAction(
+    enabled
+      ? {
+          title: "Enable the testbench for " + state.org + "?",
+          message: "Recordings and scans contributed to the testbench are stored on the hub persistently, until you delete the item.",
+          confirmLabel: "Enable testbench",
+          dismissLabel: "Keep it off",
+          danger: false,
         }
-        throw error;
+      : {
+          title: "Disable the testbench for " + state.org + "?",
+          message: "Existing items, references and runs are kept on the hub, but nothing can be added or read until the testbench is enabled again.",
+          confirmLabel: "Disable testbench",
+          dismissLabel: "Keep it on",
+        }
+  );
+  if (!confirmed) {
+    return;
+  }
+  await run(trigger, async () => {
+    const current = await apiWithEtag(SETTINGS_API);
+    if (!current.etag || !current.data || !current.data.settings) {
+      throw new ApiError(0, "settings_unreadable", "The hub did not return the organization settings.");
+    }
+    const settings = Object.assign({}, current.data.settings, { testbench_enabled: enabled });
+    try {
+      await request("PUT", SETTINGS_API, { json: settings, headers: { "If-Match": current.etag } });
+    } catch (error) {
+      if (error.status === 409) {
+        loadSection();
+        throw new ApiError(
+          409,
+          "revision_conflict",
+          "The settings changed in the meantime, so nothing was changed. The status below is up to date; try again."
+        );
       }
-      loadTab();
-    });
-  })();
+      throw error;
+    }
+    toast(enabled ? "Testbench enabled" : "Testbench disabled", "Settings saved as a new revision.");
+    loadSection();
+  });
 }
 
 function resetTestbench() {
   closeDetail();
   tb.cursor = null;
   tb.listSeq += 1;
-  tb.rows.clear();
   tb.created = null;
   $("tb-created").hidden = true;
-  $("tb-file").value = "";
-  $("tb-label").value = "";
   $("tb-state").replaceChildren();
   ["items", "corrected", "runs"].forEach((name) => {
     $("tb-count-" + name).textContent = "–";
   });
   $("tb-lb-corrected").textContent = "";
-  $("items-more").hidden = true;
+  itemsMore.hidden = true;
+  selectTestbenchTab("items");
   showTestbenchView("none");
+}
+
+function selectTestbenchTab(value) {
+  $("tb-tabs").value = value;
 }
 
 // ── Testbench: contribute and item list ────────────────────────────────────
 
-function contribute(event) {
-  event.preventDefault();
-  const input = $("tb-file");
-  const file = input.files && input.files[0];
+function openContribute() {
+  tb.file = null;
+  $("tb-uploader").querySelectorAll("cds-file-uploader-item").forEach((node) => node.remove());
+  $("tb-label").value = "";
+  $("contribute-modal").open = true;
+}
+
+function setContributeFile(file) {
+  tb.file = file || null;
+  const uploader = $("tb-uploader");
+  uploader.querySelectorAll("cds-file-uploader-item").forEach((node) => node.remove());
+  if (file) {
+    const item = h("cds-file-uploader-item", { state: "edit", "icon-description": "Remove file" }, file.name);
+    item.addEventListener("cds-file-uploader-item-deleted", () => {
+      tb.file = null;
+      item.remove();
+    });
+    uploader.appendChild(item);
+  }
+}
+
+function contribute(trigger) {
+  const file = tb.file;
   if (!file) {
-    showError("Choose a recording or scan to contribute.");
+    showError(new ApiError(0, "no_file", "Choose a recording or scan to contribute."));
     return Promise.resolve();
   }
   const form = new FormData();
@@ -1505,18 +2106,24 @@ function contribute(event) {
     form.append("label", label);
   }
   const orgSeq = state.orgSeq;
-  return tbAction($("tb-submit"), async () => {
+  return tbAction(trigger, async () => {
     const item = await apiUpload(TESTBENCH_API + "/items", form);
     if (orgSeq !== state.orgSeq || !item) {
       return;
     }
-    input.value = "";
+    $("contribute-modal").open = false;
+    setContributeFile(null);
     $("tb-label").value = "";
     tb.created = item;
-    $("tb-created-text").textContent =
-      "Item #" + item.id + " created (" + item.kind + ", " + item.language + (item.label ? ", “" + item.label + "”" : "") + "). Its draft run is queued.";
-    $("tb-created").hidden = false;
-    loadTab();
+    const created = $("tb-created");
+    created.setAttribute(
+      "subtitle",
+      "Item " + item.id + " (" + item.kind + ", " + item.language + (item.label ? ", “" + item.label + "”" : "") + "). Its draft run is queued."
+    );
+    created.replaceChildren(button("Open item", { kind: "ghost", size: "sm", onClick: (event) => openItem(item.id, event.currentTarget) }));
+    created.hidden = false;
+    created.open = true;
+    loadSection();
   });
 }
 
@@ -1533,73 +2140,92 @@ function itemFilters() {
   return params;
 }
 
-async function loadItems(seq, append) {
+async function loadItems(seq, appendPage) {
   const listSeq = (tb.listSeq += 1);
   const params = itemFilters();
-  if (append && tb.cursor) {
+  if (appendPage && tb.cursor) {
     params.set("cursor", tb.cursor);
   }
-  const data = await api("GET", TESTBENCH_API + "/items?" + params.toString());
-  if (seq !== state.seq || listSeq !== tb.listSeq) {
-    return;
+  const work = async () => {
+    const data = await api("GET", TESTBENCH_API + "/items?" + params.toString());
+    if (seq !== state.seq || listSeq !== tb.listSeq) {
+      return;
+    }
+    const items = (data && data.items) || [];
+    itemsTable.setRows(appendPage ? itemsTable.rows.concat(items) : items);
+    tb.cursor = (data && data.next_cursor) || null;
+    itemsMore.hidden = !tb.cursor;
+    itemsTable.footer.hidden = !tb.cursor;
+  };
+  if (appendPage) {
+    await work();
+  } else {
+    await withLoading(seq, [itemsTable], work);
   }
-  const body = $("items-body");
-  if (!append) {
-    body.replaceChildren();
-    tb.rows.clear();
-  }
-  ((data && data.items) || []).forEach((item) => {
-    const row = itemRow(item);
-    tb.rows.set(item.id, row);
-    body.appendChild(row);
-  });
-  tb.cursor = (data && data.next_cursor) || null;
-  $("items-more").hidden = !tb.cursor;
-  setEmpty("items");
 }
 
 function reloadItems() {
   tb.cursor = null;
-  const seq = state.seq;
-  setLoading("testbench", seq, true);
-  loadItems(seq, false)
-    .catch(report)
-    .finally(() => setLoading("testbench", seq, false));
+  loadItems(state.seq, false).catch(report);
 }
 
 function itemStatus(item) {
   const known = ITEM_STATUSES[item.status];
-  const mark = known ? badge(known.label, known.variant, known.appearance) : badge(String(item.status), "neutral", "outlined");
-  const note = item.draft_status === "failed" ? el("span", "when-rel", "Draft run failed") : null;
-  return stack(mark, note);
-}
-
-function itemRow(item) {
-  const row = el("tr", item.id === tb.openId ? "is-open" : null);
-  row.appendChild(cell("Item", numeral("#" + item.id)));
-  row.appendChild(cell("Status", itemStatus(item)));
-  row.appendChild(cell("Kind", item.kind));
-  row.appendChild(cell("Language", mono(item.language)));
-  row.appendChild(cell("Label", item.label ? el("span", "label-text", item.label) : ""));
-  row.appendChild(cell("Size", isBlank(item.size) ? "" : wa("wa-format-bytes", { value: item.size })));
-  row.appendChild(cell("Runs", numeral(item.run_count)));
-  row.appendChild(cell("Created", timeNode(item.created_at)));
-  const actions = el("div", "actions");
-  actions.appendChild(
-    actionButton("Open", {
-      variant: "brand",
-      appearance: "outlined",
-      icon: "chevron-right",
-      onClick: (event) => openItem(item.id, event.currentTarget),
-    })
+  return h(
+    "span",
+    { class: "cell-stack" },
+    known ? tag(known.label, known.type) : tag(String(item.status), "gray"),
+    item.draft_status === "failed" ? h("span", { class: "muted" }, "Draft run failed") : null
   );
-  row.appendChild(cell("Actions", actions, "actions-cell"));
-  return row;
 }
 
-function markOpenRow() {
-  tb.rows.forEach((row, id) => row.classList.toggle("is-open", id === tb.openId));
+function itemLink(item) {
+  return h(
+    "cds-link",
+    {
+      href: "#/testbench",
+      onclick: (event) => {
+        event.preventDefault();
+        openItem(item.id, null);
+      },
+    },
+    "Item " + item.id
+  );
 }
+
+const itemsTable = dataTable({
+  title: "Items",
+  description: "Contributed recordings and scans. Open one to correct its reference and run candidates.",
+  columns: [
+    { key: "id", header: "Item", sort: (i) => Number(i.id), render: itemLink },
+    { key: "status", header: "Status", sort: (i) => i.status, render: itemStatus },
+    { key: "kind", header: "Kind", sort: (i) => i.kind, render: (i) => i.kind },
+    { key: "language", header: "Language", secondary: true, sort: (i) => i.language, render: (i) => mono(i.language) },
+    { key: "label", header: "Label", secondary: true, sort: (i) => i.label || "", render: (i) => i.label || "" },
+    { key: "size", header: "Size", secondary: true, sort: (i) => Number(i.size) || 0, render: (i) => (isBlank(i.size) ? "" : num(formatBytes(i.size))) },
+    { key: "runs", header: "Runs", sort: (i) => Number(i.run_count) || 0, render: (i) => num(i.run_count) },
+    { key: "created", header: "Created", secondary: true, sort: (i) => i.created_at || "", render: (i) => whenCell(i.created_at) },
+  ],
+  rowId: (i) => i.id,
+  rowClass: (i) => (i.id === tb.openId ? "row-selected" : null),
+  actions: (item) => [
+    { label: "Open item", onClick: (menu) => openItem(item.id, menu) },
+    { label: "Delete item", danger: true, divider: true, onClick: (menu) => deleteItem(menu, item.id) },
+  ],
+  actionsLabel: (i) => "Actions for item " + i.id,
+  onRefresh: () => loadSection(),
+  toolbar: [button("Contribute", { kind: "primary", icon: Upload16, onClick: openContribute })],
+  empty: "No items match. Contribute a recording or scan with the Contribute button.",
+});
+const itemsMore = button("Load more", {
+  kind: "tertiary",
+  size: "sm",
+  onClick: (event) => {
+    const seq = state.seq;
+    tbAction(event.currentTarget, () => loadItems(seq, true));
+  },
+});
+itemsTable.footer.appendChild(itemsMore);
 
 // ── Testbench: item detail ─────────────────────────────────────────────────
 
@@ -1617,11 +2243,10 @@ async function openItem(id, trigger) {
   tb.runSig = null;
   tb.selected.clear();
   tb.candidates = [];
-  markOpenRow();
+  itemsTable.rerender();
   $("tb-diff").hidden = true;
-  $("runs-body").replaceChildren();
-  $("runs-empty").hidden = true;
-  $("tb-detail-title").textContent = "Item #" + id;
+  runsTable.clear();
+  $("tb-detail-title").textContent = "Item " + id;
   $("tb-detail-meta").textContent = "";
   $("tb-reference").value = "";
   $("tb-reference-note").textContent = "";
@@ -1629,10 +2254,13 @@ async function openItem(id, trigger) {
   $("tb-candidates-empty").hidden = true;
   updateRunButton();
   updateSaveButton();
+  $("tb-detail-none").hidden = true;
   $("tb-detail").hidden = false;
-  $("tb-detail").scrollIntoView({ block: "start" });
+  $("tb-tab-runs").textContent = "Runs · item " + id;
+  selectTestbenchTab("runs");
   await tbAction(trigger, async () => {
     $("tb-detail-spinner").hidden = false;
+    runsTable.setLoading(true);
     try {
       const detail = await api("GET", itemPath(id));
       if (seq !== tb.detailSeq) {
@@ -1651,6 +2279,7 @@ async function openItem(id, trigger) {
     } finally {
       if (seq === tb.detailSeq) {
         $("tb-detail-spinner").hidden = true;
+        runsTable.setLoading(false);
       }
     }
   });
@@ -1670,17 +2299,19 @@ function closeDetail() {
   tb.selected.clear();
   tb.candidates = [];
   $("tb-detail").hidden = true;
+  $("tb-detail-none").hidden = false;
+  $("tb-tab-runs").textContent = "Runs";
   $("tb-diff").hidden = true;
   $("tb-diff-text").replaceChildren();
-  $("runs-body").replaceChildren();
   $("tb-candidates").replaceChildren();
-  markOpenRow();
+  runsTable.clear();
+  itemsTable.rerender();
 }
 
 function itemGone() {
   closeDetail();
-  showError("That item no longer exists.");
-  loadTab();
+  showError(new ApiError(404, "not_found", "That item no longer exists."));
+  loadSection();
 }
 
 async function refreshDetail() {
@@ -1706,18 +2337,18 @@ async function refreshDetail() {
   renderDetail(detail, false);
 }
 
-function runIsActive(run) {
-  return run.status === "queued" || run.status === "processing";
+function runIsActive(entry) {
+  return entry.status === "queued" || entry.status === "processing";
 }
 
 function detailSignature(detail) {
   return [detail.status, detail.reference_set_at]
-    .concat((detail.runs || []).map((run) => [run.id, run.status, run.wer, run.cer].join(":")))
+    .concat((detail.runs || []).map((entry) => [entry.id, entry.status, entry.wer, entry.cer].join(":")))
     .join("|");
 }
 
 function renderDetail(detail, initial) {
-  $("tb-detail-title").textContent = "Item #" + detail.id;
+  $("tb-detail-title").textContent = "Item " + detail.id;
   const known = ITEM_STATUSES[detail.status];
   const meta = [detail.kind, detail.language];
   if (detail.label) {
@@ -1729,11 +2360,8 @@ function renderDetail(detail, initial) {
   }
   $("tb-detail-meta").textContent = meta.join(" · ");
 
-  const row = tb.rows.get(detail.id);
-  if (row && row.isConnected) {
-    const fresh = itemRow(detail);
-    row.replaceWith(fresh);
-    tb.rows.set(detail.id, fresh);
+  if (itemsTable.rows.some((row) => row.id === detail.id)) {
+    itemsTable.setRows(itemsTable.rows.map((row) => (row.id === detail.id ? Object.assign({}, row, detail) : row)));
   }
 
   // The editor starts from the saved reference, else the draft output; it is never
@@ -1749,7 +2377,7 @@ function renderDetail(detail, initial) {
   }
   let note;
   if (hasReference) {
-    note = "Saved reference" + (detail.reference_set_at ? " (" + detail.reference_set_at + ")" : "") + ". Saving again re-scores every completed run.";
+    note = "Saved reference" + (detail.reference_set_at ? " (" + absoluteText(detail.reference_set_at) + ")" : "") + ". Saving again re-scores every completed run.";
   } else if (draftText !== null) {
     note =
       "Prefilled with the draft run's output. Correct every word so it matches the original, then save: it becomes the ground truth the candidates are scored against.";
@@ -1761,10 +2389,7 @@ function renderDetail(detail, initial) {
   updateSaveButton();
 
   const runs = (detail.runs || []).slice().sort((a, b) => a.id - b.id);
-  const body = $("runs-body");
-  body.replaceChildren();
-  runs.forEach((run) => body.appendChild(runRow(run)));
-  setEmpty("runs");
+  runsTable.setRows(runs);
 
   const signature = detailSignature(detail);
   if (!initial && tb.runSig !== null && signature !== tb.runSig) {
@@ -1773,7 +2398,7 @@ function renderDetail(detail, initial) {
   tb.runSig = signature;
 
   if (tb.diffRunId !== null) {
-    const open = runs.find((run) => run.id === tb.diffRunId);
+    const open = runs.find((entry) => entry.id === tb.diffRunId);
     if (!open) {
       hideDiff();
     } else if ([open.status, open.wer, open.cer, detail.reference_set_at].join(":") !== tb.diffSig) {
@@ -1801,27 +2426,31 @@ function saveReference(trigger) {
     tb.dirty = false;
     tb.detail = detail;
     renderDetail(detail, false);
+    toast("Reference saved", "Item " + id + ": completed runs are re-scored.");
   }).then(updateSaveButton);
 }
 
-async function deleteItem(trigger) {
-  const id = tb.openId;
-  if (id === null) {
+async function deleteItem(trigger, id) {
+  if (id === null || id === undefined) {
     return;
   }
   const confirmed = await confirmAction({
-    title: "Delete item?",
-    message: "Delete item #" + id + "? Its stored original, reference and every run are removed, and active runs are cancelled. This cannot be undone.",
+    title: "Delete item " + id + "?",
+    message: "Its stored original, reference and every run are removed, and active runs are cancelled. This cannot be undone.",
     confirmLabel: "Delete item",
     dismissLabel: "Keep item",
   });
-  if (!confirmed || id !== tb.openId) {
+  if (!confirmed) {
     return;
   }
   await tbAction(trigger, async () => {
     await api("DELETE", itemPath(id));
-    closeDetail();
-    loadTab();
+    if (id === tb.openId) {
+      closeDetail();
+      selectTestbenchTab("items");
+    }
+    toast("Item deleted", "Item " + id + " and its runs are gone.");
+    loadSection();
   });
 }
 
@@ -1848,7 +2477,7 @@ function previewKind(detail) {
 }
 
 function previewNote(text) {
-  $("tb-preview").replaceChildren(el("p", "quiet", text));
+  $("tb-preview").replaceChildren(h("p", { class: "muted" }, text));
 }
 
 function originalProblem(error) {
@@ -1888,13 +2517,12 @@ async function loadPreview(detail, seq) {
   }
   let node;
   if (kind === "audio") {
-    node = el("audio", "original-audio");
+    node = h("audio", { class: "original-audio" });
     node.controls = true;
     node.preload = "metadata";
     node.addEventListener("error", () => previewNote("This browser cannot play the original. Use Download original."));
   } else {
-    node = el("img", "original-image");
-    node.alt = "Original scan of item " + detail.id;
+    node = h("img", { class: "original-image", alt: "Original scan of item " + detail.id });
     node.addEventListener("error", () => previewNote("This browser cannot show the original. Use Download original."));
   }
   node.src = tb.objectUrl;
@@ -1962,30 +2590,28 @@ function renderCandidates() {
   const empty = $("tb-candidates-empty");
   if (!matching.length) {
     empty.textContent =
-      "No " + (kind || "") + " candidate is available. Approve a private worker on the Workers tab; candidates appear once it has reported them as tested.";
+      "No " + (kind || "") + " candidate is available. Approve a private worker on the Workers page; candidates appear once it has reported them as tested.";
     empty.hidden = false;
     updateRunButton();
     return;
   }
   empty.hidden = true;
-  const group = el("div", "candidate-group");
-  group.appendChild(el("h5", "caps", kind));
+  const group = h("fieldset", { class: "candidate-group" }, h("legend", { class: "detail-title" }, kind + " candidates"));
   matching.forEach((entry) => {
     const key = capabilityKey(entry.candidate);
-    const line = el("div", "candidate-row");
-    const box = wa("wa-checkbox", { checked: tb.selected.has(key), size: "s" }, formatCandidate(entry.candidate));
-    box.addEventListener("change", (event) => {
-      if (event.target.checked) {
+    const online = Number(entry.workers_online) || 0;
+    const box = h("cds-checkbox", { checked: tb.selected.has(key) }, formatCandidate(entry.candidate));
+    box.addEventListener("cds-checkbox-changed", (event) => {
+      if (event.detail && event.detail.checked) {
         tb.selected.add(key);
       } else {
         tb.selected.delete(key);
       }
       updateRunButton();
     });
-    line.appendChild(box);
-    const online = Number(entry.workers_online) || 0;
-    line.appendChild(el("span", "when-rel", online + (online === 1 ? " worker online" : " workers online")));
-    group.appendChild(line);
+    group.appendChild(
+      h("div", { class: "candidate-row" }, box, tag(online + (online === 1 ? " worker online" : " workers online"), online ? "green" : "gray"))
+    );
   });
   box.appendChild(group);
   updateRunButton();
@@ -2009,6 +2635,7 @@ function runSelected(trigger) {
   if (!chosen.length) {
     return Promise.resolve();
   }
+  let queuedNote = "";
   return tbAction(trigger, async () => {
     const created = await api("POST", itemPath(id) + "/runs", { candidates: chosen });
     if (id !== tb.openId) {
@@ -2018,89 +2645,82 @@ function runSelected(trigger) {
     tb.selected.clear();
     renderCandidates();
     const skipped = chosen.length - queued;
-    $("tb-run-count").textContent =
-      "Queued " + queued + (queued === 1 ? " run" : " runs") + (skipped > 0 ? "; " + skipped + " already running was skipped" : "");
+    queuedNote = "Queued " + queued + (queued === 1 ? " run" : " runs") + (skipped > 0 ? "; " + skipped + " already running was skipped" : "");
     await refreshDetail();
   }).then(() => {
-    const note = $("tb-run-count").textContent;
     updateRunButton();
-    if (note.startsWith("Queued") && !tb.selected.size) {
-      $("tb-run-count").textContent = note;
+    if (queuedNote && !tb.selected.size) {
+      $("tb-run-count").textContent = queuedNote;
     }
   });
 }
 
-function percentNode(value) {
-  return isBlank(value) ? dash() : el("span", "num", (Number(value) * 100).toFixed(1) + " %");
-}
+const runsTable = dataTable({
+  title: "Runs",
+  description: "Draft and bench runs of this item. Open a run's word diff from its menu.",
+  size: "sm",
+  columns: [
+    {
+      key: "id",
+      header: "Run",
+      sort: (r) => r.id,
+      render: (r) =>
+        h(
+          "cds-link",
+          {
+            href: "#/testbench",
+            onclick: (event) => {
+              event.preventDefault();
+              showDiff(r.id, true);
+            },
+          },
+          "Run " + r.id
+        ),
+    },
+    {
+      key: "role",
+      header: "Role",
+      sort: (r) => r.role,
+      render: (r) =>
+        r.role === "draft"
+          ? tag("Draft", "gray", "The reference started from this output, so the draft favours itself and is left out of the leaderboard.")
+          : tag("Bench", "blue"),
+    },
+    { key: "candidate", header: "Candidate", sort: (r) => formatCandidate(r.candidate), render: (r) => mono(formatCandidate(r.candidate)) },
+    { key: "device", header: "Device", secondary: true, sort: (r) => r.device || "", render: (r) => mono(r.device) },
+    { key: "seconds", header: "Seconds", secondary: true, sort: (r) => (isBlank(r.seconds) ? Infinity : Number(r.seconds)), render: (r) => (isBlank(r.seconds) ? "" : num(Number(r.seconds).toFixed(1))) },
+    { key: "wer", header: "WER", sort: (r) => (isBlank(r.wer) ? Infinity : Number(r.wer)), render: (r) => num(percent(r.wer)) },
+    { key: "cer", header: "CER", secondary: true, sort: (r) => (isBlank(r.cer) ? Infinity : Number(r.cer)), render: (r) => num(percent(r.cer)) },
+    {
+      key: "status",
+      header: "Status",
+      sort: (r) => r.status,
+      render: (r) =>
+        h(
+          "span",
+          { class: "cell-stack" },
+          statusTag(r.status),
+          r.queue_reason ? h("span", { class: "muted" }, QUEUE_REASONS[r.queue_reason] || r.queue_reason) : null,
+          r.error_code ? mono(r.error_code) : null
+        ),
+    },
+  ],
+  rowId: (r) => r.id,
+  rowClass: (r) => (r.id === tb.diffRunId ? "row-selected" : null),
+  actions: (entry) => [
+    { label: "Show word diff", onClick: () => showDiff(entry.id, true) },
+    { label: "Delete run", danger: true, divider: true, onClick: (menu) => deleteRun(menu, entry) },
+  ],
+  actionsLabel: (r) => "Actions for run " + r.id,
+  onRefresh: () => tbAction(null, refreshDetail),
+  empty: "No runs yet. Select candidates above and run them.",
+});
 
-function secondsNode(value) {
-  return isBlank(value) ? dash() : el("span", "num", Number(value).toFixed(1));
-}
-
-function runStatus(run) {
-  switch (run.status) {
-    case "queued":
-      return badge("Queued", "warning");
-    case "processing":
-      return badge("Processing", "warning", "outlined");
-    case "completed":
-      return badge("Completed", "success");
-    case "failed":
-      return badge("Failed", "neutral", "outlined");
-    case "cancelled":
-      return stamp("Cancelled");
-    default:
-      return badge(String(run.status), "neutral", "outlined");
-  }
-}
-
-function runRow(run) {
-  const row = el("tr", run.id === tb.diffRunId ? "is-selected is-clickable" : "is-clickable");
-  row.dataset.run = String(run.id);
-  row.appendChild(cell("Run", numeral("#" + run.id)));
-  const role = badge(run.role === "draft" ? "Draft" : "Bench", run.role === "draft" ? "neutral" : "brand", "outlined");
-  if (run.role === "draft") {
-    role.title = "The reference started from this output, so the draft favours itself and is left out of the leaderboard.";
-  }
-  row.appendChild(cell("Role", role));
-  const candidate = mono(formatCandidate(run.candidate));
-  candidate.classList.add("machine-wrap");
-  row.appendChild(cell("Candidate", candidate));
-  row.appendChild(cell("Device", mono(run.device)));
-  row.appendChild(cell("Seconds", secondsNode(run.seconds)));
-  row.appendChild(cell("WER", percentNode(run.wer)));
-  row.appendChild(cell("CER", percentNode(run.cer)));
-  const reason = run.queue_reason ? el("span", "reason", QUEUE_REASONS[run.queue_reason] || run.queue_reason) : null;
-  row.appendChild(cell("Status", stack(runStatus(run), reason, run.error_code ? mono(run.error_code) : null)));
-  const actions = el("div", "actions");
-  actions.appendChild(
-    actionButton("Word diff", {
-      icon: "diff",
-      onClick: () => showDiff(run.id, true),
-    })
-  );
-  actions.appendChild(
-    actionButton("Delete", {
-      variant: "danger",
-      icon: "trash",
-      onClick: (event) => deleteRun(event.currentTarget, run),
-    })
-  );
-  row.appendChild(cell("Actions", actions, "actions-cell"));
-  row.addEventListener("click", (event) => {
-    if (!event.target.closest("wa-button")) {
-      showDiff(run.id, true);
-    }
-  });
-  return row;
-}
-
-async function deleteRun(trigger, run) {
+async function deleteRun(trigger, entry) {
   const id = tb.openId;
   const confirmed = await confirmAction({
-    title: "Delete run?",
-    message: "Delete run #" + run.id + " (" + formatCandidate(run.candidate) + ")? A queued or processing run is cancelled.",
+    title: "Delete run " + entry.id + "?",
+    message: formatCandidate(entry.candidate) + ": the run and its scores are removed; a queued or processing run is cancelled.",
     confirmLabel: "Delete run",
     dismissLabel: "Keep run",
   });
@@ -2108,19 +2728,20 @@ async function deleteRun(trigger, run) {
     return;
   }
   await tbAction(trigger, async () => {
-    await api("DELETE", itemPath(id) + "/runs/" + encodeURIComponent(run.id));
+    await api("DELETE", itemPath(id) + "/runs/" + encodeURIComponent(entry.id));
     if (id !== tb.openId) {
       return;
     }
-    if (tb.diffRunId === run.id) {
+    if (tb.diffRunId === entry.id) {
       hideDiff();
     }
+    toast("Run deleted", "Run " + entry.id + " is gone.");
     await refreshDetail();
   });
 }
 
 // While a run is queued or processing and the item is open, the detail refreshes every
-// POLL_MS. Polling stops on close, on another tab and while the page is hidden.
+// POLL_MS. Polling stops on close, in another section and while the page is hidden.
 function stopPolling() {
   if (tb.timer !== null) {
     window.clearTimeout(tb.timer);
@@ -2134,7 +2755,7 @@ function syncPolling() {
     tb.openId === null ||
     !tb.detail ||
     document.hidden ||
-    state.tab !== "testbench" ||
+    state.section !== "testbench" ||
     !(tb.detail.runs || []).some(runIsActive)
   ) {
     return;
@@ -2157,7 +2778,7 @@ function hideDiff() {
   tb.diffSig = "";
   $("tb-diff").hidden = true;
   $("tb-diff-text").replaceChildren();
-  document.querySelectorAll("#runs-body tr.is-selected").forEach((row) => row.classList.remove("is-selected"));
+  runsTable.rerender();
 }
 
 async function showDiff(runId, reveal) {
@@ -2167,13 +2788,11 @@ async function showDiff(runId, reveal) {
   }
   tb.diffRunId = runId;
   const seq = (tb.diffSeq += 1);
-  const summary = tb.detail && (tb.detail.runs || []).find((run) => run.id === runId);
+  const summary = tb.detail && (tb.detail.runs || []).find((entry) => entry.id === runId);
   if (summary) {
     tb.diffSig = [summary.status, summary.wer, summary.cer, tb.detail.reference_set_at].join(":");
   }
-  document.querySelectorAll("#runs-body tr").forEach((row) => {
-    row.classList.toggle("is-selected", row.dataset.run === String(runId));
-  });
+  runsTable.rerender();
   $("tb-diff").hidden = false;
   if (reveal) {
     $("tb-diff").scrollIntoView({ block: "nearest" });
@@ -2201,32 +2820,32 @@ function diffNote(text) {
   note.hidden = !text;
 }
 
-function renderDiff(run) {
-  $("tb-diff-title").textContent = "Word diff · run #" + run.id;
+function renderDiff(entry) {
+  $("tb-diff-title").textContent = "Word diff · run " + entry.id;
   const text = $("tb-diff-text");
   text.replaceChildren();
   const warnings = $("tb-diff-warnings");
   warnings.replaceChildren();
-  (run.warnings || []).forEach((warning) => warnings.appendChild(el("li", null, warning)));
+  (entry.warnings || []).forEach((warning) => warnings.appendChild(h("li", null, String(warning))));
 
-  const summary = [formatCandidate(run.candidate)];
-  if (!isBlank(run.wer)) {
-    summary.push("WER " + (Number(run.wer) * 100).toFixed(1) + " %");
+  const summary = [formatCandidate(entry.candidate)];
+  if (!isBlank(entry.wer)) {
+    summary.push("WER " + percent(entry.wer));
   }
-  if (!isBlank(run.cer)) {
-    summary.push("CER " + (Number(run.cer) * 100).toFixed(1) + " %");
+  if (!isBlank(entry.cer)) {
+    summary.push("CER " + percent(entry.cer));
   }
-  if (run.role === "draft") {
+  if (entry.role === "draft") {
     summary.push("draft run: biased towards the reference");
   }
 
-  const alignment = run.alignment;
+  const alignment = entry.alignment;
   if (!Array.isArray(alignment)) {
     $("tb-diff-summary").textContent = summary.join(" · ");
     const hasReference = tb.detail && tb.detail.reference !== null && tb.detail.reference !== undefined;
     diffNote(
-      run.status !== "completed"
-        ? "No word diff yet: this run is " + run.status + "."
+      entry.status !== "completed"
+        ? "No word diff yet: this run is " + entry.status + "."
         : !hasReference
           ? "No word diff yet: save a reference first."
           : "This run has no alignment."
@@ -2236,111 +2855,125 @@ function renderDiff(run) {
   diffNote("");
   const counts = { equal: 0, substitute: 0, insert: 0, delete: 0 };
   const fragment = document.createDocumentFragment();
-  alignment.forEach((entry, index) => {
+  const word = (value) => (value === null || value === undefined ? "" : String(value));
+  alignment.forEach((part, index) => {
     if (index > 0) {
       fragment.appendChild(document.createTextNode(" "));
     }
-    if (counts[entry.op] !== undefined) {
-      counts[entry.op] += 1;
+    if (counts[part.op] !== undefined) {
+      counts[part.op] += 1;
     }
-    switch (entry.op) {
-      case "equal":
-        fragment.appendChild(el("span", "diff-equal", entry.ref !== null && entry.ref !== undefined ? entry.ref : entry.hyp));
+    switch (part.op) {
+      case "substitute":
+        fragment.appendChild(
+          h("span", { class: "diff-substitute" }, h("del", { class: "diff-ref" }, word(part.ref)), " ", h("ins", { class: "diff-hyp" }, word(part.hyp)))
+        );
         break;
-      case "substitute": {
-        const pair = el("span", "diff-substitute");
-        pair.appendChild(el("span", "diff-ref", entry.ref));
-        pair.appendChild(document.createTextNode(" "));
-        pair.appendChild(el("span", "diff-hyp", entry.hyp));
-        fragment.appendChild(pair);
-        break;
-      }
       case "insert":
-        fragment.appendChild(el("span", "diff-insert diff-hyp", entry.hyp));
+        fragment.appendChild(h("ins", { class: "diff-hyp" }, word(part.hyp)));
         break;
       case "delete":
-        fragment.appendChild(el("span", "diff-delete diff-ref", entry.ref));
+        fragment.appendChild(h("del", { class: "diff-ref" }, word(part.ref)));
         break;
       default:
-        fragment.appendChild(el("span", "diff-equal", entry.ref !== null && entry.ref !== undefined ? entry.ref : entry.hyp));
+        fragment.appendChild(h("span", { class: "diff-equal" }, part.ref !== null && part.ref !== undefined ? word(part.ref) : word(part.hyp)));
     }
   });
   text.appendChild(fragment);
-  summary.push(
-    counts.equal + " equal, " + counts.substitute + " replaced, " + counts.insert + " added, " + counts.delete + " missing"
-  );
+  summary.push(counts.equal + " equal, " + counts.substitute + " replaced, " + counts.insert + " added, " + counts.delete + " missing");
   $("tb-diff-summary").textContent = summary.join(" · ");
 }
 
 // ── Testbench: leaderboard ─────────────────────────────────────────────────
+
+function leaderboardTable(kind, title, empty) {
+  let best = {};
+  const metric = (field, format) => (entry) => {
+    const value = entry[field];
+    if (isBlank(value)) {
+      return dash();
+    }
+    const node = h("span", { class: "cell-inline" }, num(format(Number(value))));
+    if (best[field] !== null && best[field] !== undefined && Number(value) === best[field]) {
+      node.appendChild(tag("Best", "green", "Best in column"));
+    }
+    return node;
+  };
+  const sortable = (field) => (entry) => (isBlank(entry[field]) ? Infinity : Number(entry[field]));
+  const table = dataTable({
+    title: title,
+    size: "sm",
+    columns: [
+      { key: "candidate", header: "Candidate", sort: (e) => formatCandidate(e.candidate), render: (e) => mono(formatCandidate(e.candidate)) },
+      { key: "items", header: "Items (n)", sort: (e) => Number(e.items) || 0, render: (e) => num(e.items) },
+      { key: "wer_mean", header: "WER mean", sort: sortable("wer_mean"), render: metric("wer_mean", (v) => (v * 100).toFixed(1) + " %") },
+      { key: "cer_mean", header: "CER mean", sort: sortable("cer_mean"), render: metric("cer_mean", (v) => (v * 100).toFixed(1) + " %") },
+      { key: "seconds_mean", header: "Mean seconds", secondary: true, sort: sortable("seconds_mean"), render: metric("seconds_mean", (v) => v.toFixed(1)) },
+    ],
+    rowId: (e) => capabilityKey(e.candidate),
+    onRefresh: () => {
+      const seq = state.seq;
+      loadLeaderboard(seq).catch(report);
+    },
+    empty: empty,
+  });
+  table.kind = kind;
+  table.setEntries = (rows) => {
+    const bestOf = (field) => {
+      const values = rows.map((entry) => entry[field]).filter((value) => !isBlank(value)).map(Number);
+      return rows.length > 1 && values.length ? Math.min(...values) : null;
+    };
+    best = { wer_mean: bestOf("wer_mean"), cer_mean: bestOf("cer_mean"), seconds_mean: bestOf("seconds_mean") };
+    table.setRows(rows);
+  };
+  return table;
+}
+
+const lbAudioTable = leaderboardTable("audio", "Audio", "No completed bench runs on corrected audio items yet.");
+const lbDocumentTable = leaderboardTable("document", "Documents", "No completed bench runs on corrected document items yet.");
 
 async function loadLeaderboard(seq) {
   const data = await api("GET", TESTBENCH_API + "/leaderboard");
   if (seq !== state.seq) {
     return;
   }
-  renderLeaderboard(data || {});
+  const board = data || {};
+  const corrected = Number(board.corrected_items) || 0;
+  $("tb-lb-corrected").textContent = corrected + (corrected === 1 ? " corrected item" : " corrected items") + " in the testbench.";
+  const entries = board.items || [];
+  [lbAudioTable, lbDocumentTable].forEach((table) => table.setEntries(entries.filter((entry) => entry.kind === table.kind)));
 }
 
-function renderLeaderboard(data) {
-  const corrected = Number(data.corrected_items) || 0;
-  $("tb-lb-corrected").textContent = corrected + (corrected === 1 ? " corrected item" : " corrected items") + " in the testbench.";
-  const entries = data.items || [];
-  ["audio", "document"].forEach((kind) => {
-    const rows = entries.filter((entry) => entry.kind === kind);
-    const bestOf = (field) => {
-      const values = rows.map((entry) => entry[field]).filter((value) => !isBlank(value));
-      return rows.length > 1 && values.length ? Math.min(...values) : null;
-    };
-    const best = { wer_mean: bestOf("wer_mean"), cer_mean: bestOf("cer_mean"), seconds_mean: bestOf("seconds_mean") };
-    const body = $("lb-" + kind + "-body");
-    body.replaceChildren();
-    rows.forEach((entry) => {
-      const row = el("tr");
-      const candidate = mono(formatCandidate(entry.candidate));
-      candidate.classList.add("machine-wrap");
-      row.appendChild(cell("Candidate", candidate));
-      row.appendChild(cell("Items (n)", numeral(entry.items)));
-      const metric = (label, field, format) => {
-        const value = entry[field];
-        const node = isBlank(value) ? dash() : el("span", "num", format(Number(value)));
-        if (!isBlank(value) && best[field] !== null && Number(value) === best[field]) {
-          node.classList.add("best");
-          node.title = "Best in column";
-        }
-        row.appendChild(cell(label, node));
-      };
-      metric("WER mean", "wer_mean", (value) => (value * 100).toFixed(1) + " %");
-      metric("CER mean", "cer_mean", (value) => (value * 100).toFixed(1) + " %");
-      metric("Mean seconds", "seconds_mean", (value) => value.toFixed(1));
-      body.appendChild(row);
-    });
-    setEmpty("lb-" + kind);
-  });
-}
+// ── Wiring ─────────────────────────────────────────────────────────────────
 
 function wireTestbench() {
-  $("tb-contribute").addEventListener("submit", contribute);
-  $("tb-created-open").addEventListener("click", (event) => {
-    if (tb.created) {
-      openItem(tb.created.id, event.currentTarget);
-    }
-  });
+  $("tb-refresh").addEventListener("click", () => loadSection());
+  $("tb-enable").addEventListener("click", (event) => setTestbenchEnabled(event.currentTarget, true));
+  $("tb-disable").addEventListener("click", (event) => setTestbenchEnabled(event.currentTarget, false));
   ["tb-filter-kind", "tb-filter-status"].forEach((id) => {
-    $(id).addEventListener("change", (event) => {
+    $(id).addEventListener("cds-select-selected", (event) => {
       if (event.target === event.currentTarget) {
         reloadItems();
       }
     });
   });
-  $("items-more").addEventListener("click", (event) => {
-    const seq = state.seq;
-    tbAction(event.currentTarget, () => loadItems(seq, true));
+  $("tb-file-button").addEventListener("cds-file-uploader-button-changed", (event) => {
+    const files = (event.detail && event.detail.addedFiles) || [];
+    if (files.length) {
+      setContributeFile(files[0]);
+    } else {
+      showError(new ApiError(0, "unsupported_file", "That file type is not accepted. Use audio, PDF, PNG, JPEG or TIFF."));
+    }
   });
-  $("tb-enable").addEventListener("click", (event) => setTestbenchEnabled(event.currentTarget, true));
-  $("tb-disable").addEventListener("click", (event) => setTestbenchEnabled(event.currentTarget, false));
-  $("tb-detail-close").addEventListener("click", closeDetail);
-  $("tb-detail-delete").addEventListener("click", (event) => deleteItem(event.currentTarget));
+  $("tb-submit").addEventListener("click", (event) => contribute(event.currentTarget));
+  $("tb-contribute-cancel").addEventListener("click", () => {
+    $("contribute-modal").open = false;
+  });
+  $("tb-detail-close").addEventListener("click", () => {
+    closeDetail();
+    selectTestbenchTab("items");
+  });
+  $("tb-detail-delete").addEventListener("click", (event) => deleteItem(event.currentTarget, tb.openId));
   $("tb-detail-refresh").addEventListener("click", (event) =>
     tbAction(event.currentTarget, async () => {
       await refreshDetail();
@@ -2364,83 +2997,70 @@ function wireTestbench() {
   document.addEventListener("visibilitychange", syncPolling);
 }
 
-// ── Wiring ─────────────────────────────────────────────────────────────────
-
 function init() {
-  $("banner-close").addEventListener("click", hideBanner);
+  buildNavigation();
+  $("workers-table").appendChild(workersTable.root);
+  $("credentials-table").appendChild(credentialsTable.root);
+  mountJobsTable(false);
+  $("baselines-table").appendChild(baselinesTable.root);
+  $("releases-table").appendChild(releasesTable.root);
+  $("items-table").appendChild(itemsTable.root);
+  $("runs-table").appendChild(runsTable.root);
+  $("lb-audio-table").appendChild(lbAudioTable.root);
+  $("lb-document-table").appendChild(lbDocumentTable.root);
 
-  $("login-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const input = $("login-token");
-    const token = String(input.value || "").trim();
-    input.value = "";
-    if (!token) {
-      return;
+  // The Sign in button and Enter in the token field submit; a form-associated button
+  // may also fire `submit`, which must not submit a second time.
+  $("login-form").addEventListener("submit", (event) => event.preventDefault());
+  $("login-submit").addEventListener("click", submitLogin);
+  $("login-token").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitLogin();
     }
-    hideBanner();
-    $("login-message").hidden = true;
-    state.token = token;
-    saveToken(token);
-    enter();
   });
 
   $("sign-out").addEventListener("click", () => signOut(""));
-  $("menu-toggle").addEventListener("click", () => setMenu(!$("rail").classList.contains("is-open")));
-
-  $("org-select").addEventListener("change", (event) => {
-    const value = event.target.value;
-    if (value && value !== state.org) {
-      chooseOrganization(value);
-    }
-  });
-
-  $("new-org-form").addEventListener("submit", (event) => {
-    event.preventDefault();
+  $("account-sign-out").addEventListener("click", () => signOut(""));
+  $("new-org").addEventListener("click", () => {
+    closePanels();
     const input = $("new-org-id");
-    const id = String(input.value || "").trim();
-    if (!id) {
-      return;
-    }
-    const submit = event.target.querySelector("[type=submit]");
-    run(submit, async () => {
-      const created = await api("POST", ADMIN_API + "/organizations", { id: id });
-      input.value = "";
-      await loadOrganizations(created && created.id ? created.id : id);
-    });
+    input.value = "";
+    input.removeAttribute("invalid");
+    $("new-org-modal").open = true;
   });
-
-  $("tabs").addEventListener("wa-tab-show", (event) => {
-    if (event.target === $("tabs") && event.detail && event.detail.name !== state.tab) {
-      setTab(event.detail.name);
+  $("new-org-submit").addEventListener("click", (event) => createOrganization(event.currentTarget));
+  $("new-org-cancel").addEventListener("click", () => {
+    $("new-org-modal").open = false;
+  });
+  $("new-org-id").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      createOrganization($("new-org-submit"));
     }
   });
-
-  document.querySelectorAll("[data-refresh]").forEach((node) => {
-    node.addEventListener("click", () => loadTab());
-  });
-
-  $("issue-client").addEventListener("click", (event) => issueCredential(event.currentTarget, "client"));
-  $("issue-admin").addEventListener("click", (event) => issueCredential(event.currentTarget, "org_admin"));
-  $("issued-copy").addEventListener("wa-copy", () => {
-    $("issued-copied").hidden = false;
-  });
-  $("issued-copy").addEventListener("wa-error", (event) => {
-    // Icons inside the copy button raise their own (composed) wa-error; only the
-    // copy button's own event means the copy failed.
-    if (event.composedPath()[0] !== event.currentTarget) {
-      return;
-    }
-    showError("Copy failed. Select the token and copy it manually.");
-  });
-  $("issued-close").addEventListener("click", tearOffIssued);
-  $("jobs-more").addEventListener("click", (event) => loadMoreJobs(event.currentTarget));
-  wireTestbench();
+  $("settings-refresh").addEventListener("click", () => loadSection());
+  $("banner").addEventListener("cds-notification-closed", () => hideBanner());
 
   $("confirm-ok").addEventListener("click", () => closeConfirmation(true));
   $("confirm-cancel").addEventListener("click", () => closeConfirmation(false));
-  $("confirm").addEventListener("wa-hide", (event) => {
+  $("confirm").addEventListener("cds-modal-closed", (event) => {
     if (event.target === $("confirm") && settleConfirmation) {
       settleConfirmation(false);
+    }
+  });
+  // The issued token closes only through Done, which also clears it.
+  $("issued").addEventListener("cds-modal-beingclosed", (event) => {
+    if (event.target === $("issued")) {
+      event.preventDefault();
+    }
+  });
+  $("issued-done").addEventListener("click", clearIssued);
+  wireTestbench();
+
+  window.addEventListener("hashchange", () => {
+    if (state.token && state.org) {
+      route();
     }
   });
 
@@ -2452,8 +3072,4 @@ function init() {
   }
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
-}
+init();
