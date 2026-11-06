@@ -34,6 +34,9 @@ jobs:
       - name: Install workspace packages
         run: uv sync --all-packages
 
+      - name: Lint
+        run: uv run ruff check .
+
       # Like `resona-worker prepare`: fetch the pinned Docling weights, so the worker's
       # private (offline) execution smoke test finds them in the HF cache.
       - name: Prepare Docling weights

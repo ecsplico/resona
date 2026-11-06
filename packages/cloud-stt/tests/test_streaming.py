@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from resona_cloud_stt.streaming import StreamTranscript, open_stream, supports_streaming
+from resona_cloud_stt.streaming import open_stream, supports_streaming
 
 
 class _FakeProviderWS:

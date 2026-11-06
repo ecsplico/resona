@@ -1,6 +1,4 @@
 """Tests for resona_cli.micrec — RecordingSession and MicRecApp (no real audio hardware)."""
-import queue
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,7 +7,7 @@ import pytest
 pytest.importorskip("sounddevice", reason="sounddevice not installed; reinstall resona-cli")
 
 import numpy as np
-from resona_cli.micrec import RecordingSession, MicRecApp
+from resona_cli.micrec import RecordingSession
 
 
 # ── RecordingSession ──────────────────────────────────────────────────────────
@@ -114,7 +112,6 @@ def test_join_with_no_thread():
 # ── run_mic_rec_app ───────────────────────────────────────────────────────────
 
 def test_run_mic_rec_app_audio_error_exits(tmp_path, monkeypatch):
-    import sys
     monkeypatch.setenv("FILE_PATH", str(tmp_path))
     with (
         patch("resona_cli.micrec.sd.check_input_settings", side_effect=Exception("no mic")),

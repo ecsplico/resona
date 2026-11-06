@@ -131,7 +131,8 @@ def test_run_tts_cloud_dispatches_to_provider(monkeypatch):
 
 def test_catalogue_includes_local_tts_engines(monkeypatch):
     monkeypatch.setenv("RESONA_ENGINE_URLS", "http://x:7001")
-    import respx, httpx
+    import respx
+    import httpx
     with respx.mock:
         respx.get("http://x:7001/health").mock(side_effect=httpx.ConnectError("x"))
         by_name = {e.name: e for e in reg.build_catalogue()}

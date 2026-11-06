@@ -12,9 +12,7 @@ The selected engine name is written to ``~/.resona/config.json`` as
 """
 from __future__ import annotations
 
-import json
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional

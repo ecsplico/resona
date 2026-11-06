@@ -449,7 +449,7 @@ async def test_live_delta_leaves_marker_mid_stream_and_removes_it_on_stop(tmp_pa
 
 @pytest.mark.anyio
 async def test_no_logs_tab_by_default(app):
-    async with app.run_test() as pilot:
+    async with app.run_test():
         tabs = app.query_one("#documents")
         with pytest.raises(Exception):
             tabs.get_pane("logs_tab")
@@ -495,7 +495,7 @@ async def test_debug_logs_tab_stays_last_when_a_new_document_is_opened(tmp_path)
     with patch("resona_cli.engine.InProcessEngine"), \
          patch("resona_cli.live_ui.TranscriptionWorker", side_effect=_FakeWorker):
         app = LiveApp(file=doc, engine="faster-whisper", language="de", debug=True)
-        async with app.run_test() as pilot:
+        async with app.run_test():
             await app._open_document(tmp_path / "second.md")
 
             # TabPane DOM/mount order doesn't reflect the visual tab-bar

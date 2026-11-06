@@ -4,7 +4,6 @@ import types
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from resona_asr_core.protocol import StreamingTranscriber, Transcriber
 

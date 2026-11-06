@@ -23,7 +23,6 @@ loaded model instance as safe, and recording is never blocked on
 transcription completing, so two documents' work can otherwise overlap.
 """
 import contextlib
-import json
 import threading
 import queue
 from dataclasses import dataclass

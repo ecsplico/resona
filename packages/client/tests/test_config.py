@@ -3,8 +3,7 @@ import json
 import pytest
 import httpx
 import respx
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from resona_client.config import EngineConfig, EngineEntry, is_reachable, resolve_engine
 

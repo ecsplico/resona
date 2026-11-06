@@ -40,7 +40,8 @@ def _validate_env() -> None:
             raise RuntimeError(f"{label}={path} is not a directory")
         probe = path / ".write_probe"
         try:
-            probe.touch(); probe.unlink()
+            probe.touch()
+            probe.unlink()
         except OSError as exc:
             raise RuntimeError(f"{label}={path} is not writable: {exc}") from exc
 

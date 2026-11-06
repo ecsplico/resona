@@ -39,11 +39,29 @@ pythonpath = ["packages/api/tests/_support"]
 # The uv workspace only: apps/resona-pwa (incl. its worker) has its own toolchain.
 testpaths = ["packages", "apps/resona-cli", "apps/resona-worker", "apps/resona-mcp", "release"]
 
+[tool.ruff]
+# Lint, not format: the codebase predates a formatter policy. Pyflakes + the
+# pycodestyle error classes catch real bugs (unused/undefined names) without
+# a mass restyle. CI runs `ruff check .` (just lint).
+extend-exclude = ["apps/resona-pwa", "site"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Deliberate late imports: ui.py silences warnings before importing Textual;
+# app.py includes routers after the app and middleware exist; test_profile.py
+# imports after fixture setup.
+"apps/resona-cli/src/resona_cli/ui.py" = ["E402"]
+"packages/api/src/resona_api/app.py" = ["E402"]
+"packages/postprocess/tests/test_profile.py" = ["E402"]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.2",
     "respx>=0.21.1",
+    "ruff>=0.15",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
     # TUI test deps — required so test_micrec runs in the workspace dev env

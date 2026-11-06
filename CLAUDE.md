@@ -255,7 +255,7 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `local_run.py` — explicit `--local`: loads cached settings for the configured hub+credential (marks them `stale`) or built-in private defaults, resolves the execution profile's approved candidates, runs `check_policy` (+ `build_pipeline` with `local_policy(profile, base=org policy)`) before any processing, then runs the candidate in the worker's execution subprocess (`python -m resona_worker.execute`, private env: offline caches, no credentials). Cloud only when allowed by the cached org settings
 - `watch.py` — `watch` subcommand: polls a directory and runs each new audio file as a private hub job (or `--local`), writing `<stem>.md` + `.result.json`; existing outputs are skipped, policy denial stops with exit 2
 - `speech.py` — `speech` subcommand: synthesise TTS. Tries the gateway (`client.create_speech`); on `HTTPStatusError` (reachable gateway) surfaces the error, but on no-server / `ConnectError` / `TimeoutException` falls back to a local in-process engine via `resona_tts_local.get_engine` — engine = `--engine` if it's a registered local-tts engine, else `recommended_offline_engine()` (Piper, torch-free). `--voice` defaults to `None` (engine default); `--language/-l` (default `de`) drives local voice selection. Offline output is always WAV. `_emit` handles play/stdout/file
-- `engine.py` — `Engine` Protocol + `InProcessEngine` (direct asr-core call) for the `live` TUI
+- `engine.py` — `InProcessEngine` (direct asr-core call) for the `live` TUI
 - `local_engine.py` — `probe_local_engine(port=DEFAULT_LOCAL_ENGINE_PORT)` checks `RESONA_LOCAL_ENGINE_PORT` (default `7720`) for an already-running resona-engine-server via `/health`. `LocalEngine`: HTTP transcription client for a resona-engine-server — on `__enter__`, attaches to an already-running one if `probe_local_engine()` finds it, else spawns `uv run resona-engine-<name>` for the context's lifetime. Used by `live_ui.py` to avoid loading an in-process model when a local engine is already running.
 - `engines.py` — `resona engines` subcommands for Resona hub entries (`list`, `add <name> <api_url>`, `remove`, `test`, `benchmark-select`, `status` = hub's live engine catalogue)
 - `profiles.py` — `resona profiles` subcommand: `list`, `show`, `push`, `pull`, `delete` for server-side profile management
@@ -472,6 +472,8 @@ just pwa test-worker                               # PWA project worker (own uv 
 ```
 
 Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the PWA and its worker run through `just pwa …` or from `apps/resona-pwa/`.
+
+Lint: `uv run ruff check .` (pyflakes + pycodestyle error classes, config in the root `pyproject.toml`; CI runs it before the tests). Not a formatter policy: do not run `ruff format` over existing files.
 
 Mocking strategy:
 - resona-engine-server: mock the transcriber at `resona_engine_server.app.get_transcriber`

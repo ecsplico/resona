@@ -2,7 +2,6 @@
 import io
 import json
 import struct
-import time
 import wave
 from pathlib import Path
 from unittest.mock import patch
@@ -178,7 +177,7 @@ def test_submit_job_uploads_then_posts_job_with_bearer_and_idempotency_key(audio
 
 def test_submit_job_retries_transport_error_with_same_idempotency_key_and_upload(audio_file):
     c = ResonaClient(base_url=BASE, api_key="k")
-    with respx.mock as mock:
+    with respx.mock:
         upload = respx.post(f"{BASE}/v1/uploads").mock(
             return_value=httpx.Response(201, json=UPLOAD_JSON)
         )

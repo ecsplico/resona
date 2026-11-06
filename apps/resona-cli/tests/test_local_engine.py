@@ -1,10 +1,7 @@
 # apps/resona-cli/tests/test_local_engine.py
 """Unit tests for LocalEngine — mocks subprocess and httpx, no real engine needed."""
-import atexit
 import subprocess
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call, ANY
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest

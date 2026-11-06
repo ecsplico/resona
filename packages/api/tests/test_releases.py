@@ -309,7 +309,7 @@ def test_incompatible_protocol_gets_426_before_any_input_download(http, fresh_or
         for method, path in (
             ("get", f"/v1/workers/jobs/{job_id}/input"),
             ("get", f"/v1/workers/jobs/{job_id}/postprocess"),
-            ("post", f"/v1/workers/claim?wait=0"),
+            ("post", "/v1/workers/claim?wait=0"),
             ("get", f"/v1/workers/releases/{releases.hub_release_id()}"),
         ):
             response = getattr(http, method)(path, headers=headers)

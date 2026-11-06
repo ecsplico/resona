@@ -2,7 +2,7 @@
 import io
 import struct
 import numpy as np
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from resona_asr_core.audio import load_audio, SAMPLE_RATE
 
 

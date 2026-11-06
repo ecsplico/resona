@@ -101,6 +101,9 @@ nav:
     - Dev Workflow: development/workflow.md
     - Adding an Engine: development/adding-engine.md
     - Testing: development/testing.md
+  - Design:
+    - Admin Console Product Brief: design/admin-product.md
+    - Admin Console Design Direction: design/admin-console.md
 
 # Agent workflow config (issue tracker, labels, domain docs) is not site content.
 exclude_docs: |

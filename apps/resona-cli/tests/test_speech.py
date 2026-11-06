@@ -1,11 +1,7 @@
 """Tests for resona_cli.speech.speak command."""
-import shutil
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 from typer.testing import CliRunner
 
 runner = CliRunner()

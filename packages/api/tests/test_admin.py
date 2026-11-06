@@ -6,7 +6,7 @@ import pytest
 
 from sqlmodel import Session, select
 
-from resona_api.admin import approve_worker, enroll_worker, issue_credential, main, revoke_credential
+from resona_api.admin import enroll_worker, issue_credential, main, revoke_credential
 from resona_api.db.engine import engine
 from resona_api.auth import resolve_token
 from resona_api.db.models import Credential, Worker

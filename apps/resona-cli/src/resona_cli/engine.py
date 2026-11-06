@@ -1,21 +1,15 @@
-"""Engine abstraction — in-process transcription for the `live` TUI.
-
-The Engine Protocol defines the contract: accept an audio Path, return a
-TranscriptionResult dict with at least ``text``, ``language``, and ``segments``.
+"""In-process transcription for the `live` TUI: `InProcessEngine` wraps an
+resona-asr-core transcriber and returns a TranscriptionResult dict with at
+least ``text``, ``language``, and ``segments``.
 """
 from pathlib import Path
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import TypedDict
 
 
 class TranscriptionResult(TypedDict):
     text: str
     language: str
     segments: list
-
-
-@runtime_checkable
-class Engine(Protocol):
-    def transcribe(self, audio: Path, **kwargs) -> TranscriptionResult: ...
 
 
 _INSTALL_HINT = (

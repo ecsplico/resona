@@ -76,5 +76,8 @@ Thumbs.db
 whisper-*
 .claude/settings.local.json
 
+# ── impeccable design-tool scratch (durable briefs live in docs/design/) ──
+.impeccable/
+
 # ── omp plan-mode autosave (session drafts; durable plans are epic issues) ──
 .omp/plans/

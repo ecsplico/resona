@@ -1,5 +1,4 @@
 """Tests for the in-process Engine used by the `live` TUI."""
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -10,7 +9,6 @@ from resona_cli.engine import InProcessEngine
 
 def test_in_process_engine_calls_registry(tmp_path):
     """InProcessEngine.transcribe loads an engine via get_transcriber and calls it."""
-    from resona_cli.engine import InProcessEngine
 
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"fake")
@@ -59,7 +57,6 @@ def test_load_audio_passes_path_to_loader(tmp_path):
 
 def test_in_process_engine_missing_extra_gives_install_hint(monkeypatch):
     """If resona-asr-core isn't installed, InProcessEngine raises ImportError with hint."""
-    from resona_cli.engine import InProcessEngine
 
     def fake_import(*args, **kwargs):
         raise ImportError("no asr-core")
