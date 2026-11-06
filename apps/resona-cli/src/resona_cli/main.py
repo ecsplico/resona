@@ -103,7 +103,7 @@ def live(
                     "Created on first save/recording if it doesn't exist."),
     language: str = typer.Option("de", "--language", "-l", help="Transcription language (e.g. de, en)."),
     engine: Optional[str] = typer.Option(None, "--engine", "-e",
-        help="Local engine to run in-process (default: platform best — MLX on Apple Silicon, else faster-whisper)."),
+        help="Local engine to run in-process (default: fastest installed — lightning-mlx, then mlx-whisper, whisper-cpp, faster-whisper on Apple Silicon; else faster-whisper)."),
     remote: Optional[str] = typer.Option(None, "--remote", "-r",
         help="Stream to a remote server instead of running locally (forces every document into "
              "continuous Live mode — push-to-talk is local-only). Without --engine: an "

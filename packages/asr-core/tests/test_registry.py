@@ -148,15 +148,16 @@ def test_detect_device_cpu_when_nothing_available(monkeypatch):
     assert reg._detect_device() == "cpu"
 
 
-def test_recommended_engine_apple_silicon_prefers_mlx(monkeypatch):
-    """On Apple Silicon, the GPU-native engines win over faster-whisper."""
+def test_recommended_engine_apple_silicon_prefers_fastest(monkeypatch):
+    """On Apple Silicon, the fastest GPU-native engine wins; slower ones are fallbacks."""
     import resona_asr_core.registry as reg
 
     monkeypatch.setattr(reg, "_is_apple_silicon", lambda: True)
-    installed = ["faster-whisper", "whisper-cpp", "mlx-whisper"]
-    assert reg.recommended_engine(installed) == "mlx-whisper"
-    # Without mlx-whisper, the next Apple-Silicon preference is lightning then cpp.
+    installed = ["faster-whisper", "whisper-cpp", "mlx-whisper", "lightning-mlx"]
+    assert reg.recommended_engine(installed) == "lightning-mlx"
+    assert reg.recommended_engine(["faster-whisper", "whisper-cpp", "mlx-whisper"]) == "mlx-whisper"
     assert reg.recommended_engine(["faster-whisper", "whisper-cpp"]) == "whisper-cpp"
+    assert reg.recommended_engine(["faster-whisper"]) == "faster-whisper"
 
 
 def test_recommended_engine_non_apple_prefers_faster_whisper(monkeypatch):

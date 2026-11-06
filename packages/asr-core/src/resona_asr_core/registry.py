@@ -23,9 +23,13 @@ ENTRY_POINT_GROUP = "resona.engines"
 # wins. RESONA_ENGINE always overrides this.
 #
 # Apple Silicon: CTranslate2 (faster-whisper) is CPU-only, so the GPU-native
-# engines are several times faster at the same model size. mlx-whisper gives the
-# best speed+accuracy balance, then the batched lightning-mlx, then whisper.cpp.
-_APPLE_SILICON_PRIORITY = ("mlx-whisper", "lightning-mlx", "whisper-cpp", "faster-whisper")
+# engines are several times faster at the same model size. Ordered fastest
+# first per the benchmark (lightning-mlx ~14-18x realtime, mlx-whisper ~9-10x,
+# whisper.cpp ~8-11x, faster-whisper CPU ~4-7x); later entries are the
+# fallbacks when an earlier engine is not installed. Speed is the criterion
+# here, not accuracy: lightning-mlx has the highest WER of the four on the
+# benchmark and ignores initial_prompt; pin `mlx-whisper` where that matters.
+_APPLE_SILICON_PRIORITY = ("lightning-mlx", "mlx-whisper", "whisper-cpp", "faster-whisper")
 # CUDA / CPU Linux: faster-whisper (CTranslate2) uses the GPU when present and
 # the CPU otherwise — a solid default on both. (To be benchmarked on Linux.)
 _GENERIC_PRIORITY = ("faster-whisper", "whisper-cpp", "whisper", "voxtral")

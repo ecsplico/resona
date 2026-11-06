@@ -305,7 +305,7 @@ resona live --remote http://api-host:7000 --engine deepgram   # cloud streaming 
 |--------|-------------|
 | `FILE` (optional) | Markdown document to open. Prompted for if omitted. |
 | `--language, -l` | Transcription language (default `de`). |
-| `--engine, -e` | Local engine to run in-process (default: platform best). |
+| `--engine, -e` | Local engine to run in-process (default: fastest installed engine; on Apple Silicon `lightning-mlx` → `mlx-whisper` → `whisper-cpp` → `faster-whisper`). |
 | `--remote, -r` | Stream to a remote server instead of running locally. Forces every document into Live mode — push-to-talk is local-only, same as recording audio needs a local mic either way. |
 | `--debug` | Show a Logs tab capturing internal log output (useful for diagnosing engine/transcription issues). |
 

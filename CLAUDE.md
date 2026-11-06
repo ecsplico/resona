@@ -73,11 +73,11 @@ faster-whisper = "resona_engine_faster_whisper.transcriber:FastWhisperTranscribe
 
 The registry in `resona_asr_core/registry.py` discovers engines at runtime:
 - Engine selection priority: explicit arg to `get_transcriber()` > `RESONA_ENGINE` env var > **environment-aware default** (`recommended_engine()`)
-- `recommended_engine(installed=None)` picks the best installed engine for the host: on **Apple Silicon** it prefers the GPU-native engines (`mlx-whisper` → `lightning-mlx` → `whisper-cpp` → `faster-whisper`), informed by `benchmarks/`; elsewhere (CUDA/CPU Linux) it prefers `faster-whisper` (which uses the GPU when present). `installed_engines()` lists discoverable engines. `_is_apple_silicon()` gates the platform branch.
+- `recommended_engine(installed=None)` picks the fastest installed engine for the host: on **Apple Silicon** it walks the benchmark speed ranking (`lightning-mlx` → `mlx-whisper` → `whisper-cpp` → `faster-whisper`) and takes the first installed one, so slower engines are the fallbacks; elsewhere (CUDA/CPU Linux) it prefers `faster-whisper` (which uses the GPU when present). `lightning-mlx` has the highest WER of the four in `benchmarks/` and ignores `initial_prompt`; pin `RESONA_ENGINE=mlx-whisper` where accuracy matters. `installed_engines()` lists discoverable engines. `_is_apple_silicon()` gates the platform branch.
 - `get_transcriber()` returns a thread-safe singleton
 - Each engine's `[project.scripts]` points to `resona_engine_server.run:main` — same FastAPI app, different engine
 
-Available engines: `faster-whisper`, `whisper`, `voxtral`, `mlx-whisper`, `whisper-cpp`, `lightning-mlx`, `parakeet` (NVIDIA NeMo, Linux CUDA/CPU). The default is environment-aware (`recommended_engine()`): `mlx-whisper` on Apple Silicon when installed, else `faster-whisper`.
+Available engines: `faster-whisper`, `whisper`, `voxtral`, `mlx-whisper`, `whisper-cpp`, `lightning-mlx`, `parakeet` (NVIDIA NeMo, Linux CUDA/CPU). The default is environment-aware (`recommended_engine()`): the fastest installed GPU engine (`lightning-mlx`, else `mlx-whisper`, …) on Apple Silicon, else `faster-whisper`.
 
 On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backend). For GPU acceleration on a Mac at the same model size, use `mlx-whisper` / `lightning-mlx` (MLX) or `whisper-cpp` (Metal). See `benchmarks/` for a speed+accuracy comparison harness.
 
