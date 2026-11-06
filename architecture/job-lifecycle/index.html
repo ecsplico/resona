@@ -664,6 +664,8 @@
       
         
       
+        
+      
     
     
     
@@ -920,6 +922,34 @@
     
   
     Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
   
 
     
@@ -2349,6 +2379,7 @@
 <li>job metadata: deleted after 7 days</li>
 <li>unattached uploads: deleted after 1 hour</li>
 </ul>
+<p><a href="../../guide/testbench/">Testbench</a> items are the exception: the original and the run results are stored under <code>&lt;storage_id&gt;/testbench/</code> and are not touched by these sweeps. A collector copies each testbench job's result into its run file before the 24 h result retention, so the job row and result may expire while the run keeps its data. Testbench jobs have <code>purpose=testbench</code> and need no promoted release tuple.</p>
 <h2 id="local-path">Local path<a class="headerlink" href="#local-path" title="Permanent link">&para;</a></h2>
 <p>Only with an explicit <code>--local</code> does the CLI process on this machine; it is never chosen
 automatically. Without <code>--local</code>, hub errors (unreachable, timeout, failed job) are reported and

@@ -662,6 +662,8 @@
       
         
       
+        
+      
     
     
     
@@ -918,6 +920,34 @@
     
   
     Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
   
 
     
@@ -2121,10 +2151,98 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#direction-contract" class="md-nav__link">
+  <a href="#direction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Direction contract
+        Direction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shell
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sections
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table pattern
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#row-actions-and-modals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Row actions and modals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#feedback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feedback
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tokens-and-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tokens and type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phone-under-42rem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phone (under 42rem)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraints
       
     </span>
   </a>
@@ -2174,10 +2292,98 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#direction-contract" class="md-nav__link">
+  <a href="#direction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Direction contract
+        Direction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shell
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sections
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table pattern
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#row-actions-and-modals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Row actions and modals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#feedback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feedback
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tokens-and-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tokens and type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phone-under-42rem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phone (under 42rem)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraints
       
     </span>
   </a>
@@ -2204,15 +2410,68 @@
   
 
 
-<h1 id="admin-hub-management-console">/admin — hub management console<a class="headerlink" href="#admin-hub-management-console" title="Permanent link">&para;</a></h1>
-<p>Scope: the static <code>/admin</code> page (index.html, admin.js, admin.css). Mode: Operate. Audience: the hub operator (mostly), occasionally org admins; desktop short sessions and phone quick checks. Task: see hub state (workers online/approved, tokens, job queue, settings, baselines) and act (approve, revoke, issue, cancel, delete, create org). Constraints: Web Awesome 3 vendored, strict CSP ('self' only), no build step, no innerHTML with API data, token shown once.</p>
-<h2 id="direction-contract">Direction contract<a class="headerlink" href="#direction-contract" title="Permanent link">&para;</a></h2>
-<p>THESIS: Every secret is handed over like registered mail: tracked, receipted once, stamped when cancelled. Refuses the grey SaaS dashboard with status dots and a blue accent.</p>
-<p>OWN-WORLD: Receipt-white ground (#fbfaf6) with faint ruled stock; postal-navy (#1d2b4f) shell rail and header; carbon violet (#5b3e8c) for every machine identifier and numeral; registered-label red (#d7262e) only for stamps and destructive actions; signal green (#1f8a4c) for online/approved; amber for waiting. Condensed grotesk caps for labels, system sans for body, tabular mono for IDs grouped like tracking numbers (<code>wrk · f21e · 64ec · fd5a · 09db</code>).</p>
-<p>STORY: The operator opens the console, sees which workers are on duty and which tokens are live, issues or cancels with confidence that nothing secret lingers.</p>
-<p>FIRST VIEWPORT: Desktop: navy rail left (brand, role, organization list for operators with a New-organization field, Sign out). Main: org title with counts, Web Awesome tab group (Workers, Credentials, Jobs, Settings &amp; baselines); Workers table first, status badges, capability tags, action buttons. Phone: rail collapses to a top bar with org select; tables become stacked row cards.</p>
-<p>FORM: Web Awesome components (wa-tab-group, wa-button, wa-badge, wa-tag, wa-input, wa-select, wa-dialog for confirms, wa-copy-button, wa-relative-time, wa-callout for errors) themed through CSS custom properties. Seed: seed:da53125d530c12d4.</p>
-<p>SIGNATURE: Issuing a token renders a perforated tear-off receipt slip (dashed perforation, red R label, tracking-number id, the token, Copy, "Shown once. Store it now."), dismissed by tearing it off (slide-out). Raises: revoked items stay listed under a REVOKED rubber stamp; pending jobs carry a wait-time bar whose length is exact duration; the action color appears only on pressable controls.</p>
+<h1 id="admin-hub-management-console">/admin - hub management console<a class="headerlink" href="#admin-hub-management-console" title="Permanent link">&para;</a></h1>
+<p>Scope: the static <code>/admin</code> page (index.html, admin.js, admin.css). Mode: Operate. Audience: the hub operator (mostly), occasionally org admins; desktop short sessions and phone quick checks. Task: see hub state (workers online/approved, tokens, job queue, settings, baselines, testbench) and act (approve, revoke, issue, cancel, delete, create org). Product facts: <a href="../admin-product/">admin-product.md</a>.</p>
+<h2 id="direction">Direction<a class="headerlink" href="#direction" title="Permanent link">&para;</a></h2>
+<p>IBM Carbon played straight, for data-dense reading: a g100 shell, a g10 page, Carbon data tables for every list, Carbon tokens and spacing only. No custom palette, no decorative motifs. State comes before action: every row shows what is true (online, approved, revoked, queued) as a tag before any menu offers an action.</p>
+<h2 id="shell">Shell<a class="headerlink" href="#shell" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>cds-header</code> in the g100 zone: menu button (<code>cds-header-menu-button</code>, rail mode), product name "Resona hub", then global actions: the selected organization (mono), an organization switcher (operators only) whose <code>cds-header-panel</code> lists every organization plus "Create organization", the signed-in role (account panel with credential and organization), and Sign out.</li>
+<li><code>cds-side-nav</code> with icon links: Overview, Workers, Credentials, Jobs, Settings, Baselines, Testbench. At 66rem and wider it is a 3rem rail beside the page; below that it is hidden until the menu button expands it, and choosing a section closes it.</li>
+<li>Hash routing: <code>#/overview</code>, <code>#/workers</code>, <code>#/credentials</code>, <code>#/jobs</code>, <code>#/settings</code>, <code>#/baselines</code>, <code>#/testbench</code>. Reload and the back button keep the section; an unknown or empty hash shows Overview.</li>
+<li>Sign-in: a g100 bar and one tile with a <code>cds-password-input</code> for the token and a Sign in button. A 401 clears the stored token and says "Token invalid or revoked"; a 403 from <code>/v1/admin/me</code> says the token is not an organization admin or hub operator token.</li>
+</ul>
+<h2 id="sections">Sections<a class="headerlink" href="#sections" title="Permanent link">&para;</a></h2>
+<p>Each section has a page header (organization label, title, one-sentence note, page tools such as Refresh) and its tables.</p>
+<ul>
+<li><strong>Overview</strong>: a row of clickable tiles linking to their section (workers online with approved / not revoked counts, live credentials, pending jobs with the oldest wait, settings revision) and a "Needs attention" table derived only from loaded data: workers reporting capabilities without approval, approved workers that are offline, pending jobs with a queue reason, approved capabilities a worker no longer reports.</li>
+<li><strong>Workers</strong>: name, ID, status (online/offline/revoked), last seen, approval, capability summary, runtime. The expanded row holds the facts and the capability list. Row menu: approve private, approve non-private, revoke.</li>
+<li><strong>Credentials</strong>: credential ID, role, state, worker, issued. Toolbar actions issue a client or an org-admin token. Row menu: revoke; disabled with the reason for the caller's own credential and for worker credentials (revoked through their worker).</li>
+<li><strong>Jobs</strong>: job, kind, status, waiting (duration and queue reason for pending jobs), execution profile, privacy, result availability, created. The expanded row holds the timeline, attempt, candidate, error and result facts. Cursor paging with "Load more" via <code>next_cursor</code>. Row menu (org admins in their own organization only): cancel, delete. Operators see metadata without a menu column.</li>
+<li><strong>Settings</strong>: read-only. Revision tag, a structured list of the top-level keys with short values, and the full JSON in a multi-line <code>cds-code-snippet</code> with copy.</li>
+<li><strong>Baselines</strong>: baselines table (execution profile, platform, revision, release, shortened corpus digest, created; full digest in the expanded row) and approved releases table.</li>
+<li><strong>Testbench</strong>: org admins in their own organization only (operators see why it is closed). Status strip with enable/disable (GET <code>/v1/settings</code> ETag, PUT with <code>If-Match</code>), then a <code>cds-tabs</code> switch: Items (kind/status filters, items table, Contribute modal with <code>cds-file-uploader</code>), Runs (the open item: original preview from a blob URL for audio and PNG, download, reference <code>cds-textarea</code> with save, candidate checkboxes with worker counts, runs table, word diff), Leaderboard (audio and document tables, best value per column marked).</li>
+</ul>
+<h2 id="table-pattern">Table pattern<a class="headerlink" href="#table-pattern" title="Permanent link">&para;</a></h2>
+<p>Every list goes through one <code>dataTable(cfg)</code> helper in admin.js:</p>
+<ul>
+<li><code>cds-table</code> size <code>md</code> (<code>sm</code> for dense testbench tables) with title and description, a toolbar with <code>cds-table-toolbar-search</code> (filters the loaded rows client-side, including expanded-row text), a refresh button and the section's primary action.</li>
+<li>Sortable headers where the column has a meaningful order; sorting and filtering act on the loaded row array, so a re-render keeps them.</li>
+<li>Secondary detail lives in <code>cds-table-expanded-row</code>; expanded state survives a refresh.</li>
+<li>Loading shows <code>cds-table-skeleton</code>; an empty table shows one sentence that says what makes a row appear (for example: enroll a worker with <code>resona-admin worker enroll</code>).</li>
+<li>Status is a <code>cds-tag</code>: green online/approved/completed/live, gray offline, red revoked/failed, purple pending/queued, blue processing, warm-gray cancelled. Capabilities: green approved and reported, cool-gray reported but not approved, magenta approved but no longer reported; each tag carries a screen-reader text equivalent and a legend explains the colours.</li>
+</ul>
+<h2 id="row-actions-and-modals">Row actions and modals<a class="headerlink" href="#row-actions-and-modals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>One <code>cds-overflow-menu</code> per row instead of rows of buttons. Destructive items are <code>danger</code>; an action that is not allowed stays visible, disabled, with the reason in its label.</li>
+<li>Destructive actions confirm in a <code>cds-modal</code> with a danger primary button; the title names the object ("Revoke credential cred_…?"), the body states the consequence, the secondary button goes back.</li>
+<li>Issued token: a <code>cds-modal</code> that does not close on an outside click, with a warning inline notification "Shown once", the credential ID and the token in a <code>cds-code-snippet type=single</code> with copy. "Done" removes the token from the DOM and from memory. The token is never re-displayed or logged.</li>
+<li>Create organization and Contribute are small form modals.</li>
+</ul>
+<h2 id="feedback">Feedback<a class="headerlink" href="#feedback" title="Permanent link">&para;</a></h2>
+<p>Success and info: <code>cds-toast-notification</code> in the top-right stack. Errors: the page-level <code>cds-inline-notification</code> banner keeps the API code and message from the <code>{error, message}</code> body (fallbacks: <code>detail.message</code>, a validation <code>detail</code> list, the HTTP status text). Sign-in errors stay on the sign-in tile.</p>
+<h2 id="tokens-and-type">Tokens and type<a class="headerlink" href="#tokens-and-type" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Theme: g10 on <code>:root</code> (page), g100 zone class on the header and sign-in bar, <code>cds--layer-two</code> on panels that sit on a layer.</li>
+<li>Colours, spacing and type only through Carbon custom properties (<code>var(--cds-…)</code>), and only theme-level tokens: component tokens such as <code>--cds-tag-background-*</code> are not defined on <code>:root</code>. Word diff: missing words <code>--cds-text-error</code> with line-through, added words on <code>--cds-highlight</code> with a <code>--cds-support-success</code> underline (never colour alone).</li>
+<li>IBM Plex Sans for text; IBM Plex Mono (<code>.mono</code>) for every machine identifier: IDs, digests, revisions, model and candidate names, execution profiles. Numbers use tabular figures.</li>
+<li>admin.css stays small: layout, phone rules and the few things Carbon does not cover.</li>
+</ul>
+<h2 id="phone-under-42rem">Phone (under 42rem)<a class="headerlink" href="#phone-under-42rem" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Header shows the menu button, the organization (and the switcher for operators), account and sign out; the side nav opens from the menu button.</li>
+<li>No page-level horizontal scroll. Tables may scroll inside their own container; columns marked <code>secondary</code> are hidden and their values stay in the expanded row, which is pinned to the viewport width. Toolbar actions wrap onto their own line.</li>
+<li>Overview tiles stack in one column.</li>
+</ul>
+<h2 id="constraints">Constraints<a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>CSP: <code>default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'</code>. No inline scripts, no <code>style="…"</code> or <code>on*</code> attributes in HTML, no external URLs. Setting <code>element.style</code> from JS is allowed.</li>
+<li>No <code>innerHTML</code>/<code>outerHTML</code>/<code>insertAdjacentHTML</code>: the DOM is built with <code>createElement</code>/<code>textContent</code>; icons are Carbon icon descriptors rendered with <code>createElementNS</code>.</li>
+<li><code>admin.js</code> is an ES module (<code>&lt;script type="module" src="/admin/admin.js"&gt;</code>) that imports icon descriptors from <code>/admin/vendor/carbon/carbon.js</code>; importing that bundle registers the <code>cds-*</code> elements. Component methods are called only after <code>customElements.whenDefined</code> (and <code>updateComplete</code> where the shadow DOM is needed).</li>
+<li>index.html loads <code>/admin/vendor/carbon/carbon.css</code>, then <code>/admin/admin.css</code>.</li>
+<li>The Carbon bundle is vendored prebuilt in <code>static/admin/vendor/carbon/</code> (script, theme CSS, Plex fonts, gzip twins). To add a component or icon, edit <code>packages/api/admin-vendor/src/entry.js</code> and run <code>packages/api/admin-vendor/build.sh</code> (bun); see <code>packages/api/admin-vendor/README.md</code>.</li>
+<li>Operator scope never includes job content: the testbench and job cancel/delete are closed to the hub operator role.</li>
+</ul>
 
 
 

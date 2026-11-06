@@ -664,6 +664,8 @@
       
         
       
+        
+      
     
     
     
@@ -920,6 +922,34 @@
     
   
     Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
   
 
     
@@ -2382,8 +2412,8 @@
 <h2 id="capabilities-and-constraints">Capabilities and Constraints<a class="headerlink" href="#capabilities-and-constraints" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Static page served by the hub (<code>packages/api/src/resona_api/static/admin/</code>), no build step, vanilla JS.</li>
-<li>Strict CSP: <code>default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:</code>. No external assets; third-party code is vendored. No <code>innerHTML</code> with API data.</li>
-<li>Component library: Web Awesome 3 (vendored), chosen by the owner as a showcase.</li>
+<li>Strict CSP: <code>default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src blob:</code>. No external assets; third-party code is vendored. No <code>innerHTML</code> with API data.</li>
+<li>Component library: IBM Carbon web components (vendored bundle, g10/g100 themes), chosen for data-dense tables.</li>
 <li>Terminology: organization, worker (approved / private / revoked, reported vs approved capabilities), credential (client, org_admin, hub_operator, worker), job (kind, status, queue reason, execution profile, candidate), settings revision, baseline (execution profile × platform, revision), approved release.</li>
 </ul>
 <h2 id="evidence-on-hand">Evidence on Hand<a class="headerlink" href="#evidence-on-hand" title="Permanent link">&para;</a></h2>

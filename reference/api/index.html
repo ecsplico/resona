@@ -664,6 +664,8 @@
       
         
       
+        
+      
     
     
     
@@ -920,6 +922,34 @@
     
   
     Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
   
 
     
@@ -2017,6 +2047,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testbench" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testbench
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-responses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2788,6 +2829,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testbench" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testbench
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-responses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3082,7 +3134,7 @@ worker is <code>unsupported_capability</code>: that worker stops offering the ca
 <p>Baselines: one item per (execution profile, platform) with its highest revision, <code>{execution_profile, platform, revision, evaluation_id, release_id, corpus_sha256, created_at}</code>; <code>approved_releases</code> items are <code>{execution_profile, platform, release_id, evaluation_id, approved_at}</code>.</p>
 <p>There are no admin routes for job results, cancel or delete: org admins cancel and delete through <code>/v1/jobs/...</code>; operators see job metadata only.</p>
 <h4 id="web-page">Web page<a class="headerlink" href="#web-page" title="Permanent link">&para;</a></h4>
-<p><code>GET /admin</code> serves a static management page (no build step, no external assets). Sign in with an org admin or hub operator token; the page keeps it in <code>sessionStorage</code> (<code>resona-admin-token</code>), so it is gone when the tab closes. Tabs: Workers, Credentials, Jobs, Settings &amp; baselines. The page is built with the <a href="https://webawesome.com">Web Awesome 3</a> component library (MIT), vendored into the hub package and served from <code>/admin/vendor/webawesome/</code>, plus local SVG icons from <code>/admin/icons/</code>; no CDN, web fonts or icon kits are loaded. Responses carry a strict <code>Content-Security-Policy</code> (<code>default-src 'none'</code>, same-origin scripts, styles and requests only), <code>Referrer-Policy: no-referrer</code> and <code>X-Content-Type-Options: nosniff</code>. <code>/admin</code>, <code>/admin/admin.js</code> and <code>/admin/admin.css</code> are sent with <code>Cache-Control: no-store</code>; the vendored library (<code>.js</code> and <code>.css</code> files only) and icons (<code>/admin/icons/&lt;name&gt;.svg</code>, <code>&lt;name&gt;</code> of <code>a-z</code>, <code>0-9</code> and <code>-</code>) with <code>Cache-Control: public, max-age=86400</code>. Any other <code>/admin/…</code> path, including paths that leave the vendor directory, → <code>404</code>.</p>
+<p><code>GET /admin</code> serves a static management page (no build step at runtime, no external assets). Sign in with an org admin or hub operator token; the page keeps it in <code>sessionStorage</code> (<code>resona-admin-token</code>), so it is gone when the tab closes. Sections (hash routes such as <code>#/workers</code>): Overview, Workers, Credentials, Jobs, Settings, Baselines, Testbench. The page is built with <a href="https://carbondesignsystem.com">IBM Carbon</a> web components (Apache-2.0) and IBM Plex fonts (OFL), vendored as one prebuilt bundle into the hub package and served from <code>/admin/vendor/carbon/</code> (<code>carbon.js</code>, <code>carbon.css</code>, <code>fonts/*.woff2</code>; rebuilt with <code>packages/api/admin-vendor/build.sh</code>); no CDN, external fonts or icon kits are loaded. Responses carry a strict <code>Content-Security-Policy</code> (<code>default-src 'none'</code>, same-origin scripts, styles, fonts and requests only; <code>blob:</code> images and media for testbench previews), <code>Referrer-Policy: no-referrer</code> and <code>X-Content-Type-Options: nosniff</code>. <code>/admin</code>, <code>/admin/admin.js</code> and <code>/admin/admin.css</code> are sent with <code>Cache-Control: no-store</code>; the vendored bundle (<code>.js</code>, <code>.css</code> and <code>.woff2</code> files only; <code>.js</code>/<code>.css</code> as their gzip twin when the client accepts gzip) with <code>Cache-Control: public, max-age=86400</code>. Any other <code>/admin/…</code> path, including paths that leave the vendor directory, → <code>404</code>.</p>
 <hr />
 <h3 id="engine-catalogue">Engine catalogue<a class="headerlink" href="#engine-catalogue" title="Permanent link">&para;</a></h3>
 <h4 id="list-engines">List engines<a class="headerlink" href="#list-engines" title="Permanent link">&para;</a></h4>
@@ -3362,6 +3414,81 @@ stored profile.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>DELETE /profiles/{name}
 </code></pre></div>
 <p>Returns <code>{"ok": true}</code>. Returns <code>404</code> if not found.</p>
+<hr />
+<h2 id="testbench">Testbench<a class="headerlink" href="#testbench" title="Permanent link">&para;</a></h2>
+<p>Contributed recordings and scans, references and bench runs. Disabled by default: with <code>testbench_enabled=false</code> every route except <code>/status</code> answers <code>403 testbench_disabled</code>. <code>hub_operator</code> credentials are always rejected. See <a href="../../guide/testbench/">Testbench</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Method &amp; path</th>
+<th>Role</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /v1/testbench/status</code></td>
+<td>client, org_admin</td>
+<td><code>{enabled, items, corrected, runs}</code></td>
+</tr>
+<tr>
+<td><code>GET /v1/testbench/candidates</code></td>
+<td>org_admin</td>
+<td><code>{items: [{kind, candidate, workers_online}]}</code>: tuples approved and tested by ≥1 approved private worker</td>
+</tr>
+<tr>
+<td><code>POST /v1/testbench/items</code></td>
+<td>client, org_admin</td>
+<td>Multipart <code>file</code> (+ optional <code>language</code>, <code>label</code>). Persists the original, queues the draft run, <code>201</code> ItemDetail. <code>415</code> unsupported media, <code>422</code> empty, <code>413</code> over <code>RESONA_MAX_UPLOAD_BYTES</code></td>
+</tr>
+<tr>
+<td><code>GET /v1/testbench/items</code></td>
+<td>org_admin</td>
+<td><code>?kind=&amp;status=&amp;limit=&amp;cursor=</code> → <code>{items, next_cursor}</code>, newest first</td>
+</tr>
+<tr>
+<td><code>GET /v1/testbench/items/{id}</code></td>
+<td>org_admin</td>
+<td>ItemDetail: summary + <code>sha256</code>, <code>reference</code>, <code>draft</code>, <code>runs</code></td>
+</tr>
+<tr>
+<td><code>GET /v1/testbench/items/{id}/file</code></td>
+<td>org_admin</td>
+<td>Original bytes (<code>inline</code>, <code>nosniff</code>, <code>no-store</code>); <code>410 content_unavailable</code> if the file is gone</td>
+</tr>
+<tr>
+<td><code>PUT /v1/testbench/items/{id}/reference</code></td>
+<td>org_admin</td>
+<td>Body <code>{"text": "..."}</code> (1–1,000,000 chars); sets the reference and re-scores completed runs</td>
+</tr>
+<tr>
+<td><code>DELETE /v1/testbench/items/{id}</code></td>
+<td>org_admin</td>
+<td><code>204</code>; removes row, files, runs and cancels active jobs</td>
+</tr>
+<tr>
+<td><code>POST /v1/testbench/items/{id}/runs</code></td>
+<td>org_admin</td>
+<td>Body <code>{"candidates": [Candidate, ...]}</code> (1–16); <code>422 unavailable_candidate</code> for a candidate not in <code>/candidates</code>; an identical active run is skipped. <code>201</code> <code>{items: [RunSummary]}</code></td>
+</tr>
+<tr>
+<td><code>GET /v1/testbench/items/{id}/runs/{run_id}</code></td>
+<td>org_admin</td>
+<td>RunDetail: <code>text</code>, <code>warnings</code>, <code>alignment</code> (<code>null</code> without reference or before completion)</td>
+</tr>
+<tr>
+<td><code>DELETE /v1/testbench/items/{id}/runs/{run_id}</code></td>
+<td>org_admin</td>
+<td><code>204</code>; cancels the job if active</td>
+</tr>
+<tr>
+<td><code>GET /v1/testbench/leaderboard</code></td>
+<td>org_admin</td>
+<td><code>{corrected_items, items: [{kind, candidate, items, wer_mean, cer_mean, seconds_mean}]}</code> over completed <strong>bench</strong> runs on corrected items (draft runs excluded), best WER first</td>
+</tr>
+</tbody>
+</table>
+<p>Item <code>status</code> is <code>awaiting_draft</code>, <code>needs_correction</code> or <code>corrected</code>; run <code>status</code> is <code>queued</code>, <code>processing</code>, <code>completed</code>, <code>failed</code> or <code>cancelled</code>; run <code>role</code> is <code>draft</code> or <code>bench</code>. Candidates have the job-core shape <code>{engine, model, model_revision, accelerator, ocr_engine}</code>. Audio runs are scored on <code>raw_text</code> with <code>text-v1</code>, documents on <code>markdown</code> with <code>markdown-v1</code>.</p>
 <hr />
 <h2 id="error-responses">Error responses<a class="headerlink" href="#error-responses" title="Permanent link">&para;</a></h2>
 <table>
