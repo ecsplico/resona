@@ -14,6 +14,7 @@ from .settings_cli import settings_app
 from .watch import watch_directory
 from .transcribe import transcribe_files
 from .speech import speak
+from .testbench_cli import testbench_app
 from .worker_cli import worker_app
 
 app = typer.Typer(help="resona CLI")
@@ -23,6 +24,7 @@ app.add_typer(profiles_app, name="profiles", help="Manage postprocessing profile
 app.add_typer(jobs_app, name="jobs", help="Inspect and manage hub jobs.")
 app.add_typer(settings_app, name="settings", help="Organization settings stored on the hub.")
 app.add_typer(eval_app, name="eval", help="Evaluate execution profiles against the corpus; promote baselines.")
+app.add_typer(testbench_app, name="testbench", help="Contribute recordings and scans to the hub testbench.")
 app.add_typer(worker_app, name="worker", help="Prepare, run and install an outbound pull worker for the hub.")
 app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)

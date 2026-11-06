@@ -215,6 +215,34 @@ def _job_ddl(raw) -> str:
     return raw.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='job'").fetchone()[0]
 
 
+def test_v4_database_gains_testbench_tables_and_keeps_jobs(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:4])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 4)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    raw = sqlite3.connect(legacy_db)  # a v4 hub's models had no testbench tables
+    raw.execute("DROP TABLE testbenchrun")
+    raw.execute("DROP TABLE testbenchitem")
+    raw.commit()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    tables = {r[0] for r in raw.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    versions = [r[0] for r in raw.execute("SELECT version FROM schema_version ORDER BY version")]
+    jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
+    run_ddl = raw.execute("SELECT sql FROM sqlite_master WHERE name='testbenchrun'").fetchone()[0]
+    item_ddl = raw.execute("SELECT sql FROM sqlite_master WHERE name='testbenchitem'").fetchone()[0]
+    raw.close()
+    assert {"testbenchitem", "testbenchrun"} <= tables
+    assert versions == list(range(1, schema.TARGET_VERSION + 1)) and schema.TARGET_VERSION >= 5
+    assert jobs == 2
+    assert "ON DELETE CASCADE" in run_ddl
+    assert "AUTOINCREMENT" in run_ddl and "AUTOINCREMENT" in item_ddl
+
+
 def test_v3_database_never_reissues_a_deleted_job_id(legacy_db, monkeypatch):
     from resona_api.db.models import Job
 

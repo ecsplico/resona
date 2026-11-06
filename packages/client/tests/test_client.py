@@ -538,3 +538,70 @@ def test_create_transcription_text_format_returns_text(client, audio_file):
         respx.post(f"{BASE}/v1/audio/transcriptions").mock(
             return_value=httpx.Response(200, text="nur text"))
         assert client.create_transcription(audio_file, response_format="text") == {"text": "nur text"}
+
+
+# ── Testbench ─────────────────────────────────────────────────────────────────
+
+@respx.mock
+def test_testbench_contribute_posts_multipart(client, audio_file):
+    route = respx.post(f"{BASE}/v1/testbench/items").mock(
+        return_value=httpx.Response(201, json={"id": 4, "status": "awaiting_draft"}))
+
+    item = client.testbench_contribute(audio_file, language="de", label="memo")
+
+    assert item["id"] == 4
+    body = route.calls.last.request.content
+    assert b'name="language"' in body and b'name="label"' in body and b"audio.wav" in body
+
+
+@respx.mock
+def test_testbench_disabled_surfaces_code(client, audio_file):
+    respx.post(f"{BASE}/v1/testbench/items").mock(
+        return_value=httpx.Response(403, json={"error": "testbench_disabled", "message": "off"}))
+
+    with pytest.raises(ResonaAPIError) as exc:
+        client.testbench_contribute(audio_file)
+
+    assert exc.value.status == 403 and exc.value.code == "testbench_disabled"
+
+
+@respx.mock
+def test_testbench_list_items_sends_only_given_params(client):
+    route = respx.get(f"{BASE}/v1/testbench/items").mock(
+        return_value=httpx.Response(200, json={"items": [], "next_cursor": None}))
+
+    client.testbench_list_items(status="corrected", limit=5)
+
+    assert dict(route.calls.last.request.url.params) == {"status": "corrected", "limit": "5"}
+
+
+@respx.mock
+def test_testbench_reference_run_and_delete(client):
+    ref = respx.put(f"{BASE}/v1/testbench/items/3/reference").mock(
+        return_value=httpx.Response(200, json={"id": 3, "reference": "hallo"}))
+    run = respx.post(f"{BASE}/v1/testbench/items/3/runs").mock(
+        return_value=httpx.Response(201, json={"items": [{"id": 9}]}))
+    delete = respx.delete(f"{BASE}/v1/testbench/items/3").mock(return_value=httpx.Response(204))
+    cand = {"engine": "faster-whisper", "model": "m", "accelerator": "cpu"}
+
+    assert client.testbench_set_reference(3, "hallo")["reference"] == "hallo"
+    assert json.loads(ref.calls.last.request.content) == {"text": "hallo"}
+    assert client.testbench_run(3, [cand])["items"][0]["id"] == 9
+    assert json.loads(run.calls.last.request.content) == {"candidates": [cand]}
+    assert client.testbench_delete_item(3) is None
+    assert delete.called
+
+
+@respx.mock
+def test_testbench_read_routes(client):
+    respx.get(f"{BASE}/v1/testbench/status").mock(return_value=httpx.Response(200, json={"enabled": True}))
+    respx.get(f"{BASE}/v1/testbench/candidates").mock(return_value=httpx.Response(200, json={"items": []}))
+    respx.get(f"{BASE}/v1/testbench/items/3").mock(return_value=httpx.Response(200, json={"id": 3}))
+    respx.get(f"{BASE}/v1/testbench/items/3/runs/9").mock(return_value=httpx.Response(200, json={"id": 9}))
+    respx.get(f"{BASE}/v1/testbench/leaderboard").mock(return_value=httpx.Response(200, json={"items": []}))
+
+    assert client.testbench_status()["enabled"] is True
+    assert client.testbench_candidates() == {"items": []}
+    assert client.testbench_get_item(3)["id"] == 3
+    assert client.testbench_get_run(3, 9)["id"] == 9
+    assert client.testbench_leaderboard() == {"items": []}

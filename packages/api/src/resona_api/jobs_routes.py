@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -50,7 +51,7 @@ from resona_postprocess.profile import ProfileError
 from . import clock, releases, storage
 from . import engine_registry as reg
 from .auth import ROLE_ORG_ADMIN, Principal, client_principal, hash_token
-from .broker import JOB_DELETED, _finish_terminal, _immediate, _remove_input, endpoints_assigned
+from .broker import JOB_DELETED, _finish_terminal, _immediate, _remove_input, endpoints_assigned, purge_job
 from .db.engine import engine
 from .db.models import (
     Credential,
@@ -649,6 +650,30 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     return meta, document, endpoint_ids(profile)
 
 
+def _snapshot_body(*, kind: str, candidates: list[Candidate], language: str, options: dict[str, Any],
+                   postprocess: tuple[dict[str, Any], bytes, list[str]] | None, policy, revision: int,
+                   execution_profile: str, purpose: str, release_id: str | None) -> dict[str, Any]:
+    """The content-free execution snapshot a job carries from admission to the worker."""
+    return {
+        "kind": kind,
+        "candidates": [c.model_dump(mode="json") for c in candidates],
+        "language": language,
+        "options": options,
+        "postprocess": postprocess[0] if postprocess else None,
+        "endpoint_ids": postprocess[2] if postprocess else [],
+        "policy": {
+            "private": policy.private,
+            "cloud_enabled": policy.cloud_enabled,
+            "approved_endpoint_ids": list(policy.approved_endpoint_ids),
+            "endpoints": [ep.model_dump(mode="json") for ep in policy.endpoints],
+        },
+        "settings_revision": revision,
+        "execution_profile": execution_profile,
+        "purpose": purpose,
+        "release_id": release_id,
+    }
+
+
 def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
                         options: dict[str, Any]) -> tuple[dict[str, Any], bytes | None]:
     """Return the content-free execution snapshot and the postprocess profile document, if any."""
@@ -665,25 +690,91 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         postprocess = _resolve_postprocess(session, organization_id, req, settings, policy)
     except PolicyDenied as exc:
         raise api_error(403, "policy_denied", f"{exc.stage}: {exc.reason}") from None
-    snapshot = {
-        "kind": req.kind,
-        "candidates": [c.model_dump(mode="json") for c in candidates],
-        "language": req.language or settings.language,
-        "options": options,
-        "postprocess": postprocess[0] if postprocess else None,
-        "endpoint_ids": postprocess[2] if postprocess else [],
-        "policy": {
-            "private": policy.private,
-            "cloud_enabled": policy.cloud_enabled,
-            "approved_endpoint_ids": list(policy.approved_endpoint_ids),
-            "endpoints": [ep.model_dump(mode="json") for ep in policy.endpoints],
-        },
-        "settings_revision": revision,
-        "execution_profile": name,
-        "purpose": req.purpose,
-        "release_id": req.release_id,
-    }
+    snapshot = _snapshot_body(
+        kind=req.kind, candidates=candidates, language=req.language or settings.language, options=options,
+        postprocess=postprocess, policy=policy, revision=revision, execution_profile=name,
+        purpose=req.purpose, release_id=req.release_id,
+    )
     return snapshot, postprocess[1] if postprocess else None
+
+
+def _link_or_copy(source: Path, dest: Path) -> None:
+    """Give a job its own name for stored bytes: a hard link, or a copy where links are unavailable."""
+    try:
+        os.link(source, dest)
+        return
+    except FileNotFoundError:
+        raise api_error(410, CONTENT_UNAVAILABLE, "stored content is unavailable") from None
+    except OSError:
+        pass
+    staged = storage.staging_path(dest)
+    try:
+        shutil.copyfile(source, staged)
+        storage.promote(staged, dest)
+    except BaseException:
+        storage.remove_file(staged)
+        raise
+
+
+TESTBENCH_PURPOSE = "testbench"
+TESTBENCH_PROFILE = "testbench"
+"""``Job.execution_profile`` of testbench jobs: they are pinned to one candidate, not drawn from a profile."""
+
+
+def admit_testbench_job(session: Session, organization_id: str, *, kind: str, language: str,
+                        candidate: Candidate, source: Path, sha256: str) -> Job:
+    """Create a private ``testbench`` job for stored item bytes, pinned to exactly ``candidate``.
+
+    Runs inside the caller's write transaction and does not commit. The candidate
+    bypasses execution-profile membership (the caller proves it is one an approved
+    worker has tested), but the policy check still runs and the snapshot is private with
+    no postprocess profile. The job's input is a link to (or copy of) ``source``, so the
+    item's file survives the job's own input removal.
+    """
+    try:
+        revision, settings = current_settings(session, organization_id)
+    except LookupError:
+        raise api_error(409, "settings_missing", "organization has no settings") from None
+    try:
+        policy = settings.policy(private=True)
+        check_policy(policy, [_candidate_stage(candidate, kind, settings)])
+    except PolicyDenied as exc:
+        raise api_error(403, "policy_denied", f"{exc.stage}: {exc.reason}") from None
+    options = _OPTIONS_MODEL[kind].model_validate({}).model_dump(mode="json", exclude_none=True)
+    if kind == "document":
+        _option_compatible([candidate], options, language)
+    snapshot = _snapshot_body(
+        kind=kind, candidates=[candidate], language=language, options=options, postprocess=None,
+        policy=policy, revision=revision, execution_profile=TESTBENCH_PROFILE,
+        purpose=TESTBENCH_PURPOSE, release_id=None,
+    )
+    now = clock.now()
+    job = Job(
+        organization_id=organization_id,
+        kind=kind,
+        private=True,
+        purpose=TESTBENCH_PURPOSE,
+        status=JobStatus.PENDING,
+        execution_profile=TESTBENCH_PROFILE,
+        execution_snapshot=json.dumps(snapshot, sort_keys=True),
+        settings_revision=revision,
+        input_sha256=sha256,
+        deadline_at=now + JOB_DEADLINE,
+        engine=candidate.engine,
+        language=language,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(job)
+    session.flush()
+    dest = storage.job_input_path(_storage_id(session, organization_id), job.id)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _link_or_copy(source, dest)
+    except BaseException:
+        storage.remove_tree(dest.parent)
+        raise
+    return job
 
 
 def _request_hash(req: JobRequest, upload: Upload | None) -> str:
@@ -986,15 +1077,6 @@ def delete_job(
             )
         ).all():
             session.delete(record)
-        if job.status == JobStatus.PROCESSING:
-            lease_until = job.lease_until
-            _finish_terminal(job, JobStatus.CANCELLED, JOB_DELETED, clock.now())
-            job.cancel_requested = True
-            job.error_message = "deleted by client"
-            # The tombstone outlives the fenced lease; the sweep purges it afterwards.
-            job.lease_until = lease_until
-            session.add(job)
-        else:
-            session.delete(job)
+        purge_job(session, job)
     storage.remove_tree(storage.job_dir(storage_id, job_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

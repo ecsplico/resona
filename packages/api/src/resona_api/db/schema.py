@@ -410,12 +410,26 @@ def _v4_job_autoincrement(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 5: testbench items and runs ───────────────────────────────
+
+_V5_TABLES = ("testbenchitem", "testbenchrun")
+
+
+def _v5_testbench(conn: sqlite3.Connection) -> AfterCommit | None:
+    _create_missing_tables(conn)
+    missing = set(_V5_TABLES) - _table_names(conn)
+    if missing:
+        raise SchemaError(f"migration 5 did not create tables: {sorted(missing)}")
+    return None
+
+
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (1, _v1_identity_settings_jobs),
     (2, _v2_releases_evaluations),
     (3, _v3_upload_links),
     (4, _v4_job_autoincrement),
+    (5, _v5_testbench),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]

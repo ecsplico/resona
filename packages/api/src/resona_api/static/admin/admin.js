@@ -36,7 +36,7 @@ const QUEUE_REASONS = {
   release_not_approved: "Release not approved",
   waiting_capacity: "Waiting for capacity",
 };
-const TABS = ["workers", "credentials", "jobs", "settings"];
+const TABS = ["workers", "credentials", "jobs", "settings", "testbench"];
 
 const state = {
   token: null,
@@ -119,15 +119,26 @@ function toApiError(status, statusText, data) {
   return new ApiError(status, body.error ? String(body.error) : "error", "Request failed (" + reason + ").");
 }
 
-async function api(method, path, body) {
+// One request with the session token. Shared by the JSON, binary and multipart helpers
+// so the network error, 401 sign-out and ApiError handling stay in one place. A non-2xx
+// response is read as JSON (when it parses) and thrown; a 2xx response is returned
+// unread. `json` sends a JSON body; `form` sends FormData (the browser sets the
+// multipart Content-Type and boundary); `accept` defaults to JSON.
+async function request(method, path, options) {
+  const opts = options || {};
   const headers = {
     Authorization: "Bearer " + state.token,
-    Accept: "application/json",
+    Accept: opts.accept || "application/json",
   };
   const init = { method: method, headers: headers, cache: "no-store", credentials: "omit" };
-  if (body !== undefined) {
+  if (opts.headers) {
+    Object.assign(headers, opts.headers);
+  }
+  if (opts.json !== undefined) {
     headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(body);
+    init.body = JSON.stringify(opts.json);
+  } else if (opts.form) {
+    init.body = opts.form;
   }
   let response;
   try {
@@ -135,24 +146,48 @@ async function api(method, path, body) {
   } catch (_) {
     throw new ApiError(0, "network_error", "Could not reach the hub.");
   }
-  const text = response.status === 204 ? "" : await response.text();
-  let data = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch (_) {
-      data = null;
-    }
-  }
   if (!response.ok) {
-    const error = toApiError(response.status, response.statusText, data);
+    const error = toApiError(response.status, response.statusText, await parseJson(response));
     if (response.status === 401) {
       signOut("Token invalid or revoked");
       error.handled = true;
     }
     throw error;
   }
-  return data;
+  return response;
+}
+
+async function parseJson(response) {
+  const text = response.status === 204 ? "" : await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function api(method, path, body) {
+  return parseJson(await request(method, path, { json: body }));
+}
+
+// Binary download (an item's original): the response body as a Blob of its Content-Type.
+async function apiBlob(path) {
+  const response = await request("GET", path, { accept: "*/*" });
+  return response.blob();
+}
+
+// Multipart upload: `form` is a FormData; the Content-Type header is left to the browser.
+async function apiUpload(path, form) {
+  return parseJson(await request("POST", path, { form: form }));
+}
+
+// GET that also returns the ETag header (the settings revision for a later If-Match).
+async function apiWithEtag(path) {
+  const response = await request("GET", path);
+  return { data: await parseJson(response), etag: response.headers.get("ETag") };
 }
 
 function orgPath() {
@@ -554,7 +589,7 @@ async function loadSummary() {
 
 function resetViews() {
   hideIssued();
-  ["workers", "credentials", "jobs", "baselines", "releases"].forEach((name) => {
+  ["workers", "credentials", "jobs", "baselines", "releases", "items", "runs", "lb-audio", "lb-document"].forEach((name) => {
     $(name + "-body").replaceChildren();
     $(name + "-empty").hidden = true;
     $(name + "-wrap").hidden = false;
@@ -564,6 +599,7 @@ function resetViews() {
   $("jobs-more").hidden = true;
   state.jobsCursor = null;
   state.jobs.clear();
+  resetTestbench();
   resetTally();
 }
 
@@ -707,6 +743,7 @@ const loaders = {
   credentials: loadCredentials,
   jobs: (seq) => loadJobs(seq, false),
   settings: loadSettings,
+  testbench: loadTestbench,
 };
 
 function setTab(name) {
@@ -714,6 +751,7 @@ function setTab(name) {
     return;
   }
   state.tab = name;
+  syncPolling();
   loadTab();
 }
 
@@ -1246,6 +1284,1086 @@ async function loadSettings(seq) {
   setEmpty("releases");
 }
 
+// ── Testbench ──────────────────────────────────────────────────────────────
+
+const TESTBENCH_API = "/v1/testbench";
+const SETTINGS_API = "/v1/settings";
+const POLL_MS = 5000;
+const ITEMS_PAGE = 50;
+const MAX_RUN_CANDIDATES = 16;
+const ITEM_STATUSES = {
+  awaiting_draft: { label: "Awaiting draft", variant: "neutral", appearance: "outlined" },
+  needs_correction: { label: "Needs correction", variant: "warning", appearance: "filled-outlined" },
+  corrected: { label: "Corrected", variant: "success", appearance: "filled-outlined" },
+};
+const FILE_EXTENSIONS = {
+  "application/pdf": "pdf",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/tiff": "tif",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/flac": "flac",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+};
+
+const tb = {
+  cursor: null,
+  // Bumped per item-list load; older responses are dropped.
+  listSeq: 0,
+  // Item id -> its table row.
+  rows: new Map(),
+  created: null,
+  // The open item (inline detail section); null when closed.
+  openId: null,
+  // Bumped whenever the detail opens or closes; responses for an older one are dropped.
+  detailSeq: 0,
+  detail: null,
+  // The user edited the reference text since it was last seeded or saved.
+  dirty: false,
+  candidates: [],
+  selected: new Set(),
+  blob: null,
+  objectUrl: null,
+  timer: null,
+  diffRunId: null,
+  diffSeq: 0,
+  diffSig: "",
+  // Signature of the item and its runs at the last render; a change refreshes the aggregates.
+  runSig: null,
+};
+
+// The testbench reads job content, so only an org admin in their own organization may use it.
+function testbenchAllowed() {
+  return canManageJobs();
+}
+
+function itemPath(id) {
+  return TESTBENCH_API + "/items/" + encodeURIComponent(id);
+}
+
+// Runs a testbench action; a switched-off testbench (403) sends the tab back to its status.
+function tbAction(trigger, action) {
+  return run(trigger, async () => {
+    try {
+      await action();
+    } catch (error) {
+      if (error && error.code === "testbench_disabled") {
+        loadTab();
+      }
+      throw error;
+    }
+  });
+}
+
+function showTestbenchView(mode, message) {
+  $("tb-forbidden").hidden = mode !== "forbidden";
+  $("tb-forbidden").textContent = mode === "forbidden" ? message || "" : "";
+  $("tb-content").hidden = mode === "forbidden" || mode === "none";
+  $("tb-off").hidden = mode !== "off";
+  $("tb-main").hidden = mode !== "on";
+  $("tb-disable").hidden = mode !== "on";
+}
+
+function renderTestbenchStatus(status) {
+  $("tb-state").replaceChildren(status.enabled ? badge("Enabled", "success") : badge("Disabled", "neutral", "outlined"));
+  $("tb-count-items").textContent = String(status.items);
+  $("tb-count-corrected").textContent = String(status.corrected);
+  $("tb-count-runs").textContent = String(status.runs);
+  showTestbenchView(status.enabled ? "on" : "off");
+}
+
+async function loadTestbench(seq) {
+  if (!testbenchAllowed()) {
+    closeDetail();
+    showTestbenchView(
+      "forbidden",
+      "The testbench stores and shows job content (recordings, scans and their texts), so it is closed to the hub operator role. Sign in with an organization admin token to use it for that organization."
+    );
+    return;
+  }
+  let status;
+  try {
+    status = await api("GET", TESTBENCH_API + "/status");
+  } catch (error) {
+    if (error.status === 403 && !error.handled) {
+      closeDetail();
+      showTestbenchView("forbidden", error.message);
+      return;
+    }
+    throw error;
+  }
+  if (seq !== state.seq) {
+    return;
+  }
+  renderTestbenchStatus(status);
+  if (!status.enabled) {
+    closeDetail();
+    return;
+  }
+  await Promise.all([loadItems(seq, false), loadLeaderboard(seq)]);
+}
+
+// Re-reads the counters and the leaderboard after something changed them.
+function refreshAggregates() {
+  const seq = state.seq;
+  api("GET", TESTBENCH_API + "/status")
+    .then((status) => {
+      if (seq === state.seq && status) {
+        renderTestbenchStatus(status);
+      }
+    })
+    .catch(report);
+  loadLeaderboard(seq).catch(report);
+}
+
+function setTestbenchEnabled(trigger, enabled) {
+  return (async () => {
+    const confirmed = await confirmAction(
+      enabled
+        ? {
+            title: "Enable testbench?",
+            message:
+              "Recordings and scans contributed to the testbench are stored on the hub persistently, until you delete the item. Enable it for " +
+              state.org +
+              "?",
+            confirmLabel: "Enable testbench",
+            dismissLabel: "Keep it off",
+          }
+        : {
+            title: "Disable testbench?",
+            message:
+              "Existing items, references and runs are kept on the hub, but nothing can be added or read until the testbench is enabled again.",
+            confirmLabel: "Disable testbench",
+            dismissLabel: "Keep it on",
+          }
+    );
+    if (!confirmed) {
+      return;
+    }
+    await run(trigger, async () => {
+      const current = await apiWithEtag(SETTINGS_API);
+      if (!current.etag || !current.data || !current.data.settings) {
+        throw new ApiError(0, "settings_unreadable", "The hub did not return the organization settings.");
+      }
+      const settings = Object.assign({}, current.data.settings, { testbench_enabled: enabled });
+      try {
+        await request("PUT", SETTINGS_API, { json: settings, headers: { "If-Match": current.etag } });
+      } catch (error) {
+        if (error.status === 409) {
+          loadTab();
+          throw new ApiError(
+            409,
+            "revision_conflict",
+            "The settings changed in the meantime, so nothing was changed. The status below is up to date; try again."
+          );
+        }
+        throw error;
+      }
+      loadTab();
+    });
+  })();
+}
+
+function resetTestbench() {
+  closeDetail();
+  tb.cursor = null;
+  tb.listSeq += 1;
+  tb.rows.clear();
+  tb.created = null;
+  $("tb-created").hidden = true;
+  $("tb-file").value = "";
+  $("tb-label").value = "";
+  $("tb-state").replaceChildren();
+  ["items", "corrected", "runs"].forEach((name) => {
+    $("tb-count-" + name).textContent = "–";
+  });
+  $("tb-lb-corrected").textContent = "";
+  $("items-more").hidden = true;
+  showTestbenchView("none");
+}
+
+// ── Testbench: contribute and item list ────────────────────────────────────
+
+function contribute(event) {
+  event.preventDefault();
+  const input = $("tb-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    showError("Choose a recording or scan to contribute.");
+    return Promise.resolve();
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("language", String($("tb-language").value || "de"));
+  const label = String($("tb-label").value || "").trim();
+  if (label) {
+    form.append("label", label);
+  }
+  const orgSeq = state.orgSeq;
+  return tbAction($("tb-submit"), async () => {
+    const item = await apiUpload(TESTBENCH_API + "/items", form);
+    if (orgSeq !== state.orgSeq || !item) {
+      return;
+    }
+    input.value = "";
+    $("tb-label").value = "";
+    tb.created = item;
+    $("tb-created-text").textContent =
+      "Item #" + item.id + " created (" + item.kind + ", " + item.language + (item.label ? ", “" + item.label + "”" : "") + "). Its draft run is queued.";
+    $("tb-created").hidden = false;
+    loadTab();
+  });
+}
+
+function itemFilters() {
+  const params = new URLSearchParams({ limit: String(ITEMS_PAGE) });
+  const kind = $("tb-filter-kind").value;
+  const status = $("tb-filter-status").value;
+  if (kind && kind !== "all") {
+    params.set("kind", kind);
+  }
+  if (status && status !== "all") {
+    params.set("status", status);
+  }
+  return params;
+}
+
+async function loadItems(seq, append) {
+  const listSeq = (tb.listSeq += 1);
+  const params = itemFilters();
+  if (append && tb.cursor) {
+    params.set("cursor", tb.cursor);
+  }
+  const data = await api("GET", TESTBENCH_API + "/items?" + params.toString());
+  if (seq !== state.seq || listSeq !== tb.listSeq) {
+    return;
+  }
+  const body = $("items-body");
+  if (!append) {
+    body.replaceChildren();
+    tb.rows.clear();
+  }
+  ((data && data.items) || []).forEach((item) => {
+    const row = itemRow(item);
+    tb.rows.set(item.id, row);
+    body.appendChild(row);
+  });
+  tb.cursor = (data && data.next_cursor) || null;
+  $("items-more").hidden = !tb.cursor;
+  setEmpty("items");
+}
+
+function reloadItems() {
+  tb.cursor = null;
+  const seq = state.seq;
+  setLoading("testbench", seq, true);
+  loadItems(seq, false)
+    .catch(report)
+    .finally(() => setLoading("testbench", seq, false));
+}
+
+function itemStatus(item) {
+  const known = ITEM_STATUSES[item.status];
+  const mark = known ? badge(known.label, known.variant, known.appearance) : badge(String(item.status), "neutral", "outlined");
+  const note = item.draft_status === "failed" ? el("span", "when-rel", "Draft run failed") : null;
+  return stack(mark, note);
+}
+
+function itemRow(item) {
+  const row = el("tr", item.id === tb.openId ? "is-open" : null);
+  row.appendChild(cell("Item", numeral("#" + item.id)));
+  row.appendChild(cell("Status", itemStatus(item)));
+  row.appendChild(cell("Kind", item.kind));
+  row.appendChild(cell("Language", mono(item.language)));
+  row.appendChild(cell("Label", item.label ? el("span", "label-text", item.label) : ""));
+  row.appendChild(cell("Size", isBlank(item.size) ? "" : wa("wa-format-bytes", { value: item.size })));
+  row.appendChild(cell("Runs", numeral(item.run_count)));
+  row.appendChild(cell("Created", timeNode(item.created_at)));
+  const actions = el("div", "actions");
+  actions.appendChild(
+    actionButton("Open", {
+      variant: "brand",
+      appearance: "outlined",
+      icon: "chevron-right",
+      onClick: (event) => openItem(item.id, event.currentTarget),
+    })
+  );
+  row.appendChild(cell("Actions", actions, "actions-cell"));
+  return row;
+}
+
+function markOpenRow() {
+  tb.rows.forEach((row, id) => row.classList.toggle("is-open", id === tb.openId));
+}
+
+// ── Testbench: item detail ─────────────────────────────────────────────────
+
+async function openItem(id, trigger) {
+  stopPolling();
+  tb.detailSeq += 1;
+  tb.diffSeq += 1;
+  const seq = tb.detailSeq;
+  releasePreview();
+  tb.openId = id;
+  tb.detail = null;
+  tb.dirty = false;
+  tb.diffRunId = null;
+  tb.diffSig = "";
+  tb.runSig = null;
+  tb.selected.clear();
+  tb.candidates = [];
+  markOpenRow();
+  $("tb-diff").hidden = true;
+  $("runs-body").replaceChildren();
+  $("runs-empty").hidden = true;
+  $("tb-detail-title").textContent = "Item #" + id;
+  $("tb-detail-meta").textContent = "";
+  $("tb-reference").value = "";
+  $("tb-reference-note").textContent = "";
+  $("tb-candidates").replaceChildren();
+  $("tb-candidates-empty").hidden = true;
+  updateRunButton();
+  updateSaveButton();
+  $("tb-detail").hidden = false;
+  $("tb-detail").scrollIntoView({ block: "start" });
+  await tbAction(trigger, async () => {
+    $("tb-detail-spinner").hidden = false;
+    try {
+      const detail = await api("GET", itemPath(id));
+      if (seq !== tb.detailSeq) {
+        return;
+      }
+      tb.detail = detail;
+      renderDetail(detail, true);
+      loadPreview(detail, seq);
+      loadCandidates(seq);
+    } catch (error) {
+      if (error.status === 404 && seq === tb.detailSeq) {
+        itemGone();
+        return;
+      }
+      throw error;
+    } finally {
+      if (seq === tb.detailSeq) {
+        $("tb-detail-spinner").hidden = true;
+      }
+    }
+  });
+}
+
+function closeDetail() {
+  tb.detailSeq += 1;
+  tb.diffSeq += 1;
+  stopPolling();
+  releasePreview();
+  tb.openId = null;
+  tb.detail = null;
+  tb.dirty = false;
+  tb.diffRunId = null;
+  tb.diffSig = "";
+  tb.runSig = null;
+  tb.selected.clear();
+  tb.candidates = [];
+  $("tb-detail").hidden = true;
+  $("tb-diff").hidden = true;
+  $("tb-diff-text").replaceChildren();
+  $("runs-body").replaceChildren();
+  $("tb-candidates").replaceChildren();
+  markOpenRow();
+}
+
+function itemGone() {
+  closeDetail();
+  showError("That item no longer exists.");
+  loadTab();
+}
+
+async function refreshDetail() {
+  const id = tb.openId;
+  if (id === null) {
+    return;
+  }
+  const seq = tb.detailSeq;
+  let detail;
+  try {
+    detail = await api("GET", itemPath(id));
+  } catch (error) {
+    if (error.status === 404 && seq === tb.detailSeq) {
+      itemGone();
+      return;
+    }
+    throw error;
+  }
+  if (seq !== tb.detailSeq) {
+    return;
+  }
+  tb.detail = detail;
+  renderDetail(detail, false);
+}
+
+function runIsActive(run) {
+  return run.status === "queued" || run.status === "processing";
+}
+
+function detailSignature(detail) {
+  return [detail.status, detail.reference_set_at]
+    .concat((detail.runs || []).map((run) => [run.id, run.status, run.wer, run.cer].join(":")))
+    .join("|");
+}
+
+function renderDetail(detail, initial) {
+  $("tb-detail-title").textContent = "Item #" + detail.id;
+  const known = ITEM_STATUSES[detail.status];
+  const meta = [detail.kind, detail.language];
+  if (detail.label) {
+    meta.push("“" + detail.label + "”");
+  }
+  meta.push(known ? known.label : String(detail.status));
+  if (detail.sha256) {
+    meta.push("SHA-256 " + String(detail.sha256).slice(0, 12));
+  }
+  $("tb-detail-meta").textContent = meta.join(" · ");
+
+  const row = tb.rows.get(detail.id);
+  if (row && row.isConnected) {
+    const fresh = itemRow(detail);
+    row.replaceWith(fresh);
+    tb.rows.set(detail.id, fresh);
+  }
+
+  // The editor starts from the saved reference, else the draft output; it is never
+  // overwritten while the user has unsaved edits.
+  const hasReference = detail.reference !== null && detail.reference !== undefined;
+  const draftText = detail.draft && typeof detail.draft.text === "string" ? detail.draft.text : null;
+  if (initial || !tb.dirty) {
+    const seed = hasReference ? detail.reference : draftText || "";
+    if ($("tb-reference").value !== seed) {
+      $("tb-reference").value = seed;
+    }
+    tb.dirty = false;
+  }
+  let note;
+  if (hasReference) {
+    note = "Saved reference" + (detail.reference_set_at ? " (" + detail.reference_set_at + ")" : "") + ". Saving again re-scores every completed run.";
+  } else if (draftText !== null) {
+    note =
+      "Prefilled with the draft run's output. Correct every word so it matches the original, then save: it becomes the ground truth the candidates are scored against.";
+  } else {
+    const draftStatus = detail.draft ? detail.draft.status : detail.draft_status;
+    note = "The draft run has not produced text yet" + (draftStatus ? " (" + draftStatus + ")" : "") + ". You can type the reference yourself.";
+  }
+  $("tb-reference-note").textContent = note;
+  updateSaveButton();
+
+  const runs = (detail.runs || []).slice().sort((a, b) => a.id - b.id);
+  const body = $("runs-body");
+  body.replaceChildren();
+  runs.forEach((run) => body.appendChild(runRow(run)));
+  setEmpty("runs");
+
+  const signature = detailSignature(detail);
+  if (!initial && tb.runSig !== null && signature !== tb.runSig) {
+    refreshAggregates();
+  }
+  tb.runSig = signature;
+
+  if (tb.diffRunId !== null) {
+    const open = runs.find((run) => run.id === tb.diffRunId);
+    if (!open) {
+      hideDiff();
+    } else if ([open.status, open.wer, open.cer, detail.reference_set_at].join(":") !== tb.diffSig) {
+      showDiff(open.id, false);
+    }
+  }
+  syncPolling();
+}
+
+function updateSaveButton() {
+  $("tb-save-reference").disabled = $("tb-reference").value === "";
+}
+
+function saveReference(trigger) {
+  const id = tb.openId;
+  const text = $("tb-reference").value;
+  if (id === null || text === "") {
+    return Promise.resolve();
+  }
+  return tbAction(trigger, async () => {
+    const detail = await api("PUT", itemPath(id) + "/reference", { text: text });
+    if (id !== tb.openId || !detail) {
+      return;
+    }
+    tb.dirty = false;
+    tb.detail = detail;
+    renderDetail(detail, false);
+  }).then(updateSaveButton);
+}
+
+async function deleteItem(trigger) {
+  const id = tb.openId;
+  if (id === null) {
+    return;
+  }
+  const confirmed = await confirmAction({
+    title: "Delete item?",
+    message: "Delete item #" + id + "? Its stored original, reference and every run are removed, and active runs are cancelled. This cannot be undone.",
+    confirmLabel: "Delete item",
+    dismissLabel: "Keep item",
+  });
+  if (!confirmed || id !== tb.openId) {
+    return;
+  }
+  await tbAction(trigger, async () => {
+    await api("DELETE", itemPath(id));
+    closeDetail();
+    loadTab();
+  });
+}
+
+// ── Testbench: original preview ────────────────────────────────────────────
+
+function releasePreview() {
+  if (tb.objectUrl) {
+    URL.revokeObjectURL(tb.objectUrl);
+  }
+  tb.objectUrl = null;
+  tb.blob = null;
+  $("tb-preview").replaceChildren();
+}
+
+function previewKind(detail) {
+  const type = String(detail.content_type || "").toLowerCase();
+  if (type.startsWith("audio/") || (!type && detail.kind === "audio")) {
+    return "audio";
+  }
+  if (type === "image/png" || type === "image/jpeg") {
+    return "image";
+  }
+  return null;
+}
+
+function previewNote(text) {
+  $("tb-preview").replaceChildren(el("p", "quiet", text));
+}
+
+function originalProblem(error) {
+  return error.code === "content_unavailable" ? "The original file is no longer available on the hub." : error.message;
+}
+
+async function fetchOriginal(detail, seq) {
+  if (tb.blob) {
+    return tb.blob;
+  }
+  const blob = await apiBlob(itemPath(detail.id) + "/file");
+  if (seq !== tb.detailSeq) {
+    return null;
+  }
+  tb.blob = blob;
+  tb.objectUrl = URL.createObjectURL(blob);
+  return blob;
+}
+
+// Audio and PNG/JPEG scans preview inline from a blob; PDFs and TIFFs only download.
+async function loadPreview(detail, seq) {
+  const kind = previewKind(detail);
+  if (!kind) {
+    previewNote("No inline preview for " + (detail.content_type || "this file type") + ". Use Download original.");
+    return;
+  }
+  previewNote("Loading the original…");
+  try {
+    if (!(await fetchOriginal(detail, seq))) {
+      return;
+    }
+  } catch (error) {
+    if (seq === tb.detailSeq) {
+      previewNote(originalProblem(error));
+    }
+    return;
+  }
+  let node;
+  if (kind === "audio") {
+    node = el("audio", "original-audio");
+    node.controls = true;
+    node.preload = "metadata";
+    node.addEventListener("error", () => previewNote("This browser cannot play the original. Use Download original."));
+  } else {
+    node = el("img", "original-image");
+    node.alt = "Original scan of item " + detail.id;
+    node.addEventListener("error", () => previewNote("This browser cannot show the original. Use Download original."));
+  }
+  node.src = tb.objectUrl;
+  $("tb-preview").replaceChildren(node);
+}
+
+function originalFileName(detail) {
+  const type = String(detail.content_type || "").toLowerCase();
+  let extension = FILE_EXTENSIONS[type];
+  if (!extension) {
+    extension = type.includes("/") ? type.split("/")[1].replace(/[^a-z0-9]/g, "") : "";
+  }
+  return "testbench-item-" + detail.id + "." + (extension || "bin");
+}
+
+function downloadOriginal(trigger) {
+  const detail = tb.detail;
+  if (!detail) {
+    return Promise.resolve();
+  }
+  const seq = tb.detailSeq;
+  return tbAction(trigger, async () => {
+    if (!(await fetchOriginal(detail, seq))) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = tb.objectUrl;
+    link.download = originalFileName(detail);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  });
+}
+
+// ── Testbench: candidates and runs ─────────────────────────────────────────
+
+async function loadCandidates(seq) {
+  try {
+    const data = await api("GET", TESTBENCH_API + "/candidates");
+    if (seq !== tb.detailSeq) {
+      return;
+    }
+    tb.candidates = (data && data.items) || [];
+  } catch (error) {
+    if (seq !== tb.detailSeq) {
+      return;
+    }
+    tb.candidates = [];
+    report(error);
+  }
+  renderCandidates();
+}
+
+function renderCandidates() {
+  const box = $("tb-candidates");
+  box.replaceChildren();
+  const kind = tb.detail ? tb.detail.kind : null;
+  const matching = tb.candidates.filter((entry) => entry.kind === kind);
+  const keys = new Set(matching.map((entry) => capabilityKey(entry.candidate)));
+  Array.from(tb.selected).forEach((key) => {
+    if (!keys.has(key)) {
+      tb.selected.delete(key);
+    }
+  });
+  const empty = $("tb-candidates-empty");
+  if (!matching.length) {
+    empty.textContent =
+      "No " + (kind || "") + " candidate is available. Approve a private worker on the Workers tab; candidates appear once it has reported them as tested.";
+    empty.hidden = false;
+    updateRunButton();
+    return;
+  }
+  empty.hidden = true;
+  const group = el("div", "candidate-group");
+  group.appendChild(el("h5", "caps", kind));
+  matching.forEach((entry) => {
+    const key = capabilityKey(entry.candidate);
+    const line = el("div", "candidate-row");
+    const box = wa("wa-checkbox", { checked: tb.selected.has(key), size: "s" }, formatCandidate(entry.candidate));
+    box.addEventListener("change", (event) => {
+      if (event.target.checked) {
+        tb.selected.add(key);
+      } else {
+        tb.selected.delete(key);
+      }
+      updateRunButton();
+    });
+    line.appendChild(box);
+    const online = Number(entry.workers_online) || 0;
+    line.appendChild(el("span", "when-rel", online + (online === 1 ? " worker online" : " workers online")));
+    group.appendChild(line);
+  });
+  box.appendChild(group);
+  updateRunButton();
+}
+
+function updateRunButton() {
+  const count = tb.selected.size;
+  $("tb-run").disabled = count === 0 || count > MAX_RUN_CANDIDATES;
+  $("tb-run-count").textContent =
+    count > MAX_RUN_CANDIDATES ? count + " selected; at most " + MAX_RUN_CANDIDATES + " per request" : count ? count + " selected" : "";
+}
+
+function runSelected(trigger) {
+  const id = tb.openId;
+  if (id === null || !tb.detail) {
+    return Promise.resolve();
+  }
+  const chosen = tb.candidates
+    .filter((entry) => entry.kind === tb.detail.kind && tb.selected.has(capabilityKey(entry.candidate)))
+    .map((entry) => entry.candidate);
+  if (!chosen.length) {
+    return Promise.resolve();
+  }
+  return tbAction(trigger, async () => {
+    const created = await api("POST", itemPath(id) + "/runs", { candidates: chosen });
+    if (id !== tb.openId) {
+      return;
+    }
+    const queued = created && created.items ? created.items.length : 0;
+    tb.selected.clear();
+    renderCandidates();
+    const skipped = chosen.length - queued;
+    $("tb-run-count").textContent =
+      "Queued " + queued + (queued === 1 ? " run" : " runs") + (skipped > 0 ? "; " + skipped + " already running was skipped" : "");
+    await refreshDetail();
+  }).then(() => {
+    const note = $("tb-run-count").textContent;
+    updateRunButton();
+    if (note.startsWith("Queued") && !tb.selected.size) {
+      $("tb-run-count").textContent = note;
+    }
+  });
+}
+
+function percentNode(value) {
+  return isBlank(value) ? dash() : el("span", "num", (Number(value) * 100).toFixed(1) + " %");
+}
+
+function secondsNode(value) {
+  return isBlank(value) ? dash() : el("span", "num", Number(value).toFixed(1));
+}
+
+function runStatus(run) {
+  switch (run.status) {
+    case "queued":
+      return badge("Queued", "warning");
+    case "processing":
+      return badge("Processing", "warning", "outlined");
+    case "completed":
+      return badge("Completed", "success");
+    case "failed":
+      return badge("Failed", "neutral", "outlined");
+    case "cancelled":
+      return stamp("Cancelled");
+    default:
+      return badge(String(run.status), "neutral", "outlined");
+  }
+}
+
+function runRow(run) {
+  const row = el("tr", run.id === tb.diffRunId ? "is-selected is-clickable" : "is-clickable");
+  row.dataset.run = String(run.id);
+  row.appendChild(cell("Run", numeral("#" + run.id)));
+  const role = badge(run.role === "draft" ? "Draft" : "Bench", run.role === "draft" ? "neutral" : "brand", "outlined");
+  if (run.role === "draft") {
+    role.title = "The reference started from this output, so the draft favours itself and is left out of the leaderboard.";
+  }
+  row.appendChild(cell("Role", role));
+  const candidate = mono(formatCandidate(run.candidate));
+  candidate.classList.add("machine-wrap");
+  row.appendChild(cell("Candidate", candidate));
+  row.appendChild(cell("Device", mono(run.device)));
+  row.appendChild(cell("Seconds", secondsNode(run.seconds)));
+  row.appendChild(cell("WER", percentNode(run.wer)));
+  row.appendChild(cell("CER", percentNode(run.cer)));
+  const reason = run.queue_reason ? el("span", "reason", QUEUE_REASONS[run.queue_reason] || run.queue_reason) : null;
+  row.appendChild(cell("Status", stack(runStatus(run), reason, run.error_code ? mono(run.error_code) : null)));
+  const actions = el("div", "actions");
+  actions.appendChild(
+    actionButton("Word diff", {
+      icon: "diff",
+      onClick: () => showDiff(run.id, true),
+    })
+  );
+  actions.appendChild(
+    actionButton("Delete", {
+      variant: "danger",
+      icon: "trash",
+      onClick: (event) => deleteRun(event.currentTarget, run),
+    })
+  );
+  row.appendChild(cell("Actions", actions, "actions-cell"));
+  row.addEventListener("click", (event) => {
+    if (!event.target.closest("wa-button")) {
+      showDiff(run.id, true);
+    }
+  });
+  return row;
+}
+
+async function deleteRun(trigger, run) {
+  const id = tb.openId;
+  const confirmed = await confirmAction({
+    title: "Delete run?",
+    message: "Delete run #" + run.id + " (" + formatCandidate(run.candidate) + ")? A queued or processing run is cancelled.",
+    confirmLabel: "Delete run",
+    dismissLabel: "Keep run",
+  });
+  if (!confirmed || id !== tb.openId) {
+    return;
+  }
+  await tbAction(trigger, async () => {
+    await api("DELETE", itemPath(id) + "/runs/" + encodeURIComponent(run.id));
+    if (id !== tb.openId) {
+      return;
+    }
+    if (tb.diffRunId === run.id) {
+      hideDiff();
+    }
+    await refreshDetail();
+  });
+}
+
+// While a run is queued or processing and the item is open, the detail refreshes every
+// POLL_MS. Polling stops on close, on another tab and while the page is hidden.
+function stopPolling() {
+  if (tb.timer !== null) {
+    window.clearTimeout(tb.timer);
+    tb.timer = null;
+  }
+}
+
+function syncPolling() {
+  stopPolling();
+  if (
+    tb.openId === null ||
+    !tb.detail ||
+    document.hidden ||
+    state.tab !== "testbench" ||
+    !(tb.detail.runs || []).some(runIsActive)
+  ) {
+    return;
+  }
+  const seq = tb.detailSeq;
+  tb.timer = window.setTimeout(() => {
+    tb.timer = null;
+    if (seq !== tb.detailSeq) {
+      return;
+    }
+    refreshDetail().catch(report);
+  }, POLL_MS);
+}
+
+// ── Testbench: word diff ───────────────────────────────────────────────────
+
+function hideDiff() {
+  tb.diffRunId = null;
+  tb.diffSeq += 1;
+  tb.diffSig = "";
+  $("tb-diff").hidden = true;
+  $("tb-diff-text").replaceChildren();
+  document.querySelectorAll("#runs-body tr.is-selected").forEach((row) => row.classList.remove("is-selected"));
+}
+
+async function showDiff(runId, reveal) {
+  const id = tb.openId;
+  if (id === null) {
+    return;
+  }
+  tb.diffRunId = runId;
+  const seq = (tb.diffSeq += 1);
+  const summary = tb.detail && (tb.detail.runs || []).find((run) => run.id === runId);
+  if (summary) {
+    tb.diffSig = [summary.status, summary.wer, summary.cer, tb.detail.reference_set_at].join(":");
+  }
+  document.querySelectorAll("#runs-body tr").forEach((row) => {
+    row.classList.toggle("is-selected", row.dataset.run === String(runId));
+  });
+  $("tb-diff").hidden = false;
+  if (reveal) {
+    $("tb-diff").scrollIntoView({ block: "nearest" });
+  }
+  try {
+    const detail = await api("GET", itemPath(id) + "/runs/" + encodeURIComponent(runId));
+    if (seq !== tb.diffSeq || id !== tb.openId) {
+      return;
+    }
+    renderDiff(detail);
+  } catch (error) {
+    if (seq !== tb.diffSeq) {
+      return;
+    }
+    if (error.status === 404) {
+      hideDiff();
+    }
+    report(error);
+  }
+}
+
+function diffNote(text) {
+  const note = $("tb-diff-note");
+  note.textContent = text || "";
+  note.hidden = !text;
+}
+
+function renderDiff(run) {
+  $("tb-diff-title").textContent = "Word diff · run #" + run.id;
+  const text = $("tb-diff-text");
+  text.replaceChildren();
+  const warnings = $("tb-diff-warnings");
+  warnings.replaceChildren();
+  (run.warnings || []).forEach((warning) => warnings.appendChild(el("li", null, warning)));
+
+  const summary = [formatCandidate(run.candidate)];
+  if (!isBlank(run.wer)) {
+    summary.push("WER " + (Number(run.wer) * 100).toFixed(1) + " %");
+  }
+  if (!isBlank(run.cer)) {
+    summary.push("CER " + (Number(run.cer) * 100).toFixed(1) + " %");
+  }
+  if (run.role === "draft") {
+    summary.push("draft run: biased towards the reference");
+  }
+
+  const alignment = run.alignment;
+  if (!Array.isArray(alignment)) {
+    $("tb-diff-summary").textContent = summary.join(" · ");
+    const hasReference = tb.detail && tb.detail.reference !== null && tb.detail.reference !== undefined;
+    diffNote(
+      run.status !== "completed"
+        ? "No word diff yet: this run is " + run.status + "."
+        : !hasReference
+          ? "No word diff yet: save a reference first."
+          : "This run has no alignment."
+    );
+    return;
+  }
+  diffNote("");
+  const counts = { equal: 0, substitute: 0, insert: 0, delete: 0 };
+  const fragment = document.createDocumentFragment();
+  alignment.forEach((entry, index) => {
+    if (index > 0) {
+      fragment.appendChild(document.createTextNode(" "));
+    }
+    if (counts[entry.op] !== undefined) {
+      counts[entry.op] += 1;
+    }
+    switch (entry.op) {
+      case "equal":
+        fragment.appendChild(el("span", "diff-equal", entry.ref !== null && entry.ref !== undefined ? entry.ref : entry.hyp));
+        break;
+      case "substitute": {
+        const pair = el("span", "diff-substitute");
+        pair.appendChild(el("span", "diff-ref", entry.ref));
+        pair.appendChild(document.createTextNode(" "));
+        pair.appendChild(el("span", "diff-hyp", entry.hyp));
+        fragment.appendChild(pair);
+        break;
+      }
+      case "insert":
+        fragment.appendChild(el("span", "diff-insert diff-hyp", entry.hyp));
+        break;
+      case "delete":
+        fragment.appendChild(el("span", "diff-delete diff-ref", entry.ref));
+        break;
+      default:
+        fragment.appendChild(el("span", "diff-equal", entry.ref !== null && entry.ref !== undefined ? entry.ref : entry.hyp));
+    }
+  });
+  text.appendChild(fragment);
+  summary.push(
+    counts.equal + " equal, " + counts.substitute + " replaced, " + counts.insert + " added, " + counts.delete + " missing"
+  );
+  $("tb-diff-summary").textContent = summary.join(" · ");
+}
+
+// ── Testbench: leaderboard ─────────────────────────────────────────────────
+
+async function loadLeaderboard(seq) {
+  const data = await api("GET", TESTBENCH_API + "/leaderboard");
+  if (seq !== state.seq) {
+    return;
+  }
+  renderLeaderboard(data || {});
+}
+
+function renderLeaderboard(data) {
+  const corrected = Number(data.corrected_items) || 0;
+  $("tb-lb-corrected").textContent = corrected + (corrected === 1 ? " corrected item" : " corrected items") + " in the testbench.";
+  const entries = data.items || [];
+  ["audio", "document"].forEach((kind) => {
+    const rows = entries.filter((entry) => entry.kind === kind);
+    const bestOf = (field) => {
+      const values = rows.map((entry) => entry[field]).filter((value) => !isBlank(value));
+      return rows.length > 1 && values.length ? Math.min(...values) : null;
+    };
+    const best = { wer_mean: bestOf("wer_mean"), cer_mean: bestOf("cer_mean"), seconds_mean: bestOf("seconds_mean") };
+    const body = $("lb-" + kind + "-body");
+    body.replaceChildren();
+    rows.forEach((entry) => {
+      const row = el("tr");
+      const candidate = mono(formatCandidate(entry.candidate));
+      candidate.classList.add("machine-wrap");
+      row.appendChild(cell("Candidate", candidate));
+      row.appendChild(cell("Items (n)", numeral(entry.items)));
+      const metric = (label, field, format) => {
+        const value = entry[field];
+        const node = isBlank(value) ? dash() : el("span", "num", format(Number(value)));
+        if (!isBlank(value) && best[field] !== null && Number(value) === best[field]) {
+          node.classList.add("best");
+          node.title = "Best in column";
+        }
+        row.appendChild(cell(label, node));
+      };
+      metric("WER mean", "wer_mean", (value) => (value * 100).toFixed(1) + " %");
+      metric("CER mean", "cer_mean", (value) => (value * 100).toFixed(1) + " %");
+      metric("Mean seconds", "seconds_mean", (value) => value.toFixed(1));
+      body.appendChild(row);
+    });
+    setEmpty("lb-" + kind);
+  });
+}
+
+function wireTestbench() {
+  $("tb-contribute").addEventListener("submit", contribute);
+  $("tb-created-open").addEventListener("click", (event) => {
+    if (tb.created) {
+      openItem(tb.created.id, event.currentTarget);
+    }
+  });
+  ["tb-filter-kind", "tb-filter-status"].forEach((id) => {
+    $(id).addEventListener("change", (event) => {
+      if (event.target === event.currentTarget) {
+        reloadItems();
+      }
+    });
+  });
+  $("items-more").addEventListener("click", (event) => {
+    const seq = state.seq;
+    tbAction(event.currentTarget, () => loadItems(seq, true));
+  });
+  $("tb-enable").addEventListener("click", (event) => setTestbenchEnabled(event.currentTarget, true));
+  $("tb-disable").addEventListener("click", (event) => setTestbenchEnabled(event.currentTarget, false));
+  $("tb-detail-close").addEventListener("click", closeDetail);
+  $("tb-detail-delete").addEventListener("click", (event) => deleteItem(event.currentTarget));
+  $("tb-detail-refresh").addEventListener("click", (event) =>
+    tbAction(event.currentTarget, async () => {
+      await refreshDetail();
+      if (tb.openId !== null) {
+        await loadCandidates(tb.detailSeq);
+      }
+    })
+  );
+  $("tb-download").addEventListener("click", (event) => downloadOriginal(event.currentTarget));
+  $("tb-reference").addEventListener("input", () => {
+    tb.dirty = true;
+    updateSaveButton();
+  });
+  $("tb-save-reference").addEventListener("click", (event) => saveReference(event.currentTarget));
+  $("tb-run").addEventListener("click", (event) => runSelected(event.currentTarget));
+  $("tb-candidates-refresh").addEventListener("click", (event) => {
+    if (tb.openId !== null) {
+      tbAction(event.currentTarget, () => loadCandidates(tb.detailSeq));
+    }
+  });
+  document.addEventListener("visibilitychange", syncPolling);
+}
+
 // ── Wiring ─────────────────────────────────────────────────────────────────
 
 function init() {
@@ -1316,6 +2434,7 @@ function init() {
   });
   $("issued-close").addEventListener("click", tearOffIssued);
   $("jobs-more").addEventListener("click", (event) => loadMoreJobs(event.currentTarget));
+  wireTestbench();
 
   $("confirm-ok").addEventListener("click", () => closeConfirmation(true));
   $("confirm-cancel").addEventListener("click", () => closeConfirmation(false));

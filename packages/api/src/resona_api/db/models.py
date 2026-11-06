@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from enum import Enum
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, text
 from .. import clock
 
 logger = logging.getLogger(__name__)
@@ -265,3 +265,62 @@ class ApprovedReleaseTuple(SQLModel, table=True):
         default_factory=_utcnow,
         sa_column=Column(DateTime, nullable=False),
     )
+
+
+class TestbenchItem(SQLModel, table=True):
+    """A contributed recording or scan kept persistently (``storage.testbench_item_path``).
+
+    ``reference_text`` is the corrected ground truth; it stays NULL until an org admin
+    saves it, which is what makes the item ``corrected``.
+    """
+
+    __test__ = False  # not a pytest class, despite the name
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
+    kind: str  # audio | document
+    language: str
+    label: str = Field(default="", sa_column=Column(String, nullable=False, server_default=""))
+    content_type: str
+    size: int
+    sha256: str
+    reference_text: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    reference_set_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    created_by_credential_id: str
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+
+
+class TestbenchRun(SQLModel, table=True):
+    """One transcription of an item by one candidate: the first (``draft``) or a ``bench`` run.
+
+    The row keeps state and metrics; the captured result lives in
+    ``storage.testbench_run_path`` so it outlives the job's 24-hour result and the job row.
+    ``job_id`` has no foreign key: job rows are purged after seven days.
+    """
+
+    __test__ = False  # not a pytest class, despite the name
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    item_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("testbenchitem.id", ondelete="CASCADE"), index=True, nullable=False)
+    )
+    organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
+    role: str  # draft | bench
+    candidate: str = Field(sa_column=Column(Text, nullable=False))  # JSON of a job-core Candidate
+    job_id: Optional[int] = Field(default=None, index=True)
+    status: str = Field(default="queued")  # queued | processing | completed | failed | cancelled
+    error_code: Optional[str] = Field(default=None)
+    seconds: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
+    device: Optional[str] = Field(default=None)
+    wer: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
+    cer: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+    completed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))

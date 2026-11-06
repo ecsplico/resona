@@ -8,6 +8,8 @@ Every name is generated; client filenames never reach the filesystem::
         jobs/<job_id>/postprocess.json
         jobs/<job_id>/result.json
         jobs/<job_id>/attempt-<n>/
+        testbench/item-<item_id>.bin
+        testbench/run-<run_id>.json
 
 Writes stage into a temporary file in the destination directory, fsync, then
 ``os.replace`` into place, so a reader never observes a partial file.
@@ -60,6 +62,20 @@ def attempt_dir(storage_id: str, job_id: int, attempt: int) -> Path:
 
 def result_path(storage_id: str, job_id: int) -> Path:
     return job_dir(storage_id, job_id) / "result.json"
+
+
+def testbench_dir(storage_id: str) -> Path:
+    """Persistent testbench files; retention sweeps never touch this directory."""
+    return org_dir(storage_id) / "testbench"
+
+
+def testbench_item_path(storage_id: str, item_id: int) -> Path:
+    return testbench_dir(storage_id) / f"item-{int(item_id)}.bin"
+
+
+def testbench_run_path(storage_id: str, run_id: int) -> Path:
+    """The result a testbench run captured from its job (a ``JobResult`` JSON document)."""
+    return testbench_dir(storage_id) / f"run-{int(run_id)}.json"
 
 
 def staging_path(final: Path) -> Path:

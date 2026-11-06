@@ -142,13 +142,17 @@ def may_run(
 ) -> bool:
     """Whether a worker on ``worker_release`` may run this job with ``candidate``.
 
-    Evaluation jobs run only on the release under test; production jobs need a
-    promoted evaluation of ``(execution_profile, platform, worker_release)``.
+    Evaluation jobs run only on the release under test; testbench jobs run on any
+    release (they only measure candidates and never produce production output);
+    production jobs need a promoted evaluation of ``(execution_profile, platform,
+    worker_release)``.
     """
     if not worker_release:
         return False
     if purpose == "evaluation":
         return worker_release == snapshot_release
+    if purpose == "testbench":
+        return True
     return (execution_profile, platform_of(candidate), worker_release) in approved
 
 

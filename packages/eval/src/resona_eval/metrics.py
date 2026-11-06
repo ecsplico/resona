@@ -53,16 +53,55 @@ def cer(reference: str, hypothesis: str) -> float:
     return _error_rate(jiwer.cer, reference, hypothesis)
 
 
-def score(reference: str, hypothesis: str) -> dict:
-    """WER/CER after ``text-v1`` normalization, plus normalized word counts."""
-    ref = normalize(reference)
-    hyp = normalize(hypothesis)
+def _normalizer(markdown: bool):
+    return normalize_markdown if markdown else normalize
+
+
+def score(reference: str, hypothesis: str, *, markdown: bool = False) -> dict:
+    """WER/CER after ``text-v1`` (``markdown-v1`` with ``markdown=True``) normalization,
+    plus normalized word counts."""
+    normalizer = _normalizer(markdown)
+    ref = normalizer(reference)
+    hyp = normalizer(hypothesis)
     return {
         "wer": wer(ref, hyp),
         "cer": cer(ref, hyp),
         "ref_words": len(ref.split()),
         "hyp_words": len(hyp.split()),
     }
+
+
+def word_alignment(reference: str, hypothesis: str, *, markdown: bool = False) -> list[dict]:
+    """Word-level edit alignment of the normalized texts, one entry per aligned word.
+
+    Each entry is ``{"op", "ref", "hyp"}`` with ``op`` one of ``equal``, ``substitute``,
+    ``insert`` (hypothesis word absent from the reference: ``ref`` is None) or ``delete``
+    (reference word the hypothesis lacks: ``hyp`` is None). The words are the ``text-v1``
+    (``markdown-v1`` with ``markdown=True``) normalized words, and the alignment is the
+    minimum-edit one WER counts, so ``substitute + insert + delete`` entries equal the
+    word errors.
+    """
+    normalizer = _normalizer(markdown)
+    ref = normalizer(reference).split()
+    hyp = normalizer(hypothesis).split()
+    if not ref or not hyp:
+        if ref:
+            return [{"op": "delete", "ref": word, "hyp": None} for word in ref]
+        return [{"op": "insert", "ref": None, "hyp": word} for word in hyp]
+    out = jiwer.process_words(" ".join(ref), " ".join(hyp))
+    entries: list[dict] = []
+    for chunk in out.alignments[0]:
+        ref_words = ref[chunk.ref_start_idx:chunk.ref_end_idx]
+        hyp_words = hyp[chunk.hyp_start_idx:chunk.hyp_end_idx]
+        if chunk.type == "equal":
+            entries.extend({"op": "equal", "ref": r, "hyp": h} for r, h in zip(ref_words, hyp_words))
+        elif chunk.type == "substitute":
+            entries.extend({"op": "substitute", "ref": r, "hyp": h} for r, h in zip(ref_words, hyp_words))
+        elif chunk.type == "delete":
+            entries.extend({"op": "delete", "ref": r, "hyp": None} for r in ref_words)
+        else:
+            entries.extend({"op": "insert", "ref": None, "hyp": h} for h in hyp_words)
+    return entries
 
 
 def inserted_words(hypothesis: str) -> int:

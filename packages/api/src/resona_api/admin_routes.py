@@ -49,7 +49,8 @@ _STATIC_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
         "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
-        "img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "img-src 'self' data: blob:; media-src blob:; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'none'"
     ),
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",

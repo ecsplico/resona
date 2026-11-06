@@ -74,6 +74,12 @@ curl http://localhost:7000/v1/audio/transcriptions \
 
 ---
 
+## Testbench contributions
+
+The optional [testbench](testbench.md) is the one place where the hub keeps content beyond the normal retention: contributed recordings and scans, their drafts, references and bench-run results are **persisted until an org admin deletes the item**. It is off by default (`testbench_enabled`), only org admins can read the stored content (the hub operator never can), and all testbench jobs are private, so nothing reaches a cloud provider. Contribute only material you have consent to keep.
+
+---
+
 ## Practical recommendations for medical use
 
 !!! warning "Medical and legal audio"

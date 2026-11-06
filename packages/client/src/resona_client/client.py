@@ -608,6 +608,82 @@ class ResonaClient:
             expected={409: RevisionConflict},
         ).json()
 
+    # ── Testbench routes ──────────────────────────────────────────────
+
+    def testbench_status(self) -> dict:
+        """Return whether the testbench is enabled and its counters. GET /v1/testbench/status (client|org_admin)"""
+        return self._send("GET", "/v1/testbench/status").json()
+
+    def testbench_contribute(
+        self,
+        path: "Path | str",
+        *,
+        language: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> dict:
+        """Contribute a recording or scan; the hub persists it and queues a draft run. POST /v1/testbench/items (client|org_admin)
+
+        Raises ResonaAPIError with code ``testbench_disabled`` (403) while the
+        organization has not enabled the testbench.
+        """
+        path = Path(path)
+        data = {k: v for k, v in {"language": language, "label": label}.items() if v}
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        with path.open("rb") as fh:
+            return self._send(
+                "POST", "/v1/testbench/items",
+                files={"file": (path.name, fh, content_type)},
+                data=data,
+            ).json()
+
+    def testbench_list_items(
+        self,
+        kind: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> dict:
+        """List testbench items, newest first. GET /v1/testbench/items (org_admin)"""
+        params = {
+            k: v for k, v in
+            {"kind": kind, "status": status, "limit": limit, "cursor": cursor}.items()
+            if v is not None
+        }
+        return self._send("GET", "/v1/testbench/items", params=params).json()
+
+    def testbench_get_item(self, item_id: int) -> dict:
+        """Get one item with its reference and runs. GET /v1/testbench/items/{id} (org_admin)"""
+        return self._send("GET", f"/v1/testbench/items/{item_id}").json()
+
+    def testbench_set_reference(self, item_id: int, text: str) -> dict:
+        """Set the item's reference text and re-score its runs. PUT /v1/testbench/items/{id}/reference (org_admin)"""
+        return self._send(
+            "PUT", f"/v1/testbench/items/{item_id}/reference", json={"text": text},
+        ).json()
+
+    def testbench_delete_item(self, item_id: int) -> None:
+        """Delete an item, its files and its runs. DELETE /v1/testbench/items/{id} (org_admin)"""
+        self._send("DELETE", f"/v1/testbench/items/{item_id}")
+
+    def testbench_candidates(self) -> dict:
+        """List candidates approved workers have tested. GET /v1/testbench/candidates (org_admin)"""
+        return self._send("GET", "/v1/testbench/candidates").json()
+
+    def testbench_run(self, item_id: int, candidates: list[Mapping[str, Any]]) -> dict:
+        """Run an item through the given candidates. POST /v1/testbench/items/{id}/runs (org_admin)"""
+        return self._send(
+            "POST", f"/v1/testbench/items/{item_id}/runs",
+            json={"candidates": [dict(c) for c in candidates]},
+        ).json()
+
+    def testbench_get_run(self, item_id: int, run_id: int) -> dict:
+        """Get one run with text and word alignment. GET /v1/testbench/items/{id}/runs/{run_id} (org_admin)"""
+        return self._send("GET", f"/v1/testbench/items/{item_id}/runs/{run_id}").json()
+
+    def testbench_leaderboard(self) -> dict:
+        """Rank candidates over corrected items (draft runs excluded). GET /v1/testbench/leaderboard (org_admin)"""
+        return self._send("GET", "/v1/testbench/leaderboard").json()
+
     # ── v1 Audio & Engine routes ──────────────────────────────────────
 
     def list_engines(self) -> dict:

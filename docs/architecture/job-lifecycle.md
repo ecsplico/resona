@@ -53,6 +53,8 @@ Content is stored as files under `/data/organizations/<storage_id>/jobs/<job_id>
 - job metadata: deleted after 7 days
 - unattached uploads: deleted after 1 hour
 
+[Testbench](../guide/testbench.md) items are the exception: the original and the run results are stored under `<storage_id>/testbench/` and are not touched by these sweeps. A collector copies each testbench job's result into its run file before the 24 h result retention, so the job row and result may expire while the run keeps its data. Testbench jobs have `purpose=testbench` and need no promoted release tuple.
+
 ## Local path
 
 Only with an explicit `--local` does the CLI process on this machine; it is never chosen

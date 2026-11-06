@@ -230,6 +230,21 @@ resona jobs list --limit 20 --cursor <cursor> --json
 
 ---
 
+## testbench
+
+Contribute recordings and scans to the hub [testbench](testbench.md) and list what it holds.
+Correcting references, bench runs and the leaderboard are done in the admin UI (`/admin`), not here.
+
+```bash
+resona testbench add memo.m4a scans/ --language de --label "Brief"   # files or directories; prints item id + status
+resona testbench list --status needs_correction --kind audio --json   # org admin
+resona testbench status                                               # enabled flag and counters
+```
+
+The organization must have `testbench_enabled=true` (the admin UI Testbench tab has an Enable button; CLI route in [Testbench](testbench.md#enabling-it)); otherwise `add` exits 1 with `testbench_disabled` and a hint. `add` exits 1 if any file was rejected.
+
+---
+
 ## settings
 
 Read and change the organization's revisioned settings on the hub (`GET /v1/settings`).

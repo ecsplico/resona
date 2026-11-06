@@ -72,6 +72,7 @@ nav:
     - MCP Server: guide/mcp.md
     - Privacy: guide/privacy.md
     - Evaluation & Baselines: guide/evaluation.md
+    - Testbench: guide/testbench.md
   - Server Setup:
     - Docker Deployment: server/docker.md
     - Full-Stack (uv): server/full-stack.md

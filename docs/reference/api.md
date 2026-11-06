@@ -411,6 +411,29 @@ Returns `{"ok": true}`. Returns `404` if not found.
 
 ---
 
+## Testbench
+
+Contributed recordings and scans, references and bench runs. Disabled by default: with `testbench_enabled=false` every route except `/status` answers `403 testbench_disabled`. `hub_operator` credentials are always rejected. See [Testbench](../guide/testbench.md).
+
+| Method & path | Role | Description |
+|---|---|---|
+| `GET /v1/testbench/status` | client, org_admin | `{enabled, items, corrected, runs}` |
+| `GET /v1/testbench/candidates` | org_admin | `{items: [{kind, candidate, workers_online}]}`: tuples approved and tested by ≥1 approved private worker |
+| `POST /v1/testbench/items` | client, org_admin | Multipart `file` (+ optional `language`, `label`). Persists the original, queues the draft run, `201` ItemDetail. `415` unsupported media, `422` empty, `413` over `RESONA_MAX_UPLOAD_BYTES` |
+| `GET /v1/testbench/items` | org_admin | `?kind=&status=&limit=&cursor=` → `{items, next_cursor}`, newest first |
+| `GET /v1/testbench/items/{id}` | org_admin | ItemDetail: summary + `sha256`, `reference`, `draft`, `runs` |
+| `GET /v1/testbench/items/{id}/file` | org_admin | Original bytes (`inline`, `nosniff`, `no-store`); `410 content_unavailable` if the file is gone |
+| `PUT /v1/testbench/items/{id}/reference` | org_admin | Body `{"text": "..."}` (1–1,000,000 chars); sets the reference and re-scores completed runs |
+| `DELETE /v1/testbench/items/{id}` | org_admin | `204`; removes row, files, runs and cancels active jobs |
+| `POST /v1/testbench/items/{id}/runs` | org_admin | Body `{"candidates": [Candidate, ...]}` (1–16); `422 unavailable_candidate` for a candidate not in `/candidates`; an identical active run is skipped. `201` `{items: [RunSummary]}` |
+| `GET /v1/testbench/items/{id}/runs/{run_id}` | org_admin | RunDetail: `text`, `warnings`, `alignment` (`null` without reference or before completion) |
+| `DELETE /v1/testbench/items/{id}/runs/{run_id}` | org_admin | `204`; cancels the job if active |
+| `GET /v1/testbench/leaderboard` | org_admin | `{corrected_items, items: [{kind, candidate, items, wer_mean, cer_mean, seconds_mean}]}` over completed **bench** runs on corrected items (draft runs excluded), best WER first |
+
+Item `status` is `awaiting_draft`, `needs_correction` or `corrected`; run `status` is `queued`, `processing`, `completed`, `failed` or `cancelled`; run `role` is `draft` or `bench`. Candidates have the job-core shape `{engine, model, model_revision, accelerator, ocr_engine}`. Audio runs are scored on `raw_text` with `text-v1`, documents on `markdown` with `markdown-v1`.
+
+---
+
 ## Error responses
 
 | Status | Meaning |

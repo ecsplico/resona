@@ -46,6 +46,7 @@ class OrganizationSettings(BaseModel):
     postprocess_profile: str | None = None
     cloud_enabled: bool = False
     cpu_fallback_enabled: bool = False
+    testbench_enabled: bool = False
     default_execution_profile: str = "private-auto"
     execution_profiles: dict[str, ExecutionProfile] = Field(default_factory=dict)
     endpoints: list[Endpoint] = Field(default_factory=list)

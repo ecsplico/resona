@@ -219,6 +219,25 @@ def _remove_input(storage_id: str, job_id: int) -> None:
     storage.remove_file(storage.postprocess_path(storage_id, job_id))
 
 
+def purge_job(session: Session, job: Job) -> None:
+    """Delete ``job`` in the caller's write transaction; the caller removes its directory after commit.
+
+    A pending or terminal job's row goes at once. A processing job is cancelled
+    first: its lease is fenced, its row kept as an invisible ``deleted`` tombstone
+    until the replaced lease would have expired (so a late worker cannot resurrect
+    it), and :func:`sweep_leases` purges it afterwards.
+    """
+    if job.status == JobStatus.PROCESSING:
+        lease_until = job.lease_until
+        _finish_terminal(job, JobStatus.CANCELLED, JOB_DELETED, _now())
+        job.cancel_requested = True
+        job.error_message = "deleted by client"
+        job.lease_until = lease_until
+        session.add(job)
+    else:
+        session.delete(job)
+
+
 def _accepted_duplicate(job: Job, lease: LeaseRef, sha256: str) -> None:
     """A completed job answers only its own accepted lease; anything else is stale."""
     manifest = json.loads(job.result_manifest or "{}")
@@ -630,6 +649,7 @@ __all__ = [
     "input_path",
     "parse_result",
     "postprocess_path",
+    "purge_job",
     "record_heartbeat",
     "sweep_leases",
     "try_claim",

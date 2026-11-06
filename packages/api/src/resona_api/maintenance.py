@@ -5,6 +5,8 @@ periodically (and once at startup, which doubles as crash recovery):
 
 * expired leases are requeued or failed, pending jobs past their deadline fail
   and lose their input (:func:`broker.sweep_leases`);
+* finished testbench jobs have their results captured into the run's own file
+  (:func:`testbench.collect`) before result retention can remove them;
 * unattached uploads are deleted once ``expires_at`` passes (one hour);
 * result files are deleted once ``result_expires_at`` passes (24 hours); the job
   row and its hash-only ``result_manifest`` stay, so the result route answers
@@ -13,7 +15,7 @@ periodically (and once at startup, which doubles as crash recovery):
   idempotency records are deleted seven days after completion/creation;
 * staging files untouched for an hour, abandoned attempt directories, inputs or
   unaccepted results left behind by terminal jobs, and orphaned job directories
-  are removed.
+  are removed. Testbench items and captured run results are kept until deleted.
 
 Only counts are logged, never content, filenames or identifiers of content.
 """
@@ -27,7 +29,7 @@ from pathlib import Path
 
 from sqlmodel import Session, select
 
-from . import broker, clock, storage
+from . import broker, clock, storage, testbench
 from .db import engine as db_engine
 from .db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload, UploadLink
 
@@ -166,6 +168,8 @@ def _sweep_files(session: Session, storage_ids: dict[str, str], now: datetime) -
     for storage_id in storage_ids.values():
         root = storage.org_dir(storage_id)
         staging += storage.sweep_staging(root / "uploads", older_than=stale_before)
+        # Only leftover staging files: testbench items and run results are kept until deleted.
+        staging += storage.sweep_staging(storage.testbench_dir(storage_id), older_than=stale_before)
         jobs_root = root / "jobs"
         if not jobs_root.is_dir():
             continue
@@ -187,6 +191,8 @@ def run_once() -> dict[str, int]:
         now = clock.now()
         storage_ids = _storage_ids(session)
         session.commit()
+        # Before result retention: capture finished testbench results while their jobs still have them.
+        testbench_runs = testbench.collect(session)
         uploads = _expire_uploads(session, storage_ids, now)
         links = _expire_upload_links(session, now)
         results = _expire_results(session, storage_ids, now)
@@ -194,6 +200,7 @@ def run_once() -> dict[str, int]:
         staging, reconciled = _sweep_files(session, storage_ids, now)
     return {
         "leases_swept": leases,
+        "testbench_runs_settled": testbench_runs,
         "uploads_expired": uploads,
         "upload_links_expired": links,
         "results_expired": results,

@@ -99,6 +99,22 @@ with open("out.mp3", "wb") as f:
 engines = client.list_engines()
 ```
 
+## Testbench
+
+```python
+client.testbench_status()                                   # {enabled, items, corrected, runs}
+item = client.testbench_contribute("memo.m4a", language="de", label="Brief")   # persists + queues a draft run
+client.testbench_list_items(status="needs_correction")      # org_admin
+client.testbench_set_reference(item["id"], "corrected text")
+cands = client.testbench_candidates()["items"]              # tested worker tuples
+client.testbench_run(item["id"], [c["candidate"] for c in cands[:2]])
+client.testbench_get_run(item["id"], run_id)                # text, wer/cer, alignment
+client.testbench_leaderboard()
+client.testbench_delete_item(item["id"])
+```
+
+A disabled testbench raises `ResonaAPIError` with `code == "testbench_disabled"` (403). See [Testbench](../guide/testbench.md).
+
 ## Profile management
 
 ```python

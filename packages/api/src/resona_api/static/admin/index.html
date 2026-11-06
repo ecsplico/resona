@@ -107,6 +107,7 @@
         <wa-tab slot="nav" panel="credentials"><wa-icon name="key"></wa-icon>Credentials</wa-tab>
         <wa-tab slot="nav" panel="jobs"><wa-icon name="list"></wa-icon>Jobs</wa-tab>
         <wa-tab slot="nav" panel="settings"><wa-icon name="sliders"></wa-icon>Settings &amp; baselines</wa-tab>
+        <wa-tab slot="nav" panel="testbench"><wa-icon name="flask"></wa-icon>Testbench</wa-tab>
 
         <!-- Workers -->
         <wa-tab-panel name="workers" id="panel-workers">
@@ -313,6 +314,270 @@
             </table>
           </div>
           <p id="releases-empty" class="empty" hidden>No approved releases.</p>
+        </wa-tab-panel>
+
+        <!-- Testbench -->
+        <wa-tab-panel name="testbench" id="panel-testbench">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>Testbench</h2>
+              <p class="panel-note">Contribute a recording or scan, correct the draft transcription into a reference, then run candidates against it. Originals are kept on the hub until you delete the item. Organization admins only.</p>
+            </div>
+            <div class="panel-tools">
+              <wa-spinner class="panel-spinner" data-spinner="testbench" hidden></wa-spinner>
+              <wa-button data-refresh size="s" appearance="outlined">
+                <wa-icon slot="start" name="refresh"></wa-icon>
+                Refresh
+              </wa-button>
+            </div>
+          </div>
+
+          <p id="tb-forbidden" class="empty" hidden></p>
+
+          <div id="tb-content" hidden>
+            <div class="strip-row">
+            <dl id="tb-strip" class="strip" aria-label="Testbench status">
+              <div class="strip-item">
+                <dt class="caps">Testbench</dt>
+                <dd id="tb-state"></dd>
+              </div>
+              <div class="strip-item">
+                <dt class="caps">Items</dt>
+                <dd><span id="tb-count-items" class="num">–</span></dd>
+              </div>
+              <div class="strip-item">
+                <dt class="caps">Corrected</dt>
+                <dd><span id="tb-count-corrected" class="num">–</span></dd>
+              </div>
+              <div class="strip-item">
+                <dt class="caps">Runs</dt>
+                <dd><span id="tb-count-runs" class="num">–</span></dd>
+              </div>
+            </dl>
+            <wa-button id="tb-disable" size="s" appearance="outlined" hidden>Disable testbench</wa-button>
+            </div>
+
+            <div id="tb-off" class="empty" hidden>
+              <p>The testbench is switched off for this organization. While it is off, nothing can be contributed and no stored item is readable.</p>
+              <p>Contributed originals are stored on the hub until you delete them. Switching it on affects only this organization.</p>
+              <wa-button id="tb-enable" variant="brand">
+                <wa-icon slot="start" name="flask"></wa-icon>
+                Enable testbench
+              </wa-button>
+            </div>
+
+            <div id="tb-main" hidden>
+              <h3 class="section-title section-first">Contribute</h3>
+              <form id="tb-contribute" class="contribute" autocomplete="off">
+                <div class="contribute-fields">
+                  <div class="file-field">
+                    <label for="tb-file">Recording or scan</label>
+                    <input id="tb-file" name="file" type="file" required accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.opus,.webm,.pdf,.png,.jpg,.jpeg,.tif,.tiff,application/pdf,image/png,image/jpeg,image/tiff">
+                  </div>
+                  <wa-select id="tb-language" label="Language" value="de" size="m">
+                    <wa-option value="de">German (de)</wa-option>
+                    <wa-option value="en">English (en)</wa-option>
+                    <wa-option value="fr">French (fr)</wa-option>
+                    <wa-option value="it">Italian (it)</wa-option>
+                    <wa-option value="es">Spanish (es)</wa-option>
+                  </wa-select>
+                  <wa-input id="tb-label" name="label" label="Label" placeholder="optional" maxlength="120" spellcheck="false"></wa-input>
+                  <wa-button id="tb-submit" type="submit" variant="brand">
+                    <wa-icon slot="start" name="upload"></wa-icon>
+                    Contribute
+                  </wa-button>
+                </div>
+                <p class="panel-note">The hub queues a draft run right away. Audio and PDF, PNG, JPEG or TIFF scans are accepted.</p>
+              </form>
+              <wa-callout id="tb-created" class="created" variant="success" appearance="filled-outlined" role="status" hidden>
+                <wa-icon slot="icon" name="check"></wa-icon>
+                <div class="banner-row">
+                  <span id="tb-created-text"></span>
+                  <wa-button id="tb-created-open" size="s" appearance="outlined">Open item</wa-button>
+                </div>
+              </wa-callout>
+
+              <h3 class="section-title">Items</h3>
+              <div class="filters">
+                <wa-select id="tb-filter-kind" label="Kind" size="s" value="all">
+                  <wa-option value="all">All kinds</wa-option>
+                  <wa-option value="audio">Audio</wa-option>
+                  <wa-option value="document">Document</wa-option>
+                </wa-select>
+                <wa-select id="tb-filter-status" label="Status" size="s" value="all">
+                  <wa-option value="all">All statuses</wa-option>
+                  <wa-option value="awaiting_draft">Awaiting draft</wa-option>
+                  <wa-option value="needs_correction">Needs correction</wa-option>
+                  <wa-option value="corrected">Corrected</wa-option>
+                </wa-select>
+              </div>
+              <div class="table-wrap" id="items-wrap">
+                <table class="ledger">
+                  <thead>
+                    <tr>
+                      <th scope="col">Item</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Kind</th>
+                      <th scope="col">Language</th>
+                      <th scope="col">Label</th>
+                      <th scope="col">Size</th>
+                      <th scope="col">Runs</th>
+                      <th scope="col">Created</th>
+                      <th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="items-body" data-columns="9"></tbody>
+                </table>
+              </div>
+              <p id="items-empty" class="empty" hidden>No items match. Contribute a recording or scan above.</p>
+              <div class="more-row">
+                <wa-button id="items-more" size="s" appearance="outlined" hidden>
+                  <wa-icon slot="start" name="chevron-down"></wa-icon>
+                  Load more
+                </wa-button>
+              </div>
+
+              <!-- Item detail -->
+              <section id="tb-detail" class="detail" aria-labelledby="tb-detail-title" hidden>
+                <header class="detail-head">
+                  <div class="detail-title">
+                    <h3 id="tb-detail-title"></h3>
+                    <p id="tb-detail-meta" class="panel-note"></p>
+                  </div>
+                  <div class="panel-tools">
+                    <wa-spinner class="panel-spinner" id="tb-detail-spinner" hidden></wa-spinner>
+                    <wa-button id="tb-detail-refresh" size="s" appearance="outlined">
+                      <wa-icon slot="start" name="refresh"></wa-icon>
+                      Refresh
+                    </wa-button>
+                    <wa-button id="tb-detail-delete" size="s" variant="danger" appearance="outlined">
+                      <wa-icon slot="start" name="trash"></wa-icon>
+                      Delete item
+                    </wa-button>
+                    <wa-button id="tb-detail-close" size="s" appearance="outlined">
+                      <wa-icon slot="start" name="x"></wa-icon>
+                      Close
+                    </wa-button>
+                  </div>
+                </header>
+
+                <div class="detail-grid">
+                  <section class="detail-block" aria-labelledby="tb-original-title">
+                    <h4 id="tb-original-title" class="block-title">Original</h4>
+                    <div id="tb-preview" class="preview"></div>
+                    <div class="preview-tools">
+                      <wa-button id="tb-download" size="s" appearance="outlined">
+                        <wa-icon slot="start" name="download"></wa-icon>
+                        Download original
+                      </wa-button>
+                    </div>
+                  </section>
+
+                  <section class="detail-block" aria-labelledby="tb-reference-title">
+                    <h4 id="tb-reference-title" class="block-title">Reference text</h4>
+                    <p id="tb-reference-note" class="panel-note"></p>
+                    <wa-textarea id="tb-reference" class="reference" label="Reference" rows="12" resize="vertical" spellcheck="false"></wa-textarea>
+                    <div class="preview-tools">
+                      <wa-button id="tb-save-reference" size="s" variant="brand">
+                        <wa-icon slot="start" name="check"></wa-icon>
+                        Save as reference
+                      </wa-button>
+                    </div>
+                  </section>
+                </div>
+
+                <section class="detail-block" aria-labelledby="tb-candidates-title">
+                  <h4 id="tb-candidates-title" class="block-title">Run candidates</h4>
+                  <p class="panel-note">Only candidates that an approved, unrevoked private worker has tested and reported are offered. A candidate without an online worker waits in the queue.</p>
+                  <div id="tb-candidates" class="candidates"></div>
+                  <p id="tb-candidates-empty" class="empty" hidden></p>
+                  <div class="preview-tools">
+                    <wa-button id="tb-run" size="s" variant="brand" disabled>
+                      <wa-icon slot="start" name="plus"></wa-icon>
+                      Run selected
+                    </wa-button>
+                    <wa-button id="tb-candidates-refresh" size="s" appearance="outlined">
+                      <wa-icon slot="start" name="refresh"></wa-icon>
+                      Reload candidates
+                    </wa-button>
+                    <span id="tb-run-count" class="quiet" role="status"></span>
+                  </div>
+                </section>
+
+                <section class="detail-block" aria-labelledby="tb-runs-title">
+                  <h4 id="tb-runs-title" class="block-title">Runs</h4>
+                  <div class="table-wrap" id="runs-wrap">
+                    <table class="ledger">
+                      <thead>
+                        <tr>
+                          <th scope="col">Run</th>
+                          <th scope="col">Role</th>
+                          <th scope="col">Candidate</th>
+                          <th scope="col">Device</th>
+                          <th scope="col">Seconds</th>
+                          <th scope="col">WER</th>
+                          <th scope="col">CER</th>
+                          <th scope="col">Status</th>
+                          <th scope="col">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="runs-body" data-columns="9"></tbody>
+                    </table>
+                  </div>
+                  <p id="runs-empty" class="empty" hidden>No runs yet.</p>
+                </section>
+
+                <section id="tb-diff" class="detail-block" aria-labelledby="tb-diff-title" hidden>
+                  <h4 id="tb-diff-title" class="block-title">Word diff</h4>
+                  <p id="tb-diff-summary" class="panel-note"></p>
+                  <ul class="legend" aria-label="Legend">
+                    <li><span class="diff-equal">equal</span> word matches the reference</li>
+                    <li><span class="diff-ref">reference word</span> missing from or replaced in the run</li>
+                    <li><span class="diff-hyp">run word</span> added or replacing a reference word</li>
+                  </ul>
+                  <p id="tb-diff-note" class="empty" hidden></p>
+                  <div id="tb-diff-text" class="diff" tabindex="0" aria-label="Word diff of the run against the reference"></div>
+                  <ul id="tb-diff-warnings" class="warnings"></ul>
+                </section>
+              </section>
+
+              <h3 class="section-title">Leaderboard</h3>
+              <p class="panel-note">Mean over completed bench runs on corrected items. Draft runs are excluded: the reference started from the draft output, so the draft would score in its own favour. Candidates were not necessarily run on the same items, so compare the item count (n) before the means. Best value per column is marked.</p>
+              <p id="tb-lb-corrected" class="panel-note"></p>
+              <h4 class="block-title">Audio</h4>
+              <div class="table-wrap" id="lb-audio-wrap">
+                <table class="ledger">
+                  <thead>
+                    <tr>
+                      <th scope="col">Candidate</th>
+                      <th scope="col">Items (n)</th>
+                      <th scope="col">WER mean</th>
+                      <th scope="col">CER mean</th>
+                      <th scope="col">Mean seconds</th>
+                    </tr>
+                  </thead>
+                  <tbody id="lb-audio-body" data-columns="5"></tbody>
+                </table>
+              </div>
+              <p id="lb-audio-empty" class="empty" hidden>No completed bench runs on corrected audio items yet.</p>
+              <h4 class="block-title">Documents</h4>
+              <div class="table-wrap" id="lb-document-wrap">
+                <table class="ledger">
+                  <thead>
+                    <tr>
+                      <th scope="col">Candidate</th>
+                      <th scope="col">Items (n)</th>
+                      <th scope="col">WER mean</th>
+                      <th scope="col">CER mean</th>
+                      <th scope="col">Mean seconds</th>
+                    </tr>
+                  </thead>
+                  <tbody id="lb-document-body" data-columns="5"></tbody>
+                </table>
+              </div>
+              <p id="lb-document-empty" class="empty" hidden>No completed bench runs on corrected document items yet.</p>
+            </div>
+          </div>
         </wa-tab-panel>
       </wa-tab-group>
     </main>

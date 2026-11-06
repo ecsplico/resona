@@ -52,6 +52,8 @@ def clean_db(create_tables):
     """Remove job rows before each test; identities persist across the session."""
     from resona_api.db.engine import engine
     with Session(engine) as session:
+        session.execute(text("DELETE FROM testbenchrun"))
+        session.execute(text("DELETE FROM testbenchitem"))
         session.execute(text("DELETE FROM job"))
         session.commit()
 
@@ -211,6 +213,7 @@ def test_app():
     from resona_api.settings_routes import router as settings_router
     from resona_api.evaluations_routes import router as evaluations_router
     from resona_api.admin_routes import router as admin_router, static_router as admin_static_router
+    from resona_api.testbench_routes import router as testbench_router
     app = FastAPI()
     app.include_router(jobs_router)
     app.include_router(worker_router)
@@ -220,6 +223,7 @@ def test_app():
     app.include_router(evaluations_router)
     app.include_router(admin_router)
     app.include_router(admin_static_router)
+    app.include_router(testbench_router)
     return app
 
 

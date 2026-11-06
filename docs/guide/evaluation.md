@@ -127,3 +127,5 @@ resona-admin release stage --manifest release-manifest.json
 ```
 
 A staged release runs evaluation jobs only. It runs production jobs for a tuple after an evaluation of it has been promoted.
+
+To compare engines on your own recordings and scans instead of the shared corpus, see the [Testbench](testbench.md).

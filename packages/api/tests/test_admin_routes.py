@@ -110,6 +110,11 @@ def test_admin_page_is_served_with_strict_headers(anon_client):
     assert resp.headers["content-type"].startswith("text/html")
     assert "default-src 'none'" in resp.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
+    csp = resp.headers["content-security-policy"]
+    assert "img-src 'self' data: blob:" in csp
+    assert "media-src blob:" in csp
+    assert "frame-src" not in csp
+    assert "unsafe-inline" not in csp
     assert resp.headers["cache-control"] == "no-store"
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["referrer-policy"] == "no-referrer"

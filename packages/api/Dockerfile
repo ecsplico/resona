@@ -17,6 +17,7 @@ COPY packages/cloud-stt/ ./packages/cloud-stt/
 COPY packages/cloud-tts/ ./packages/cloud-tts/
 COPY packages/tts-local/ ./packages/tts-local/
 COPY packages/postprocess/ ./packages/postprocess/
+COPY packages/eval/ ./packages/eval/
 COPY packages/job-core/ ./packages/job-core/
 COPY packages/client/ ./packages/client/
 COPY apps/resona-mcp/ ./apps/resona-mcp/
