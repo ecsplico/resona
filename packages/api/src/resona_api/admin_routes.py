@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -53,6 +54,14 @@ _STATIC_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
 }
+VENDOR_DIR = STATIC_DIR / "vendor" / "webawesome"
+ICONS_DIR = STATIC_DIR / "icons"
+_VENDOR_TYPES = {
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+}
+_ICON_NAME = re.compile(r"^[a-z0-9-]+\.svg$")
+_CACHED_HEADERS = {**_STATIC_HEADERS, "Cache-Control": "public, max-age=86400"}
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
@@ -381,10 +390,41 @@ def _static(path: Path, media_type: str) -> FileResponse:
     return FileResponse(path, media_type=media_type, headers=_STATIC_HEADERS)
 
 
+def _contained_file(base: Path, relative: str) -> Path:
+    """``relative`` resolved under ``base``; 404 unless it is a regular file inside it."""
+    not_found = api_error(404, "not_found", "no such asset")
+    root = base.resolve()
+    try:
+        target = (root / relative).resolve()
+    except (OSError, ValueError) as exc:
+        raise not_found from exc
+    if not target.is_relative_to(root) or not target.is_file():
+        raise not_found
+    return target
+
+
 @static_router.get("/admin")
 def admin_page() -> FileResponse:
     """The management page; it signs in with a token and calls ``/v1/admin``."""
     return _static(STATIC_DIR / "index.html", "text/html; charset=utf-8")
+
+
+@static_router.get("/admin/vendor/webawesome/{path:path}")
+def admin_vendor(path: str) -> FileResponse:
+    """The vendored Web Awesome component library (scripts and styles only)."""
+    target = _contained_file(VENDOR_DIR, path)
+    media_type = _VENDOR_TYPES.get(target.suffix)
+    if media_type is None:
+        raise api_error(404, "not_found", "no such asset")
+    return FileResponse(target, media_type=media_type, headers=_CACHED_HEADERS)
+
+
+@static_router.get("/admin/icons/{name}")
+def admin_icon(name: str) -> FileResponse:
+    """A local SVG icon used by the management page."""
+    if not _ICON_NAME.fullmatch(name):
+        raise api_error(404, "not_found", "no such icon")
+    return FileResponse(_contained_file(ICONS_DIR, name), media_type="image/svg+xml", headers=_CACHED_HEADERS)
 
 
 @static_router.get("/admin/{asset}")

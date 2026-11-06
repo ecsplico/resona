@@ -127,6 +127,38 @@ def test_unknown_admin_asset_is_not_found(anon_client):
     assert anon_client.get("/admin/evil.js").status_code == 404
 
 
+@pytest.mark.parametrize(("path", "media_type"), [
+    ("webawesome.loader.js", "text/javascript"),
+    ("styles/webawesome.css", "text/css"),
+])
+def test_vendored_web_awesome_is_served_with_caching(anon_client, path, media_type):
+    resp = anon_client.get(f"/admin/vendor/webawesome/{path}")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith(media_type)
+    assert "default-src 'none'" in resp.headers["content-security-policy"]
+    assert resp.headers["cache-control"] == "public, max-age=86400"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.parametrize("path", [
+    "/admin/vendor/webawesome/../../admin_routes.py",
+    "/admin/vendor/webawesome/%2e%2e/%2e%2e/admin_routes.py",
+    "/admin/vendor/webawesome/%2e%2e/%2e%2e/admin.js",
+    "/admin/vendor/webawesome/%2e%2e/%2e%2e/%2e%2e/%2e%2e/admin_routes.py",
+    "/admin/vendor/webawesome/does-not-exist.js",
+    "/admin/vendor/webawesome/components",
+    "/admin/vendor/webawesome/LICENSE.md",
+])
+def test_vendor_paths_outside_the_library_or_of_other_types_are_not_found(anon_client, path):
+    assert anon_client.get(path).status_code == 404
+
+
+@pytest.mark.parametrize("name", ["does-not-exist.svg", "BAD_NAME.svg", "icon.js", "%2e%2e%2fadmin.js"])
+def test_unknown_or_malformed_icons_are_not_found(anon_client, name):
+    assert anon_client.get(f"/admin/icons/{name}").status_code == 404
+
+
 # ── Organization-scoped endpoints ────────────────────────────────────────────
 
 def org_path(org_id: str, suffix: str) -> str:

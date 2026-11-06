@@ -1,197 +1,328 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="wa-cloak">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Resona hub admin</title>
+  <meta name="color-scheme" content="light">
+  <title>Resona hub console</title>
+  <link rel="stylesheet" href="/admin/vendor/webawesome/styles/webawesome.css">
   <link rel="stylesheet" href="/admin/admin.css">
-  <script src="/admin/admin.js" defer></script>
+  <script type="module" src="/admin/vendor/webawesome/webawesome.loader.js"></script>
+  <script type="module" src="/admin/admin.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <h1>Resona hub admin</h1>
-    <div id="session-info" class="session-info" hidden>
-      <span>Role: <strong id="me-role"></strong></span>
-      <span>Organization: <strong id="me-org"></strong></span>
-      <button type="button" id="sign-out" class="secondary">Sign out</button>
-    </div>
-  </header>
-
-  <div id="banner" class="banner" role="alert" hidden>
-    <span id="banner-text"></span>
-    <button type="button" id="banner-close" class="banner-close" aria-label="Dismiss">&times;</button>
-  </div>
-
-  <main>
-    <section id="login" class="card login" hidden>
-      <h2>Sign in</h2>
-      <form id="login-form" autocomplete="off">
-        <label for="login-token">Organization or operator token</label>
-        <input type="password" id="login-token" name="token" required spellcheck="false" autocomplete="off">
-        <button type="submit">Sign in</button>
+  <!-- Sign-in: a single receipt slip on the ruled ground. -->
+  <main id="login" class="signin" hidden>
+    <div class="slip-shadow">
+      <form id="login-form" class="slip signin-slip" autocomplete="off">
+        <header class="slip-head">
+          <span class="r-label" aria-hidden="true">R</span>
+          <h1 class="slip-title">Resona hub console</h1>
+        </header>
+        <p class="slip-note">Sign in with an organization admin or hub operator token. It stays in this tab until you sign out or close the tab.</p>
+        <wa-input id="login-token" name="token" type="password" password-toggle label="Organization or operator token" required autocomplete="off" spellcheck="false"></wa-input>
+        <wa-button type="submit" variant="brand" class="signin-submit">Sign in</wa-button>
+        <p id="login-message" class="signin-message" role="alert" hidden></p>
       </form>
-      <p id="login-message" class="muted" hidden></p>
-    </section>
+    </div>
+  </main>
 
-    <section id="app" hidden>
-      <div class="card org-bar">
-        <label for="org-select">Organization</label>
-        <select id="org-select"></select>
-        <form id="new-org-form" class="inline-form" autocomplete="off" hidden>
-          <label for="new-org-id">New organization</label>
-          <input type="text" id="new-org-id" name="id" required spellcheck="false" placeholder="organization id">
-          <button type="submit">Create</button>
-        </form>
+  <div id="app" class="console" hidden>
+    <!-- Navy rail (desktop) / navy top bar (phone). -->
+    <aside id="rail" class="rail" aria-label="Hub console">
+      <div class="rail-bar">
+        <p class="mark">
+          <span class="mark-name">Resona</span>
+          <span class="mark-sub caps">Hub console</span>
+        </p>
+        <wa-select id="org-select" class="org-compact" size="s" label="Organization"></wa-select>
+        <button type="button" id="menu-toggle" class="rail-button menu-toggle" aria-expanded="false" aria-controls="rail-body">
+          <wa-icon name="menu"></wa-icon>
+          <span>Menu</span>
+        </button>
       </div>
 
-      <nav class="tabs" role="tablist">
-        <button type="button" role="tab" class="tab" data-tab="workers" aria-selected="true">Workers</button>
-        <button type="button" role="tab" class="tab" data-tab="credentials" aria-selected="false">Credentials</button>
-        <button type="button" role="tab" class="tab" data-tab="jobs" aria-selected="false">Jobs</button>
-        <button type="button" role="tab" class="tab" data-tab="settings" aria-selected="false">Settings &amp; baselines</button>
-      </nav>
+      <div id="rail-body" class="rail-body">
+        <section class="rail-section session" aria-labelledby="session-title">
+          <h2 id="session-title" class="caps">Signed in</h2>
+          <p class="session-role" id="me-role"></p>
+          <p class="session-org">Home organization <span id="me-org" class="rail-id"></span></p>
+        </section>
 
-      <section id="panel-workers" class="panel card" role="tabpanel">
-        <div class="panel-head">
-          <h2>Workers</h2>
-          <button type="button" class="secondary" data-refresh="workers">Refresh</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>ID</th>
-                <th>Status</th>
-                <th>Last seen</th>
-                <th>Runtime</th>
-                <th>Approved</th>
-                <th>Private</th>
-                <th>Revoked</th>
-                <th>Capabilities</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="workers-body"></tbody>
-          </table>
-        </div>
-        <p id="workers-empty" class="muted" hidden>No workers have enrolled in this organization.</p>
-      </section>
+        <nav class="rail-section org-nav" aria-labelledby="org-nav-title">
+          <h2 id="org-nav-title" class="caps">Organizations</h2>
+          <ul id="org-list" class="org-list"></ul>
+        </nav>
 
-      <section id="panel-credentials" class="panel card" role="tabpanel" hidden>
-        <div class="panel-head">
-          <h2>Credentials</h2>
-          <div class="actions">
-            <button type="button" id="issue-client">Issue client token</button>
-            <button type="button" id="issue-admin">Issue admin token</button>
-            <button type="button" class="secondary" data-refresh="credentials">Refresh</button>
+        <form id="new-org-form" class="rail-section new-org" autocomplete="off" hidden>
+          <wa-input id="new-org-id" name="id" size="s" label="New organization" placeholder="organization id" required spellcheck="false"></wa-input>
+          <wa-button type="submit" size="s" appearance="outlined">
+            <wa-icon slot="start" name="plus"></wa-icon>
+            Create
+          </wa-button>
+        </form>
+
+        <div class="rail-foot">
+          <wa-button id="sign-out" size="s" appearance="outlined">
+            <wa-icon slot="start" name="log-out"></wa-icon>
+            Sign out
+          </wa-button>
+        </div>
+      </div>
+    </aside>
+
+    <main id="work" class="work">
+      <header class="work-head">
+        <h1 id="org-title" class="org-title"></h1>
+        <dl class="tally" aria-label="Organization summary">
+          <div class="tally-item">
+            <dt class="caps">Workers online</dt>
+            <dd><span id="tally-online" class="num">–</span><span class="tally-of">/</span><span id="tally-workers" class="num">–</span></dd>
           </div>
-        </div>
-        <div id="issued" class="issued" hidden>
-          <p><strong>New <span id="issued-role"></span> token <span id="issued-id"></span>.</strong> Shown once. Store it now.</p>
-          <div class="issued-row">
-            <input type="text" id="issued-token" readonly spellcheck="false" aria-label="Issued token">
-            <button type="button" id="issued-copy">Copy</button>
-            <button type="button" id="issued-close" class="secondary">Done</button>
+          <div class="tally-item">
+            <dt class="caps">Live tokens</dt>
+            <dd><span id="tally-tokens" class="num">–</span></dd>
           </div>
-          <p id="issued-copied" class="muted" hidden>Copied to clipboard.</p>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Role</th>
-                <th>Worker</th>
-                <th>Created</th>
-                <th>Revoked</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="credentials-body"></tbody>
-          </table>
-        </div>
-        <p id="credentials-empty" class="muted" hidden>No credentials.</p>
-      </section>
+          <div class="tally-item">
+            <dt class="caps">Pending jobs</dt>
+            <dd><span id="tally-pending" class="num">–</span></dd>
+          </div>
+        </dl>
+      </header>
 
-      <section id="panel-jobs" class="panel card" role="tabpanel" hidden>
-        <div class="panel-head">
-          <h2>Jobs</h2>
-          <button type="button" class="secondary" data-refresh="jobs">Refresh</button>
+      <wa-callout id="banner" class="banner" variant="danger" appearance="filled-outlined" role="alert" hidden>
+        <wa-icon slot="icon" name="alert"></wa-icon>
+        <div class="banner-row">
+          <span id="banner-text"></span>
+          <wa-button id="banner-close" size="s" appearance="plain" variant="danger">
+            <wa-icon slot="start" name="x"></wa-icon>
+            Dismiss
+          </wa-button>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Kind</th>
-                <th>Status</th>
-                <th>Queue reason</th>
-                <th>Private</th>
-                <th>Profile</th>
-                <th>Candidate</th>
-                <th>Attempt</th>
-                <th>Error</th>
-                <th>Result</th>
-                <th>Created</th>
-                <th>Updated</th>
-                <th>Deadline</th>
-                <th id="jobs-actions-head">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="jobs-body"></tbody>
-          </table>
-        </div>
-        <p id="jobs-empty" class="muted" hidden>No jobs.</p>
-        <button type="button" id="jobs-more" class="secondary" hidden>Load more</button>
-      </section>
+      </wa-callout>
 
-      <section id="panel-settings" class="panel card" role="tabpanel" hidden>
-        <div class="panel-head">
-          <h2>Settings</h2>
-          <button type="button" class="secondary" data-refresh="settings">Refresh</button>
-        </div>
-        <p>Revision: <strong id="settings-revision"></strong></p>
-        <pre id="settings-json" class="json"></pre>
+      <wa-tab-group id="tabs" active="workers">
+        <wa-tab slot="nav" panel="workers"><wa-icon name="server"></wa-icon>Workers</wa-tab>
+        <wa-tab slot="nav" panel="credentials"><wa-icon name="key"></wa-icon>Credentials</wa-tab>
+        <wa-tab slot="nav" panel="jobs"><wa-icon name="list"></wa-icon>Jobs</wa-tab>
+        <wa-tab slot="nav" panel="settings"><wa-icon name="sliders"></wa-icon>Settings &amp; baselines</wa-tab>
 
-        <h2>Baselines</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Execution profile</th>
-                <th>Platform</th>
-                <th>Revision</th>
-                <th>Evaluation</th>
-                <th>Release</th>
-                <th>Corpus SHA-256</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody id="baselines-body"></tbody>
-          </table>
-        </div>
-        <p id="baselines-empty" class="muted" hidden>No baselines promoted yet.</p>
+        <!-- Workers -->
+        <wa-tab-panel name="workers" id="panel-workers">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>Workers</h2>
+              <p class="panel-note">Approving a worker accepts the capabilities it reported. Private workers take private jobs only; non-private workers take non-private jobs only.</p>
+            </div>
+            <div class="panel-tools">
+              <wa-spinner class="panel-spinner" data-spinner="workers" hidden></wa-spinner>
+              <wa-button data-refresh size="s" appearance="outlined">
+                <wa-icon slot="start" name="refresh"></wa-icon>
+                Refresh
+              </wa-button>
+            </div>
+          </div>
+          <div class="table-wrap" id="workers-wrap">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">ID</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Runtime</th>
+                  <th scope="col">Approval</th>
+                  <th scope="col">Capabilities</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="workers-body" data-columns="7"></tbody>
+            </table>
+          </div>
+          <p id="workers-empty" class="empty" hidden>No workers have enrolled in this organization.</p>
+        </wa-tab-panel>
 
-        <h2>Approved releases</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Execution profile</th>
-                <th>Platform</th>
-                <th>Release</th>
-                <th>Evaluation</th>
-                <th>Approved</th>
-              </tr>
-            </thead>
-            <tbody id="releases-body"></tbody>
-          </table>
-        </div>
-        <p id="releases-empty" class="muted" hidden>No approved releases.</p>
-      </section>
-    </section>
-  </main>
+        <!-- Credentials -->
+        <wa-tab-panel name="credentials" id="panel-credentials">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>Credentials</h2>
+              <p class="panel-note">A token is shown once, when it is issued. The hub keeps only its hash.</p>
+            </div>
+            <div class="panel-tools">
+              <wa-spinner class="panel-spinner" data-spinner="credentials" hidden></wa-spinner>
+              <wa-button id="issue-client" size="s" variant="brand">
+                <wa-icon slot="start" name="plus"></wa-icon>
+                Issue client token
+              </wa-button>
+              <wa-button id="issue-admin" size="s" variant="brand" appearance="outlined">
+                <wa-icon slot="start" name="plus"></wa-icon>
+                Issue admin token
+              </wa-button>
+              <wa-button data-refresh size="s" appearance="outlined">
+                <wa-icon slot="start" name="refresh"></wa-icon>
+                Refresh
+              </wa-button>
+            </div>
+          </div>
+
+          <!-- Signature: the tear-off receipt for a freshly issued token. -->
+          <div id="issued" class="slip-shadow issued" hidden>
+            <section class="slip receipt" aria-labelledby="issued-title">
+              <header class="slip-head">
+                <span class="r-label" aria-hidden="true">R</span>
+                <h3 id="issued-title" class="slip-title">Token issued</h3>
+                <span class="caps receipt-tag">Receipt</span>
+              </header>
+              <dl class="slip-fields">
+                <div>
+                  <dt class="caps">Credential</dt>
+                  <dd id="issued-id"></dd>
+                </div>
+                <div>
+                  <dt class="caps">Role</dt>
+                  <dd id="issued-role"></dd>
+                </div>
+              </dl>
+              <div class="token-row">
+                <wa-input id="issued-token" class="token-field" label="Token" readonly spellcheck="false" autocomplete="off"></wa-input>
+                <wa-copy-button id="issued-copy" class="token-copy" tooltip="copy" success-label="Copied" error-label="Copy failed">
+                  <wa-button size="m" variant="brand">Copy</wa-button>
+                </wa-copy-button>
+              </div>
+              <p class="slip-warning">Shown once. Store it now.</p>
+              <p id="issued-copied" class="slip-copied" role="status" hidden>Copied to clipboard.</p>
+              <div class="slip-stub">
+                <wa-button id="issued-close" size="s" appearance="outlined">
+                  <wa-icon slot="start" name="scissors"></wa-icon>
+                  Tear off
+                </wa-button>
+              </div>
+            </section>
+          </div>
+
+          <div class="table-wrap" id="credentials-wrap">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th scope="col">Credential</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Worker</th>
+                  <th scope="col">Issued</th>
+                  <th scope="col">State</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="credentials-body" data-columns="6"></tbody>
+            </table>
+          </div>
+          <p id="credentials-empty" class="empty" hidden>No credentials.</p>
+        </wa-tab-panel>
+
+        <!-- Jobs -->
+        <wa-tab-panel name="jobs" id="panel-jobs">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>Jobs</h2>
+              <p class="panel-note">Metadata only: no job content, filenames or results are shown here.</p>
+            </div>
+            <div class="panel-tools">
+              <wa-spinner class="panel-spinner" data-spinner="jobs" hidden></wa-spinner>
+              <wa-button data-refresh size="s" appearance="outlined">
+                <wa-icon slot="start" name="refresh"></wa-icon>
+                Refresh
+              </wa-button>
+            </div>
+          </div>
+          <div class="table-wrap" id="jobs-wrap">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th scope="col">Job</th>
+                  <th scope="col">Kind &amp; profile</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Candidate</th>
+                  <th scope="col">Error</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Timeline</th>
+                  <th scope="col" id="jobs-actions-head">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-body" data-columns="8"></tbody>
+            </table>
+          </div>
+          <p id="jobs-empty" class="empty" hidden>No jobs.</p>
+          <div class="more-row">
+            <wa-button id="jobs-more" size="s" appearance="outlined" hidden>
+              <wa-icon slot="start" name="chevron-down"></wa-icon>
+              Load more
+            </wa-button>
+          </div>
+        </wa-tab-panel>
+
+        <!-- Settings & baselines -->
+        <wa-tab-panel name="settings" id="panel-settings">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>Settings</h2>
+              <p class="panel-note">Read-only here.</p>
+            </div>
+            <div class="panel-tools">
+              <wa-spinner class="panel-spinner" data-spinner="settings" hidden></wa-spinner>
+              <wa-button data-refresh size="s" appearance="outlined">
+                <wa-icon slot="start" name="refresh"></wa-icon>
+                Refresh
+              </wa-button>
+            </div>
+          </div>
+          <p class="revision"><span class="caps">Revision</span> <span id="settings-revision" class="num"></span></p>
+          <pre id="settings-json" class="json" tabindex="0" aria-label="Organization settings as JSON"></pre>
+
+          <h2 class="section-title">Baselines</h2>
+          <div class="table-wrap" id="baselines-wrap">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th scope="col">Execution profile</th>
+                  <th scope="col">Platform</th>
+                  <th scope="col">Revision</th>
+                  <th scope="col">Evaluation</th>
+                  <th scope="col">Release</th>
+                  <th scope="col">Corpus SHA-256</th>
+                  <th scope="col">Created</th>
+                </tr>
+              </thead>
+              <tbody id="baselines-body" data-columns="7"></tbody>
+            </table>
+          </div>
+          <p id="baselines-empty" class="empty" hidden>No baselines promoted yet.</p>
+
+          <h2 class="section-title">Approved releases</h2>
+          <div class="table-wrap" id="releases-wrap">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th scope="col">Execution profile</th>
+                  <th scope="col">Platform</th>
+                  <th scope="col">Release</th>
+                  <th scope="col">Evaluation</th>
+                  <th scope="col">Approved</th>
+                </tr>
+              </thead>
+              <tbody id="releases-body" data-columns="5"></tbody>
+            </table>
+          </div>
+          <p id="releases-empty" class="empty" hidden>No approved releases.</p>
+        </wa-tab-panel>
+      </wa-tab-group>
+    </main>
+  </div>
+
+  <!-- One dialog serves every confirmation. -->
+  <wa-dialog id="confirm" label="Confirm" class="confirm">
+    <p id="confirm-text" class="confirm-text"></p>
+    <wa-button slot="footer" id="confirm-cancel" appearance="outlined" autofocus>Go back</wa-button>
+    <wa-button slot="footer" id="confirm-ok" variant="danger">Confirm</wa-button>
+  </wa-dialog>
 </body>
 </html>
