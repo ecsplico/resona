@@ -17,5 +17,6 @@ export default defineEventHandler((event) => {
 		throw createError({ statusCode: 404, statusMessage: "Not Found" });
 	}
 	const query = getRequestURL(event).search;
-	return proxyRequest(event, `${base.replace(/\/$/, "")}${path}${query}`);
+	// Directus answers the SSO start/callback with 302s meant for the browser.
+	return proxyRequest(event, `${base.replace(/\/$/, "")}${path}${query}`, { fetchOptions: { redirect: "manual" } });
 });
