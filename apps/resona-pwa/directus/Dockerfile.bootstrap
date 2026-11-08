@@ -1,0 +1,3 @@
+FROM node:24-alpine
+COPY bootstrap.mjs /bootstrap.mjs
+CMD ["node", "/bootstrap.mjs"]

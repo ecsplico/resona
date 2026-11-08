@@ -21,8 +21,6 @@ services:
     volumes:
       - directus-db:/directus/database
       - directus-uploads:/directus/uploads
-      # writable: `directus schema snapshot` (directus/bootstrap.md §4) exports here
-      - ./directus/schema-snapshot.yaml:/directus/schema-snapshot.yaml
     environment:
       SECRET: ${DIRECTUS_SECRET:?set DIRECTUS_SECRET}
       ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:?set DIRECTUS_ADMIN_EMAIL}
@@ -48,16 +46,17 @@ services:
   # One-shot: brings a blank Directus up to the schema/roles/worker-token state
   # in directus/bootstrap.md. Idempotent — re-runs harmlessly on every `up`.
   directus-bootstrap:
-    image: node:24-alpine
-    volumes:
-      - ./directus/bootstrap.mjs:/bootstrap.mjs:ro
+    # Built, not bind-mounted: Coolify runs the raw compose where the git checkout
+    # is not on the host filesystem, so relative bind mounts would be empty.
+    build:
+      context: ./directus
+      dockerfile: Dockerfile.bootstrap
     environment:
       DIRECTUS_URL: http://directus:8055
       ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:?set DIRECTUS_ADMIN_EMAIL}
       ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:?set DIRECTUS_ADMIN_PASSWORD}
       # Pinned as the worker's static token, so DIRECTUS_TOKEN below just works.
       DIRECTUS_TOKEN: ${DIRECTUS_TOKEN:?set DIRECTUS_TOKEN in .env (e.g. openssl rand -hex 24)}
-    command: ["node", "/bootstrap.mjs"]
     depends_on:
       directus:
         condition: service_healthy
