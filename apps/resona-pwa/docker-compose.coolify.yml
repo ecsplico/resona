@@ -85,6 +85,14 @@ services:
       - caddy_0.header=-Server
       - caddy_ingress_network=coolify
     environment:
+      # Public config again at runtime: Nitro renders runtimeConfig.public from these
+      # into the page, so the URLs are right even if Coolify's build step did not
+      # interpolate the build args above.
+      NUXT_PUBLIC_DIRECTUS_URL: ${NUXT_PUBLIC_DIRECTUS_URL}
+      NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL}
+      NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
+      NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}
+      NUXT_PUBLIC_DATA_MODE: ${NUXT_PUBLIC_DATA_MODE:-directus}
       # Server-only secrets — never baked into the bundle, read at runtime by Nitro.
       NUXT_GOOGLE_CLIENT_ID: ${NUXT_GOOGLE_CLIENT_ID:-}
       NUXT_GOOGLE_CLIENT_SECRET: ${NUXT_GOOGLE_CLIENT_SECRET:-}
