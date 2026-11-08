@@ -199,6 +199,8 @@ mockNuxtImport("useDataStore", () => () => store);
 
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
+const nav = vi.hoisted(() => ({ back: vi.fn(async () => {}), leaveTo: vi.fn(async () => {}) }));
+mockNuxtImport("useBackNav", () => () => nav);
 
 describe("live transcription page", () => {
 	beforeEach(() => {
@@ -257,7 +259,9 @@ describe("live transcription page", () => {
 		const w = await mountLive();
 		const back = w.find("[data-testid=\"live-back\"]");
 		expect(back.text()).toBe("Zurück");
-		expect(back.attributes("href")).toBe("/");
+		await back.trigger("click");
+		expect(nav.back).toHaveBeenCalledWith("/");
+		expect(navigateTo).not.toHaveBeenCalled();
 	});
 
 	it("shows the rolling transcript with final and partial text", async () => {
@@ -341,7 +345,7 @@ describe("live transcription page", () => {
 		expect(store.createRecording.mock.invocationCallOrder[0]!)
 			.toBeLessThan(store.createTranscript.mock.invocationCallOrder[0]!);
 
-		expect(navigateTo).toHaveBeenCalledWith("/");
+		expect(nav.leaveTo).toHaveBeenCalledWith("/");
 	});
 
 	it("surfaces an error and does not navigate when saving fails", async () => {
@@ -360,7 +364,7 @@ describe("live transcription page", () => {
 		await new Promise(r => setTimeout(r, 0));
 		await w.vm.$nextTick();
 
-		expect(navigateTo).not.toHaveBeenCalled();
+		expect(nav.leaveTo).not.toHaveBeenCalled();
 		const err = w.find("[data-testid=\"live-save-error\"]");
 		expect(err.exists()).toBe(true);
 		expect(err.text()).toContain("Speichern fehlgeschlagen");
@@ -549,7 +553,7 @@ describe("live transcription page", () => {
 
 			expect(w.find("[data-testid=\"live-correction-pending\"]").exists()).toBe(false);
 			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Eins. Zwei.", engine: "whisper-live+whisper-large" });
-			expect(navigateTo).toHaveBeenCalledWith("/");
+			expect(nav.leaveTo).toHaveBeenCalledWith("/");
 		});
 
 		it("stamps the configured correction engine, and falls back to hub when engines fail to load", async () => {

@@ -33,6 +33,7 @@ function deferred<T>() {
 describe("useRecordings", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		clearNuxtState([...LIST_STATE_KEYS]);
 	});
 
 	it("list() loads recordings from the store and stores the rows", async () => {

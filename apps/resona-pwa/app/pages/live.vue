@@ -4,6 +4,7 @@ import type { NewRecording } from "~/data/types";
 import type { ListenEngine } from "~/composables/useHub";
 
 const cfg = useRuntimeConfig().public;
+const nav = useBackNav();
 
 // When launched from a calendar event (/live?title=…), pre-fill the recording
 // name with the event's "<name> – <date>" title.
@@ -229,7 +230,7 @@ async function confirmSave(): Promise<void> {
 
 		await store.createTranscript(recording.id, { text: capturedText.value, engine: capturedEngine.value });
 
-		void navigateTo("/");
+		void nav.leaveTo("/");
 	}
 	catch {
 		// Keep the title prompt, captured blob and transcript so the user can retry.
@@ -242,7 +243,7 @@ async function confirmSave(): Promise<void> {
 
 function cancelSave(): void {
 	showTitlePrompt.value = false;
-	void navigateTo("/");
+	void nav.leaveTo("/");
 }
 
 onMounted(async () => {
@@ -259,10 +260,11 @@ onMounted(async () => {
 <template>
 	<div class="live">
 		<header class="live__bar">
-			<NuxtLink
+			<button
+				type="button"
 				class="live__back"
-				to="/"
 				data-testid="live-back"
+				@click="nav.back('/')"
 			>
 				<svg
 					width="20"
@@ -278,7 +280,7 @@ onMounted(async () => {
 					<polyline points="15 18 9 12 15 6" />
 				</svg>
 				Zurück
-			</NuxtLink>
+			</button>
 			<h1 class="live__title">
 				Live
 			</h1>
@@ -486,7 +488,7 @@ onMounted(async () => {
 .live :deep(:focus-visible) { outline-color:var(--tomato); }
 
 .live__bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; min-height:56px; padding:env(safe-area-inset-top) 8px 0; border-bottom:1px solid color-mix(in srgb, var(--on-night) 10%, transparent); }
-.live__back { justify-self:start; display:inline-flex; align-items:center; gap:4px; min-height:40px; padding:0 12px 0 6px; border-radius:var(--r-full); color:var(--on-night); font-size:var(--fs-sm); font-weight:600; text-decoration:none; transition:background-color var(--motion-fast) var(--motion-ease); }
+.live__back { justify-self:start; display:inline-flex; align-items:center; gap:4px; min-height:40px; padding:0 12px 0 6px; border-radius:var(--r-full); color:var(--on-night); font-size:var(--fs-sm); font-weight:600; text-decoration:none; border:0; background:none; cursor:pointer; font-family:inherit; transition:background-color var(--motion-fast) var(--motion-ease); }
 .live__back:hover { background:var(--night-raised); }
 .live__back:active { background:color-mix(in srgb, var(--on-night) 14%, transparent); }
 .live__title { margin:0; font-family:var(--font-display); font-size:var(--fs-lg); font-weight:600; line-height:1.2; color:var(--on-night); }

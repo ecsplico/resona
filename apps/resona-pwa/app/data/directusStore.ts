@@ -95,6 +95,11 @@ export function createDirectusStore(): DataStore {
 			await client.request(updateItem("transcripts", id, { text: patch.text }));
 		},
 
+		async recordCorrection(input) {
+			const { client } = useDirectus();
+			await client.request(createItem("transcript_corrections", input));
+		},
+
 		async audioUrl(recording) {
 			return recording.audio_file ? useDirectus().assetUrl(recording.audio_file) : null;
 		},

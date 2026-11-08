@@ -31,7 +31,11 @@ Issue a client token for your organization there
 The token is entered **per device** in the PWA under **Einstellungen → Verbindung**
 (stored in the browser's localStorage, never baked into the bundle). "Verbindung
 testen" checks it against the hub. Without a token the home screen shows a notice;
-push-to-talk and live dictation need it.
+push-to-talk and live dictation need it, and recording, uploading (audio and
+documents) and sharing to the app are refused with a hint to Einstellungen →
+Verbindung. In Directus mode the token is also stored on the user's account
+(`directus_users.hub_token`, only readable by the user themself) and filled in
+automatically on the next device after sign-in.
 
 ### 2. PWA data layer (this repo)
 

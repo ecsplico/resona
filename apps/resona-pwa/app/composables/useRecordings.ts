@@ -9,7 +9,8 @@ interface ListOpts {
 }
 
 export function useRecordings() {
-	const items: Ref<Recording[]> = ref([]);
+	// Shared state: the list outlives the pane, so returning from a detail page shows it at once.
+	const items: Ref<Recording[]> = useState<Recording[]>("recordings-items", () => []);
 	const pending: Ref<boolean> = ref(false);
 	const error: Ref<string | null> = ref(null);
 	let lastOpts: ListOpts = {};

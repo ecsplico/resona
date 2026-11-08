@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { isServiceUnreachable } from "#shared/errors";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
 import type { ContinueResult } from "~/composables/useContinueRecording";
 import type { Recording, Transcript } from "~/types/directus";
@@ -113,10 +113,15 @@ watch([recording, transcript], ([, t]) => {
 const dirty = computed(() => seeded.value && edit.text.value !== edit.committed.value);
 
 /** Persists the editor text; false when the save failed (the text stays in the editor). */
-async function saveTranscript(): Promise<boolean> {
+async function saveTranscript(options: { correction?: boolean } = {}): Promise<boolean> {
 	const target = edit.text.value;
 	if (transcript.value) {
-		await edit.saveEdit(transcript.value.id, target);
+		// The user's edits become correction data for the engine; text appended by
+		// "Weiter aufnehmen" is new content, not a correction.
+		const correction = options.correction === false
+			? undefined
+			: { recording: id, engine: transcript.value.engine, language: recording.value?.language };
+		await edit.saveEdit(transcript.value.id, target, correction);
 		return !edit.error.value;
 	}
 	// No transcript row yet -> create one for this recording.
@@ -125,6 +130,52 @@ async function saveTranscript(): Promise<boolean> {
 	transcript.value = created;
 	seeded.value = true;
 	return true;
+}
+
+/** Throws the unsaved edits away and shows the last saved text again. */
+function discardEdits(): void {
+	edit.text.value = edit.committed.value;
+	edit.error.value = null;
+}
+
+// ── Title (editable on the detail page) ────────────────────────────────────
+const editingTitle = ref(false);
+const titleDraft = ref("");
+const titleError = ref<string | null>(null);
+const titleInput = ref<HTMLInputElement | null>(null);
+
+async function startTitleEdit(): Promise<void> {
+	if (!recording.value) return;
+	titleDraft.value = recording.value.title ?? "";
+	titleError.value = null;
+	editingTitle.value = true;
+	await nextTick();
+	titleInput.value?.focus();
+	titleInput.value?.select();
+}
+
+function cancelTitleEdit(): void {
+	editingTitle.value = false;
+	titleError.value = null;
+}
+
+async function commitTitle(): Promise<void> {
+	if (!editingTitle.value || !recording.value) return;
+	const next = titleDraft.value.trim();
+	if (next === (recording.value.title ?? "")) {
+		editingTitle.value = false;
+		return;
+	}
+	try {
+		await store.updateRecording(id, { title: next });
+		recording.value.title = next;
+		recordingsList.request();
+		editingTitle.value = false;
+		titleError.value = null;
+	}
+	catch (err) {
+		titleError.value = humanizeError(err, "Titel konnte nicht gespeichert werden.");
+	}
 }
 
 // ── Review status (editing / ready) ────────────────────────────────────────
@@ -192,6 +243,7 @@ async function startDictation(): Promise<void> {
 }
 
 async function stopDictation(): Promise<void> {
+	pttLatched.value = false;
 	if (pttState.value !== "recording") return;
 	pttState.value = "transcribing";
 	const blob = await pttRecorder.stop();
@@ -255,7 +307,16 @@ async function stopDictation(): Promise<void> {
 	}
 }
 
+// Touch has no Ctrl key and holding a button while the thumb also has to reach
+// the text is awkward: a short tap latches dictation on, the next tap stops it;
+// holding (>= 400 ms) keeps the old push-to-talk behavior (stop on release).
+const PTT_HOLD_MS = 400;
+let pttDownAt = 0;
+const pttLatched = ref(false);
+
 function onPttDown(e: PointerEvent): void {
+	if (pttLatched.value) return;
+	pttDownAt = Date.now();
 	try {
 		(e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
 	}
@@ -271,6 +332,15 @@ function onPttUp(e: PointerEvent): void {
 	}
 	catch {
 		// pointer capture unsupported in test env
+	}
+	if (pttLatched.value) {
+		pttLatched.value = false;
+		void stopDictation();
+		return;
+	}
+	if (e.type === "pointerup" && Date.now() - pttDownAt < PTT_HOLD_MS && pttState.value === "recording") {
+		pttLatched.value = true;
+		return;
 	}
 	void stopDictation();
 }
@@ -331,7 +401,7 @@ async function applyContinueResult(result: ContinueResult | null): Promise<void>
 	let saved = true;
 	if (result.text) {
 		appendParagraph(result.text);
-		saved = await saveTranscript();
+		saved = await saveTranscript({ correction: false });
 	}
 	if (result.text || result.audioMerged) recordingsList.request();
 	const textNotice = !result.text
@@ -363,9 +433,56 @@ function confirmLeave(): boolean {
 	return window.confirm(CONTINUE_LEAVE);
 }
 
-onBeforeRouteLeave(() => confirmLeave());
+// Unsaved text edits: ask whether to save or discard them before leaving.
+// A dialog (not window.confirm) because it has three outcomes.
+const leaveDialog = ref(false);
+let leaveResolve: ((leave: boolean) => void) | null = null;
+
+function askUnsaved(): Promise<boolean> {
+	leaveDialog.value = true;
+	return new Promise((resolve) => {
+		leaveResolve = resolve;
+	});
+}
+
+function answerLeave(leave: boolean): void {
+	leaveDialog.value = false;
+	leaveResolve?.(leave);
+	leaveResolve = null;
+}
+
+async function leaveSave(): Promise<void> {
+	if (await saveTranscript()) {
+		recordingsList.request();
+		answerLeave(true);
+	}
+	else {
+		// Saving failed: stay, the text is still in the editor and the error shows.
+		answerLeave(false);
+	}
+}
+
+function leaveDiscard(): void {
+	discardEdits();
+	answerLeave(true);
+}
+
+function guardLeave(): boolean | Promise<boolean> {
+	if (!confirmLeave()) return false;
+	if (!dirty.value) return true;
+	return askUnsaved();
+}
+
+onBeforeRouteLeave(() => guardLeave());
 onBeforeRouteUpdate((to, from) =>
-	(to.params as { id?: string }).id === (from.params as { id?: string }).id || confirmLeave());
+	(to.params as { id?: string }).id === (from.params as { id?: string }).id || guardLeave());
+
+// Closing the tab or reloading with unsaved edits.
+function onBeforeUnload(e: BeforeUnloadEvent): void {
+	if (dirty.value) {
+		e.preventDefault();
+	}
+}
 
 const restarting = ref(false);
 
@@ -386,8 +503,26 @@ async function restartTranscription(): Promise<void> {
 const confirmingDelete = ref(false);
 const deleting = ref(false);
 
+// One back rule shared with the other pages (see useBackNav).
+const { back, leaveTo } = useBackNav();
+
 function goBack(): void {
-	void navigateTo("/");
+	void back("/");
+}
+
+const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+async function shareTranscript(): Promise<void> {
+	if (!recording.value) return;
+	try {
+		await navigator.share({
+			title: recording.value.title || "Aufnahme",
+			text: toText(recording.value, currentTranscript()),
+		});
+	}
+	catch {
+		// cancelled by the user or unsupported content: nothing to do
+	}
 }
 
 function copyTranscript(): void {
@@ -424,7 +559,7 @@ async function confirmDelete(): Promise<void> {
 	try {
 		await store.deleteRecording(id);
 		recordingsList.request();
-		void navigateTo("/");
+		void leaveTo("/");
 	}
 	finally {
 		deleting.value = false;
@@ -436,6 +571,7 @@ onMounted(() => {
 	startPolling();
 	window.addEventListener("keydown", onKeyDown);
 	window.addEventListener("keyup", onKeyUp);
+	window.addEventListener("beforeunload", onBeforeUnload);
 });
 
 onUnmounted(() => {
@@ -445,6 +581,7 @@ onUnmounted(() => {
 	audioSrc.value = null;
 	window.removeEventListener("keydown", onKeyDown);
 	window.removeEventListener("keyup", onKeyUp);
+	window.removeEventListener("beforeunload", onBeforeUnload);
 });
 </script>
 
@@ -477,11 +614,93 @@ onUnmounted(() => {
 					<path d="M15 18l-6-6 6-6" />
 				</svg>
 			</button>
-			<span
-				class="detail__bar-title"
+			<input
+				v-if="editingTitle"
+				ref="titleInput"
+				v-model="titleDraft"
+				class="detail__title-input"
+				type="text"
+				aria-label="Titel"
+				data-testid="title-input"
+				@keydown.enter.prevent="commitTitle"
+				@keydown.esc.prevent="cancelTitleEdit"
+				@blur="commitTitle"
+			>
+			<button
+				v-else
+				type="button"
+				class="detail__bar-title detail__bar-title--btn"
+				title="Titel ändern"
 				data-testid="bar-title"
-			>{{ recording?.title || "Aufnahme" }}</span>
+				:disabled="!recording"
+				@click="startTitleEdit"
+			>
+				{{ recording?.title || "Aufnahme" }}
+			</button>
+			<span
+				v-if="titleError"
+				class="detail__tool-error"
+				role="alert"
+				data-testid="title-error"
+			>{{ titleError }}</span>
 			<div class="detail__actions">
+				<template v-if="canEdit && dirty">
+					<HButton
+						variant="secondary"
+						:disabled="edit.saving.value"
+						data-testid="discard-edits"
+						@click="discardEdits"
+					>
+						Verwerfen
+					</HButton>
+				</template>
+				<HButton
+					v-if="canEdit"
+					variant="primary"
+					:disabled="edit.saving.value || pttState !== 'idle' || contWorking || !dirty"
+					data-testid="save-transcript"
+					@click="saveTranscript()"
+				>
+					{{ edit.saving.value ? "Speichert…" : "Speichern" }}
+				</HButton>
+				<button
+					v-if="canShare"
+					type="button"
+					class="detail__icon"
+					aria-label="Teilen"
+					title="Teilen"
+					data-testid="share"
+					@click="shareTranscript"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<circle
+							cx="18"
+							cy="5"
+							r="3"
+						/>
+						<circle
+							cx="6"
+							cy="12"
+							r="3"
+						/>
+						<circle
+							cx="18"
+							cy="19"
+							r="3"
+						/>
+						<path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+					</svg>
+				</button>
 				<button
 					type="button"
 					class="detail__icon"
@@ -711,110 +930,19 @@ onUnmounted(() => {
 				</p>
 
 				<template v-if="canEdit">
-					<div class="detail__toolbar">
-						<div class="detail__tools">
-							<button
-								type="button"
-								class="detail__ptt"
-								:class="{
-									'detail__ptt--active': pttState === 'recording',
-									'detail__ptt--busy': pttState === 'transcribing',
-								}"
-								:disabled="pttState === 'transcribing' || contActive"
-								data-testid="push-to-talk"
-								:aria-pressed="pttState === 'recording'"
-								:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
-								@pointerdown.prevent="onPttDown"
-								@pointerup="onPttUp"
-								@pointercancel="onPttUp"
-							>
-								<svg
-									width="18"
-									height="18"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"
-								>
-									<rect
-										x="9"
-										y="2"
-										width="6"
-										height="12"
-										rx="3"
-									/>
-									<path d="M5 10a7 7 0 0 0 14 0" />
-									<line
-										x1="12"
-										y1="17"
-										x2="12"
-										y2="21"
-									/>
-								</svg>
-								<span>{{
-									pttState === "recording" ? "Aufnahme… loslassen zum Transkribieren"
-									: pttState === "transcribing" ? "Transkribiert…"
-										: `Diktieren (${pttKeyLabel} halten)`
-								}}</span>
-							</button>
-							<button
-								type="button"
-								class="detail__ptt"
-								:disabled="pttState !== 'idle' || contActive || contRetained"
-								data-testid="continue-recording"
-								@click="startContinue"
-							>
-								<svg
-									width="18"
-									height="18"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"
-								>
-									<circle
-										cx="12"
-										cy="12"
-										r="9"
-									/>
-									<circle
-										cx="12"
-										cy="12"
-										r="3.5"
-										fill="currentColor"
-									/>
-								</svg>
-								<span>Weiter aufnehmen</span>
-							</button>
-							<span
-								v-if="contStartError"
-								class="detail__tool-error"
-								role="alert"
-								data-testid="continue-error"
-							>{{ contStartError }}</span>
-						</div>
-						<div class="detail__save">
-							<span
-								class="detail__save-state"
-								:class="{ 'detail__save-state--dirty': dirty }"
-								aria-live="polite"
-								data-testid="save-state"
-							>{{ dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
-							<HButton
-								variant="primary"
-								:disabled="edit.saving.value || pttState !== 'idle' || contWorking || !dirty"
-								data-testid="save-transcript"
-								@click="saveTranscript"
-							>
-								{{ edit.saving.value ? "Speichert…" : "Speichern" }}
-							</HButton>
-						</div>
+					<div class="detail__statusrow">
+						<span
+							class="detail__save-state"
+							:class="{ 'detail__save-state--dirty': dirty }"
+							aria-live="polite"
+							data-testid="save-state"
+						>{{ dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
+						<span
+							v-if="contStartError"
+							class="detail__tool-error"
+							role="alert"
+							data-testid="continue-error"
+						>{{ contStartError }}</span>
 					</div>
 					<p
 						v-if="pttError"
@@ -910,12 +1038,135 @@ onUnmounted(() => {
 			</template>
 		</div>
 
-		<HPlayerDock
-			v-if="recording?.audio_file && audioSrc"
-			class="detail__dock"
-			:src="audioSrc"
-			:fallback-duration="recording.duration_seconds ?? undefined"
-		/>
+		<div
+			v-if="leaveDialog"
+			class="detail__confirm detail__leave"
+			role="alertdialog"
+			aria-label="Ungespeicherte Änderungen"
+			data-testid="leave-dialog"
+		>
+			<span class="detail__confirm-text">Änderungen am Text speichern?</span>
+			<div class="detail__confirm-actions">
+				<HButton
+					variant="secondary"
+					data-testid="leave-stay"
+					@click="answerLeave(false)"
+				>
+					Bleiben
+				</HButton>
+				<HButton
+					variant="secondary"
+					data-testid="leave-discard"
+					@click="leaveDiscard"
+				>
+					Verwerfen
+				</HButton>
+				<HButton
+					variant="primary"
+					data-testid="leave-save"
+					@click="leaveSave"
+				>
+					Speichern
+				</HButton>
+			</div>
+		</div>
+
+		<div
+			v-if="canEdit || (recording?.audio_file && audioSrc)"
+			class="detail__foot"
+		>
+			<div
+				v-if="canEdit"
+				class="detail__tools"
+				role="group"
+				aria-label="Diktieren und weiter aufnehmen"
+			>
+				<button
+					type="button"
+					class="detail__ptt"
+					:class="{
+						'detail__ptt--active': pttState === 'recording',
+						'detail__ptt--busy': pttState === 'transcribing',
+					}"
+					:disabled="pttState === 'transcribing' || contActive"
+					data-testid="push-to-talk"
+					:aria-pressed="pttState === 'recording'"
+					:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
+					@pointerdown.prevent="onPttDown"
+					@pointerup="onPttUp"
+					@pointercancel="onPttUp"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<rect
+							x="9"
+							y="2"
+							width="6"
+							height="12"
+							rx="3"
+						/>
+						<path d="M5 10a7 7 0 0 0 14 0" />
+						<line
+							x1="12"
+							y1="17"
+							x2="12"
+							y2="21"
+						/>
+					</svg>
+					<span>{{
+						pttState === "recording" ? (pttLatched ? "Aufnahme… tippen zum Beenden" : "Aufnahme… loslassen zum Transkribieren")
+						: pttState === "transcribing" ? "Transkribiert…"
+							: `Diktieren (tippen oder ${pttKeyLabel} halten)`
+					}}</span>
+				</button>
+				<button
+					type="button"
+					class="detail__ptt"
+					:disabled="pttState !== 'idle' || contActive || contRetained"
+					data-testid="continue-recording"
+					@click="startContinue"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<circle
+							cx="12"
+							cy="12"
+							r="9"
+						/>
+						<circle
+							cx="12"
+							cy="12"
+							r="3.5"
+							fill="currentColor"
+						/>
+					</svg>
+					<span>Weiter aufnehmen</span>
+				</button>
+			</div>
+			<HPlayerDock
+				v-if="recording?.audio_file && audioSrc"
+				:src="audioSrc"
+				:fallback-duration="recording.duration_seconds ?? undefined"
+			/>
+		</div>
 
 		<HRecordingSheet
 			v-if="cont.phase.value === 'recording' && cont.recorder.recording.value"
@@ -937,6 +1188,10 @@ onUnmounted(() => {
 .detail { min-height:100dvh; display:flex; flex-direction:column; background:var(--bg); }
 .detail--pane { min-height:0; flex:1 0 auto; }
 .detail__bar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:10px 12px 10px 16px; background:var(--bg); border-bottom:1px solid var(--border); }
+.detail__bar-title--btn { background:none; border:0; padding:4px 6px; margin:-4px -6px; text-align:left; cursor:text; border-radius:6px; }
+.detail__bar-title--btn:hover:not(:disabled) { background:var(--crust-soft); }
+.detail__title-input { flex:1; min-width:0; font:inherit; font-family:var(--font-body); font-size:var(--fs-md); font-weight:600; padding:4px 8px; border:1.5px solid var(--accent); border-radius:8px; background:var(--white); color:var(--fg1); }
+.detail__leave { position:sticky; bottom:0; z-index:6; }
 .detail__bar-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-body); font-size:var(--fs-md); font-weight:600; color:var(--fg1); }
 .detail__actions { display:flex; align-items:center; gap:2px; }
 .detail__icon { width:38px; height:38px; flex:0 0 auto; border:none; border-radius:50%; background:transparent; color:var(--crust-deep); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background var(--motion-fast) var(--motion-ease); }
@@ -964,10 +1219,8 @@ onUnmounted(() => {
 .detail__banner-icon { flex-shrink:0; align-self:flex-start; margin-top:1px; }
 .detail__banner-text { flex:1; min-width:180px; display:flex; flex-direction:column; gap:4px; }
 .detail__banner-hint { font-size:13px; opacity:0.85; }
-.detail__toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 .detail__tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .detail__tool-error { flex-basis:100%; color:var(--danger); font-family:var(--font-body); font-size:13px; }
-.detail__save { display:flex; align-items:center; gap:12px; margin-left:auto; }
 .detail__save-state { font-family:var(--font-body); font-size:13px; color:var(--fg3); }
 .detail__save-state--dirty { color:var(--accent-ink,var(--accent)); font-weight:600; }
 .detail__surface { flex:1; display:flex; flex-direction:column; min-height:240px; }
@@ -977,5 +1230,8 @@ onUnmounted(() => {
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
 .detail__ptt--busy { opacity:0.65; cursor:default; }
 .detail__ptt:disabled:not(.detail__ptt--busy) { opacity:0.5; cursor:default; }
-.detail__dock { position:sticky; bottom:0; z-index:5; }
+.detail__foot { position:sticky; bottom:0; z-index:5; background:var(--white); }
+.detail__foot .detail__tools { padding:10px 16px 0; justify-content:center; border-top:1px solid var(--border); }
+.detail__foot .h-dock { border-top:0; padding-top:10px; }
+.detail__statusrow { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 </style>

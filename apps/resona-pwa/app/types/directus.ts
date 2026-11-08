@@ -40,6 +40,25 @@ export interface Transcript {
 	date_created?: string;
 	date_updated?: string;
 }
+/** A user's edit of an ASR transcript, kept as training/evaluation data for the engines. */
+export interface TranscriptCorrection {
+	id: string;
+	transcript: string;
+	recording: string;
+	/** Text before and after the save (whole transcript). */
+	before: string;
+	after: string;
+	/** Changed spans (word level): what the engine wrote vs what the user made of it. */
+	edits: CorrectionEdit[];
+	engine?: string | null;
+	language?: string | null;
+	user_created?: string;
+	date_created?: string;
+}
+export interface CorrectionEdit {
+	before: string;
+	after: string;
+}
 export interface ResonaDocument {
 	id: string;
 	user_created?: string;
@@ -59,4 +78,5 @@ export interface Schema {
 	recordings: Recording[];
 	transcripts: Transcript[];
 	documents: ResonaDocument[];
+	transcript_corrections: TranscriptCorrection[];
 }

@@ -4,11 +4,12 @@ import type { ResonaDocument } from "~/types/directus";
 import { humanizeError } from "#shared/errors";
 
 const store = useDataStore();
-const items = ref<ResonaDocument[]>([]);
+// Shared state: rows and search survive the detail round trip (see LIST_STATE_KEYS).
+const items = useState<ResonaDocument[]>("documents-items", () => []);
 const pending = ref(false);
 const error = ref<string | null>(null);
 const uploading = ref(false);
-const search = ref("");
+const search = useState("documents-search", () => "");
 const uploadInput = ref<HTMLInputElement | null>(null);
 
 const ACCEPT = "application/pdf,image/png,image/jpeg,image/tiff,.pdf,.png,.jpg,.jpeg,.tif,.tiff";
@@ -71,6 +72,12 @@ function openDocument(doc: ResonaDocument): void {
 }
 
 function triggerUpload(): void {
+	const gate = useHubTokenGate();
+	if (!gate.allowed()) {
+		error.value = gate.message;
+		return;
+	}
+	error.value = null;
 	uploadInput.value?.click();
 }
 

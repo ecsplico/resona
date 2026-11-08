@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { computed, h, nextTick, ref, type Ref } from "vue";
 import { flushPromises, type VueWrapper } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport, mockComponent } from "@nuxt/test-utils/runtime";
@@ -80,6 +80,8 @@ mockNuxtImport("useDataStore", () => () => store);
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
 
+const nav = vi.hoisted(() => ({ back: vi.fn(async () => {}), leaveTo: vi.fn(async () => {}) }));
+mockNuxtImport("useBackNav", () => () => nav);
 mockNuxtImport("useRoute", () => () => ({ params: { id: "rec-1" } }));
 
 // The page's route guards, so specs can run them like the router would.
@@ -272,7 +274,7 @@ describe("recording detail page", () => {
 		await w.find("[data-testid=\"confirm-delete\"]").trigger("click");
 		await w.vm.$nextTick();
 		expect(store.deleteRecording).toHaveBeenCalledWith("rec-1");
-		expect(navigateTo).toHaveBeenCalledWith("/");
+		expect(nav.leaveTo).toHaveBeenCalledWith("/");
 		expect(listReloads()).toBe(reloads + 1);
 	});
 
@@ -392,6 +394,7 @@ describe("recording detail page", () => {
 		const areaAfter = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
 		expect(areaAfter.value).toContain("[…]");
 
+		heldFor(500);
 		await ptt.trigger("pointerup", { pointerId: 1 });
 		await w.vm.$nextTick();
 		await new Promise(r => setTimeout(r, 0));
@@ -415,6 +418,50 @@ describe("recording detail page", () => {
 		expect(areaFinal.value).not.toContain("[…]");
 	});
 
+	/** Makes the next pointerup look like it came after a long press (hold = push-to-talk, tap = latch). */
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	function heldFor(ms: number): void {
+		const now = Date.now();
+		vi.spyOn(Date, "now").mockReturnValue(now + ms);
+	}
+
+	it("leaving with unsaved text edits asks, and Verwerfen restores the saved text", async () => {
+		const w = await mountSuspended(RecordingPage);
+		const area = w.find("[data-testid=\"transcript-edit\"]");
+		const saved = (area.element as HTMLTextAreaElement).value;
+		await area.setValue(`${saved} geändert`);
+		const here = { params: { id: "rec-1" } };
+		const result = guards.leave!({ params: { id: "rec-2" } }, here);
+		await w.vm.$nextTick();
+		expect(w.find("[data-testid=\"leave-dialog\"]").exists()).toBe(true);
+		await w.find("[data-testid=\"leave-discard\"]").trigger("click");
+		expect(await result).toBe(true);
+		expect((w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement).value).toBe(saved);
+	});
+
+	it("tapping the dictation button latches recording until the next tap", async () => {
+		globalThis.fetch = vi.fn(async () => new Response(
+			JSON.stringify({ text: "satz" }),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		)) as unknown as typeof fetch;
+		const w = await mountSuspended(RecordingPage);
+		const ptt = w.find("[data-testid=\"push-to-talk\"]");
+		await ptt.trigger("pointerdown", { pointerId: 1 });
+		await w.vm.$nextTick();
+		await ptt.trigger("pointerup", { pointerId: 1 });
+		await w.vm.$nextTick();
+		expect(globalThis.fetch).not.toHaveBeenCalled();
+		expect(ptt.text()).toContain("tippen zum Beenden");
+		await ptt.trigger("pointerdown", { pointerId: 1 });
+		await ptt.trigger("pointerup", { pointerId: 1 });
+		await new Promise(r => setTimeout(r, 0));
+		await w.vm.$nextTick();
+		expect(globalThis.fetch).toHaveBeenCalled();
+	});
+
 	it("push-to-talk without a hub token records the diagnostic and never calls the hub", async () => {
 		useHubSettings().token = "";
 		globalThis.fetch = vi.fn() as unknown as typeof fetch;
@@ -422,6 +469,7 @@ describe("recording detail page", () => {
 		const ptt = w.find("[data-testid=\"push-to-talk\"]");
 		await ptt.trigger("pointerdown", { pointerId: 1 });
 		await w.vm.$nextTick();
+		heldFor(500);
 		await ptt.trigger("pointerup", { pointerId: 1 });
 		await w.vm.$nextTick();
 		await new Promise(r => setTimeout(r, 0));

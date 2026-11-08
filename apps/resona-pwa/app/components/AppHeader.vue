@@ -46,6 +46,7 @@ const active = computed<Section | null>(() => {
 			<NuxtLink
 				class="app-header__brand"
 				to="/"
+				replace
 			>
 				Resona
 			</NuxtLink>
@@ -60,6 +61,7 @@ const active = computed<Section | null>(() => {
 					class="h-tab app-header__tab"
 					:class="{ 'h-tab--active': active === tab.key }"
 					:to="tab.to"
+					replace
 					:aria-current="active === tab.key ? 'page' : undefined"
 					:data-testid="tab.testid"
 				>

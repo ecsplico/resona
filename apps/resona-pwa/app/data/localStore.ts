@@ -23,6 +23,7 @@ interface Stores {
 	transcripts: UseStore;
 	documents: UseStore;
 	files: UseStore;
+	corrections: UseStore;
 }
 
 let stores: Stores | null = null;
@@ -34,6 +35,7 @@ function db(): Stores {
 			transcripts: createStore("resona-local-transcripts", "items"),
 			documents: createStore("resona-local-documents", "items"),
 			files: createStore("resona-local-files", "items"),
+			corrections: createStore("resona-local-corrections", "items"),
 		};
 	}
 	return stores;
@@ -244,6 +246,10 @@ export function createLocalStore(): DataStore {
 
 		async updateTranscript(id, patch) {
 			await patchRow<Transcript>(db().transcripts, id, { text: patch.text }, "Transkript nicht gefunden");
+		},
+
+		async recordCorrection(input) {
+			await set(crypto.randomUUID(), { ...input, date_created: now() }, db().corrections);
 		},
 
 		async audioUrl(recording) {

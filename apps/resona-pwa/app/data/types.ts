@@ -1,7 +1,7 @@
-import type { Recording, ResonaDocument, Transcript } from "~/types/directus";
+import type { CorrectionEdit, Recording, ResonaDocument, Transcript } from "~/types/directus";
 
 export interface NewRecording { title: string; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
-export interface RecordingPatch { status?: Recording["status"]; error_message?: string | null; review_status?: "editing" | "ready" }
+export interface RecordingPatch { title?: string; status?: Recording["status"]; error_message?: string | null; review_status?: "editing" | "ready" }
 export interface DataStore {
 	readonly mode: "directus" | "standalone";
 	listRecordings(opts: { search?: string; since?: string }): Promise<Recording[]>;
@@ -14,6 +14,8 @@ export interface DataStore {
 	deleteRecording(id: string): Promise<void>;
 	createTranscript(recordingId: string, input: { text: string; engine?: string }): Promise<Transcript>;
 	updateTranscript(id: string, patch: { text: string }): Promise<void>;
+	/** Stores a user's edit of a transcript as a correction for later engine tuning. */
+	recordCorrection(input: { transcript: string; recording: string; before: string; after: string; edits: CorrectionEdit[]; engine?: string | null; language?: string | null }): Promise<void>;
 	audioUrl(recording: Recording): Promise<string | null>;
 	listDocuments(opts: { search?: string }): Promise<ResonaDocument[]>;
 	getDocument(id: string): Promise<ResonaDocument>;

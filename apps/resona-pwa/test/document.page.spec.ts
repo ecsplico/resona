@@ -16,6 +16,8 @@ mockNuxtImport("useDataStore", () => () => store);
 
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
+const nav = vi.hoisted(() => ({ back: vi.fn(async () => {}), leaveTo: vi.fn(async () => {}) }));
+mockNuxtImport("useBackNav", () => () => nav);
 mockNuxtImport("useRoute", () => () => ({ params: { id: "doc-1" } }));
 
 const exportFns = vi.hoisted(() => ({ copy: vi.fn(async () => {}), downloadDocumentMarkdown: vi.fn() }));
@@ -82,6 +84,14 @@ describe("document detail page", () => {
 		w.unmount();
 	});
 
+	it("the back arrow goes through the shared back navigation to the document list", async () => {
+		const w = await mountSuspended(DocumentPage);
+		await flushPromises();
+		await w.find("[data-testid=\"doc-back\"]").trigger("click");
+		expect(nav.back).toHaveBeenCalledWith("/documents");
+		expect(navigateTo).not.toHaveBeenCalled();
+	});
+
 	it("deletes only after confirmation and returns to the list", async () => {
 		const w = await mountSuspended(DocumentPage);
 		await flushPromises();
@@ -95,7 +105,7 @@ describe("document detail page", () => {
 		await w.find("[data-testid=\"doc-confirm-delete\"]").trigger("click");
 		await flushPromises();
 		expect(store.deleteDocument).toHaveBeenCalledWith("doc-1");
-		expect(navigateTo).toHaveBeenCalledWith("/documents");
+		expect(nav.leaveTo).toHaveBeenCalledWith("/documents");
 	});
 
 	it("copies the markdown", async () => {

@@ -8,6 +8,7 @@ const id = String(route.params.id);
 const store = useDataStore();
 const { copy, downloadDocumentMarkdown } = useExport();
 const { wide } = useShell();
+const nav = useBackNav();
 
 const doc = ref<ResonaDocument | null>(null);
 const loading = ref(false);
@@ -128,7 +129,7 @@ async function confirmDelete(): Promise<void> {
 	deleting.value = true;
 	try {
 		await store.deleteDocument(id);
-		void navigateTo("/documents");
+		void nav.leaveTo("/documents");
 	}
 	catch (err) {
 		error.value = humanizeError(err, "Dokument konnte nicht gelöscht werden.");
@@ -152,13 +153,14 @@ onUnmounted(() => {
 <template>
 	<div class="doc">
 		<header class="doc__bar">
-			<NuxtLink
+			<button
 				v-if="!wide"
+				type="button"
 				class="doc__icon"
-				to="/documents"
 				aria-label="Zurück"
 				title="Zurück"
 				data-testid="doc-back"
+				@click="nav.back('/documents')"
 			>
 				<svg
 					width="20"
@@ -173,7 +175,7 @@ onUnmounted(() => {
 				>
 					<path d="M15 18l-6-6 6-6" />
 				</svg>
-			</NuxtLink>
+			</button>
 			<span
 				class="doc__bar-title"
 				data-testid="doc-bar-title"

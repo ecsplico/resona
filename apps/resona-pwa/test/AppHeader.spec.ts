@@ -51,6 +51,14 @@ describe("AppHeader", () => {
 		expect(tabs[2]!.attributes("data-testid")).toBe("nav-calendar");
 	});
 
+	it("switches sections with replace, so tab hops never pile up history entries", async () => {
+		const w = await mountSuspended(AppHeader);
+		const links = w.findAllComponents({ name: "NuxtLink" });
+		// wordmark + the section tabs
+		expect(links.length).toBeGreaterThanOrEqual(3);
+		expect(links.every(l => l.props("replace") === true)).toBe(true);
+	});
+
 	it("marks the tab of the current section as active", async () => {
 		useRuntimeConfig().public.calendarEnabled = true;
 		viewport.wide = true;

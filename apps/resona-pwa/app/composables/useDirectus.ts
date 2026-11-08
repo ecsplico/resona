@@ -67,7 +67,7 @@ function getClient(): ResonaDirectusClient {
 				const status = (err as { response?: { status?: number } } | null)?.response?.status;
 				if (status === 401 && isAuthenticated.value) {
 					clearLocalSession();
-					void nuxtApp?.runWithContext(() => navigateTo("/login"));
+					void nuxtApp?.runWithContext(() => navigateTo("/login", { replace: true }));
 				}
 				throw err;
 			}
@@ -79,11 +79,25 @@ function getClient(): ResonaDirectusClient {
 
 export function useDirectus() {
 	const directus = getClient();
+	const hubTokenSync = useHubTokenSync();
+
+	// A fresh session fills an empty device token from the user's account. Best
+	// effort: a failure here (old Directus without the field/permission) never
+	// blocks the sign-in.
+	async function syncHubToken(): Promise<void> {
+		try {
+			await hubTokenSync.pull();
+		}
+		catch (err) {
+			console.warn("[hub-token] sync failed", err);
+		}
+	}
 
 	async function login(email: string, password: string): Promise<void> {
 		await directus.login({ email, password });
 		accessToken.value = (await directus.getToken()) ?? "";
 		isAuthenticated.value = true;
+		await syncHubToken();
 	}
 
 	// Single sign-on through a Directus auth provider (Keycloak). Directus runs the
@@ -103,6 +117,7 @@ export function useDirectus() {
 		catch {
 			clearLocalSession();
 		}
+		if (isAuthenticated.value) await syncHubToken();
 		return isAuthenticated.value;
 	}
 
@@ -139,6 +154,7 @@ export function useDirectus() {
 			accessToken.value = "";
 			isAuthenticated.value = false;
 		}
+		if (isAuthenticated.value) await syncHubToken();
 		return isAuthenticated.value;
 	}
 

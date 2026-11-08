@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ref, reactive } from "vue";
 import { flushPromises } from "@vue/test-utils";
+import type { VueWrapper } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import SettingsDrawer from "~/components/SettingsDrawer.vue";
 import { useLiveSettings } from "~/composables/useLiveSettings";
+import { useHubSettings } from "~/composables/useHubSettings";
 
 const listListenEngines = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => vi.fn());
@@ -15,6 +17,9 @@ mockNuxtImport("useHub", () => () => ({
 	listListenEngines,
 	listEngines,
 }));
+
+const tokenSync = vi.hoisted(() => ({ enabled: vi.fn(() => true), push: vi.fn(), pull: vi.fn() }));
+mockNuxtImport("useHubTokenSync", () => () => tokenSync);
 
 mockNuxtImport("useDeviceSpeech", () => () => ({ availability, install: installPack }));
 
@@ -267,5 +272,52 @@ describe("SettingsDrawer – modal behaviour", () => {
 		await tablist.trigger("keydown", { key: "End" });
 		expect(selected().element).toBe(tabs[tabs.length - 1]!.element);
 		wrapper.unmount();
+	});
+});
+
+describe("SettingsDrawer – hub token account sync", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		tokenSync.enabled.mockReturnValue(true);
+		tokenSync.push.mockResolvedValue(true);
+		useHubSettings().token = "";
+	});
+
+	afterEach(() => {
+		useHubSettings().token = "";
+	});
+
+	async function enterToken(wrapper: VueWrapper, value: string): Promise<void> {
+		const input = wrapper.find("[data-testid=settings-hub-token]");
+		await input.setValue(value);
+		await input.trigger("change");
+		await flushPromises();
+	}
+
+	it("stores the entered token on the account (directus mode) and says so", async () => {
+		const wrapper = await mountSuspended(SettingsDrawer);
+		expect(wrapper.find("[data-testid=settings-hub-token-hint]").text()).toContain("in deinem Konto");
+		await enterToken(wrapper, "new-token");
+		expect(useHubSettings().token).toBe("new-token");
+		expect(tokenSync.push).toHaveBeenCalledWith("new-token");
+		expect(wrapper.find("[data-testid=settings-hub-token-sync]").text()).toContain("im Konto gespeichert");
+	});
+
+	it("reports an account failure but keeps the device token", async () => {
+		tokenSync.push.mockRejectedValue(new Error("403"));
+		const wrapper = await mountSuspended(SettingsDrawer);
+		await enterToken(wrapper, "tok");
+		expect(useHubSettings().token).toBe("tok");
+		expect(wrapper.find("[data-testid=settings-hub-token-sync]").text()).toContain("nur auf diesem Gerät");
+	});
+
+	it("does not touch the account in standalone mode", async () => {
+		tokenSync.enabled.mockReturnValue(false);
+		const wrapper = await mountSuspended(SettingsDrawer);
+		expect(wrapper.find("[data-testid=settings-hub-token-hint]").exists()).toBe(false);
+		await enterToken(wrapper, "tok");
+		expect(tokenSync.push).not.toHaveBeenCalled();
+		expect(wrapper.find("[data-testid=settings-hub-token-sync]").exists()).toBe(false);
+		expect(wrapper.text()).toContain("Der Token wird nur auf diesem Gerät gespeichert.");
 	});
 });

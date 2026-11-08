@@ -2,6 +2,14 @@ import { ref } from "vue";
 import type { Ref } from "vue";
 import type { Transcript } from "~/types/directus";
 import { humanizeError } from "#shared/errors";
+import { diffEdits } from "~/utils/correction";
+
+/** Where an edit belongs, so a saved change can be stored as an engine correction. */
+export interface CorrectionContext {
+	recording: string;
+	engine?: string | null;
+	language?: string | null;
+}
 
 export function useTranscriptEdit(initialText = "") {
 	const text: Ref<string> = ref(initialText);
@@ -40,8 +48,29 @@ export function useTranscriptEdit(initialText = "") {
 		}
 	}
 
-	async function saveEdit(transcriptId: string, newText: string): Promise<void> {
-		await persist(newText, () => useDataStore().updateTranscript(transcriptId, { text: newText }));
+	// With `correction`, the saved change is also stored as a correction of the
+	// engine's text (training data). That is best effort: a failure there never
+	// fails the save.
+	async function saveEdit(transcriptId: string, newText: string, correction?: CorrectionContext): Promise<void> {
+		const before = committed.value;
+		const saved = await persist(newText, () => useDataStore().updateTranscript(transcriptId, { text: newText }));
+		if (saved === null && error.value) return;
+		const edits = correction ? diffEdits(before, newText) : [];
+		if (!correction || edits.length === 0) return;
+		try {
+			await useDataStore().recordCorrection({
+				transcript: transcriptId,
+				recording: correction.recording,
+				before,
+				after: newText,
+				edits,
+				engine: correction.engine ?? null,
+				language: correction.language ?? null,
+			});
+		}
+		catch (err) {
+			console.warn("could not store transcript correction", err);
+		}
 	}
 
 	// Create the transcript row for a recording that has none yet — a manual note

@@ -92,6 +92,7 @@ async function saveUploadedFile(w: VueWrapper): Promise<void> {
 describe("index (recordings list) page", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		clearNuxtState([...LIST_STATE_KEYS]);
 		items.value = [recA, recB];
 		pending.value = false;
 		error.value = null;
@@ -184,6 +185,7 @@ describe("index (recordings list) page", () => {
 	});
 
 	it("closes the recording sheet and shows the error when the mic cannot start", async () => {
+		useHubSettings().token = "tok";
 		const original = Object.getOwnPropertyDescriptor(globalThis.navigator, "mediaDevices");
 		Object.defineProperty(globalThis.navigator, "mediaDevices", { value: undefined, configurable: true });
 		try {
@@ -205,6 +207,27 @@ describe("index (recordings list) page", () => {
 		row.vm.$emit("open");
 		await w.vm.$nextTick();
 		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-a");
+	});
+
+	it("swaps the history entry when another recording is opened from the workspace list", async () => {
+		route.path = "/recording/rec-b";
+		const w = await mountSuspended(inShell(RecordingsPane, true));
+		w.findAllComponents({ name: "RecordingListItem" })[0]!.vm.$emit("open");
+		await w.vm.$nextTick();
+		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-a", { replace: true });
+	});
+
+	it("keeps search text and date filter when the list is mounted again", async () => {
+		const first = await mountSuspended(IndexPage);
+		await first.find("[data-testid=\"search\"]").setValue("Visite");
+		await first.find("[data-testid=\"since\"]").setValue("2026-06-01");
+		first.unmount();
+
+		list.mockClear();
+		const again = await mountSuspended(IndexPage);
+		expect((again.find("[data-testid=\"search\"]").element as HTMLInputElement).value).toBe("Visite");
+		expect((again.find("[data-testid=\"since\"]").element as HTMLInputElement).value).toBe("2026-06-01");
+		expect(list).toHaveBeenCalledWith({ search: "Visite", since: "2026-06-01" });
 	});
 
 	it("copies a recording's transcript text from the list", async () => {
@@ -310,5 +333,44 @@ describe("index (recordings list) page", () => {
 		const w2 = await mountSuspended(IndexPage);
 		expect(w2.find("[data-testid=\"hub-token-missing\"]").exists()).toBe(false);
 		useHubSettings().token = "";
+	});
+
+	it("refuses to record without a hub token and names Einstellungen → Verbindung", async () => {
+		useHubSettings().token = "";
+		const getUserMedia = vi.fn();
+		const original = Object.getOwnPropertyDescriptor(globalThis.navigator, "mediaDevices");
+		Object.defineProperty(globalThis.navigator, "mediaDevices", { value: { getUserMedia }, configurable: true });
+		try {
+			const w = await mountSuspended(IndexPage);
+			await w.find("[data-testid=\"record-fab\"]").trigger("click");
+			await flushPromises();
+			expect(getUserMedia).not.toHaveBeenCalled();
+			expect(w.findComponent({ name: "HRecordingSheet" }).exists()).toBe(false);
+			expect(w.find("[data-testid=\"record-error\"]").text()).toContain("Einstellungen → Verbindung");
+		}
+		finally {
+			if (original) Object.defineProperty(globalThis.navigator, "mediaDevices", original);
+			else Reflect.deleteProperty(globalThis.navigator, "mediaDevices");
+		}
+	});
+
+	it("refuses to open the file picker without a hub token and opens it with one", async () => {
+		const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+		try {
+			useHubSettings().token = "";
+			const w = await mountSuspended(IndexPage);
+			await w.find("[data-testid=\"upload-trigger\"]").trigger("click");
+			expect(click).not.toHaveBeenCalled();
+			expect(w.find("[data-testid=\"record-error\"]").text()).toContain("Einstellungen → Verbindung");
+
+			useHubSettings().token = "tok";
+			await w.find("[data-testid=\"upload-trigger\"]").trigger("click");
+			expect(click).toHaveBeenCalledTimes(1);
+			expect(w.find("[data-testid=\"record-error\"]").exists()).toBe(false);
+		}
+		finally {
+			click.mockRestore();
+			useHubSettings().token = "";
+		}
 	});
 });

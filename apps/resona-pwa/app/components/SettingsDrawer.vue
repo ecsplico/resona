@@ -26,6 +26,27 @@ const hubUrl = trimUrl(cfg.resonaApiUrl);
 const hubTesting = ref(false);
 const hubStatus = ref<string | null>(null);
 
+// Directus mode: the token is also kept on the user's account, so another
+// device of the same user picks it up at login instead of asking again.
+const tokenSync = useHubTokenSync();
+const accountSync = ref<string | null>(null);
+
+async function saveTokenToAccount(): Promise<void> {
+	if (!tokenSync.enabled()) {
+		return;
+	}
+	accountSync.value = null;
+	try {
+		await tokenSync.push(hubSettings.token);
+		accountSync.value = hubSettings.token.trim()
+			? "Token im Konto gespeichert – auf deinen anderen Geräten wird er automatisch übernommen."
+			: "Token aus dem Konto entfernt.";
+	}
+	catch {
+		accountSync.value = "Token konnte nicht im Konto gespeichert werden – er gilt nur auf diesem Gerät.";
+	}
+}
+
 async function testHub(): Promise<void> {
 	hubTesting.value = true;
 	hubStatus.value = null;
@@ -306,6 +327,7 @@ watch(tab, (value) => {
 						autocomplete="off"
 						placeholder="Token dieses Geräts"
 						data-testid="settings-hub-token"
+						@change="saveTokenToAccount"
 					>
 				</label>
 
@@ -317,8 +339,26 @@ watch(tab, (value) => {
 					>{{ hubUrl }}</span>
 				</div>
 
-				<p class="drawer__sub">
+				<p
+					v-if="tokenSync.enabled()"
+					class="drawer__sub"
+					data-testid="settings-hub-token-hint"
+				>
+					Der Token wird auf diesem Gerät und in deinem Konto gespeichert, damit er auf deinen anderen Geräten nicht erneut eingetragen werden muss.
+				</p>
+				<p
+					v-else
+					class="drawer__sub"
+				>
 					Der Token wird nur auf diesem Gerät gespeichert.
+				</p>
+				<p
+					v-if="accountSync"
+					class="drawer__sub"
+					role="status"
+					data-testid="settings-hub-token-sync"
+				>
+					{{ accountSync }}
 				</p>
 
 				<div class="drawer__field drawer__field--row">

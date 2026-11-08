@@ -12,6 +12,7 @@ const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
 const settings = useSettingsDrawer();
 const hubSettings = useHubSettings();
+const gate = useHubTokenGate();
 const { wide, paneInLayout } = useShell();
 const route = useRoute();
 
@@ -25,8 +26,10 @@ async function refreshQueued(): Promise<void> {
 	queued.value = await queue.pending();
 }
 
-const search = ref("");
-const since = ref("");
+// Filters live in shared state so they survive the pane being remounted on phones
+// (list -> detail -> back).
+const search = useState("recordings-search", () => "");
+const since = useState("recordings-since", () => "");
 
 // Record flow state: record button -> HRecordingSheet (recording) -> SaveSheet (review).
 const showRecorder = ref(false);
@@ -62,8 +65,15 @@ function startPolling(): void {
 	}, POLL_MS);
 }
 
+// Switching between recordings in the desktop workspace swaps the history entry,
+// so back from a recording always leaves the workspace instead of stepping through
+// every recording opened before. From the list (no recording open) it stacks.
+function openRoute(path: string) {
+	return selectedId.value === null ? navigateTo(path) : navigateTo(path, { replace: true });
+}
+
 function openRecording(recording: Recording): void {
-	void navigateTo(`/recording/${recording.id}`);
+	void openRoute(`/recording/${recording.id}`);
 }
 
 async function copyRecording(recording: Recording): Promise<void> {
@@ -83,6 +93,10 @@ async function copyRecording(recording: Recording): Promise<void> {
 }
 
 async function startRecording(): Promise<void> {
+	if (!gate.allowed()) {
+		recordError.value = gate.message;
+		return;
+	}
 	recordError.value = null;
 	showRecorder.value = true;
 	try {
@@ -106,6 +120,11 @@ async function stopRecording(): Promise<void> {
 }
 
 function triggerUpload(): void {
+	if (!gate.allowed()) {
+		recordError.value = gate.message;
+		return;
+	}
+	recordError.value = null;
 	uploadInput.value?.click();
 }
 
@@ -147,7 +166,7 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	await refreshQueued();
 	// Desktop: open the new recording in the right pane next to the list.
 	if (wide.value) {
-		await navigateTo(`/recording/${created.id}`);
+		await openRoute(`/recording/${created.id}`);
 	}
 }
 
@@ -169,7 +188,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(() => {
-	void list();
+	void list({ search: search.value, since: since.value });
 	void refreshQueued();
 	startPolling();
 	// Drain the offline queue to Directus whenever connectivity returns; refresh

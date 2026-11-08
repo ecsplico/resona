@@ -16,6 +16,11 @@ to exactly the state documented below:
 - the non-admin **`user`** role + `user-policy` + owner-scoped permissions (§2),
   plus `directus_files` upload/read/update for the owner (needed for audio and
   document files);
+- the custom field **`directus_users.hub_token`** (string, hidden) plus `user`-policy
+  `directus_users` read/update restricted to `id = $CURRENT_USER` and the fields
+  `id`/`hub_token`: the user's own Resona hub token, synced across their devices by
+  the PWA (directus mode). Other users' rows and fields stay unreadable; admins are
+  unaffected;
 - the **`transcribe-worker`** admin user whose static token is **pinned to
   `DIRECTUS_TOKEN`** from `.env` — so the worker authenticates with no
   copy-paste (§3). `DIRECTUS_TOKEN` must be set (e.g. `openssl rand -hex 24`);
@@ -89,6 +94,10 @@ Create a role **"user"** (non-admin). Add a policy with:
 - `transcripts`: read/update/delete where `recording.user_created = $CURRENT_USER`;
   **create** validated against the same relational filter (parent recording
   owned by the current user)
+
+- `directus_users`: read (`id`, `hub_token`) and update (`hub_token`) where
+  `id = $CURRENT_USER` — the user's own hub token, nothing else. Needs the custom
+  field `hub_token` (string) on `directus_users`.
 
 The project-worker authenticates with a **static service token** (admin role),
 which bypasses the user policy.

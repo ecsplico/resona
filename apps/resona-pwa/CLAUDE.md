@@ -52,6 +52,18 @@ Verbindung (stored in localStorage `resona.hub.settings`, never baked into the b
 All hub calls go through `useHub()` (`app/composables/useHub.ts`), which sends
 `Authorization: Bearer <token>`.
 
+**Token gating + per-user sync.** Without a hub token on the device recording, uploading
+(recordings and documents) and sharing are refused with a German hint to Einstellungen →
+Verbindung (`useHubTokenGate()`; `RecordingsPane` record/upload, `documents/index.vue`
+upload, `share-target.vue` which keeps the stashed file until the token is entered;
+continue-recording already checks `hub.hasToken()`). In **directus mode** the token is also
+stored per user in `directus_users.hub_token` (bootstrap adds the field plus `user`-policy
+read/update with filter `id = $CURRENT_USER`, fields limited to `hub_token`; admin
+unaffected). `useHubTokenSync()` (`push` on change in the settings drawer, `pull` from
+`useDirectus` after login/SSO/session restore) fills an empty local token from
+`/users/me`; a device that has a token keeps it and uploads it only if the account has
+none (`app/utils/hubTokenSync.ts`). Standalone mode has no account: purely per device.
+
 Two `.env` consumers, both named `.env`: the **compose stack** is seeded from
 `.env.stack.example` (`DIRECTUS_*` / `RESONA_API_URL`), the **Nuxt frontend** from
 `.env.example` (`NUXT_PUBLIC_*`). Keys are disjoint, so they don't conflict.
@@ -111,6 +123,12 @@ it via `docker compose` (the `project-worker` service).
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
 - **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
+- **Uploads and shares** (`useUpload.saveRecording`): the file's type is normalised
+  (`utils/audioFile.ts`; phones send `""`, `application/octet-stream` or `audio/x-m4a`, and the
+  file used to be stored as `<title>.webm` with that type, so Directus served an unplayable
+  Content-Type) and the stored filename gets the matching extension. A `duration_seconds` of
+  0 is replaced by the real length (`probeDuration`: `<audio>` metadata, fallback
+  `decodeAudioData`; recorder callers pass their own elapsed time).
 - **Continue recording** (`useContinueRecording`, own `useRecorder`): a new part of an
   existing recording is transcribed on its own as a hub job (upload → `createJob` with a
   per-attempt `continue:recordings:<id>:<uuid>` key → `getJob` every 2 s, no timeout →
@@ -201,6 +219,8 @@ app/
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
+├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
+├── utils/hubTokenSync.ts            # pure per-user hub token sync (pull/push over a remote interface)
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css
 

@@ -110,6 +110,19 @@ const COLLECTIONS = {
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 	],
+	// A user's edit of an ASR transcript, kept as correction data for engine tuning.
+	transcript_corrections: [
+		uuidPk,
+		{ field: "transcript", type: "uuid", schema: {}, meta: { interface: "select-dropdown-m2o", special: ["m2o"] } },
+		{ field: "recording", type: "uuid", schema: {}, meta: { interface: "select-dropdown-m2o", special: ["m2o"] } },
+		sysField("user_created", ["user-created"]),
+		sysField("date_created", ["date-created"]),
+		plain("before", "text"),
+		plain("after", "text"),
+		{ field: "edits", type: "json", schema: {}, meta: { special: ["cast-json"] } },
+		plain("engine", "string"),
+		plain("language", "string"),
+	],
 	documents: [
 		uuidPk,
 		sysField("user_created", ["user-created"]),
@@ -130,10 +143,27 @@ const COLLECTIONS = {
 	],
 };
 
+// Custom fields on Directus system collections (added next to the app collections).
+// `hub_token`: the user's own Resona hub token, so a second device of the same user
+// does not ask again. Hidden in the Data Studio; the `user` policy below lets only the
+// user themself read/update it (filter id = $CURRENT_USER), never others'.
+const SYSTEM_FIELDS = {
+	directus_users: [
+		{
+			field: "hub_token",
+			type: "string",
+			schema: {},
+			meta: { interface: "input", hidden: true, note: "Resona hub token of this user (synced across their devices)" },
+		},
+	],
+};
+
 // (collection, field, related_collection) for the M2O foreign keys
 const RELATIONS = [
 	["recordings", "audio_file", "directus_files"],
 	["transcripts", "recording", "recordings"],
+	["transcript_corrections", "transcript", "transcripts"],
+	["transcript_corrections", "recording", "recordings"],
 	["documents", "file", "directus_files"],
 ];
 
@@ -159,7 +189,7 @@ async function ensureCollections() {
 // Fields created earlier without `meta` get it backfilled, so the schema
 // snapshot includes them.
 async function ensureFields() {
-	for (const [name, fields] of Object.entries(COLLECTIONS)) {
+	for (const [name, fields] of [...Object.entries(COLLECTIONS), ...Object.entries(SYSTEM_FIELDS)]) {
 		const have = new Map((await api("GET", `/fields/${name}`)).map(f => [f.field, f]));
 		for (const field of fields) {
 			const current = have.get(field.field);
@@ -204,6 +234,9 @@ const PERMISSIONS = [
 	{ collection: "transcripts", action: "create", validation: { recording: { user_created: OWNER } } },
 	{ collection: "transcripts", action: "update", permissions: { recording: { user_created: OWNER } } },
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
+	// corrections: write + read own; never updated or deleted by users
+	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
+	{ collection: "transcript_corrections", action: "create", validation: { recording: { user_created: OWNER } } },
 	// documents: full CRUD scoped to owner
 	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "documents", action: "create", permissions: {} },
@@ -213,6 +246,9 @@ const PERMISSIONS = [
 	{ collection: "directus_files", action: "create", permissions: {} },
 	{ collection: "directus_files", action: "read", permissions: { uploaded_by: OWNER } },
 	{ collection: "directus_files", action: "update", permissions: { uploaded_by: OWNER } },
+	// users: the own hub token only (never anyone else's row, no other fields)
+	{ collection: "directus_users", action: "read", permissions: { id: OWNER }, fields: ["id", "hub_token"] },
+	{ collection: "directus_users", action: "update", permissions: { id: OWNER }, fields: ["hub_token"] },
 ];
 
 async function ensureUserRole() {
@@ -263,7 +299,7 @@ async function ensureUserRole() {
 			action: p.action,
 			permissions: p.permissions ?? {},
 			validation: p.validation ?? {},
-			fields: ["*"],
+			fields: p.fields ?? ["*"],
 		});
 		console.log(`+ perm ${key}`);
 	}

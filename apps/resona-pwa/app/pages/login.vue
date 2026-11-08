@@ -13,7 +13,7 @@ const error = ref("");
 
 onMounted(async () => {
 	if (useRoute().query.sso !== "1") return;
-	if (await completeSso()) await navigateTo("/");
+	if (await completeSso()) await navigateTo("/", { replace: true });
 	else error.value = "Anmeldung fehlgeschlagen";
 });
 
@@ -23,7 +23,7 @@ async function submit(): Promise<void> {
 	error.value = "";
 	try {
 		await login(email.value, password.value);
-		await navigateTo("/");
+		await navigateTo("/", { replace: true });
 	}
 	catch {
 		error.value = "Anmeldung fehlgeschlagen";

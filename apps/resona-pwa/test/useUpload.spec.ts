@@ -8,6 +8,12 @@ const state = vi.hoisted(() => ({
 
 mockNuxtImport("useDataStore", () => () => ({ createRecording: state.createRecording }));
 
+const probeDuration = vi.hoisted(() => vi.fn());
+vi.mock("~/utils/audioFile", async importOriginal => ({
+	...await importOriginal<typeof import("~/utils/audioFile")>(),
+	probeDuration,
+}));
+
 describe("useUpload", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -75,5 +81,74 @@ describe("useUpload", () => {
 		})).rejects.toThrow("boom");
 		expect(u.error.value).toBeTypeOf("string");
 		expect(u.uploading.value).toBe(false);
+	});
+
+	it("reads the real duration for an upload that arrives without one", async () => {
+		state.createRecording.mockResolvedValueOnce({ id: "rec-3" });
+		probeDuration.mockResolvedValueOnce(125.4);
+
+		const u = useUpload();
+		await u.saveRecording({
+			blob: new File(["audio"], "Memo.m4a", { type: "audio/mp4" }),
+			title: "Memo",
+			language: "de",
+			profile: "default",
+			transcribe: true,
+			duration_seconds: 0,
+		});
+
+		expect(probeDuration).toHaveBeenCalledTimes(1);
+		expect(state.createRecording.mock.calls[0]![0]).toMatchObject({ duration_seconds: 125.4 });
+	});
+
+	it("does not probe when the recorder already knows the duration", async () => {
+		state.createRecording.mockResolvedValueOnce({ id: "rec-4" });
+		await useUpload().saveRecording({
+			blob: new Blob(["x"], { type: "audio/webm" }),
+			title: "T",
+			language: "de",
+			profile: "default",
+			transcribe: true,
+			duration_seconds: 9,
+		});
+		expect(probeDuration).not.toHaveBeenCalled();
+	});
+
+	it("stores an untyped phone upload with a playable audio type and matching extension", async () => {
+		state.createRecording.mockResolvedValueOnce({ id: "rec-5" });
+		probeDuration.mockResolvedValueOnce(3);
+		const file = new File(["audio"], "Voice 001.m4a", { type: "" });
+
+		await useUpload().saveRecording({
+			blob: file,
+			title: "Voice 001",
+			language: "de",
+			profile: "default",
+			transcribe: true,
+			duration_seconds: 0,
+		});
+
+		const [, audio, filename] = state.createRecording.mock.calls[0]!;
+		expect((audio as Blob).type).toBe("audio/mp4");
+		expect(filename).toBe("Voice 001.m4a");
+	});
+
+	it("uses the shared file's original name for the type when the blob carries none", async () => {
+		state.createRecording.mockResolvedValueOnce({ id: "rec-6" });
+		probeDuration.mockResolvedValueOnce(3);
+
+		await useUpload().saveRecording({
+			blob: new Blob(["audio"], { type: "application/octet-stream" }),
+			title: "Geteilt",
+			language: "de",
+			profile: "default",
+			transcribe: true,
+			duration_seconds: 0,
+			sourceName: "PTT-2026.aac",
+		});
+
+		const [, audio, filename] = state.createRecording.mock.calls[0]!;
+		expect((audio as Blob).type).toBe("audio/aac");
+		expect(filename).toBe("Geteilt.aac");
 	});
 });

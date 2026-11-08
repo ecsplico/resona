@@ -14,8 +14,10 @@ function describeError(err: unknown): string {
 	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
 }
 
+const { back } = useBackNav();
+
 function goBack(): void {
-	void navigateTo("/");
+	void back("/");
 }
 
 // ── Config echo ─────────────────────────────────────────────────────────────

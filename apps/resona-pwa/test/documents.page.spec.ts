@@ -3,6 +3,7 @@ import { flushPromises } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import DocumentsPage from "~/pages/documents/index.vue";
 import type { ResonaDocument } from "~/types/directus";
+import { useHubSettings } from "~/composables/useHubSettings";
 
 const docA: ResonaDocument = { id: "doc-a", title: "Arztbrief", date_created: "2026-06-19T08:30:00.000Z", status: "done", markdown: "# A" };
 const docB: ResonaDocument = { id: "doc-b", title: "Laborwerte", date_created: "2026-06-18T14:05:00.000Z", status: "processing" };
@@ -20,6 +21,7 @@ mockNuxtImport("navigateTo", () => navigateTo);
 describe("documents list page", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		clearNuxtState([...LIST_STATE_KEYS]);
 		store.listDocuments.mockResolvedValue([docA, docB, docC]);
 		store.createDocument.mockResolvedValue({ id: "doc-new", title: "x", status: "pending" });
 	});
@@ -54,6 +56,26 @@ describe("documents list page", () => {
 		const input = w.find("[data-testid=\"docs-upload-input\"]");
 		expect(input.attributes("accept")).toBe("application/pdf,image/png,image/jpeg,image/tiff,.pdf,.png,.jpg,.jpeg,.tif,.tiff");
 		expect(w.find("[data-testid=\"docs-upload\"]").text()).toBe("Dokument hochladen");
+	});
+
+	it("refuses to open the file picker without a hub token and opens it with one", async () => {
+		const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+		try {
+			useHubSettings().token = "";
+			const w = await mountSuspended(DocumentsPage);
+			await flushPromises();
+			await w.find("[data-testid=\"docs-upload\"]").trigger("click");
+			expect(click).not.toHaveBeenCalled();
+			expect(w.find("[data-testid=\"docs-error\"]").text()).toContain("Einstellungen → Verbindung");
+
+			useHubSettings().token = "tok";
+			await w.find("[data-testid=\"docs-upload\"]").trigger("click");
+			expect(click).toHaveBeenCalledTimes(1);
+		}
+		finally {
+			click.mockRestore();
+			useHubSettings().token = "";
+		}
 	});
 
 	it("uploads a file with the extension stripped from the title and reloads", async () => {

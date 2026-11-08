@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { useDirectus } from "~/composables/useDirectus";
+import { useHubSettings } from "~/composables/useHubSettings";
 
 // useDirectus wraps client.request on construction, so keep the raw fn apart.
 const rawRequest = vi.hoisted(() => vi.fn());
@@ -32,6 +33,8 @@ vi.mock("@directus/sdk", () => ({
 	updateItem: vi.fn(),
 	deleteItem: vi.fn(),
 	uploadFiles: vi.fn(),
+	readMe: vi.fn(() => "readMe"),
+	updateMe: vi.fn((data: unknown) => ({ updateMe: data })),
 }));
 
 interface AuthStorageOpts {
@@ -87,6 +90,51 @@ describe("useDirectus", () => {
 		await d.login("a@b.de", "pw");
 		expect(mockClient.login).toHaveBeenCalledWith({ email: "a@b.de", password: "pw" });
 		expect(d.isAuthenticated.value).toBe(true);
+	});
+
+	describe("hub token sync after sign-in", () => {
+		beforeEach(() => {
+			useHubSettings().token = "";
+			rawRequest.mockReset();
+		});
+
+		it("login fills an empty device token from the account", async () => {
+			mockClient.login.mockResolvedValue({ access_token: "t" });
+			rawRequest.mockResolvedValueOnce({ hub_token: "acct-token" });
+			await useDirectus().login("a@b.de", "pw");
+			expect(rawRequest).toHaveBeenCalledWith("readMe");
+			expect(useHubSettings().token).toBe("acct-token");
+		});
+
+		it("session restore fills an empty device token from the account", async () => {
+			mockClient.getToken.mockResolvedValue("tok");
+			rawRequest.mockResolvedValueOnce({ hub_token: "acct-token" });
+			await useDirectus().restoreSession();
+			expect(useHubSettings().token).toBe("acct-token");
+		});
+
+		it("keeps the local token and asks the account only for what it holds", async () => {
+			useHubSettings().token = "device";
+			mockClient.getToken.mockResolvedValue("tok");
+			rawRequest.mockResolvedValueOnce({ hub_token: "acct-token" });
+			await useDirectus().restoreSession();
+			expect(useHubSettings().token).toBe("device");
+		});
+
+		it("never fails the sign-in when the account read is refused", async () => {
+			mockClient.login.mockResolvedValue({ access_token: "t" });
+			rawRequest.mockRejectedValueOnce(new Error("403"));
+			const d = useDirectus();
+			await expect(d.login("a@b.de", "pw")).resolves.toBeUndefined();
+			expect(d.isAuthenticated.value).toBe(true);
+			expect(useHubSettings().token).toBe("");
+		});
+
+		it("does not sync when the session cannot be restored", async () => {
+			mockClient.getToken.mockResolvedValue(null);
+			await useDirectus().restoreSession();
+			expect(rawRequest).not.toHaveBeenCalled();
+		});
 	});
 
 	it("logout clears isAuthenticated", async () => {
@@ -176,7 +224,7 @@ describe("useDirectus", () => {
 			expect(d.isAuthenticated.value).toBe(false);
 			expect(storageOf().get()).toBeNull();
 			expect(navigateTo).toHaveBeenCalledTimes(1);
-			expect(navigateTo).toHaveBeenCalledWith("/login");
+			expect(navigateTo).toHaveBeenCalledWith("/login", { replace: true });
 		});
 
 		it("a non-auth request error leaves the session alone", async () => {
