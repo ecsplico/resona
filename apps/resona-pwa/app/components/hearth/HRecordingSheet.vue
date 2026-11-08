@@ -9,7 +9,7 @@ const MAX_BARS = 44;
 // Speech RMS sits around 0.05-0.3, so bars are scaled up to use the wave's height.
 const LEVEL_GAIN = 3;
 
-const bars = computed(() => props.levels.slice(-MAX_BARS).map(level => Math.max(4, Math.min(1, level * LEVEL_GAIN) * 100)));
+const bars = computed(() => props.levels.slice(-MAX_BARS).map(level => Math.max(4, Math.round(Math.min(1, level * LEVEL_GAIN) * 100))));
 
 const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: [] }>();
 
