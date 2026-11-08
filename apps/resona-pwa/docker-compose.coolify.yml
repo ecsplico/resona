@@ -1,5 +1,5 @@
-# Coolify variant of docker-compose.yml: no published ports (Coolify's proxy routes
-# by domain: pwa -> resona.ecsplico.de, directus -> resona-directus.ecsplico.de) and
+# Coolify variant of docker-compose.yml, "Raw Compose Deployment" ON: no published
+# ports; the Caddy labels below route by domain (like the hub's compose file: pwa -> resona.ecsplico.de, directus -> resona-directus.ecsplico.de) and
 # no insecure defaults (missing secrets fail the deploy). Build pack "Docker
 # Compose", base directory /apps/resona-pwa, compose file /docker-compose.coolify.yml.
 # Runbook: docs/server/coolify.md.
@@ -12,6 +12,12 @@ services:
     image: directus/directus:11
     expose:
       - "8055"
+    networks: [default, coolify]
+    labels:
+      - caddy_0=${NUXT_PUBLIC_DIRECTUS_URL}
+      - caddy_0.reverse_proxy={{upstreams 8055}}
+      - caddy_0.header=-Server
+      - caddy_ingress_network=coolify
     volumes:
       - directus-db:/directus/database
       - directus-uploads:/directus/uploads
@@ -72,6 +78,13 @@ services:
         NUXT_PUBLIC_DATA_MODE: ${NUXT_PUBLIC_DATA_MODE:-directus}
     expose:
       - "3000"
+    networks: [default, coolify]
+    labels:
+      - caddy_0=${PWA_ORIGIN}
+      - caddy_0.encode=zstd gzip
+      - caddy_0.reverse_proxy={{upstreams 3000}}
+      - caddy_0.header=-Server
+      - caddy_ingress_network=coolify
     environment:
       # Server-only secrets — never baked into the bundle, read at runtime by Nitro.
       NUXT_GOOGLE_CLIENT_ID: ${NUXT_GOOGLE_CLIENT_ID:-}
@@ -113,3 +126,7 @@ services:
 volumes:
   directus-db:
   directus-uploads:
+
+networks:
+  coolify:
+    external: true
