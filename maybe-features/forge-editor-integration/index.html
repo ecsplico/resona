@@ -1,0 +1,3058 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modular audio transcription platform with pluggable ASR engines and composable postprocessing">
+      
+      
+      
+        <link rel="canonical" href="https://ecsplico.github.io/resona/maybe-features/forge-editor-integration/">
+      
+      
+        <link rel="prev" href="../youtube-share/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Forge-Editor-Integration (Studie) - Resona</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#studie-forge-editor-in-die-resona-pwa-integrieren-diktat-an-beliebiger-stelle" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Resona" class="md-header__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Resona
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Forge-Editor-Integration (Studie)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../server/docker/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Server Setup
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../configuration/environment/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/client/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../development/workflow/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../design/admin-product/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../youtube-share/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Maybe Features
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Resona" class="md-nav__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Resona
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/local-only/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local-Only Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/engines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engine Selection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/replacements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Text Replacements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Speech Synthesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Server Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/full-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Single-Host Stack (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/cpu-standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Single-Host Stack (Linux, no GPU)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/config-files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/engine-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateless Engine Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/job-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Job Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-api
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/engine-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-engine-server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/asr-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-asr-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cloud-stt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-stt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cloud-tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-tts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/postprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-postprocess
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dev Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/adding-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding an Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Product Brief
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-console/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Design Direction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maybe Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Maybe Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../youtube-share/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forge-Editor-Integration (Studie)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forge-Editor-Integration (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-kann-der-forge-editor-schon-hineindiktieren-befund" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Kann der Forge-Editor schon „hineindiktieren"? Befund
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Kann der Forge-Editor schon „hineindiktieren&#34;? Befund">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-wo-der-forge-editor-liegt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Wo der „Forge-Editor" liegt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-suchergebnis-quelltext-ohne-node_modules-scratch-research-dist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Suchergebnis (Quelltext ohne node_modules, .scratch, research, dist)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-was-die-bibliothek-schon-mitbringt-grundlage-fur-das-ticket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Was die Bibliothek schon mitbringt (Grundlage für das Ticket)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-was-die-resona-pwa-heute-hat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Was die Resona PWA heute hat
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-integrationsoptionen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Integrationsoptionen
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Integrationsoptionen">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-paket-einbetten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A. Paket einbetten
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-iframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B. iframe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-nachbau-in-der-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C. Nachbau in der PWA
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-bedienung-und-mobilzugang" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Bedienung und Mobilzugang
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-abbildung-text-diktiersegmente-provenienz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Abbildung Text ↔ Diktiersegmente (Provenienz)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-konflikte-bei-anderungen-wahrend-der-transkription" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Konflikte bei Änderungen während der Transkription
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-aufwand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Aufwand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-risiken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Risiken
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-empfehlung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Empfehlung
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anhang-forge-ticket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anhang: Forge-Ticket
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-kann-der-forge-editor-schon-hineindiktieren-befund" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Kann der Forge-Editor schon „hineindiktieren"? Befund
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Kann der Forge-Editor schon „hineindiktieren&#34;? Befund">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-wo-der-forge-editor-liegt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Wo der „Forge-Editor" liegt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-suchergebnis-quelltext-ohne-node_modules-scratch-research-dist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Suchergebnis (Quelltext ohne node_modules, .scratch, research, dist)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-was-die-bibliothek-schon-mitbringt-grundlage-fur-das-ticket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Was die Bibliothek schon mitbringt (Grundlage für das Ticket)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-was-die-resona-pwa-heute-hat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Was die Resona PWA heute hat
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-integrationsoptionen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Integrationsoptionen
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Integrationsoptionen">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-paket-einbetten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A. Paket einbetten
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-iframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B. iframe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-nachbau-in-der-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C. Nachbau in der PWA
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-bedienung-und-mobilzugang" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Bedienung und Mobilzugang
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-abbildung-text-diktiersegmente-provenienz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Abbildung Text ↔ Diktiersegmente (Provenienz)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-konflikte-bei-anderungen-wahrend-der-transkription" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Konflikte bei Änderungen während der Transkription
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-aufwand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Aufwand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-risiken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Risiken
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-empfehlung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Empfehlung
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anhang-forge-ticket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anhang: Forge-Ticket
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="studie-forge-editor-in-die-resona-pwa-integrieren-diktat-an-beliebiger-stelle">Studie: Forge-Editor in die Resona PWA integrieren (Diktat an beliebiger Stelle)<a class="headerlink" href="#studie-forge-editor-in-die-resona-pwa-integrieren-diktat-an-beliebiger-stelle" title="Permanent link">&para;</a></h1>
+<p>Status: Idee, nicht geplant. Stand: 2026-11-08.</p>
+<p><strong>Frage:</strong> Lässt sich der Editor des Projekts skaile-forge als einfacher Editor in die Resona PWA einbauen, damit Diktieren und Textbearbeitung besser werden, insbesondere: an beliebiger Stelle im Text per Tastendruck, Mausklick oder Telefonfunktion hineindiktieren, auch bei einfachen Editoren mit Sprachunterstützung?</p>
+<p><strong>Kurzfassung:</strong></p>
+<ul>
+<li><strong>Der Forge-Editor kann das heute nicht.</strong> Weder die Bibliothek <code>forge-editor</code> noch die Host-App <code>skaile-forge</code> diktieren an die Stelle, an der das Diktat begann (Belege in Abschnitt 1).</li>
+<li>Die Bibliothek hat aber genau den Baustein, der dafür fehlt: eine änderungsfeste Bereichsmarke (<code>captureRange</code>/<code>resolveRange</code>, Abschnitt 1.3).</li>
+<li>Dafür ist ein <strong>Ticket im Forge-Repo angelegt</strong>: <a href="https://github.com/skaile-ai/forge-editor/issues/150">skaile-ai/forge-editor#150</a>.</li>
+<li>Die Resona PWA hat bereits einen TipTap-Editor und Push-to-Talk mit Platzhalter, aber <strong>ohne</strong> Positionsverfolgung (Abschnitt 2). Der kleinste Weg zu „überall hineindiktieren" ist, dieses Verfahren in der PWA nachzubauen. Das Einbetten des kompletten Forge-Editors lohnt erst, wenn auch dessen übrige Funktionen gewünscht sind.</li>
+</ul>
+<p>Markierung: <strong>[Annahme]</strong> = nicht geprüft; <strong>[INFERENCE]</strong> = aus gelesenem Code geschlossen, nicht ausgeführt.</p>
+<hr />
+<h2 id="1-kann-der-forge-editor-schon-hineindiktieren-befund">1. Kann der Forge-Editor schon „hineindiktieren"? Befund<a class="headerlink" href="#1-kann-der-forge-editor-schon-hineindiktieren-befund" title="Permanent link">&para;</a></h2>
+<h3 id="11-wo-der-forge-editor-liegt">1.1 Wo der „Forge-Editor" liegt<a class="headerlink" href="#11-wo-der-forge-editor-liegt" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Bibliothek: Repo <code>skaile-ai/forge-editor</code> (lokal <code>~/devBench/SKAILEdev/forge/forge-editor</code>, privat, Issues aktiv). Paket <code>@skaile/forge-editor</code> 7.1.0, Vue <strong>und</strong> React, auf TipTap 3 (<code>packages/editor/package.json</code>; Peer-Abhängigkeit <code>@tiptap/core ^3.31.3</code>).</li>
+<li>Host-App: <code>skaile-forge</code> (lokal <code>~/devBench/SKAILEdev/forge/skaile-forge</code>), bindet <code>@skaile/forge-editor</code> ein (<code>CLAUDE.md</code>, Abschnitt Shared modules). Dass die Coolify-Anwendung <code>skaile-forge</code> (https://skaile-forge.ecsplico.de) genau dieses Repo ausliefert, habe ich nicht geprüft <strong>[Annahme]</strong>; die Zuordnung ergibt sich aus dem Namen.</li>
+</ul>
+<h3 id="12-suchergebnis-quelltext-ohne-node_modules-scratch-research-dist">1.2 Suchergebnis (Quelltext ohne <code>node_modules</code>, <code>.scratch</code>, <code>research</code>, <code>dist</code>)<a class="headerlink" href="#12-suchergebnis-quelltext-ohne-node_modules-scratch-research-dist" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>rg -i "dictat|SpeechRecognition|webkitSpeech"</code> in <strong>forge-editor</strong>: <strong>keine Treffer</strong> außerhalb der ausgeschlossenen Ordner.</li>
+<li>Aufnahme existiert, aber nur für Audio-Blöcke: <code>packages/editor/src/features/media/audio-recorder.ts</code> (<code>createAudioRecorder</code>, <code>MediaRecorder</code>, Ergebnis ist eine <code>File</code>); eingebunden als Slash-Befehl „aufnahme" mit Berechtigung <code>ABILITY.record</code> = <code>insert.record</code> (<code>core/schema/abilities.ts</code>) und im <code>AudioRecorderModal</code> (Vue und React). Es fügt einen Medienblock ein, keinen Text an der Cursorposition.</li>
+<li>Transkription existiert für <strong>Assets</strong>: <code>packages/editor/src/server/extract.ts</code> (<code>transcribe()</code>, Zeile ~135; OpenAI-kompatibel oder Deepgram, bis 25 MB-Grenze laut Kommentar im Code) über <code>POST /api/ai/extract</code>, Methode <code>transcription</code>, als Ableitung (Rendition) eines importierten Audios.</li>
+<li>Sprachausgabe (TTS) existiert: <code>packages/editor/src/adapters/speech/*</code>, Add-on <code>editor-audio</code>.</li>
+<li>In <strong>skaile-forge</strong> (Host-App) gibt es eine einfache Diktierfunktion: <code>app/editor/audio/feature.ts</code> (<code>forgeAudioFeature</code>, Befehl <code>dictate</code>, Werkzeugleiste) mit <code>app/composables/useAudio.ts</code> und <code>server/api/transcribe.post.ts</code>:</li>
+<li>Ablauf: Klick → <code>getUserMedia</code> + <code>MediaRecorder</code> → zweiter Klick beendet → <code>POST /api/transcribe</code> → <code>editor.chain().focus().insertContent(transcript).run()</code>.</li>
+<li><strong>Eingefügt wird dort, wo die Auswahl bei Eintreffen des Transkripts steht</strong>, nicht dort, wo das Diktat begann. Keine Marke, kein Platzhalter, keine Positionsverfolgung.</li>
+<li>Ein <code>MediaRecorder</code> pro Seite; während <code>isTranscribing</code> ist der Befehl gesperrt (<code>can: () =&gt; !audio.isTranscribing.value</code>), also kein zweites Diktat parallel.</li>
+<li>Kein Tastenkürzel, keine Auswahlleiste, kein Bedienelement für Touchgeräte außer dem Werkzeugleisten-Knopf.</li>
+<li>Die Server-Route nimmt rohe Audiodaten oder <code>multipart</code> mit <code>audio</code> und <code>language</code> und antwortet <code>{ transcript }</code>; STT-Anbieter kommt aus den Einstellungen (<code>kind: stt</code>).</li>
+</ul>
+<p><strong>Ergebnis:</strong> Teilweise vorhanden (Diktat an der Cursorposition <strong>zum Zeitpunkt des Einfügens</strong>), die gewünschte Funktion (Diktat an beliebiger, über Änderungen hinweg verfolgter Stelle; Auslösung per Tastatur, Maus und Telefon) <strong>nicht</strong>. Auch keine bestehenden Issues dazu: Suche in <code>skaile-ai/forge-editor</code> nach <code>dictat OR diktier OR speech OR voice OR Spracheingabe</code> lieferte nur die geschlossenen Tickets #56/#57/#70/#66 (Sprachausgabe/Audio-Add-on, Kitchen-Sink).</p>
+<h3 id="13-was-die-bibliothek-schon-mitbringt-grundlage-fur-das-ticket">1.3 Was die Bibliothek schon mitbringt (Grundlage für das Ticket)<a class="headerlink" href="#13-was-die-bibliothek-schon-mitbringt-grundlage-fur-das-ticket" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>packages/editor/src/core/doc-anchors.ts</code>: Erweiterung <code>DocAnchors</code>, Funktionen <code>captureRange(editor, {from,to}, {startInside})</code>, <code>resolveRange(state, anchor)</code>, <code>releaseRanges(editor, anchors)</code>. Bereiche wandern durch lokale Transaktionen (<code>tr.mapping</code>) und werden mit einem <code>AnchorResolver</code> (Yjs, <code>features/collab/anchor-resolver.ts</code>) auch über Fremdänderungen neu aufgelöst. Gedacht für KI-Abläufe (Auswahlmenü, Reviews).</li>
+<li>Grenzverhalten dort: Text, der genau an der Grenze eingefügt wird, bleibt außerhalb; <code>startInside</code> bindet den Anfang an das erste eigene Zeichen. Genau das braucht eine Diktiermarke.</li>
+<li>Rahmen für Funktionen: <code>EditorFeature</code> (<code>core/feature.ts</code>) mit Befehlen, Werkzeugleiste, Auswahlleiste (<code>selectionActions</code>), Berechtigungen (<code>ABILITY</code>); Vue- und React-Bindungen pro Funktion.</li>
+</ul>
+<hr />
+<h2 id="2-was-die-resona-pwa-heute-hat">2. Was die Resona PWA heute hat<a class="headerlink" href="#2-was-die-resona-pwa-heute-hat" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>apps/resona-pwa/app/components/TranscriptEditor.vue</code>: TipTap 3 (<code>@tiptap/vue-3 ^3.27.1</code>, StarterKit, Placeholder); Text ist <strong>einfacher Text</strong> (Directus-Feld <code>text</code>, ein <code>\n</code> = ein Absatz). Methoden: <code>insertText</code>, <code>insertPlaceholder</code>, <code>replaceBetween</code>, <code>appendParagraph</code>, <code>focus</code>.</li>
+<li>Push-to-Talk in <code>app/pages/recording/[id].vue</code> (Abschnitt „Push-to-talk dictation"): Taste links-Strg gehalten oder Knopf; beim Start wird <code>insertPlaceholder()</code> aufgerufen, das <strong>die Zeichen „[…]" in den Text schreibt</strong> und die Rohpositionen <code>{from, to}</code> zurückgibt; nach dem Hub-Aufruf ersetzt <code>replaceBetween(from, to, text)</code> diese Rohpositionen. Es ist immer nur ein Diktat gleichzeitig möglich (<code>pttState</code> muss <code>idle</code> sein).</li>
+<li><strong>Schwäche (aus dem Code gelesen, nicht ausgeführt) [INFERENCE]:</strong> Die gespeicherten Positionen werden bei Änderungen des Textes zwischen Start und Antwort nicht mitgeführt. Schreibt der Nutzer davor etwas, trifft <code>replaceBetween</code> die falsche Stelle; der Platzhalter „[…]" ist echter Text und könnte (bei Auto-Speichern während des Wartens) im gespeicherten Transkript landen.</li>
+<li>Das Konzept existiert bereits im CLI: <code>apps/resona-cli/src/resona_cli/dictate_anchors.py</code> (<code>AnchorTracker</code>, <code>adjust_location</code>: Anfang rechts-haftend, Ende links-haftend) und <code>dictate.py</code> (<code>DictationTextArea</code> meldet jede Änderung, unterscheidet Nutzeraktion von eigener Buchführung über <code>internal_edit()</code>; <code>Segment</code> mit Status <code>recording|queued|transcribing|inserted|error</code>, <code>disturbed</code>-Flag; <code>TranscriptionWorker</code> serialisiert Modellzugriffe). Die PWA hat nichts davon.</li>
+<li>Mobil: <code>useRecorder</code> (MediaRecorder), Hub-Sync-Aufruf über <code>useHub()</code>; Live-Pfad über <code>/v1/listen</code> und Gerätesprache (<code>useDeviceSpeech</code>). Auf dem Telefon gibt es keine Tastatur-Taste „Strg", der Knopf ist das einzige Bedienelement.</li>
+</ul>
+<hr />
+<h2 id="3-integrationsoptionen">3. Integrationsoptionen<a class="headerlink" href="#3-integrationsoptionen" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Inhalt</th>
+<th>Aufwand</th>
+<th>Passt, wenn …</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. Paket einbetten</strong> (<code>@skaile/forge-editor</code> Vue)</td>
+<td>Editor, Werkzeugleiste, Markdown, Kommentare, KI-Review, Block-UI</td>
+<td>L</td>
+<td>die PWA mehr als Diktieren will (Kommentare, KI-Bearbeitung, strukturierte Dokumente)</td>
+</tr>
+<tr>
+<td><strong>B. iframe</strong> der Host-App <code>skaile-forge</code></td>
+<td>Fertiger Editor mit Login der Host-App</td>
+<td>M, aber schlechte Passung</td>
+<td>nur als Notlösung</td>
+</tr>
+<tr>
+<td><strong>C. Mechanismus nachbauen</strong> in <code>TranscriptEditor.vue</code></td>
+<td>Eigene kleine ProseMirror-Erweiterung für verfolgte Bereiche, Diktier-Zustandsmaschine, Bedienelemente</td>
+<td>S–M</td>
+<td>die Frage „überall hineindiktieren" im Vordergrund steht</td>
+</tr>
+</tbody>
+</table>
+<h3 id="a-paket-einbetten">A. Paket einbetten<a class="headerlink" href="#a-paket-einbetten" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Vorteile: Ein Editor für beide Welten; Anker, Kollaboration, Auswahlleiste, Markdown und KI vorhanden; die geplante Diktierfunktion (Ticket #150) kommt dort generisch an.</li>
+<li>Hindernisse:</li>
+<li>Die Vue-Oberfläche ist auf <strong>Nuxt UI</strong> ausgelegt (<code>./vue/kit/nuxt-ui</code>; Einstellung über <code>--ui-*</code>-Variablen, Tailwind 4 plus Icon-Sammlung <code>@iconify-json/lucide</code>, README des Pakets). Die PWA nutzt das eigene <strong>Hearth</strong>-Design (reines Vue + Tailwind-Tokens, ohne Komponentenbibliothek, <code>apps/resona-pwa/CLAUDE.md</code>). Ob sich die neutrale <code>./vue/kit</code>-Ebene ohne Nuxt UI sinnvoll stylen lässt, ist offen und im Spike zu klären <strong>[Annahme: nicht geprüft]</strong>.</li>
+<li>TipTap-Versionen: Bibliothek verlangt <code>^3.31.3</code>, PWA hat <code>^3.27.1</code> (Anhebung nötig, geringes Risiko).</li>
+<li>Datenmodell: Die PWA speichert <strong>reinen Text</strong>. Forge arbeitet mit Dokumenten (Markdown/Yjs/Blöcke). Entweder Forge im Einfach-Modus (<code>./vue/simple</code>) mit Text↔Absatz-Abbildung wie heute, oder Datenmodell der Transkripte ändern (Directus-Feld, Export, Live- und Batch-Schreiber). Das Zweite ist ein großer Eingriff.</li>
+<li>Veröffentlichung: Das Paket hat <code>publishConfig.access: public</code>; ob es auf npm liegt und aus dem PWA-Docker-Build erreichbar ist, habe ich nicht geprüft <strong>[Annahme]</strong>. Das Repo selbst ist privat.</li>
+<li>Umfang: Das Paket ist groß (viele Einstiegspunkte, Add-ons). Tree-Shaking auf <code>./core</code> + <code>./vue/simple</code> + Diktierfunktion ist Pflicht, sonst wächst das PWA-Bundle spürbar.</li>
+<li>Offline: Die PWA ist installierbar und arbeitet offline in der Warteschlange; KI-/Kollaborationsfunktionen des Forge-Editors setzen einen Server voraus und müssten abgeschaltet werden.</li>
+</ul>
+<h3 id="b-iframe">B. iframe<a class="headerlink" href="#b-iframe" title="Permanent link">&para;</a></h3>
+<p>Nachteile: anderes Origin (Login/Keycloak-SSO, Cookies, CORS, Content-Security-Policy), mobile Tastatur- und Fokusprobleme in iframes, Daten müssten über <code>postMessage</code> hin und her (Text, Cursor, Diktat-Ereignisse), Offline unmöglich, zwei Deployments gekoppelt. Nicht empfohlen.</p>
+<h3 id="c-nachbau-in-der-pwa">C. Nachbau in der PWA<a class="headerlink" href="#c-nachbau-in-der-pwa" title="Permanent link">&para;</a></h3>
+<p>Inhalt (alles in der PWA, <code>TranscriptEditor.vue</code> bleibt die einzige Editor-Stelle):</p>
+<ol>
+<li>Kleine TipTap-Erweiterung <code>DictationAnchors</code>: Plugin-Zustand mit Karten <code>id → {from, to}</code>, Fortschreibung über <code>tr.mapping.map(pos, assoc)</code> (Anfang <code>assoc = 1</code>, Ende <code>assoc = -1</code>, wie <code>AnchorTracker</code> und <code>doc-anchors.ts</code>), ohne <code>addToHistory</code>. Ohne Kollaboration braucht man keinen <code>AnchorResolver</code>.</li>
+<li>Platzhalter als <strong>Decoration</strong> (Widget am Anker), nicht als Text. Damit kann „[…]" nie im Speicherwert landen.</li>
+<li>Diktier-Zustandsmaschine (Composable, z. B. <code>useDictation</code>) mit mehreren gleichzeitigen Segmenten (nur eines nimmt auf), Status <code>recording|transcribing|inserted|error|cancelled</code>, Wiederholen bei Fehler.</li>
+<li>Bedienelemente: siehe Abschnitt 4.</li>
+</ol>
+<p>Ein Teil der betroffenen Dateien (<code>recording/[id].vue</code>, <code>TranscriptEditor.vue</code>, <code>useTranscriptEdit.ts</code>) wird gerade von anderer Seite bearbeitet; die Umsetzung muss danach oder in Abstimmung geschehen.</p>
+<hr />
+<h2 id="4-bedienung-und-mobilzugang">4. Bedienung und Mobilzugang<a class="headerlink" href="#4-bedienung-und-mobilzugang" title="Permanent link">&para;</a></h2>
+<p>Gewünscht: per Tastendruck, Maus oder Telefonfunktion an beliebiger Stelle hineindiktieren.</p>
+<ul>
+<li><strong>Tastatur (Desktop):</strong> wählbares Tastenkürzel zum Umschalten; zusätzlich Halten-zum-Sprechen (heute links-Strg in der PWA, <code>ControlLeft</code>; auf macOS erreicht die Fn-/Globus-Taste den Browser nicht, siehe Kommentar in <code>recording/[id].vue</code>). Kürzel dürfen nicht mit Browser-/TipTap-Tastenbelegungen kollidieren.</li>
+<li><strong>Maus:</strong> Werkzeugleistenknopf; Knopf in der Auswahlleiste bei markiertem Text („durch Diktat ersetzen"); Rechtsklick/Kontextmenü optional.</li>
+<li><strong>Telefon:</strong></li>
+<li>Schwebender Mikrofonknopf, sichtbar bei fokussiertem Editor und grobem Zeigegerät (<code>(pointer: coarse)</code>), oberhalb der Bildschirmtastatur positioniert (<code>visualViewport</code>). Antippen = Start/Stop.</li>
+<li>Lang drücken = halten zum Sprechen, Loslassen beendet.</li>
+<li>Wichtig: Der Knopf darf dem Editor Fokus und Auswahl nicht nehmen (<code>pointerdown</code> mit <code>preventDefault()</code>), sonst geht die Einfügestelle verloren. Die jetzige PWA verlässt sich darauf, dass <code>focus()</code> die letzte Auswahl wiederherstellt (Kommentar in <code>TranscriptEditor.vue</code>).</li>
+<li>Mikrofon-Berechtigung und Verfügbarkeit (<code>getUserMedia</code> nur im sicheren Kontext) sichtbar melden, nicht still scheitern.</li>
+<li><strong>Tastatur-Diktat des Betriebssystems als Rückfall:</strong> Das Mikrofon der Bildschirmtastatur (iOS/Android) schreibt über normale Eingabeereignisse (<code>beforeinput</code> mit <code>inputType: "insertFromDictation"</code> <strong>[Annahme]</strong>) direkt an die Cursorposition und funktioniert in jedem Editor, auch ohne Resona. Es hat keine Resona-Nachbearbeitung (Profile, Ersetzungen) und keine Provenienz, ist aber der Maßstab: Der Editor darf es nicht stören (keine Eingabe abfangen, die Anker dürfen es nicht als Fremdänderung missdeuten). „Auch bei einfachen Editoren mit Sprachunterstützung" lässt sich damit ohne Eingriff erfüllen; der Mehrwert eigener Diktierfunktion ist Qualität (Hub-Engines) und Nachvollziehbarkeit.</li>
+</ul>
+<hr />
+<h2 id="5-abbildung-text-diktiersegmente-provenienz">5. Abbildung Text ↔ Diktiersegmente (Provenienz)<a class="headerlink" href="#5-abbildung-text-diktiersegmente-provenienz" title="Permanent link">&para;</a></h2>
+<p>Ziel: Für Korrekturen und Trainingsdaten wissen, welcher Textabschnitt aus welchem Audioclip stammt.</p>
+<ul>
+<li>Pro Segment: <code>segment_id</code>, Audioclip (Blob/Datei), Engine/Modell (Hub-Provenienz, siehe <code>JobResult.provenance</code>, in der PWA bei Expertenmodus sichtbar), Start-/Endzeit, rohes Transkript, <strong>Bereich beim Einfügen</strong>, Bereich nach späteren Änderungen (über denselben Anker, solange er lebt).</li>
+<li>Drei Speicherformen, aufsteigend nach Aufwand:</li>
+<li><strong>Nur Ereignisse:</strong> Beim Einfügen wird <code>onSegment({id, range, text, audio, engine, …})</code> ausgelöst; der Host speichert das in einer eigenen Sammlung (Directus, z. B. <code>dictation_segments</code>: <code>recording</code>, <code>audio_file</code>, <code>raw_text</code>, <code>engine</code>, <code>offset</code>, <code>length</code> zum Einfügezeitpunkt). Keine Änderung am Dokumentformat. Das ist auch das Vorgehen im Forge-Ticket.</li>
+<li><strong>Markierung im Dokument</strong> (TipTap-Mark <code>dictation</code> mit <code>segmentId</code>): bleibt bei Bearbeitung am Text haften, erlaubt später „Diff zwischen rohem und korrigiertem Text je Segment". Preis: Persistenzformat muss Marks aufnehmen; die PWA speichert heute reinen Text, also bräuchte sie ein Zusatzfeld (z. B. <code>structured</code>/JSON in <code>transcripts</code>, das es als Feld gibt).</li>
+<li><strong>Korrekturspur:</strong> je Segment der letzte Stand des Bereichs vs. <code>raw_text</code>; ergibt direkt Paare (Audio, korrigierter Text) für Training. Nur sinnvoll mit 2.</li>
+<li>Datenschutz: Medizinische Audioclips dauerhaft für „Training" zu speichern ist eine eigene Entscheidung (Einwilligung, Aufbewahrung, Löschung); der Hub speichert Ergebnisse nur 24 h (<code>CLAUDE.md</code>, Job-Ablauf). Die Studie nimmt keine Speicherung an; sie macht sie nur technisch möglich.</li>
+</ul>
+<hr />
+<h2 id="6-konflikte-bei-anderungen-wahrend-der-transkription">6. Konflikte bei Änderungen während der Transkription<a class="headerlink" href="#6-konflikte-bei-anderungen-wahrend-der-transkription" title="Permanent link">&para;</a></h2>
+<p>Szenarien und Soll-Verhalten (jeweils mit Test):</p>
+<table>
+<thead>
+<tr>
+<th>Fall</th>
+<th>Verhalten</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nutzer tippt <strong>vor</strong> der Marke</td>
+<td>Marke wandert mit; Ergebnis landet an der neuen Position</td>
+</tr>
+<tr>
+<td>Nutzer tippt <strong>genau an</strong> der Markengrenze</td>
+<td>Anfangs-Grenze rechts-haftend, End-Grenze links-haftend: Neu getippter Text bleibt vor bzw. nach dem Ergebnis (CLI-Vorbild: <code>adjust_location(inclusive=…)</code>)</td>
+</tr>
+<tr>
+<td>Absatz um die Marke wird gelöscht</td>
+<td>Anker kollabiert; Ergebnis an kollabierter Stelle, bei verlorenem Anker an den Cursor mit Hinweis, nie an Dokumentende/Position 0</td>
+</tr>
+<tr>
+<td>Mehrere Diktate nacheinander, Antworten in anderer Reihenfolge</td>
+<td>Jedes an eigener Marke; Reihenfolge der Antworten egal</td>
+</tr>
+<tr>
+<td>Rückgängig (Undo)</td>
+<td>Einfügen ein Schritt; Undo anderer Edits darf Marken nicht verschieben (Plugin-Zustand mit <code>addToHistory: false</code>; im CLI sperrt man Undo, in TipTap geht Mapping über Transaktionen sauber, <strong>[INFERENCE]</strong>)</td>
+</tr>
+<tr>
+<td>Datei wird parallel gespeichert/neu geladen (<code>useTranscriptEdit</code>, Auto-Speichern)</td>
+<td>Vor einem externen <code>setContent</code> (die PWA setzt den Editor bei Wertänderung von außen neu, <code>watch(modelValue)</code>) gingen alle Anker verloren. Lösung: bei ausstehenden Segmenten Setzen von außen blockieren oder Anker vorher aus- und danach wieder einlesen</td>
+</tr>
+<tr>
+<td>Kollaboration (nur Forge)</td>
+<td><code>AnchorResolver</code> löst Anker nach Yjs-Transaktionen neu auf; vorhanden in der Bibliothek</td>
+</tr>
+<tr>
+<td>Seite wird verlassen / Offline</td>
+<td>Aufnahme kann nicht fortgesetzt werden; Clip lokal halten und Wiederholen anbieten</td>
+</tr>
+</tbody>
+</table>
+<p>Hinweis zum aktuellen PWA-Code: Der Wertefluss <code>v-model</code> → <code>setContent</code> bei Abweichung (<code>TranscriptEditor.vue</code>, <code>watch</code>) ist für Anker kritisch (siehe Tabelle).</p>
+<hr />
+<h2 id="7-aufwand">7. Aufwand<a class="headerlink" href="#7-aufwand" title="Permanent link">&para;</a></h2>
+<p>Größen: S ≈ bis 1 Tag, M ≈ 2–4 Tage, L ≈ 1–2 Wochen.</p>
+<p><strong>Weg C (empfohlen als erster Schritt)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Schnitt</th>
+<th>Größe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DictationAnchors</code>-Erweiterung + Tests (Randfälle aus Abschnitt 6)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>Platzhalter als Decoration; <code>[…]</code>-Text entfernen</td>
+<td>S</td>
+</tr>
+<tr>
+<td><code>useDictation</code> (mehrere Segmente, Status, Wiederholen), Anbindung an bestehenden Hub-Aufruf</td>
+<td>M</td>
+</tr>
+<tr>
+<td>Bedienelemente: Kürzel, Knopf, Auswahlleiste, schwebender Mobil-Knopf, Lang-Drücken</td>
+<td>M</td>
+</tr>
+<tr>
+<td><code>onSegment</code>-Ereignis + Directus-Sammlung für Provenienz (optional)</td>
+<td>S–M</td>
+</tr>
+<tr>
+<td>Echtgeräte-Test (iOS Safari/Chrome Android, Bildschirmtastatur, Fokus)</td>
+<td>M</td>
+</tr>
+</tbody>
+</table>
+<p>Gesamt etwa 1,5–2 Wochen.</p>
+<p><strong>Weg A (Einbetten)</strong>: Spike (Bundle-Größe, Styling ohne Nuxt UI, Text↔Dokument-Abbildung) M; Umsetzung L; zuzüglich Abhängigkeit vom Forge-Ticket #150 (Diktierfunktion in der Bibliothek, Größe nach Ticket L).</p>
+<hr />
+<h2 id="8-risiken">8. Risiken<a class="headerlink" href="#8-risiken" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Fokus und Auswahl auf Mobilgeräten:</strong> Schwebende Knöpfe verlieren die Auswahl leicht (iOS Safari besonders) <strong>[Annahme]</strong>. Früh auf echten Geräten prüfen.</li>
+<li><strong>Mikrofon im Hintergrund:</strong> Mobile Browser stoppen Aufnahmen bei Bildschirmsperre/App-Wechsel <strong>[Annahme]</strong>; die PWA muss das erkennen und den Clip sichern.</li>
+<li><strong>Anker gehen bei externem <code>setContent</code> verloren</strong> (Abschnitt 6).</li>
+<li><strong>Paketkopplung bei Weg A:</strong> Nuxt-UI-Annahmen, Versionssprünge (TipTap), Bundle-Größe, privates Repo/Registry.</li>
+<li><strong>Datenmodell:</strong> Wechsel von Text auf Dokument rührt Export, Live-Pfad, Batch-Schreiber und Worker an.</li>
+<li><strong>Doppelte Arbeit:</strong> Baut die PWA Weg C und Forge das Ticket #150 getrennt, entstehen zwei Implementierungen derselben Idee. Gegenmittel: dieselbe Semantik (Grenzverhalten, Status, Ereignis <code>onSegment</code>), damit ein späterer Wechsel einfach bleibt.</li>
+<li><strong>Datenschutz</strong> der Provenienz-Audios (Abschnitt 5).</li>
+</ol>
+<hr />
+<h2 id="9-empfehlung">9. Empfehlung<a class="headerlink" href="#9-empfehlung" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Forge-Ticket #150 stehen lassen</strong> und dort priorisieren, was Forge selbst braucht. Es beschreibt Auslöser (Kürzel, Werkzeugleiste, mobiler Knopf), Einfügen an Cursor/Auswahl, Anker unter Änderungen (inklusive Kollaboration), austauschbare Transkriptions-Schnittstelle, Touch-Betrieb und Tests.</li>
+<li><strong>Für die PWA zuerst Weg C:</strong> Anker-Erweiterung und Decoration-Platzhalter in <code>TranscriptEditor.vue</code>, mehrere Diktate, Bedienung inklusive mobilem Knopf. Das behebt die Positions- und Platzhalter-Schwäche des bestehenden Push-to-Talk und liefert „überall hineindiktieren" ohne neue Abhängigkeit.</li>
+<li><strong>Weg A erst entscheiden</strong>, wenn Kommentare, KI-Bearbeitung oder strukturierte Dokumente in der PWA gewünscht sind; vorher einen kurzen Spike (Styling, Bundle, Datenmodell). Dann die Diktierfunktion aus der Bibliothek verwenden und den PWA-Nachbau entfernen.</li>
+<li><strong>Weg B (iframe) nicht verfolgen.</strong></li>
+<li>Betriebssystem-Diktat der Tastatur als gleichwertigen Rückfall weiterhin zulassen und in Tests absichern.</li>
+</ol>
+<hr />
+<h2 id="anhang-forge-ticket">Anhang: Forge-Ticket<a class="headerlink" href="#anhang-forge-ticket" title="Permanent link">&para;</a></h2>
+<p>Angelegt in <code>skaile-ai/forge-editor</code> (privates Repo, Konventionen aus <code>docs/agents/issue-tracker.md</code>: Titel <code>&lt;KÜRZEL&gt;: i-&lt;kürzel&gt;-&lt;slug&gt; - …</code>, Labels <code>enhancement</code>, <code>needs-triage</code>):</p>
+<ul>
+<li><a href="https://github.com/skaile-ai/forge-editor/issues/150">#150 DIK: i-dik-dictate-at-position - Dictate into the document at any caret/selection, anchored under concurrent edits</a></li>
+</ul>
+<p>Der Text enthält keine Hostnamen, Zugangsdaten oder Patientendaten.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../youtube-share/" class="md-footer__link md-footer__link--prev" aria-label="Previous: YouTube-Share (Studie)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                YouTube-Share (Studie)
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.instant", "navigation.top", "navigation.footer", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

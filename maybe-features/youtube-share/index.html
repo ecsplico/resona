@@ -1,0 +1,3126 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modular audio transcription platform with pluggable ASR engines and composable postprocessing">
+      
+      
+      
+        <link rel="canonical" href="https://ecsplico.github.io/resona/maybe-features/youtube-share/">
+      
+      
+        <link rel="prev" href="../../design/admin-console/">
+      
+      
+        <link rel="next" href="../forge-editor-integration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>YouTube-Share (Studie) - Resona</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#studie-youtube-videos-und-shorts-in-die-resona-pwa-teilen" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Resona" class="md-header__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Resona
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              YouTube-Share (Studie)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../server/docker/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Server Setup
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../configuration/environment/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/client/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../development/workflow/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../design/admin-product/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Maybe Features
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Resona" class="md-nav__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Resona
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/local-only/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local-Only Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/engines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engine Selection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/replacements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Text Replacements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Speech Synthesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Server Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/full-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Single-Host Stack (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/cpu-standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Single-Host Stack (Linux, no GPU)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/config-files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/engine-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateless Engine Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/job-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Job Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-api
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/engine-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-engine-server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/asr-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-asr-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cloud-stt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-stt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cloud-tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-tts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/postprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-postprocess
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dev Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/adding-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding an Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Product Brief
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-console/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Design Direction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maybe Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Maybe Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-was-das-teilen-heute-liefert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Was das Teilen heute liefert
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Was das Teilen heute liefert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ist-zustand-in-der-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ist-Zustand in der PWA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#was-die-teilen-aktion-von-youtube-mitgibt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Was die Teilen-Aktion von YouTube mitgibt
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-wie-kommt-man-an-audio-oder-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Wie kommt man an Audio oder Text?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Wie kommt man an Audio oder Text?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zu-a-yt-dlp-im-detail-annahme-alles-zu-yt-dlpyoutube-ist-externes-wissen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zu A: yt-dlp im Detail [Annahme] (alles zu yt-dlp/YouTube ist externes Wissen)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rechtliches-und-nutzungsbedingungen-annahme-keine-rechtsberatung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rechtliches und Nutzungsbedingungen [Annahme], keine Rechtsberatung
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-wo-wurde-das-in-der-resona-architektur-laufen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Wo würde das in der Resona-Architektur laufen?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Wo würde das in der Resona-Architektur laufen?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rahmenbedingungen-im-repo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rahmenbedingungen im Repo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optionen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optionen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#datenschutzklassen-und-richtlinien" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Datenschutzklassen und Richtlinien
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#groen-und-dauerlimits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Größen- und Dauerlimits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-sicherheit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Sicherheit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-anderungen-in-der-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Änderungen in der PWA
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-datenmodell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Datenmodell
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-aufwand-nach-schnitten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Aufwand nach Schnitten
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-risiken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Risiken
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-empfehlung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Empfehlung
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge-editor-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forge-Editor-Integration (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-was-das-teilen-heute-liefert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Was das Teilen heute liefert
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Was das Teilen heute liefert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ist-zustand-in-der-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ist-Zustand in der PWA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#was-die-teilen-aktion-von-youtube-mitgibt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Was die Teilen-Aktion von YouTube mitgibt
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-wie-kommt-man-an-audio-oder-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Wie kommt man an Audio oder Text?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Wie kommt man an Audio oder Text?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zu-a-yt-dlp-im-detail-annahme-alles-zu-yt-dlpyoutube-ist-externes-wissen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zu A: yt-dlp im Detail [Annahme] (alles zu yt-dlp/YouTube ist externes Wissen)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rechtliches-und-nutzungsbedingungen-annahme-keine-rechtsberatung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rechtliches und Nutzungsbedingungen [Annahme], keine Rechtsberatung
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-wo-wurde-das-in-der-resona-architektur-laufen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Wo würde das in der Resona-Architektur laufen?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Wo würde das in der Resona-Architektur laufen?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rahmenbedingungen-im-repo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rahmenbedingungen im Repo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optionen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optionen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#datenschutzklassen-und-richtlinien" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Datenschutzklassen und Richtlinien
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#groen-und-dauerlimits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Größen- und Dauerlimits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-sicherheit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Sicherheit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-anderungen-in-der-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Änderungen in der PWA
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-datenmodell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Datenmodell
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-aufwand-nach-schnitten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Aufwand nach Schnitten
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-risiken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Risiken
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-empfehlung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Empfehlung
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="studie-youtube-videos-und-shorts-in-die-resona-pwa-teilen">Studie: YouTube-Videos und Shorts in die Resona PWA teilen<a class="headerlink" href="#studie-youtube-videos-und-shorts-in-die-resona-pwa-teilen" title="Permanent link">&para;</a></h1>
+<p>Status: Idee, nicht geplant. Stand: 2026-11-08.</p>
+<p><strong>Frage:</strong> Was bedeutet es, ein YouTube-Video oder einen Short per Teilen-Menü (Android/iOS) an die Resona PWA zu schicken und das Transkript in Resona zu erhalten?</p>
+<p><strong>Kurzfassung:</strong> Das Teilen liefert nur einen Link, keine Datei. Resona kann bisher ausschließlich hochgeladene Bytes verarbeiten. Es fehlt also ein Schritt, der aus dem Link Audio (oder vorhandene Untertitel) holt. Technisch ist das mit <code>yt-dlp</code> machbar und klein genug, um in den PWA-Projekt-Worker zu passen, ohne den Hub-Vertrag zu ändern. Das eigentliche Risiko liegt nicht im Code, sondern in Nutzungsbedingungen, Urheberrecht, Bot-Erkennung und dauerndem Wartungsaufwand. Empfehlung am Ende: nur als abschaltbare Funktion für selbst betriebene Installationen, nicht auf dem öffentlichen Hub.</p>
+<p>Markierung: Aussagen mit <strong>[Annahme]</strong> habe ich nicht geprüft (externes Wissen, kein Zugriff in dieser Studie). Alle rechtlichen Punkte sind keine Rechtsberatung.</p>
+<hr />
+<h2 id="1-was-das-teilen-heute-liefert">1. Was das Teilen heute liefert<a class="headerlink" href="#1-was-das-teilen-heute-liefert" title="Permanent link">&para;</a></h2>
+<h3 id="ist-zustand-in-der-pwa">Ist-Zustand in der PWA<a class="headerlink" href="#ist-zustand-in-der-pwa" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Das Manifest registriert ein <code>share_target</code> (<code>apps/resona-pwa/nuxt.config.ts</code>, Zeilen 81–93): <code>POST /share-target</code>, <code>multipart/form-data</code>, Felder <code>title</code>, <code>text</code>, <code>url</code> und eine Datei <code>audio</code> (<code>audio/*</code>, <code>video/webm</code>, <code>.webm</code>, <code>.m4a</code>, <code>.mp3</code>, <code>.wav</code>, <code>.ogg</code>).</li>
+<li>Der Service Worker (<code>apps/resona-pwa/public/share-target-handler.js</code>) fängt den POST ab:</li>
+<li>Datei vorhanden → Cache API, Redirect auf <code>/share-target?kind=audio</code>; <code>app/pages/share-target.vue</code> liest den Blob und öffnet <code>SaveSheet</code> → <code>useUpload().saveRecording</code>.</li>
+<li>Keine Datei → Redirect auf <code>/live?title=&lt;title || text || url&gt;</code> (Titel-Vorbelegung, wie beim Kalender).</li>
+<li>Folge für YouTube: Ein geteilter Link landet heute <strong>ohne Fehlermeldung in der Live-Aufnahme</strong>, mit der URL als Titel. Das ist falsches Verhalten für diesen Anwendungsfall, unabhängig davon, ob die Funktion je gebaut wird.</li>
+</ul>
+<h3 id="was-die-teilen-aktion-von-youtube-mitgibt">Was die Teilen-Aktion von YouTube mitgibt<a class="headerlink" href="#was-die-teilen-aktion-von-youtube-mitgibt" title="Permanent link">&para;</a></h3>
+<ul>
+<li>YouTube teilt Text und URL, keine Mediendatei. Android-Chrome-PWAs liefern die URL häufig im Feld <code>text</code>, nicht in <code>url</code> <strong>[Annahme]</strong>; deshalb muss die URL aus allen drei Feldern (<code>title</code>, <code>text</code>, <code>url</code>) per Regex extrahiert werden.</li>
+<li>URL-Formen <strong>[Annahme]</strong>: <code>https://youtu.be/&lt;id&gt;</code>, <code>https://www.youtube.com/watch?v=&lt;id&gt;</code>, <code>https://m.youtube.com/...</code>, <code>https://www.youtube.com/shorts/&lt;id&gt;</code>, mit Tracking-Parametern (<code>si=</code>, <code>feature=share</code>). Shorts verhalten sich für Download und Untertitel wie normale Videos.</li>
+<li><strong>iOS:</strong> Das Web Share Target wird von iOS-Safari/Homescreen-Web-Apps meines Wissens nicht unterstützt <strong>[Annahme]</strong>. Auf iOS wäre das nur über einen Kurzbefehl (Shortcuts) lösbar, der <code>https://&lt;pwa&gt;/share-target?url=&lt;kodierte URL&gt;</code> öffnet. Dafür braucht die PWA zusätzlich zur bestehenden POST-Route eine <strong>GET-Variante</strong> der Route (heute gibt es nur POST im Service Worker). Auch für Android ist ein GET-Fallback nützlich (Link manuell einfügen, Deep-Link).</li>
+</ul>
+<hr />
+<h2 id="2-wie-kommt-man-an-audio-oder-text">2. Wie kommt man an Audio oder Text?<a class="headerlink" href="#2-wie-kommt-man-an-audio-oder-text" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Weg</th>
+<th>Was passiert</th>
+<th>Vorteile</th>
+<th>Nachteile</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. Audio laden (<code>yt-dlp</code>), dann Resona-ASR</strong></td>
+<td>Audio-Stream herunterladen, per ffmpeg auf 16 kHz mono, normaler <code>audio</code>-Job</td>
+<td>Gleiche Pipeline, gleiche Qualität, Postprocess-Profile, Provenienz, funktioniert auch ohne Untertitel</td>
+<td>Rechtlich/ToS heikel, Bot-Erkennung, Wartung, Bandbreite, Rechenzeit</td>
+</tr>
+<tr>
+<td><strong>B. Vorhandene Untertitel/Transkript abrufen</strong></td>
+<td>Nur Textspur holen (manuelle oder automatische Untertitel), kein Download von Audio</td>
+<td>Schnell, billig, kein ASR, keine Audio-Kopie</td>
+<td>Nicht jedes Video hat Untertitel; automatische Untertitel sind schwächer und ohne Satzzeichen; Abruf ebenfalls inoffiziell <strong>[Annahme]</strong></td>
+</tr>
+<tr>
+<td><strong>C. Offizielle YouTube Data API</strong></td>
+<td><code>captions.list</code>/<code>captions.download</code></td>
+<td>Offiziell</td>
+<td><code>captions.download</code> verlangt OAuth und Rechte am Video (nur eigene Videos) <strong>[Annahme]</strong>; Kontingent (Quota) begrenzt; liefert kein Audio</td>
+</tr>
+<tr>
+<td><strong>D. Nutzer lädt selbst Audio hoch</strong></td>
+<td>Heutiger Weg (Datei teilen/hochladen)</td>
+<td>Rechtlich Sache des Nutzers, null neuer Code</td>
+<td>Umständlich, kein „Teilen aus der YouTube-App"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="zu-a-yt-dlp-im-detail-annahme-alles-zu-yt-dlpyoutube-ist-externes-wissen">Zu A: <code>yt-dlp</code> im Detail <strong>[Annahme]</strong> (alles zu yt-dlp/YouTube ist externes Wissen)<a class="headerlink" href="#zu-a-yt-dlp-im-detail-annahme-alles-zu-yt-dlpyoutube-ist-externes-wissen" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Braucht Python plus <code>ffmpeg</code> auf dem Host und häufige Updates, weil YouTube die Zugriffswege oft ändert. Ein veralteter <code>yt-dlp</code> fällt nach Wochen aus. Im Betrieb heißt das: automatisches Update im Container-Build oder per Cron, Gesundheitscheck mit einem festen Testvideo.</li>
+<li><strong>Bot-Erkennung:</strong> Rechenzentrums-IPs werden oft mit „Sign in to confirm you're not a bot" abgewiesen. Gegenmittel (Cookies aus einem angemeldeten Konto, Proof-of-Origin-Token, Proxys) sind Wartungs- und Risikoquellen. <strong>Cookies eines echten Kontos auf einem gemeinsam genutzten Server sind keine gute Idee</strong> (Kontosperrung, Geheimnis im Worker). In dieser Studie wird keine Cookie-Lösung vorgeschlagen; ohne sie ist die Zuverlässigkeit von einem Server-Standort aus nicht garantiert.</li>
+<li><strong>Ratenbegrenzung:</strong> pro Worker serialisieren, kleine Wartezeit zwischen Abrufen, kein Massenabruf; Playlists und Kanäle grundsätzlich ablehnen (<code>--no-playlist</code>).</li>
+<li><strong>Live-Streams, Premieren, Altersbeschränkung, Mitglieder-/Privatvideos:</strong> nicht abrufbar ohne Anmeldung; klare Fehlermeldung statt Retry-Schleife.</li>
+<li><strong>Größe/Dauer:</strong> nur Audio-Format (<code>bestaudio</code>), Dauer- und Bytegrenze vor dem Download prüfen (Metadatenabruf liefert Dauer). Vorschlag: max. 2 Stunden und max. 200 MiB, passend zur Obergrenze des Hubs (siehe Abschnitt 3, „Größen- und Dauerlimits“).</li>
+</ul>
+<h3 id="rechtliches-und-nutzungsbedingungen-annahme-keine-rechtsberatung">Rechtliches und Nutzungsbedingungen <strong>[Annahme], keine Rechtsberatung</strong><a class="headerlink" href="#rechtliches-und-nutzungsbedingungen-annahme-keine-rechtsberatung" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Die YouTube-Nutzungsbedingungen verbieten meines Wissens das Herunterladen von Inhalten außer über ausdrücklich angebotene Funktionen. Ein Server, der das automatisiert tut, verstößt wahrscheinlich dagegen. Das Risiko trägt der Betreiber der Installation (beim öffentlichen Hub also der Betreiber von <code>resona.ecsplico.de</code>), nicht der Nutzer allein.</li>
+<li>Urheberrecht: Transkript und Audiokopie sind Vervielfältigungen. Das deutsche Recht kennt private Kopien, aber mit Grenzen (Umgehung technischer Schutzmaßnahmen, offensichtlich rechtswidrige Vorlage). Eigene Videos, Creative-Commons-Videos und Material mit Erlaubnis sind unkritisch.</li>
+<li>Datenschutz/Einwilligung: Gesprochene Inhalte Dritter in einem Video sind personenbezogene Daten. Bei Resona (Schwerpunkt medizinische Diktate) ist der Einsatz mit fremden Videos nicht der Kernfall; der Hub darf daraus aber nichts Unnötiges speichern.</li>
+<li>Folgerung für das Design: <strong>Audiokopie nach dem Job löschen</strong> (nur Transkript und Quellenangabe behalten), Funktion standardmäßig <strong>aus</strong>, Hinweis im Dialog („Nur für eigene oder frei lizenzierte Inhalte"), keine Weitergabe-Funktion.</li>
+</ul>
+<hr />
+<h2 id="3-wo-wurde-das-in-der-resona-architektur-laufen">3. Wo würde das in der Resona-Architektur laufen?<a class="headerlink" href="#3-wo-wurde-das-in-der-resona-architektur-laufen" title="Permanent link">&para;</a></h2>
+<h3 id="rahmenbedingungen-im-repo">Rahmenbedingungen im Repo<a class="headerlink" href="#rahmenbedingungen-im-repo" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Der Hub kennt nur zwei Job-Arten: <code>JobKind = Literal["audio", "document"]</code> (<code>packages/job-core/src/resona_job_core/settings.py</code>). Jobs entstehen aus einem <strong>Upload</strong> (<code>POST /v1/uploads</code>, Magic-Byte-Prüfung, <code>audio|document</code>, Obergrenze <code>RESONA_MAX_UPLOAD_BYTES</code>, im Code Standard 200 MiB in <code>jobs_routes.py</code>; <code>CLAUDE.md</code> nennt 500 MiB, der Code gilt) plus <code>POST /v1/jobs</code> mit <code>Idempotency-Key</code>. Es gibt <strong>keine URL-Eingabe</strong>.</li>
+<li>Der Hub führt selbst keine Inferenz aus (er verwaltet Uploads, Jobs und Ergebnisse); Worker holen Jobs aktiv ab (outbound-only, kein offener Port, <code>apps/resona-worker</code>). Der Ausführungs-Subprozess läuft im privaten Fall mit Allowlist-Umgebung und erzwungenem Offline-Modus (<code>subprocess_env(private=True)</code>, <code>HF_HUB_OFFLINE</code>). Ein Netzwerk-Download passt nicht in diesen Subprozess.</li>
+<li>Richtlinien: <code>ExecutionPolicy</code>/<code>Stage</code> kennen nur <code>asr</code>, <code>ocr</code>, <code>llm</code> (<code>packages/job-core/src/resona_job_core/policy.py</code>, <code>StageKind</code>); Endpunkt-Arten <code>local_llm</code>, <code>cloud_asr</code>, <code>cloud_llm</code>. „Privat" heißt: keine Audio- oder Dokument-Bytes an Dritte. Ein Abruf von YouTube sendet zwar keine Nutzerdaten, aber die <strong>URL und die IP des Workers</strong> an Google; das ist ein neuer Egress-Typ, den die Richtlinie heute nicht beschreibt.</li>
+<li>Aufbewahrung: Ergebnisse 24 h, Metadaten 7 Tage (<code>maintenance.py</code>, <code>METADATA_TTL</code>), nicht angehängte Uploads verfallen nach 1 h.</li>
+<li>Die PWA hat bereits eine Stelle, die Inhalte holt und an den Hub gibt: den <strong>Projekt-Worker</strong> (<code>apps/resona-pwa/worker/</code>, <code>worker.py</code>): er liest <code>pending</code>-Zeilen aus Directus (<code>Source("recordings", "audio_file", "audio", "transcribing")</code>), lädt Audio hoch, legt den Hub-Job an, pollt und schreibt das Transkript zurück. Er hat eine eigene <code>uv</code>-Umgebung und keinen Import aus <code>packages/*</code>.</li>
+<li>Standalone-Modus (IndexedDB, <code>localProcessor.ts</code>) kann das <strong>nicht</strong>: Ein Browser darf <code>googlevideo.com</code> nicht per <code>fetch</code> lesen (CORS), und <code>yt-dlp</code> läuft nicht im Browser. Die Funktion gäbe es nur im Directus-Modus (so läuft <code>resona.ecsplico.de</code>).</li>
+</ul>
+<h3 id="optionen">Optionen<a class="headerlink" href="#optionen" title="Permanent link">&para;</a></h3>
+<p><strong>Option 1 (Empfehlung für einen Spike): Abruf im PWA-Projekt-Worker, Hub unverändert.</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Teilen → /share-target (SW erkennt YouTube-URL) → Bestätigungsdialog
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  → Directus: recordings { source: &quot;url&quot;, source_url, status: &quot;fetching&quot; }
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  → project-worker: Allowlist prüfen → yt-dlp (nur Audio, Limits) → ffmpeg 16 kHz mono
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>      → Datei in audio_file ODER direkt Upload an den Hub → status &quot;pending&quot;
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  → vorhandene Schleife: POST /v1/uploads + /v1/jobs (audio) → Transkript → done
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  → Audiokopie löschen, Quelle + Transkript behalten
+</code></pre></div>
+<p>Vorteile: kein Eingriff in Hub-Protokoll, Policy, Settings-Schema oder Worker-Release; Egress liegt in einem eigenen Dienst, den man separat abschalten, drosseln und netzwerkseitig einschränken kann; Fehlermeldungen und Zustandsmaschine (<code>fetching</code> → <code>pending</code> → <code>transcribing</code>) passen in das bestehende Muster (Stale-Recovery in <code>directus.py</code>).
+Nachteile: Der PWA-Stack bekommt <code>ffmpeg</code> und <code>yt-dlp</code> im Image; das Transkript hat dann Provenienz „Hub-Job auf hochgeladener Datei", nicht „YouTube-Link" (muss in <code>source_url</code> stehen).</p>
+<p><strong>Option 2: Neue Job-Art <code>url</code> / Fetch-Stufe auf dem Resona-Worker.</strong></p>
+<p>Der Hub nähme <code>POST /v1/jobs</code> mit <code>kind: "url"</code> und einem validierten <code>source_url</code> an; ein Worker mit Fähigkeit <code>media-fetch</code> lädt das Audio im eigenen Netzwerk-Subprozess und führt danach ASR aus. Das erfordert: neue <code>JobKind</code>, neuer <code>StageKind</code> (z. B. <code>fetch</code>) und Endpunkt-Art, Organisations-Einstellung (z. B. <code>url_fetch_enabled</code>, Standard <code>false</code>; <code>OrganizationSettings</code> ist <code>extra="forbid"</code>, also Schemaänderung samt Hub-Migration und Worker-Protokoll-/Release-Abstimmung), Worker-Manifest/<code>prepare</code>, Evaluations-Gate für den Kandidaten, MCP- und CLI-Oberfläche, Docs. Es lohnt sich nur, wenn mehrere Clients (CLI, MCP) URL-Jobs wollen. Für die PWA allein ist es überdimensioniert.</p>
+<p><strong>Option 3: Nur Untertitel (Weg B) im Projekt-Worker</strong>, ohne Audio, ohne ASR. Sehr klein, keine Audiokopie, aber nur für Videos mit Untertiteln und mit schwächerer Qualität. Als Vorstufe von Option 1 sinnvoll (Untertitel zuerst, Audio nur auf Wunsch oder als Rückfall).</p>
+<h3 id="datenschutzklassen-und-richtlinien">Datenschutzklassen und Richtlinien<a class="headerlink" href="#datenschutzklassen-und-richtlinien" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Der Fetch-Schritt ist kein ASR-Stufe der Hub-Richtlinie. In Option 1 liegt er außerhalb des Hubs; der anschließende <code>audio</code>-Job ist ein normaler, <strong>privater</strong> Job (<code>private=true</code>, Standard der PWA über <code>useHub()</code>), also keine Cloud-ASR, wenn der Nutzer das nicht ausdrücklich wählt.</li>
+<li>Wenn der Nutzer die Cloud-Erlaubnis nicht erteilt hat, bleibt die Auswertung lokal; der Fetch selbst muss im Dialog klar als „Abruf bei YouTube" benannt werden (URL/IP gehen an Google). Eine Prüfung „Org-Einstellung erlaubt URL-Abruf" gibt es in Option 1 nur auf PWA-Seite (Konfiguration <code>NUXT_PUBLIC_…</code>/Worker-Env), nicht im Hub. Wer das serverseitig erzwingen will, braucht Option 2.</li>
+<li>Option 2 bräuchte: <code>check_policy</code> für die neue Stufe vor Admission (403 <code>policy_denied</code>), frische Prüfung vor dem Abruf (<code>/v1/workers/jobs/{id}/policy</code>), Abruf nur auf einem Worker mit ausdrücklicher Freigabe.</li>
+</ul>
+<h3 id="groen-und-dauerlimits">Größen- und Dauerlimits<a class="headerlink" href="#groen-und-dauerlimits" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Vor dem Download Metadaten abfragen (Dauer, Livestatus, Format), abbrechen bei Überschreitung, außerdem <code>--max-filesize</code> als zweite Sicherung. Nach ffmpeg-Umwandlung (16 kHz mono PCM16, ca. 2 MB/min, wie <code>utils/audioMerge.ts</code> der PWA) ergeben 2 Stunden etwa 230 MB, also über 200 MiB. Entweder Grenze auf ca. 90 Minuten setzen oder in kompaktem Format (Opus/M4A) hochladen und den Worker umwandeln lassen. Das ist vor einer Umsetzung zu entscheiden.</li>
+<li>Die 24 h Aufbewahrung des Hubs betrifft nur den Hub-Job (der Projekt-Worker löscht ihn nach dem Zurückschreiben); Transkript und Quelle liegen danach in Directus.</li>
+</ul>
+<hr />
+<h2 id="4-sicherheit">4. Sicherheit<a class="headerlink" href="#4-sicherheit" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>SSRF:</strong> Der Nutzer liefert eine beliebige Zeichenkette; der Worker darf nie diese Zeichenkette an <code>yt-dlp</code> geben. Stattdessen: URL parsen, nur Schema <code>https</code>, kein Benutzername/Passwort, kein Port, Host exakt aus Allowlist (<code>youtube.com</code>, <code>www.youtube.com</code>, <code>m.youtube.com</code>, <code>youtu.be</code>; optional <code>music.youtube.com</code>), Video-ID per Regex <code>^[A-Za-z0-9_-]{11}$</code> extrahieren und daraus selbst <code>https://www.youtube.com/watch?v=&lt;id&gt;</code> bauen. Shorts-Pfad <code>/shorts/&lt;id&gt;</code> auf dieselbe Form normalisieren. Playlist- und Kanal-Parameter verwerfen.</li>
+<li><code>yt-dlp</code> unterstützt viele Extraktoren und <code>file://</code>-artige Quellen <strong>[Annahme]</strong>: den YouTube-Extraktor erzwingen, Generic-Extraktor abschalten, Konfigurationsdateien des Hosts nicht laden (<code>--ignore-config</code>), keine Plugins.</li>
+<li>Der Worker-Container bekommt <strong>keine</strong> Hub-/Directus-Schreibgeheimnisse mehr als nötig und läuft mit eingeschränktem Netz (Egress nur zu YouTube-/googlevideo-Zielen und zu Directus/Hub; interne Adressbereiche sperren, damit eine Umleitung nicht intern landet). Das Netz-Allowlisting ist unabhängig von der URL-Prüfung nötig, weil <code>yt-dlp</code> weitere Hosts selbst auflöst.</li>
+<li>Befehlsausführung nur mit Argumentliste, nie über eine Shell; Ausgabepfade selbst erzeugen (Temp-Verzeichnis pro Auftrag, Aufräumen im <code>finally</code>).</li>
+<li>Bei Option 1 darf die PWA selbst nichts abrufen: Der Browser sendet nur die Zeile nach Directus; die Allowlist-Prüfung läuft <strong>serverseitig im Worker</strong>, die Prüfung in der PWA ist nur Komfort.</li>
+</ul>
+<hr />
+<h2 id="5-anderungen-in-der-pwa">5. Änderungen in der PWA<a class="headerlink" href="#5-anderungen-in-der-pwa" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Service Worker</strong> (<code>public/share-target-handler.js</code>): Text/URL-Shares auf YouTube-URL prüfen (alle Felder), bei Treffer nach <code>/share-target?kind=url&amp;u=&lt;kodiert&gt;</code> umleiten statt nach <code>/live</code>. Nicht-YouTube-Text bleibt wie heute (<code>/live?title=</code>). Zusätzlich GET-Route <code>/share-target?url=</code> für Kurzbefehle/Deep-Links.</li>
+<li><strong><code>pages/share-target.vue</code>:</strong> zusätzlicher Zweig <code>kind=url</code>: Vorschau (Titel/ID), Sprache und Profil wie <code>SaveSheet</code>, Hinweistext zu ToS/Eigengebrauch, Button „Transkribieren". Fehler und „Funktion nicht aktiviert" als eigener Zustand.</li>
+<li><strong>Datenmodell</strong> (<code>directus/bootstrap.md</code>, <code>app/types/directus.ts</code>, <code>bootstrap.mjs</code>): siehe Abschnitt 6.</li>
+<li><strong>Listen/Detailseite:</strong> Zeilen ohne <code>audio_file</code> zeigen Quelle (Link, Kanal, Dauer) statt Player; Status <code>fetching</code> mit eigener <code>StatusChip</code>-Beschriftung („Wird geladen"). Die Detailseite <code>recording/[id].vue</code> setzt heute einen Player voraus; die Anpassung dort gehört in dieselbe Änderung, kollidiert aber mit der laufenden Arbeit an dieser Datei und muss mit deren Bearbeiter abgestimmt werden.</li>
+<li><strong>Konfiguration:</strong> Schalter (z. B. <code>NUXT_PUBLIC_URL_IMPORT_ENABLED</code>, Standard <code>false</code>) analog zu <code>NUXT_PUBLIC_CALENDAR_ENABLED</code>; Worker-seitig ein eigener Schalter, damit ein Client allein die Funktion nicht aktiviert.</li>
+<li><strong>Standalone-Modus:</strong> Funktion ausblenden (Abschnitt 3).</li>
+<li><strong>Tests:</strong> Vitest für URL-Normalisierung (alle Formen, Ablehnungsfälle), SW-Handler-Logik, Worker-pytest für Allowlist, Limits, Zustandsübergänge mit gemocktem <code>yt-dlp</code>.</li>
+</ol>
+<hr />
+<h2 id="6-datenmodell">6. Datenmodell<a class="headerlink" href="#6-datenmodell" title="Permanent link">&para;</a></h2>
+<p>Erweiterung von <code>recordings</code> (statt neue Sammlung, damit Liste, Suche, Export, Bearbeitung und Review-Status weiter greifen):</p>
+<table>
+<thead>
+<tr>
+<th>Feld</th>
+<th>Typ</th>
+<th>Zweck</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>Wert <code>url</code> ergänzen (heute <code>batch</code> | <code>live</code>)</td>
+<td>Herkunft</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>Wert <code>fetching</code> ergänzen (heute <code>pending</code> | <code>transcribing</code> | <code>done</code> | <code>error</code>)</td>
+<td>Abruf läuft</td>
+</tr>
+<tr>
+<td><code>source_url</code></td>
+<td>string</td>
+<td>kanonische URL (<code>https://www.youtube.com/watch?v=&lt;id&gt;</code>)</td>
+</tr>
+<tr>
+<td><code>source_meta</code></td>
+<td>json</td>
+<td><code>video_id</code>, Titel, Kanal, Dauer, Abrufweg (<code>audio</code>/<code>captions</code>), Zeitpunkt</td>
+</tr>
+<tr>
+<td><code>audio_file</code></td>
+<td>bleibt, aber <strong>nullable</strong> und nach Abschluss geleert</td>
+<td>Audiokopie nicht dauerhaft halten</td>
+</tr>
+</tbody>
+</table>
+<p><code>transcripts.engine</code>: bei Untertitelweg ein eigener Stempel wie <code>youtube-captions</code>, beim ASR-Weg wie heute der Hub-Stempel. Die Stale-Recovery im Worker (<code>directus.py</code>) muss <code>fetching</code> ohne Fortschritt auf <code>pending</code> zurücksetzen (wie <code>transcribing</code> ohne <code>hub_job_id</code>). Fehlertexte auf Deutsch wie in <code>worker.py</code>.</p>
+<p>Hub: keine Änderung in Option 1. In Option 2 zusätzlich <code>kind: "url"</code> im Job-Request, <code>source_url</code> im <code>execution_snapshot</code>, Provenienz-Eintrag der Fetch-Stufe in <code>JobResult.provenance</code>.</p>
+<hr />
+<h2 id="7-aufwand-nach-schnitten">7. Aufwand nach Schnitten<a class="headerlink" href="#7-aufwand-nach-schnitten" title="Permanent link">&para;</a></h2>
+<p>Größen: S ≈ bis 1 Tag, M ≈ 2–4 Tage, L ≈ 1–2 Wochen (jeweils eine Person, inklusive Tests).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Schnitt</th>
+<th>Größe</th>
+<th>Abhängigkeit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Share-Target erkennt YouTube-URL (SW, GET-Route, URL-Normalisierung, Bestätigungsdialog); behebt nebenbei das „URL als Live-Titel"-Verhalten</td>
+<td>S</td>
+<td>–</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Datenmodell (<code>bootstrap</code>, Typen, Feature-Schalter)</td>
+<td>S</td>
+<td>–</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Worker-Abruf mit <code>yt-dlp</code>: Allowlist, Limits, ffmpeg, Zustände, Aufräumen, Image-Anpassung, Tests</td>
+<td>M</td>
+<td>2</td>
+</tr>
+<tr>
+<td>4</td>
+<td>UI: Status, Quelle statt Player, Fehlerzustände</td>
+<td>S–M</td>
+<td>2, Abstimmung mit der Detailseiten-Arbeit</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Untertitel-zuerst-Pfad mit Rückfall auf Audio</td>
+<td>M</td>
+<td>3</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Betrieb: yt-dlp-Updates, Gesundheitscheck, Netz-Allowlist, Dokumentation, ToS-Hinweis</td>
+<td>M (laufend)</td>
+<td>3</td>
+</tr>
+<tr>
+<td>7</td>
+<td>iOS-Kurzbefehl dokumentieren und GET-Route testen</td>
+<td>S</td>
+<td>1</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Hub-native Job-Art <code>url</code> (Option 2)</td>
+<td>L</td>
+<td>Entscheidung, 3 gelernt</td>
+</tr>
+</tbody>
+</table>
+<p>Spike (1 + 2 + 3, ohne Untertitel): etwa 1 Woche.</p>
+<hr />
+<h2 id="8-risiken">8. Risiken<a class="headerlink" href="#8-risiken" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>ToS/Urheberrecht</strong> (Abschnitt 2): höchstes Risiko, nicht durch Technik lösbar.</li>
+<li><strong>Zuverlässigkeit:</strong> Bot-Erkennung und ständige Änderungen bei YouTube; ohne Cookies von Rechenzentrums-IPs oft nicht erreichbar <strong>[Annahme]</strong>. Ein Feature, das „manchmal" geht, erzeugt Support.</li>
+<li><strong>Wartung:</strong> <code>yt-dlp</code>-Updates sind ein Dauerauftrag.</li>
+<li><strong>Verwechslung mit Privatsphäre-Versprechen:</strong> Resona wirbt mit privater Verarbeitung; der Abruf geht ins Internet. Muss im UI und in <code>docs/guide/privacy.md</code> stehen.</li>
+<li><strong>Speicher/Kosten:</strong> lange Videos → viel ASR-Zeit auf dem Worker; Warteschlange kann für medizinische Diktate blockieren. Mitigation: Dauergrenze; eine Prioritätssteuerung für Jobs habe ich im Hub-Code nicht gefunden <strong>[INFERENCE: nicht gezielt gesucht]</strong>.</li>
+<li><strong>Detailseite/Player:</strong> Bestehende UI nimmt Audio an.</li>
+<li><strong>Fehlklassifizierung beim Teilen:</strong> Nicht jeder geteilte Link ist YouTube; bei Nicht-Treffer muss das alte Verhalten bleiben.</li>
+</ol>
+<hr />
+<h2 id="9-empfehlung">9. Empfehlung<a class="headerlink" href="#9-empfehlung" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Jetzt unabhängig von der Funktion beheben:</strong> Beim Teilen eines Links (Text/URL ohne Datei) nicht stillschweigend eine Live-Aufnahme mit der URL als Titel öffnen. Mindestens eine Meldung „Links können noch nicht transkribiert werden" (Schnitt 1, klein).</li>
+<li><strong>Funktion selbst: zurückstellen, bis die Rechtsfrage für den eigenen Einsatz geklärt ist.</strong> Wenn es gebraucht wird: Option 1 als Spike, <strong>standardmäßig aus</strong>, nur für selbst betriebene Installationen, <strong>nicht auf dem öffentlichen Hub</strong>; Untertitel zuerst (Option 3) als risikoärmerer Einstieg, Audio nur als bewusster Rückfall; Audiokopie nie dauerhaft speichern; keine Cookies.</li>
+<li><strong>Hub-native Job-Art (Option 2) nicht bauen</strong>, solange nur die PWA den Bedarf hat.</li>
+<li>Offene Entscheidungen vor einem Spike: (a) Dauer-/Größengrenze gegen die 200-MiB-Hubgrenze, (b) Untertitelweg ja/nein, (c) wo der Schalter lebt (nur PWA/Worker-Env), (d) wer die rechtliche Einschätzung gibt.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../design/admin-console/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Admin Console Design Direction">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Admin Console Design Direction
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../forge-editor-integration/" class="md-footer__link md-footer__link--next" aria-label="Next: Forge-Editor-Integration (Studie)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Forge-Editor-Integration (Studie)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.instant", "navigation.top", "navigation.footer", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
