@@ -40,8 +40,8 @@ services:
     environment:
       DATA_PATH: /data
       RESONA_MAX_UPLOAD_BYTES: ${RESONA_MAX_UPLOAD_BYTES:-209715200}
-      CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}
-      RESONA_PUBLIC_URL: ${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://resona.ecsplico.de,${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}}
+      RESONA_PUBLIC_URL: ${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}
       LOGLEVEL: ${LOGLEVEL:-info}
     healthcheck:
       test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/health', timeout=3)"]
@@ -50,9 +50,13 @@ services:
       retries: 5
       start_period: 20s
     labels:
-      - caddy_0=${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
+      - caddy_0=${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}
       - caddy_0.reverse_proxy={{upstreams 7000}}
       - caddy_0.header=-Server
+      # Temporary: workers enrolled against the old hub origin (the PWA now owns
+      # resona.ecsplico.de) keep their pull protocol until they are re-pointed.
+      - caddy_1=https://resona.ecsplico.de
+      - caddy_1.reverse_proxy=/v1/workers/* {{upstreams 7000}}
       - caddy_ingress_network=coolify
 
   mcp:
@@ -67,11 +71,11 @@ services:
     networks: [default, coolify]
     environment:
       RESONA_API_URL: http://hub:7000
-      RESONA_MCP_ALLOWED_HOSTS: ${RESONA_PUBLIC_HOST:-resona.ecsplico.de},${RESONA_PUBLIC_HOST:-resona.ecsplico.de}:*
-      RESONA_MCP_ALLOWED_ORIGINS: ${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
+      RESONA_MCP_ALLOWED_HOSTS: ${RESONA_PUBLIC_HOST:-resona-hub.ecsplico.de},${RESONA_PUBLIC_HOST:-resona-hub.ecsplico.de}:*
+      RESONA_MCP_ALLOWED_ORIGINS: ${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}
     labels:
       # Same Caddy site as the hub; the path-matched route sorts before the hub's catch-all.
-      - caddy_0=${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}
+      - caddy_0=${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}
       - caddy_0.reverse_proxy=/mcp* {{upstreams 7010}}
       - caddy_0.reverse_proxy.flush_interval=-1
       - caddy_ingress_network=coolify
