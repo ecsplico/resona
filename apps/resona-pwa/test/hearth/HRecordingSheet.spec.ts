@@ -66,6 +66,15 @@ describe("HRecordingSheet", () => {
 		expect(w.findAll("[data-testid=\"wave-bar\"]")).toHaveLength(5);
 	});
 
+	it("shows only the newest bars that fit and scales quiet levels up", async () => {
+		const levels = Array.from({ length: 100 }, (_, i) => (i === 99 ? 0.1 : 0.2));
+		const w = await mountSuspended(HRecordingSheet, { props: { elapsed: 0, levels } });
+		const bars = w.findAll("[data-testid=\"wave-bar\"]");
+		expect(bars).toHaveLength(44);
+		expect(bars.at(-1)!.attributes("style")).toContain("height: 30%");
+		expect(bars[0]!.attributes("style")).toContain("height: 60%");
+	});
+
 	it("emits stop when the stop button is clicked", async () => {
 		const w = await mountSuspended(HRecordingSheet, {
 			props: { elapsed: 0, levels: [] },

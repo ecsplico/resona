@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 // `label` replaces the default heading, e.g. "Weiter aufnehmen" when continuing a recording.
 const props = defineProps<{ elapsed: number; levels: number[]; paused?: boolean; label?: string }>();
+
+// Only the newest bars that fit the sheet (7 px each incl. gap, 432 px dialog / phone width).
+const MAX_BARS = 44;
+// Speech RMS sits around 0.05-0.3, so bars are scaled up to use the wave's height.
+const LEVEL_GAIN = 3;
+
+const bars = computed(() => props.levels.slice(-MAX_BARS).map(level => Math.max(4, Math.min(1, level * LEVEL_GAIN) * 100)));
 
 const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: [] }>();
 
@@ -60,11 +67,11 @@ function togglePause(): void {
 				:class="{ 'is-paused': paused }"
 			>
 				<span
-					v-for="(level, i) in levels"
+					v-for="(height, i) in bars"
 					:key="i"
 					class="h-rec__bar"
 					data-testid="wave-bar"
-					:style="{ height: Math.max(4, Math.min(1, level) * 100) + '%' }"
+					:style="{ height: height + '%' }"
 				/>
 			</div>
 
@@ -165,7 +172,7 @@ function togglePause(): void {
 @keyframes h-rec-in { from { opacity:0; transform:translateY(8px); } }
 @media (prefers-reduced-motion:reduce) { .h-rec--dialog .h-rec__sheet { animation:none; } }
 .h-rec__eyebrow { margin:0; font-family:var(--font-body); font-weight:600; font-size:12px; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent-soft); }
-.h-rec__wave { display:flex; align-items:center; justify-content:center; gap:3px; height:72px; width:100%; }
+.h-rec__wave { display:flex; align-items:center; justify-content:center; gap:3px; height:72px; width:100%; overflow:hidden; }
 .h-rec__wave.is-paused { opacity:.5; }
 .h-rec__bar { flex:0 0 auto; width:4px; min-height:4px; border-radius:999px; background:var(--accent); }
 .h-rec__timer { display:flex; align-items:center; gap:10px; }
