@@ -56,7 +56,8 @@ services:
       # Temporary: workers enrolled against the old hub origin (the PWA now owns
       # resona.ecsplico.de) keep their pull protocol until they are re-pointed.
       - caddy_1=https://resona.ecsplico.de
-      - caddy_1.reverse_proxy=/v1/workers/* {{upstreams 7000}}
+      - caddy_1.handle=/v1/workers/*
+      - caddy_1.handle.reverse_proxy={{upstreams 7000}}
       - caddy_ingress_network=coolify
 
   mcp:
