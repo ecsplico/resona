@@ -1280,6 +1280,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#hostnames-and-the-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hostnames and the PWA
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#image" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2300,6 +2311,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#hostnames-and-the-pwa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hostnames and the PWA
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#image" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2440,18 +2462,24 @@
 <td><code>hub</code></td>
 <td><code>ghcr.io/ecsplico/resona-hub@sha256:&lt;digest&gt;</code></td>
 <td><code>:7000</code> (<code>expose</code> only)</td>
-<td><code>https://resona.ecsplico.de/*</code></td>
+<td><code>https://resona-hub.ecsplico.de/*</code></td>
 </tr>
 <tr>
 <td><code>mcp</code></td>
 <td>same image, <code>resona-mcp http</code></td>
 <td><code>:7010</code> (<code>expose</code> only)</td>
-<td><code>https://resona.ecsplico.de/mcp</code></td>
+<td><code>https://resona-hub.ecsplico.de/mcp</code></td>
 </tr>
 </tbody>
 </table>
 <p>There are no models, GPUs, Docker socket mounts, privileges or published ports. Both containers run as UID 1000 with a read-only root filesystem, all capabilities dropped and <code>no-new-privileges</code>. SQLite and the transient job payloads live on the named volume <code>resona-data</code> (<code>/data</code>); the database is never exposed. Inference runs on approved pull workers that connect outbound over HTTPS (<a href="../mac-worker/">Mac worker</a>, <a href="../full-stack/">Linux CUDA worker</a>). When no worker is online, jobs wait in the queue.</p>
 <p>TLS ends at Coolify's Caddy proxy. In raw mode Coolify adds no labels or networks, so the compose file declares the Caddy labels and the external <code>coolify</code> network itself.</p>
+<h2 id="hostnames-and-the-pwa">Hostnames and the PWA<a class="headerlink" href="#hostnames-and-the-pwa" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Hub + MCP: <code>https://resona-hub.ecsplico.de</code>.</li>
+<li>PWA: <code>https://resona.ecsplico.de</code>, a separate Coolify app <code>resona-pwa</code> (Dockerfile build pack, base directory <code>/apps/resona-pwa</code>, port 3000), built in <strong>standalone</strong> mode (<code>NUXT_PUBLIC_DATA_MODE=standalone</code>, <code>NUXT_PUBLIC_RESONA_API_URL=https://resona-hub.ecsplico.de</code>; build-time env). Data lives in each browser's IndexedDB; the hub token is entered per device under Einstellungen &gt; Verbindung.</li>
+<li>Legacy: the hub also answers <code>https://resona.ecsplico.de/v1/workers/*</code> (a <code>handle</code> route in the compose labels) so workers still configured with the old origin keep working. Re-point them with <code>--hub https://resona-hub.ecsplico.de</code>, then remove the <code>caddy_1*</code> labels.</li>
+</ul>
 <h2 id="image">Image<a class="headerlink" href="#image" title="Permanent link">&para;</a></h2>
 <p>Both services run the released hub image <code>ghcr.io/ecsplico/resona-hub</code>, pinned by digest; the compose file has no <code>build:</code>, so Coolify only pulls. The GHCR package is <strong>private</strong>. The Coolify host (<code>&lt;user&gt;@&lt;coolify-host&gt;</code>) holds a GitHub token with the single scope <code>read:packages</code> in <code>/root/.docker/config.json</code> (check with <code>curl -sI -H "Authorization: token &lt;t&gt;" https://api.github.com/user | grep x-oauth-scopes</code>), which Coolify's <code>docker compose pull</code> uses. Never put a token with wider scopes there. Should that token be revoked, pull the pinned digest from your own logged-in machine through the remote daemon instead of logging the server in: <code>docker --host ssh://&lt;user&gt;@&lt;coolify-host&gt; pull ghcr.io/ecsplico/resona-hub@sha256:&lt;digest&gt;</code> (the client sends the credential per request; nothing is stored on the server) and add <code>pull_policy: missing</code> to both services so Compose skips the pull of a digest that is already present.</p>
 <p>Bump per release:</p>
@@ -2462,7 +2490,7 @@
 </ol>
 <p>Manual build outside the workflow (the first image, <code>0.1.0-d7405d3</code>, was built this way): build from a clean <code>git archive &lt;commit&gt;</code> tree, never the working tree, <code>docker buildx build --platform linux/amd64 -f packages/api/Dockerfile -t ghcr.io/ecsplico/resona-hub:&lt;version&gt;-&lt;commit&gt; --push --metadata-file meta.json .</code>, and pin <code>containerimage.digest</code> from <code>meta.json</code>. The Coolify server is amd64.</p>
 <h2 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h2>
-<p>No variable is required; the defaults serve <code>https://resona.ecsplico.de</code>.</p>
+<p>No variable is required; the defaults serve <code>https://resona-hub.ecsplico.de</code>.</p>
 <table>
 <thead>
 <tr>
@@ -2474,17 +2502,17 @@
 <tbody>
 <tr>
 <td><code>RESONA_PUBLIC_URL</code></td>
-<td><code>https://resona.ecsplico.de</code></td>
-<td>Caddy site, default CORS origin, MCP <code>Origin</code> allowlist</td>
+<td><code>https://resona-hub.ecsplico.de</code></td>
+<td>Caddy site, CORS origin, MCP <code>Origin</code> allowlist</td>
 </tr>
 <tr>
 <td><code>CORS_ORIGINS</code></td>
-<td><code>${RESONA_PUBLIC_URL}</code></td>
+<td><code>https://resona.ecsplico.de,${RESONA_PUBLIC_URL}</code> (the PWA origin plus the hub)</td>
 <td>Comma-separated browser origins allowed by CORS (<code>CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}</code>). Set it to add the PWA origin, e.g. <code>https://resona.ecsplico.de,https://&lt;pwa-host&gt;</code></td>
 </tr>
 <tr>
 <td><code>RESONA_PUBLIC_HOST</code></td>
-<td><code>resona.ecsplico.de</code></td>
+<td><code>resona-hub.ecsplico.de</code></td>
 <td>MCP <code>Host</code> allowlist</td>
 </tr>
 <tr>
@@ -2517,14 +2545,14 @@
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>coolify<span class="w"> </span>deploy<span class="w"> </span>get<span class="w"> </span>&lt;deployment-uuid&gt;<span class="w"> </span>--format<span class="w"> </span>json<span class="w">   </span><span class="c1"># until &quot;status&quot;: &quot;finished&quot;</span>
 </code></pre></div>
 <p>Check:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>https://resona.ecsplico.de/health<span class="w">       </span><span class="c1"># {&quot;status&quot;:&quot;ok&quot;}</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>curl<span class="w"> </span>https://resona.ecsplico.de/ready<span class="w">        </span><span class="c1"># 200 {&quot;status&quot;:&quot;ready&quot;,...,&quot;capacity&quot;:&quot;degraded&quot;|&quot;available&quot;}</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>curl<span class="w"> </span>https://resona.ecsplico.de/v1/version<span class="w">   </span><span class="c1"># {&quot;release_id&quot;:...,&quot;hub_version&quot;:...,&quot;worker_protocol&quot;:1}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>https://resona-hub.ecsplico.de/health<span class="w">       </span><span class="c1"># {&quot;status&quot;:&quot;ok&quot;}</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>curl<span class="w"> </span>https://resona-hub.ecsplico.de/ready<span class="w">        </span><span class="c1"># 200 {&quot;status&quot;:&quot;ready&quot;,...,&quot;capacity&quot;:&quot;degraded&quot;|&quot;available&quot;}</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>curl<span class="w"> </span>https://resona-hub.ecsplico.de/v1/version<span class="w">   </span><span class="c1"># {&quot;release_id&quot;:...,&quot;hub_version&quot;:...,&quot;worker_protocol&quot;:1}</span>
 </code></pre></div>
 <p><code>/ready</code> turns <code>503</code> when the schema is behind, <code>/data</code> is not writable or the maintenance loop stalls. Offline workers only change <code>capacity</code> to <code>degraded</code>.</p>
 <h2 id="approve-releases-before-production-jobs">Approve releases before production jobs<a class="headerlink" href="#approve-releases-before-production-jobs" title="Permanent link">&para;</a></h2>
 <p>A freshly deployed hub runs no production jobs until an evaluation of each <code>(execution profile, platform)</code> has been promoted on <strong>this</strong> hub (<a href="../releases/">Releases</a>); jobs submitted before that wait with <code>queue_reason: release_not_approved</code>. With the Mac worker online, run per profile the clients use (<code>private-auto</code> is the organization default, <code>mac-private</code> the worker profile):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">RESONA_API_URL</span><span class="o">=</span>https://resona.ecsplico.de<span class="w"> </span><span class="nv">RESONA_API_KEY</span><span class="o">=</span><span class="k">$(</span>cat<span class="w"> </span>~/.resona/hub-admin.token<span class="k">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">RESONA_API_URL</span><span class="o">=</span>https://resona-hub.ecsplico.de<span class="w"> </span><span class="nv">RESONA_API_KEY</span><span class="o">=</span><span class="k">$(</span>cat<span class="w"> </span>~/.resona/hub-admin.token<span class="k">)</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--profile<span class="w"> </span>private-auto<span class="w"> </span>--remote<span class="w"> </span>--output-dir<span class="w"> </span>/tmp/eval-private-auto
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>promote<span class="w"> </span>&lt;evaluation-id&gt;<span class="w"> </span>--report<span class="w"> </span>/tmp/eval-private-auto/report.json<span class="w">   </span><span class="c1"># pins eval/baselines.json; commit it</span>
 </code></pre></div>
