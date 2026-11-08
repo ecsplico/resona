@@ -84,6 +84,26 @@ export function useDirectus() {
 		isAuthenticated.value = true;
 	}
 
+	// Single sign-on through a Directus auth provider (Keycloak). Directus runs the
+	// OpenID flow and returns to `returnPath` with its refresh-token cookie set.
+	function loginWithSso(provider: string, returnPath: string): void {
+		const redirect = encodeURIComponent(`${window.location.origin}${returnPath}`);
+		window.location.assign(`${directusUrl}/auth/login/${provider}?redirect=${redirect}`);
+	}
+
+	// Called on the page SSO returns to: trades the refresh-token cookie for a session.
+	async function completeSso(): Promise<boolean> {
+		try {
+			await directus.refresh();
+			accessToken.value = (await directus.getToken()) ?? "";
+			isAuthenticated.value = !!accessToken.value;
+		}
+		catch {
+			clearLocalSession();
+		}
+		return isAuthenticated.value;
+	}
+
 	async function logout(): Promise<void> {
 		try {
 			await directus.logout();
@@ -130,6 +150,8 @@ export function useDirectus() {
 		client: directus,
 		isAuthenticated,
 		login,
+		loginWithSso,
+		completeSso,
 		logout,
 		restoreSession,
 		assetUrl,

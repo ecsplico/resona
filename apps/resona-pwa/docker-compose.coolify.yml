@@ -1,6 +1,7 @@
 # Coolify variant of docker-compose.yml, "Raw Compose Deployment" ON: no published
-# ports; the Caddy labels below route by domain (like the hub's compose file: pwa -> resona.ecsplico.de, directus -> resona-directus.ecsplico.de) and
-# no insecure defaults (missing secrets fail the deploy). Build pack "Docker
+# ports; the Caddy labels below route the PWA host (like the hub's compose file).
+# Directus is internal only: the PWA proxies it at /directus. Keycloak (realm
+# ecsplico) is the SSO provider. Missing secrets fail the deploy. Build pack "Docker
 # Compose", base directory /apps/resona-pwa, compose file /docker-compose.coolify.yml.
 # Runbook: docs/server/coolify.md.
 # PWA data layer: Directus (auth/data/files) + the project-worker (recordings and
@@ -12,12 +13,6 @@ services:
     image: directus/directus:11
     expose:
       - "8055"
-    networks: [default, coolify]
-    labels:
-      - caddy_0=${NUXT_PUBLIC_DIRECTUS_URL}
-      - caddy_0.reverse_proxy={{upstreams 8055}}
-      - caddy_0.header=-Server
-      - caddy_ingress_network=coolify
     volumes:
       - directus-db:/directus/database
       - directus-uploads:/directus/uploads
@@ -30,7 +25,20 @@ services:
       WEBSOCKETS_ENABLED: "true"
       # CORS so the browser PWA origin may call Directus directly.
       CORS_ENABLED: "true"
-      PUBLIC_URL: ${NUXT_PUBLIC_DIRECTUS_URL}
+      # Directus has no host of its own: the PWA proxies it at ${PWA_ORIGIN}/directus
+      # (server/routes/directus/[...path].ts), which is also where Keycloak returns.
+      PUBLIC_URL: ${PWA_ORIGIN}/directus
+      REFRESH_TOKEN_COOKIE_SECURE: "true"
+      REFRESH_TOKEN_COOKIE_SAME_SITE: lax
+      AUTH_PROVIDERS: keycloak
+      AUTH_KEYCLOAK_DRIVER: openid
+      AUTH_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-resona-pwa}
+      AUTH_KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?set KEYCLOAK_CLIENT_SECRET}
+      AUTH_KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL:-https://keycloak.ecsplico.de/realms/ecsplico/.well-known/openid-configuration}
+      AUTH_KEYCLOAK_IDENTIFIER_KEY: email
+      AUTH_KEYCLOAK_ALLOW_PUBLIC_REGISTRATION: "true"
+      AUTH_KEYCLOAK_DEFAULT_ROLE_ID: ${DIRECTUS_USER_ROLE_ID:?set DIRECTUS_USER_ROLE_ID}
+      AUTH_KEYCLOAK_REDIRECT_ALLOW_LIST: ${PWA_ORIGIN}/login
       CORS_ORIGIN: ${PWA_ORIGIN:?set PWA_ORIGIN}
     healthcheck:
       # 127.0.0.1, not localhost: inside the container `localhost` resolves to ::1
@@ -89,6 +97,8 @@ services:
       # into the page, so the URLs are right even if Coolify's build step did not
       # interpolate the build args above.
       NUXT_PUBLIC_DIRECTUS_URL: ${NUXT_PUBLIC_DIRECTUS_URL}
+      NUXT_PUBLIC_SSO_PROVIDER: keycloak
+      NUXT_DIRECTUS_INTERNAL_URL: http://directus:8055
       NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL}
       NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
       NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}

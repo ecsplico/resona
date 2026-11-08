@@ -27,6 +27,10 @@ export default defineNuxtConfig({
 		// Password (>= 32 chars) sealing the per-browser session cookie that holds
 		// the calendar refresh/access tokens. Set via NUXT_SESSION_PASSWORD.
 		sessionPassword: "",
+		// Server-side URL of Directus (set via NUXT_DIRECTUS_INTERNAL_URL). When set,
+		// /directus/** proxies the allow-listed Directus API paths, so Directus needs
+		// no public host of its own (server/routes/directus/[...path].ts).
+		directusInternalUrl: "",
 		public: {
 			directusUrl: "http://localhost:7700",
 			resonaApiUrl: "http://localhost:7710",
@@ -34,6 +38,8 @@ export default defineNuxtConfig({
 			defaultProfile: "default",
 			calendarEnabled: false,
 			dataMode: "directus",
+			// Directus auth provider key for single sign-on ("" = password login only).
+			ssoProvider: "",
 		},
 	},
 	devServer: { port: 7730 },

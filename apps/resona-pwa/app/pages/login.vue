@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 
 definePageMeta({ layout: false });
 
-const { login } = useDirectus();
+const { login, loginWithSso, completeSso } = useDirectus();
+const ssoProvider = useRuntimeConfig().public.ssoProvider;
 
 const email = ref("");
 const password = ref("");
 const submitting = ref(false);
 const error = ref("");
+
+onMounted(async () => {
+	if (useRoute().query.sso !== "1") return;
+	if (await completeSso()) await navigateTo("/");
+	else error.value = "Anmeldung fehlgeschlagen";
+});
 
 async function submit(): Promise<void> {
 	if (submitting.value) return;
@@ -97,6 +104,15 @@ async function submit(): Promise<void> {
 				@click="submit"
 			>
 				Anmelden
+			</HButton>
+			<HButton
+				v-if="ssoProvider"
+				class="login__submit"
+				variant="secondary"
+				type="button"
+				@click="loginWithSso(ssoProvider, '/login?sso=1')"
+			>
+				Mit Keycloak anmelden
 			</HButton>
 		</form>
 	</div>
