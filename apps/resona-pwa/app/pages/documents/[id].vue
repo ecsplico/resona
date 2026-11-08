@@ -21,6 +21,9 @@ const chipStatus = computed(() => {
 	return status === "processing" ? "transcribing" : status;
 });
 
+const hubSettings = useHubSettings();
+const provenanceLines = computed(() => describeProvenance(doc.value?.provenance));
+
 const metaLine = computed(() => {
 	const d = doc.value;
 	if (!d) {
@@ -335,6 +338,18 @@ onUnmounted(() => {
 					>
 						{{ metaLine }}
 					</p>
+					<ul
+						v-if="hubSettings.expert && provenanceLines.length"
+						class="doc__provenance tabular"
+						data-testid="doc-provenance"
+					>
+						<li
+							v-for="line in provenanceLines"
+							:key="line"
+						>
+							{{ line }}
+						</li>
+					</ul>
 					<div
 						v-if="chipStatus !== 'done'"
 						class="doc__state"
@@ -397,6 +412,7 @@ onUnmounted(() => {
 .doc__meta { display:flex; flex-direction:column; gap:6px; }
 .doc__title { margin:0; font-family:var(--font-display); font-size:var(--fs-xl); font-weight:600; line-height:1.25; color:var(--fg1); overflow-wrap:anywhere; }
 .doc__metaline { margin:0; font-family:var(--font-mono); font-size:var(--fs-xs); color:var(--fg3); }
+.doc__provenance { margin:0; padding:0; list-style:none; font-family:var(--font-mono); font-size:12px; color:var(--fg3); }
 .doc__state { display:flex; align-items:center; gap:10px; margin-top:6px; }
 .doc__banner { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:12px 14px; border-radius:var(--r-md); background:var(--tomato-soft); color:var(--tomato-deep); font-size:var(--fs-sm); }
 .doc__banner-text { flex:1; min-width:180px; }

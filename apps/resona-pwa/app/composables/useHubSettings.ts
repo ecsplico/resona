@@ -9,12 +9,15 @@ import { reactive, watch } from "vue";
 export interface HubSettings {
 	/** Org-bound hub token; empty → not configured on this device. */
 	token: string;
+	/** Expert mode: show where/how a result was produced (worker, model, time). */
+	expert: boolean;
 }
 
 const STORAGE_KEY = "resona.hub.settings";
 
 const DEFAULTS: HubSettings = {
 	token: "",
+	expert: false,
 };
 
 let singleton: HubSettings | null = null;
@@ -31,6 +34,9 @@ function load(target: HubSettings): void {
 		const saved = JSON.parse(raw) as Partial<HubSettings>;
 		if (typeof saved.token === "string") {
 			target.token = saved.token;
+		}
+		if (typeof saved.expert === "boolean") {
+			target.expert = saved.expert;
 		}
 	}
 	catch {

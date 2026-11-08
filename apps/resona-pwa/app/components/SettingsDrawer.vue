@@ -321,6 +321,18 @@ watch(tab, (value) => {
 					Der Token wird nur auf diesem Gerät gespeichert.
 				</p>
 
+				<div class="drawer__field drawer__field--row">
+					<span class="drawer__label">Expertenmodus</span>
+					<HToggle
+						v-model="hubSettings.expert"
+						aria-label="Expertenmodus"
+						data-testid="settings-expert"
+					/>
+				</div>
+				<p class="drawer__sub">
+					Zeigt bei Aufnahmen und Dokumenten, auf welchem Worker, mit welchem Modell und wie lange die Verarbeitung dauerte.
+				</p>
+
 				<HButton
 					variant="secondary"
 					:disabled="hubTesting"

@@ -110,6 +110,7 @@ it via `docker compose` (the `project-worker` service).
   (`live__block--corrected`/`--pending`), save awaits `finish()` (≤90 s, prompt shows
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
+- **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
 - **Continue recording** (`useContinueRecording`, own `useRecorder`): a new part of an
   existing recording is transcribed on its own as a hub job (upload → `createJob` with a
   per-attempt `continue:recordings:<id>:<uuid>` key → `getJob` every 2 s, no timeout →

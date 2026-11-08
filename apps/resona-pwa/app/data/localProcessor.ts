@@ -149,11 +149,12 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 			segments: result.segments,
 			structured: result.structured,
 			engine: job.candidate?.engine,
+			provenance: result.provenance,
 		});
 		await spec.patch(row.id, { status: "done", hub_job_id: null, hub_job_key: null });
 	}
 	else {
-		await spec.patch(row.id, { markdown: result.markdown, pages: result.pages, status: "done", hub_job_id: null, hub_job_key: null });
+		await spec.patch(row.id, { markdown: result.markdown, pages: result.pages, provenance: result.provenance, status: "done", hub_job_id: null, hub_job_key: null });
 	}
 	await deleteJobQuietly(hub, jobId);
 }

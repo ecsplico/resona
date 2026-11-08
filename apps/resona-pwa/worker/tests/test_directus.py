@@ -98,12 +98,14 @@ async def test_write_transcript_posts_when_none_exists(base_url):
     await client.write_transcript(
         recording_id="rec-1", text="hallo", language="de",
         segments=[{"start": 0, "end": 1}], structured=None, engine="faster-whisper",
+        provenance={"worker_id": "wrk_1"},
     )
     await client.aclose()
     body = json.loads(post.calls.last.request.content)
     assert body["recording"] == "rec-1"
     assert body["text"] == "hallo"
     assert body["engine"] == "faster-whisper"
+    assert body["provenance"] == {"worker_id": "wrk_1"}
 
 
 @respx.mock
@@ -118,7 +120,7 @@ async def test_write_transcript_patches_when_exists(base_url):
     client = DirectusClient(base_url=base_url, token=TOKEN)
     await client.write_transcript(
         recording_id="rec-1", text="neu", language="de",
-        segments=None, structured=None, engine="faster-whisper",
+        segments=None, structured=None, engine="faster-whisper", provenance=None,
     )
     await client.aclose()
     body = json.loads(patch.calls.last.request.content)
@@ -133,10 +135,10 @@ async def test_write_document(base_url):
         return_value=httpx.Response(200, json={"data": {}})
     )
     client = DirectusClient(base_url=base_url, token=TOKEN)
-    await client.write_document("doc-1", markdown="# A", pages=[{"n": 1}])
+    await client.write_document("doc-1", markdown="# A", pages=[{"n": 1}], provenance={"worker_id": "wrk_1"})
     await client.aclose()
     assert json.loads(route.calls.last.request.content) == {
-        "markdown": "# A", "pages": [{"n": 1}],
+        "markdown": "# A", "pages": [{"n": 1}], "provenance": {"worker_id": "wrk_1"},
     }
 
 

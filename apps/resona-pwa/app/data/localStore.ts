@@ -1,6 +1,6 @@
 import { createStore, del, get, promisifyRequest, set, values } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import type { Recording, ResonaDocument, Transcript } from "~/types/directus";
+import type { Provenance, Recording, ResonaDocument, Transcript } from "~/types/directus";
 import type { DataStore } from "~/data/types";
 
 // Browser-local backend for NUXT_PUBLIC_DATA_MODE=standalone. idb-keyval can
@@ -135,7 +135,7 @@ export async function patchDocumentInternal(id: string, patch: Partial<ResonaDoc
  */
 export async function upsertTranscript(
 	recordingId: string,
-	t: { text: string; segments?: unknown; structured?: unknown; engine?: string | null },
+	t: { text: string; segments?: unknown; structured?: unknown; engine?: string | null; provenance?: Provenance | null },
 ): Promise<void> {
 	const recording = await get<LocalRecording>(recordingId, db().recordings);
 	if (!recording) return;
@@ -151,6 +151,7 @@ export async function upsertTranscript(
 		date_updated: ts,
 	};
 	if (t.engine) row.engine = t.engine;
+	if (t.provenance) row.provenance = t.provenance;
 	await set(row.id, row, db().transcripts);
 }
 

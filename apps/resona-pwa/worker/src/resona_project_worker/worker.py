@@ -109,11 +109,13 @@ async def _poll(
             language=result.get("language"),
             segments=result.get("segments"),
             structured=result.get("structured"),
+            provenance=result.get("provenance"),
             engine=(job.get("candidate") or {}).get("engine") or engine or None,
         )
     else:
         await directus.write_document(
             row_id, markdown=result.get("markdown") or "", pages=result.get("pages"),
+            provenance=result.get("provenance"),
         )
     await directus.mark_done(src.collection, row_id)
     log.info("completed %s %s (hub job %s)", src.collection, row_id, job_id)

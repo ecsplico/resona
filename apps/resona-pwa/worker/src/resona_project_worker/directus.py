@@ -100,6 +100,7 @@ class DirectusClient:
     async def write_transcript(
         self, *, recording_id: str, text: str, language: str | None,
         segments: list | None, structured: dict | None, engine: str | None,
+        provenance: dict | None,
     ) -> None:
         # `language` lives on the recording, not the transcript collection —
         # accepted for a uniform call site but intentionally not POSTed.
@@ -108,6 +109,7 @@ class DirectusClient:
             "segments": segments,
             "structured": structured,
             "engine": engine,
+            "provenance": provenance,
         }
         existing = await self._client.get(
             f"{self.base_url}/items/transcripts",
@@ -127,8 +129,13 @@ class DirectusClient:
             )
         resp.raise_for_status()
 
-    async def write_document(self, document_id: str, *, markdown: str, pages: list | None) -> None:
-        await self._patch("documents", document_id, {"markdown": markdown, "pages": pages})
+    async def write_document(
+        self, document_id: str, *, markdown: str, pages: list | None, provenance: dict | None,
+    ) -> None:
+        await self._patch(
+            "documents", document_id,
+            {"markdown": markdown, "pages": pages, "provenance": provenance},
+        )
 
     async def mark_done(self, collection: str, item_id: str) -> None:
         await self._patch(

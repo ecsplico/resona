@@ -55,6 +55,8 @@ async def cycle(base_url, tmp_path, *, engine=""):
         await hub.aclose()
 
 
+PROV = {"worker_id": "wrk_1", "stages": [{"stage": "asr", "engine": "faster-whisper", "model": "large-v3", "seconds": 2.5}]}
+
 @respx.mock
 @pytest.mark.anyio
 async def test_pending_audio_is_uploaded_and_submitted(base_url, tmp_path, recording):
@@ -116,6 +118,7 @@ async def test_completed_job_writes_transcript_and_deletes(base_url, tmp_path, r
         "markdown": "Hallo Welt", "raw_text": "hallo welt", "language": "de",
         "segments": [{"start": 0, "end": 1, "text": "Hallo Welt"}],
         "pages": [], "structured": {"k": 1},
+        "provenance": PROV,
     }))
     delete = respx.delete(f"{HUB}/v1/jobs/7").mock(return_value=httpx.Response(204))
     respx.get(f"{base_url}/items/transcripts").mock(
@@ -131,7 +134,7 @@ async def test_completed_job_writes_transcript_and_deletes(base_url, tmp_path, r
     assert json.loads(transcript.calls.last.request.content) == {
         "recording": "rec-1", "text": "Hallo Welt",
         "segments": [{"start": 0, "end": 1, "text": "Hallo Welt"}],
-        "structured": {"k": 1}, "engine": "faster-whisper",
+        "structured": {"k": 1}, "engine": "faster-whisper", "provenance": PROV,
     }
     assert bodies(patch) == [{"status": "done", "hub_job_id": None, "hub_job_key": None}]
     assert delete.called
@@ -290,7 +293,7 @@ async def test_completed_document_writes_markdown_and_pages(base_url, tmp_path, 
     )
     respx.get(f"{HUB}/v1/jobs/9/result").mock(return_value=httpx.Response(200, json={
         "markdown": "# Arztbrief", "pages": [{"page": 1, "markdown": "# Arztbrief"}],
-        "segments": [],
+        "segments": [], "provenance": PROV,
     }))
     delete = respx.delete(f"{HUB}/v1/jobs/9").mock(return_value=httpx.Response(204))
     patch = mock_patch(base_url, "documents", "doc-1")
@@ -298,7 +301,8 @@ async def test_completed_document_writes_markdown_and_pages(base_url, tmp_path, 
     assert await cycle(base_url, tmp_path) == 1
 
     assert bodies(patch) == [
-        {"markdown": "# Arztbrief", "pages": [{"page": 1, "markdown": "# Arztbrief"}]},
+        {"markdown": "# Arztbrief", "pages": [{"page": 1, "markdown": "# Arztbrief"}],
+         "provenance": PROV},
         {"status": "done", "hub_job_id": None, "hub_job_key": None},
     ]
     assert delete.called

@@ -39,6 +39,9 @@ const metaLine = computed(() => {
 	].filter(part => part.length > 0).join(" · ");
 });
 
+const hubSettings = useHubSettings();
+const provenanceLines = computed(() => describeProvenance(transcript.value?.provenance));
+
 // Player source resolves asynchronously through the data store (Directus asset
 // URL or a local object URL); refresh it only when the recording's audio
 // actually changes (multi-source watch compares the primitives, so a poll
@@ -604,6 +607,18 @@ onUnmounted(() => {
 					>
 						{{ metaLine }}
 					</p>
+					<ul
+						v-if="hubSettings.expert && provenanceLines.length"
+						class="detail__provenance tabular"
+						data-testid="provenance"
+					>
+						<li
+							v-for="line in provenanceLines"
+							:key="line"
+						>
+							{{ line }}
+						</li>
+					</ul>
 					<div
 						v-if="recording.status !== 'done' || canEdit"
 						class="detail__state"
@@ -935,6 +950,7 @@ onUnmounted(() => {
 .detail__meta { display:flex; flex-direction:column; gap:6px; }
 .detail__title { margin:0; font-family:var(--font-display); font-size:var(--fs-xl,22px); font-weight:600; line-height:1.25; color:var(--fg1); overflow-wrap:anywhere; }
 .detail__metaline { margin:0; font-family:var(--font-mono); font-size:12px; color:var(--fg3); font-variant-numeric:tabular-nums; }
+.detail__provenance { margin:0; padding:0; list-style:none; font-family:var(--font-mono); font-size:12px; color:var(--fg3); }
 .detail__state { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px; }
 .detail__hint { color:var(--fg3); font-size:15px; margin:0; }
 .detail__error { color:var(--danger); font-size:14px; margin:0; }

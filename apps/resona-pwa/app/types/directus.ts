@@ -1,3 +1,16 @@
+/** Hub JobResult.provenance as stored with a transcript/document. */
+export interface StageProvenance {
+	stage: string;
+	engine: string;
+	model: string;
+	accelerator?: string;
+	seconds: number;
+}
+export interface Provenance {
+	worker_id?: string | null;
+	runtime_version?: string | null;
+	stages?: StageProvenance[];
+}
 export interface Recording {
 	id: string;
 	user_created?: string;
@@ -23,6 +36,7 @@ export interface Transcript {
 	structured?: Record<string, unknown> | null;
 	segments?: unknown[] | null;
 	engine?: string;
+	provenance?: Provenance | null;
 	date_created?: string;
 	date_updated?: string;
 }
@@ -37,6 +51,7 @@ export interface ResonaDocument {
 	error_message?: string | null;
 	markdown?: string | null;
 	pages?: unknown[] | null;
+	provenance?: Provenance | null;
 	hub_job_id?: number | null;
 	hub_job_key?: string | null;
 }

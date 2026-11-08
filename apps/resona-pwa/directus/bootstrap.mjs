@@ -105,6 +105,8 @@ const COLLECTIONS = {
 		{ field: "structured", type: "json", schema: {}, meta: { special: ["cast-json"] } },
 		{ field: "segments", type: "json", schema: {}, meta: { special: ["cast-json"] } },
 		plain("engine", "string"),
+		// hub JobResult.provenance: worker, model, seconds per stage (expert mode)
+		{ field: "provenance", type: "json", schema: {}, meta: { special: ["cast-json"] } },
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 	],
@@ -120,6 +122,7 @@ const COLLECTIONS = {
 		plain("error_message", "text"),
 		plain("markdown", "text"),
 		{ field: "pages", type: "json", schema: {}, meta: { special: ["cast-json"] } },
+		{ field: "provenance", type: "json", schema: {}, meta: { special: ["cast-json"] } },
 		plain("hub_job_id", "integer"),
 		// hub Idempotency-Key of the current submission attempt; kept across stale
 		// recovery so a lost create response never yields a second hub job

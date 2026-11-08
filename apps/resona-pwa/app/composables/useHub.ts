@@ -2,6 +2,7 @@
  * The only hub HTTP client in the app. Every request authenticates with the
  * per-device token from `useHubSettings` (`Authorization: Bearer <token>`).
  */
+import type { Provenance } from "~/types/directus";
 
 export class HubError extends Error {
 	/** HTTP status; 0 = network failure (unreachable host, CORS, offline). */
@@ -59,7 +60,7 @@ export interface HubResult {
 	pages: unknown[];
 	warnings: unknown[];
 	structured: unknown;
-	provenance: unknown;
+	provenance: Provenance | null;
 }
 
 export interface EngineList<T> {
