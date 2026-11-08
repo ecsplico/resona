@@ -4,12 +4,18 @@ The public hub runs on the ecsplico Coolify server from `docker-compose.coolify.
 
 | Service | Image | Listens | Route |
 |---------|-------|---------|-------|
-| `hub` | `ghcr.io/ecsplico/resona-hub@sha256:<digest>` | `:7000` (`expose` only) | `https://resona.ecsplico.de/*` |
-| `mcp` | same image, `resona-mcp http` | `:7010` (`expose` only) | `https://resona.ecsplico.de/mcp` |
+| `hub` | `ghcr.io/ecsplico/resona-hub@sha256:<digest>` | `:7000` (`expose` only) | `https://resona-hub.ecsplico.de/*` |
+| `mcp` | same image, `resona-mcp http` | `:7010` (`expose` only) | `https://resona-hub.ecsplico.de/mcp` |
 
 There are no models, GPUs, Docker socket mounts, privileges or published ports. Both containers run as UID 1000 with a read-only root filesystem, all capabilities dropped and `no-new-privileges`. SQLite and the transient job payloads live on the named volume `resona-data` (`/data`); the database is never exposed. Inference runs on approved pull workers that connect outbound over HTTPS ([Mac worker](mac-worker.md), [Linux CUDA worker](full-stack.md)). When no worker is online, jobs wait in the queue.
 
 TLS ends at Coolify's Caddy proxy. In raw mode Coolify adds no labels or networks, so the compose file declares the Caddy labels and the external `coolify` network itself.
+
+## Hostnames and the PWA
+
+- Hub + MCP: `https://resona-hub.ecsplico.de`.
+- PWA: `https://resona.ecsplico.de`, a separate Coolify app `resona-pwa` (Dockerfile build pack, base directory `/apps/resona-pwa`, port 3000), built in **standalone** mode (`NUXT_PUBLIC_DATA_MODE=standalone`, `NUXT_PUBLIC_RESONA_API_URL=https://resona-hub.ecsplico.de`; build-time env). Data lives in each browser's IndexedDB; the hub token is entered per device under Einstellungen > Verbindung.
+- Legacy: the hub also answers `https://resona.ecsplico.de/v1/workers/*` (a `handle` route in the compose labels) so workers still configured with the old origin keep working. Re-point them with `--hub https://resona-hub.ecsplico.de`, then remove the `caddy_1*` labels.
 
 ## Image
 
@@ -25,13 +31,13 @@ Manual build outside the workflow (the first image, `0.1.0-d7405d3`, was built t
 
 ## Environment
 
-No variable is required; the defaults serve `https://resona.ecsplico.de`.
+No variable is required; the defaults serve `https://resona-hub.ecsplico.de`.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `RESONA_PUBLIC_URL` | `https://resona.ecsplico.de` | Caddy site, default CORS origin, MCP `Origin` allowlist |
-| `CORS_ORIGINS` | `${RESONA_PUBLIC_URL}` | Comma-separated browser origins allowed by CORS (`CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}`). Set it to add the PWA origin, e.g. `https://resona.ecsplico.de,https://<pwa-host>` |
-| `RESONA_PUBLIC_HOST` | `resona.ecsplico.de` | MCP `Host` allowlist |
+| `RESONA_PUBLIC_URL` | `https://resona-hub.ecsplico.de` | Caddy site, CORS origin, MCP `Origin` allowlist |
+| `CORS_ORIGINS` | `https://resona.ecsplico.de,${RESONA_PUBLIC_URL}` (the PWA origin plus the hub) | Comma-separated browser origins allowed by CORS (`CORS_ORIGINS: ${CORS_ORIGINS:-${RESONA_PUBLIC_URL:-https://resona.ecsplico.de}}`). Set it to add the PWA origin, e.g. `https://resona.ecsplico.de,https://<pwa-host>` |
+| `RESONA_PUBLIC_HOST` | `resona-hub.ecsplico.de` | MCP `Host` allowlist |
 | `RESONA_MAX_UPLOAD_BYTES` | `209715200` | Upload and worker-result cap. The app enforces it while streaming, independent of the proxy |
 | `LOGLEVEL` | `info` | Uvicorn log level. Access lines never carry query strings |
 
@@ -61,9 +67,9 @@ coolify deploy get <deployment-uuid> --format json   # until "status": "finished
 Check:
 
 ```bash
-curl https://resona.ecsplico.de/health       # {"status":"ok"}
-curl https://resona.ecsplico.de/ready        # 200 {"status":"ready",...,"capacity":"degraded"|"available"}
-curl https://resona.ecsplico.de/v1/version   # {"release_id":...,"hub_version":...,"worker_protocol":1}
+curl https://resona-hub.ecsplico.de/health       # {"status":"ok"}
+curl https://resona-hub.ecsplico.de/ready        # 200 {"status":"ready",...,"capacity":"degraded"|"available"}
+curl https://resona-hub.ecsplico.de/v1/version   # {"release_id":...,"hub_version":...,"worker_protocol":1}
 ```
 
 `/ready` turns `503` when the schema is behind, `/data` is not writable or the maintenance loop stalls. Offline workers only change `capacity` to `degraded`.
@@ -73,7 +79,7 @@ curl https://resona.ecsplico.de/v1/version   # {"release_id":...,"hub_version":.
 A freshly deployed hub runs no production jobs until an evaluation of each `(execution profile, platform)` has been promoted on **this** hub ([Releases](releases.md)); jobs submitted before that wait with `queue_reason: release_not_approved`. With the Mac worker online, run per profile the clients use (`private-auto` is the organization default, `mac-private` the worker profile):
 
 ```bash
-export RESONA_API_URL=https://resona.ecsplico.de RESONA_API_KEY=$(cat ~/.resona/hub-admin.token)
+export RESONA_API_URL=https://resona-hub.ecsplico.de RESONA_API_KEY=$(cat ~/.resona/hub-admin.token)
 resona eval --profile private-auto --remote --output-dir /tmp/eval-private-auto
 resona eval promote <evaluation-id> --report /tmp/eval-private-auto/report.json   # pins eval/baselines.json; commit it
 ```
