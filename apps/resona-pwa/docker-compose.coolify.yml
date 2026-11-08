@@ -32,6 +32,10 @@ services:
       REFRESH_TOKEN_COOKIE_SAME_SITE: lax
       AUTH_PROVIDERS: keycloak
       AUTH_KEYCLOAK_DRIVER: openid
+      # refresh-token cookie (the PWA exchanges it via /auth/refresh, mode json);
+      # the default "session" mode would set a session cookie the PWA's bearer-token
+      # client cannot exchange.
+      AUTH_KEYCLOAK_MODE: cookie
       AUTH_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-resona-pwa}
       AUTH_KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?set KEYCLOAK_CLIENT_SECRET}
       AUTH_KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL:-https://keycloak.ecsplico.de/realms/ecsplico/.well-known/openid-configuration}
