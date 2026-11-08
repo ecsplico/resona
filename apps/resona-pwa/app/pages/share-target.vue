@@ -50,7 +50,9 @@ async function loadStash(): Promise<void> {
 			pendingBlob.value = type === raw.type ? raw : new Blob([raw], { type });
 		}
 		pendingName.value = filename;
-		pendingTitle.value = (sharedTitle || filename.replace(/\.[^.]+$/, "")).trim();
+		// Never empty: Speichern is disabled without a title.
+		pendingTitle.value = (sharedTitle || filename.replace(/\.[^.]+$/, "")).trim()
+			|| `Geteilte Aufnahme ${new Date().toLocaleString("de-DE")}`;
 		status.value = "ready";
 	}
 	catch {

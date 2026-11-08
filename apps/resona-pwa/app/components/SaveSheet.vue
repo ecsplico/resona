@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import type { Ref } from "vue";
 
 const props = withDefaults(
@@ -15,6 +15,10 @@ const emit = defineEmits<{
 const cfg = useRuntimeConfig().public;
 
 const title = ref(props.initialTitle);
+// A later share replaces the proposal while the sheet is still open.
+watch(() => props.initialTitle, (next) => {
+	title.value = next;
+});
 const language = ref(cfg.defaultLanguage);
 const profile = ref(cfg.defaultProfile);
 const transcribe = ref(true);
