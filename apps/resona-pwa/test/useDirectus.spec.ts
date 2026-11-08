@@ -50,9 +50,9 @@ describe("useDirectus", () => {
 		await useDirectus().logout();
 	});
 
-	it("configures JSON auth with autoRefresh and a localStorage-backed storage", () => {
+	it("configures cookie-mode auth (refresh token in the httpOnly cookie) with autoRefresh and a localStorage-backed storage", () => {
 		useDirectus();
-		expect(authConfig.mode).toBe("json");
+		expect(authConfig.mode).toBe("cookie");
 		const opts = authConfig.options as AuthStorageOpts;
 		expect(opts.autoRefresh).toBe(true);
 		expect(opts.storage).toBeTruthy();

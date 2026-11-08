@@ -8,7 +8,7 @@ type ResonaDirectusClient = DirectusClient<Schema> & AuthenticationClient<Schema
 
 const STORAGE_KEY = "resona.auth";
 
-// Persist the session (access + refresh tokens) in localStorage so it survives a
+// Persist the session (access token + expiry) in localStorage so it survives a
 // page refresh — the SDK's default storage is in-memory only, which logged the
 // user out on every reload. This also makes "Remember me" implicit: the refresh
 // token is kept and auto-refreshed, so the session sticks until explicit logout.
@@ -51,7 +51,9 @@ function getClient(): ResonaDirectusClient {
 		// later async request can still navigate.
 		const nuxtApp = tryUseNuxtApp();
 		const base = createDirectus<Schema>(directusUrl)
-			.with(authentication("json", { storage: authStorage, autoRefresh: true }))
+			// Cookie mode: the refresh token lives in an httpOnly cookie (set by password
+			// login and by the Keycloak SSO callback alike); the SDK keeps only the access token.
+			.with(authentication("cookie", { storage: authStorage, autoRefresh: true, credentials: "include" }))
 			.with(rest());
 		// The SDK swallows a failed refresh and keeps sending the dead token, so
 		// every request 401s ("Token expired.") while the page still looks logged
