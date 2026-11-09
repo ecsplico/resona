@@ -2585,6 +2585,11 @@
 <td>Maximum size of one upload or worker result; enforced while streaming, larger requests get <code>413</code></td>
 </tr>
 <tr>
+<td><code>RESONA_MAX_TEXT_UPLOAD_BYTES</code></td>
+<td><code>2097152</code> (2 MiB)</td>
+<td>Maximum size of one UTF-8 text upload (text jobs, postprocess only); larger text gets <code>413</code></td>
+</tr>
+<tr>
 <td><code>RESONA_PROFILES_DIR</code></td>
 <td><code>&lt;DATA_PATH&gt;/profiles</code></td>
 <td>Directory where the bundled and file-backed profile sources are resolved for CLI and postprocessing; hosted profile revisions are stored in the database per organization and served by <code>GET /profiles</code></td>

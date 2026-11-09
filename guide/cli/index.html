@@ -827,6 +827,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#postprocess" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        postprocess
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#watch" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2614,6 +2625,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#postprocess" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        postprocess
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#watch" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3201,12 +3223,64 @@ grow with the square of the scale.</p>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>resona<span class="w"> </span>doc<span class="w"> </span>small-print-scan.pdf<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>rapidocr
 </code></pre></div>
 <hr />
+<h2 id="postprocess">postprocess<a class="headerlink" href="#postprocess" title="Permanent link">&para;</a></h2>
+<p>Run a postprocess profile on text without transcribing again: each input becomes a hub <code>text</code>
+job (see <a href="../../reference/api/#text-jobs">Text jobs</a>) that runs only the profile. Outputs, exit
+codes and the shared flags (<code>--recursive</code>, <code>--output-dir</code>, <code>--force</code>, <code>--json</code>, <code>--no-wait</code>,
+<code>--timeout</code>, <code>--private</code>, <code>--allow-cloud</code>, <code>--language</code>, <code>--local</code>) work as for
+<a href="#transcribe"><code>transcribe</code></a>. There are no <code>--execution-profile</code>, <code>--engine</code> or <code>--model</code> flags.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>resona postprocess [INPUTS...] --profile NAME [OPTIONS]
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>resona postprocess --job ID --profile NAME [OPTIONS]
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>INPUTS</code></td>
+<td></td>
+<td><code>.md</code>, <code>.markdown</code> or <code>.txt</code> files, globs or directories (UTF-8, at most 2 MiB each on the hub)</td>
+</tr>
+<tr>
+<td><code>--job ID</code></td>
+<td></td>
+<td>Instead of files: re-run on the result of an earlier job. Input is its <code>raw_markdown</code> (the text before its own postprocessing), else its <code>markdown</code>; the language defaults to that job's. Outputs are <code>job-&lt;id&gt;.&lt;profile&gt;.md</code> + <code>job-&lt;id&gt;.&lt;profile&gt;.result.json</code> in <code>--output-dir</code> (default: the current directory), because the hub keeps no source file names; <code>--json</code> reports the input as <code>job:&lt;id&gt;</code></td>
+</tr>
+<tr>
+<td><code>--profile NAME</code></td>
+<td>(required)</td>
+<td>Stored postprocess profile name; a file or inline JSON only with <code>--local</code></td>
+</tr>
+</tbody>
+</table>
+<p>Outputs carry the profile in their name and sit next to the input unless <code>--output-dir</code> is
+given: <code>resona postprocess notes.md --profile fix</code> writes <code>notes.fix.md</code> +
+<code>notes.fix.result.json</code>, so the input is never replaced and runs of different profiles sit side
+by side. The profile part is the stored profile's name, a profile file's stem, or an inline JSON
+profile's <code>name</code> (<code>postprocess</code> if it has none), reduced to file-name-safe characters. Existing
+outputs are kept unless <code>--force</code>. <code>--local</code> runs the profile in-process with cached hub settings
+and the same policy checks; no execution subprocess is started.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Re-run a new profile on job 12&#39;s transcript</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>--job<span class="w"> </span><span class="m">12</span><span class="w"> </span>--profile<span class="w"> </span>transcript-markdown-de<span class="w">   </span><span class="c1"># -&gt; job-12.transcript-markdown-de.md</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Fix dictation commands in a note, next to it -&gt; befund.fix.md</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>befund.md<span class="w"> </span>--profile<span class="w"> </span>fix
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Polish exported notes with the local LLM that only the assigned worker reaches</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>./notes/*.md<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span>--output-dir<span class="w"> </span>./polished/
+</code></pre></div>
+<hr />
 <h2 id="watch">watch<a class="headerlink" href="#watch" title="Permanent link">&para;</a></h2>
 <p>Watch a directory and submit each new audio file as a private hub job (or process it with
 <code>--local</code>). Writes the same two outputs as <code>transcribe</code> and skips files whose outputs already
 exist. Hub errors are reported per file and never replaced by a local run; a policy denial stops
 watching with exit code 2.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>resona watch DIRECTORY [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>resona watch DIRECTORY [OPTIONS]
 </code></pre></div>
 <p><strong>Options</strong></p>
 <table>
@@ -3266,39 +3340,39 @@ watching with exit code 2.</p>
 </tbody>
 </table>
 <p><strong>Examples</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Watch a directory, submitting new files to the hub</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>resona<span class="w"> </span>watch<span class="w"> </span>./inbox/
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Watch recursively, poll every 5 seconds</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>resona<span class="w"> </span>watch<span class="w"> </span>./inbox/<span class="w"> </span>--recursive<span class="w"> </span>--poll-interval<span class="w"> </span><span class="m">5</span><span class="w"> </span>--output-dir<span class="w"> </span>./done/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Watch a directory, submitting new files to the hub</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>resona<span class="w"> </span>watch<span class="w"> </span>./inbox/
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Watch recursively, poll every 5 seconds</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>resona<span class="w"> </span>watch<span class="w"> </span>./inbox/<span class="w"> </span>--recursive<span class="w"> </span>--poll-interval<span class="w"> </span><span class="m">5</span><span class="w"> </span>--output-dir<span class="w"> </span>./done/
 </code></pre></div>
 <hr />
 <h2 id="jobs">jobs<a class="headerlink" href="#jobs" title="Permanent link">&para;</a></h2>
 <p>Inspect and manage hub jobs.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>get<span class="w"> </span><span class="m">12</span><span class="w">                      </span><span class="c1"># job state as JSON</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span><span class="nb">wait</span><span class="w"> </span><span class="m">12</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">300</span><span class="w">       </span><span class="c1"># exit 0 completed, 2 policy denial, 1 otherwise</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>result<span class="w"> </span><span class="m">12</span><span class="w">                   </span><span class="c1"># print Markdown (--json for the full result)</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>result<span class="w"> </span><span class="m">12</span><span class="w"> </span>--output-dir<span class="w"> </span>out/<span class="w"> </span>--stem<span class="w"> </span>interview<span class="w">   </span><span class="c1"># write &lt;stem&gt;.md + .result.json</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>cancel<span class="w"> </span><span class="m">12</span><span class="w">                   </span><span class="c1"># fence the worker&#39;s lease</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>delete<span class="w"> </span><span class="m">12</span><span class="w">                   </span><span class="c1"># delete a terminal job&#39;s input, result and metadata</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>list<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span><span class="w"> </span>--cursor<span class="w"> </span>&lt;cursor&gt;<span class="w"> </span>--json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>get<span class="w"> </span><span class="m">12</span><span class="w">                      </span><span class="c1"># job state as JSON</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span><span class="nb">wait</span><span class="w"> </span><span class="m">12</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">300</span><span class="w">       </span><span class="c1"># exit 0 completed, 2 policy denial, 1 otherwise</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>result<span class="w"> </span><span class="m">12</span><span class="w">                   </span><span class="c1"># print Markdown (--json for the full result)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>result<span class="w"> </span><span class="m">12</span><span class="w"> </span>--output-dir<span class="w"> </span>out/<span class="w"> </span>--stem<span class="w"> </span>interview<span class="w">   </span><span class="c1"># write &lt;stem&gt;.md + .result.json</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>cancel<span class="w"> </span><span class="m">12</span><span class="w">                   </span><span class="c1"># fence the worker&#39;s lease</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>delete<span class="w"> </span><span class="m">12</span><span class="w">                   </span><span class="c1"># delete a terminal job&#39;s input, result and metadata</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>resona<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>list<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span><span class="w"> </span>--cursor<span class="w"> </span>&lt;cursor&gt;<span class="w"> </span>--json
 </code></pre></div>
 <hr />
 <h2 id="testbench">testbench<a class="headerlink" href="#testbench" title="Permanent link">&para;</a></h2>
 <p>Contribute recordings and scans to the hub <a href="../testbench/">testbench</a> and list what it holds.
 Correcting references, bench runs and the leaderboard are done in the admin UI (<code>/admin</code>), not here.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>resona<span class="w"> </span>testbench<span class="w"> </span>add<span class="w"> </span>memo.m4a<span class="w"> </span>scans/<span class="w"> </span>--language<span class="w"> </span>de<span class="w"> </span>--label<span class="w"> </span><span class="s2">&quot;Brief&quot;</span><span class="w">   </span><span class="c1"># files or directories; prints item id + status</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>resona<span class="w"> </span>testbench<span class="w"> </span>list<span class="w"> </span>--status<span class="w"> </span>needs_correction<span class="w"> </span>--kind<span class="w"> </span>audio<span class="w"> </span>--json<span class="w">   </span><span class="c1"># org admin</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>resona<span class="w"> </span>testbench<span class="w"> </span>status<span class="w">                                               </span><span class="c1"># enabled flag and counters</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>resona<span class="w"> </span>testbench<span class="w"> </span>add<span class="w"> </span>memo.m4a<span class="w"> </span>scans/<span class="w"> </span>--language<span class="w"> </span>de<span class="w"> </span>--label<span class="w"> </span><span class="s2">&quot;Brief&quot;</span><span class="w">   </span><span class="c1"># files or directories; prints item id + status</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>resona<span class="w"> </span>testbench<span class="w"> </span>list<span class="w"> </span>--status<span class="w"> </span>needs_correction<span class="w"> </span>--kind<span class="w"> </span>audio<span class="w"> </span>--json<span class="w">   </span><span class="c1"># org admin</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>resona<span class="w"> </span>testbench<span class="w"> </span>status<span class="w">                                               </span><span class="c1"># enabled flag and counters</span>
 </code></pre></div>
 <p>The organization must have <code>testbench_enabled=true</code> (the admin UI Testbench tab has an Enable button; CLI route in <a href="../testbench/#enabling-it">Testbench</a>); otherwise <code>add</code> exits 1 with <code>testbench_disabled</code> and a hint. <code>add</code> exits 1 if any file was rejected.</p>
 <hr />
 <h2 id="settings">settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
 <p>Read and change the organization's revisioned settings on the hub (<code>GET /v1/settings</code>).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w">                     </span><span class="c1"># print current revision as JSON, refresh the cache</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span>settings<span class="w"> </span>pull<span class="w">                    </span><span class="c1"># cache the current revision for --local runs</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.settings<span class="w"> </span>&gt;<span class="w"> </span>settings.json<span class="w">   </span><span class="c1"># edit the complete settings object …</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json<span class="w">              </span><span class="c1"># … and replace it on the hub</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w">                     </span><span class="c1"># print current revision as JSON, refresh the cache</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>resona<span class="w"> </span>settings<span class="w"> </span>pull<span class="w">                    </span><span class="c1"># cache the current revision for --local runs</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.settings<span class="w"> </span>&gt;<span class="w"> </span>settings.json<span class="w">   </span><span class="c1"># edit the complete settings object …</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json<span class="w">              </span><span class="c1"># … and replace it on the hub</span>
 </code></pre></div>
 <p>Settings are cached without secrets per hub URL and <code>organization_id</code> in
 <code>~/.resona/settings-cache/&lt;hash&gt;.json</code> (<code>hub_url</code>, <code>organization_id</code>, <code>credential</code> — a SHA-256
@@ -3312,7 +3386,7 @@ settings snapshot.</p>
 <h2 id="rec">rec<a class="headerlink" href="#rec" title="Permanent link">&para;</a></h2>
 <p>Launch the audio recorder TUI. Records from the default microphone and saves the audio file.
 Does not transcribe — use <code>resona ui</code> if you want to record and transcribe in one step.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>resona rec
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>resona rec
 </code></pre></div>
 <p>No options. The TUI shows recording time and allows stopping with a keypress.</p>
 <div class="admonition note">
@@ -3328,10 +3402,10 @@ the current cursor if you've since moved/typed elsewhere). Flip a document's <st
 (<code>ctrl+l</code>, or click it) to switch that document to continuous streaming transcription instead —
 confirmed text is spliced into the same buffer as you speak. Documents autosave as markdown
 after every insertion, on <code>ctrl+s</code>, and on quit.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>resona live                # prompts for a filename, then opens it
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>resona live notes.md       # opens (or creates) notes.md directly
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>resona live --engine mlx-whisper --language en
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>resona live --remote http://api-host:7000 --engine deepgram   # cloud streaming (Live-only)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>resona live                # prompts for a filename, then opens it
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>resona live notes.md       # opens (or creates) notes.md directly
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>resona live --engine mlx-whisper --language en
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>resona live --remote http://api-host:7000 --engine deepgram   # cloud streaming (Live-only)
 </code></pre></div>
 <table>
 <thead>
@@ -3379,13 +3453,13 @@ of loading a redundant copy of the model.</p>
 <h2 id="ui">ui<a class="headerlink" href="#ui" title="Permanent link">&para;</a></h2>
 <p>Launch the record-and-transcribe TUI. Records audio, submits the file as a job to resona-api,
 and displays the result when the job completes.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>resona ui
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>resona ui
 </code></pre></div>
 <p>No options. Requires resona-api to be running at <code>RESONA_API_URL</code>.</p>
 <hr />
 <h2 id="speech">speech<a class="headerlink" href="#speech" title="Permanent link">&para;</a></h2>
 <p>Synthesise speech from text using a cloud TTS provider via the resona-api gateway.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>resona speech TEXT [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>resona speech TEXT [OPTIONS]
 </code></pre></div>
 <p><strong>Options</strong></p>
 <table>
@@ -3440,23 +3514,23 @@ and displays the result when the job completes.</p>
 </tbody>
 </table>
 <p><strong>Examples</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Synthesise and save to speech.mp3</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Good morning, Dr. Schmidt.&quot;</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Use a specific engine and voice</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Hello world&quot;</span><span class="w"> </span>--engine<span class="w"> </span>openai<span class="w"> </span>--voice<span class="w"> </span>nova
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Play back immediately without saving</span>
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Appointment at three o&#39;clock.&quot;</span><span class="w"> </span>--play
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># Save to a specific file</span>
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Processing complete.&quot;</span><span class="w"> </span>--output<span class="w"> </span>alert.mp3
-<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>
-<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="c1"># ElevenLabs with Rachel voice</span>
-<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Bitte warten Sie.&quot;</span><span class="w"> </span>--engine<span class="w"> </span>elevenlabs<span class="w"> </span>--voice<span class="w"> </span>Rachel
-<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>
-<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="c1"># Pipe raw audio to stdout</span>
-<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Test&quot;</span><span class="w"> </span>--output<span class="w"> </span>-
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Synthesise and save to speech.mp3</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Good morning, Dr. Schmidt.&quot;</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Use a specific engine and voice</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Hello world&quot;</span><span class="w"> </span>--engine<span class="w"> </span>openai<span class="w"> </span>--voice<span class="w"> </span>nova
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># Play back immediately without saving</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Appointment at three o&#39;clock.&quot;</span><span class="w"> </span>--play
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="c1"># Save to a specific file</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Processing complete.&quot;</span><span class="w"> </span>--output<span class="w"> </span>alert.mp3
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="c1"># ElevenLabs with Rachel voice</span>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Bitte warten Sie.&quot;</span><span class="w"> </span>--engine<span class="w"> </span>elevenlabs<span class="w"> </span>--voice<span class="w"> </span>Rachel
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="c1"># Pipe raw audio to stdout</span>
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>resona<span class="w"> </span>speech<span class="w"> </span><span class="s2">&quot;Test&quot;</span><span class="w"> </span>--output<span class="w"> </span>-
 </code></pre></div>
 <p>See <a href="../tts/">Speech Synthesis</a> for full provider and format details.</p>
 <hr />
@@ -3464,12 +3538,12 @@ and displays the result when the job completes.</p>
 <p>Manage built-in local engines and hub (resona-api) entries in <code>~/.resona/config.json</code>.</p>
 <h3 id="engines-list">engines list<a class="headerlink" href="#engines-list" title="Permanent link">&para;</a></h3>
 <p>List all engines — built-in local engines plus configured hub entries from <code>~/.resona/config.json</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>list
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>list
 </code></pre></div>
 <p>Output columns: <code>NAME</code>, <code>TYPE</code>, <code>PRIVATE</code>, <code>STATUS</code>.</p>
 <h3 id="engines-add">engines add<a class="headerlink" href="#engines-add" title="Permanent link">&para;</a></h3>
 <p>Add a hub (resona-api server) entry to <code>~/.resona/config.json</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>NAME<span class="w"> </span>API_URL<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>NAME<span class="w"> </span>API_URL<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
 </code></pre></div>
 <table>
 <thead>
@@ -3498,30 +3572,30 @@ and displays the result when the job completes.</p>
 </tbody>
 </table>
 <p><strong>Examples</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Add a remote LAN server</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>gpu-server<span class="w"> </span>http://gpu-machine:7001
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Add a server reachable over SSH tunnel</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>home<span class="w"> </span>http://localhost:7001<span class="w"> </span>--ssh<span class="w"> </span>user@homeserver.example.com
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1"># Add a Docker Compose stack with auto-start</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span><span class="nb">local</span><span class="w"> </span>http://localhost:7000<span class="w"> </span>--compose-dir<span class="w"> </span>~/resona
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Add a remote LAN server</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>gpu-server<span class="w"> </span>http://gpu-machine:7001
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1"># Add a server reachable over SSH tunnel</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span>home<span class="w"> </span>http://localhost:7001<span class="w"> </span>--ssh<span class="w"> </span>user@homeserver.example.com
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1"># Add a Docker Compose stack with auto-start</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>resona<span class="w"> </span>engines<span class="w"> </span>add<span class="w"> </span><span class="nb">local</span><span class="w"> </span>http://localhost:7000<span class="w"> </span>--compose-dir<span class="w"> </span>~/resona
 </code></pre></div>
 <h3 id="engines-remove">engines remove<a class="headerlink" href="#engines-remove" title="Permanent link">&para;</a></h3>
 <p>Remove a configured engine entry.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>remove<span class="w"> </span>NAME
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>remove<span class="w"> </span>NAME
 </code></pre></div>
 <h3 id="engines-test">engines test<a class="headerlink" href="#engines-test" title="Permanent link">&para;</a></h3>
 <p>Test reachability of one or all configured engines. Exits with code 0 if at least one engine is
 reachable, 1 otherwise.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>resona<span class="w"> </span>engines<span class="w"> </span><span class="nb">test</span><span class="w">             </span><span class="c1"># test all configured engines</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>resona<span class="w"> </span>engines<span class="w"> </span><span class="nb">test</span><span class="w"> </span>gpu-server<span class="w">  </span><span class="c1"># test a specific entry</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>resona<span class="w"> </span>engines<span class="w"> </span><span class="nb">test</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="c1"># custom timeout in seconds</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>resona<span class="w"> </span>engines<span class="w"> </span><span class="nb">test</span><span class="w">             </span><span class="c1"># test all configured engines</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>resona<span class="w"> </span>engines<span class="w"> </span><span class="nb">test</span><span class="w"> </span>gpu-server<span class="w">  </span><span class="c1"># test a specific entry</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>resona<span class="w"> </span>engines<span class="w"> </span><span class="nb">test</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="c1"># custom timeout in seconds</span>
 </code></pre></div>
 <h3 id="engines-status">engines status<a class="headerlink" href="#engines-status" title="Permanent link">&para;</a></h3>
 <p>Query the live resona-api gateway catalogue and show which engines are currently available,
 their capabilities, and their status. Requires a running gateway.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>status
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>status
 </code></pre></div>
 <p>Output columns: <code>Name</code>, <code>Kind</code>, <code>Capabilities</code>, <code>Available</code>, <code>Models</code>.</p>
 <hr />
@@ -3536,27 +3610,27 @@ files in <code>~/.resona/profiles/</code> and reference them with <code>--profil
 </div>
 <h3 id="profiles-list">profiles list<a class="headerlink" href="#profiles-list" title="Permanent link">&para;</a></h3>
 <p>List all profiles stored on the server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
 </code></pre></div>
 <p>Output columns: <code>NAME</code>, <code>DESCRIPTION</code>.</p>
 <h3 id="profiles-show">profiles show<a class="headerlink" href="#profiles-show" title="Permanent link">&para;</a></h3>
 <p>Display the full JSON of a profile stored on the server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
 </code></pre></div>
 <h3 id="profiles-push">profiles push<a class="headerlink" href="#profiles-push" title="Permanent link">&para;</a></h3>
 <p>Upload a local profile JSON file to the server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile.json
 </code></pre></div>
 <p>The profile's <code>name</code> field determines the server-side name. If a profile with the same name
 already exists it is replaced.</p>
 <h3 id="profiles-pull">profiles pull<a class="headerlink" href="#profiles-pull" title="Permanent link">&para;</a></h3>
 <p>Download a profile from the server and save it to a local file.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w">               </span><span class="c1"># saves to my-profile.json</span>
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>output.json<span class="w">   </span><span class="c1"># saves to output.json</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w">               </span><span class="c1"># saves to my-profile.json</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>output.json<span class="w">   </span><span class="c1"># saves to output.json</span>
 </code></pre></div>
 <h3 id="profiles-delete">profiles delete<a class="headerlink" href="#profiles-delete" title="Permanent link">&para;</a></h3>
 <p>Delete a profile from the server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile
 </code></pre></div>
 
 
