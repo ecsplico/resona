@@ -74,9 +74,15 @@ export interface ResonaDocument {
 	hub_job_id?: number | null;
 	hub_job_key?: string | null;
 }
+/** Custom fields on the core `directus_users` collection. */
+export interface DirectusUserFields {
+	hub_token?: string | null;
+}
 export interface Schema {
 	recordings: Recording[];
 	transcripts: Transcript[];
 	documents: ResonaDocument[];
 	transcript_corrections: TranscriptCorrection[];
+	// Singular: extends the core collection instead of declaring a new one.
+	directus_users: DirectusUserFields;
 }
