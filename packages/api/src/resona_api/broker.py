@@ -259,14 +259,16 @@ def record_heartbeat(
     organization_id: str,
     runtime_version: str,
     reported: list[Candidate],
+    text_jobs: bool = False,
 ) -> dict[str, Any]:
-    """Record readiness and version. Approval fields are never touched here."""
+    """Record readiness, version and whether the worker runs text jobs. Approval fields are never touched here."""
     now = _now()
     worker = session.get(Worker, worker_id)
     if worker is None or worker.organization_id != organization_id or worker.revoked_at is not None:
         raise BrokerError(401, "invalid_credential", "worker credential is not active")
     worker.runtime_version = runtime_version
     worker.reported_capabilities = _dump_candidates(reported)
+    worker.text_jobs = text_jobs
     worker.last_seen = now
     session.add(worker)
     session.commit()
@@ -279,9 +281,9 @@ def record_heartbeat(
     }
 
 
-def job_endpoint_ids(snapshot: dict[str, Any], kind: str, candidate: Candidate) -> list[str]:
+def job_endpoint_ids(snapshot: dict[str, Any], kind: str, candidate: Candidate | None) -> list[str]:
     """Endpoints a job uses when run with ``candidate``: its postprocess LLM endpoints
-    plus the cloud ASR endpoint the candidate implies.
+    plus the cloud ASR endpoint the candidate implies (text jobs have no candidate).
 
     Snapshots admitted before ``endpoint_ids`` was recorded count every endpoint of
     their policy registry when they carry a postprocess profile.
@@ -291,7 +293,7 @@ def job_endpoint_ids(snapshot: dict[str, Any], kind: str, candidate: Candidate) 
         policy = snapshot.get("policy") or {}
         ids = [ep["id"] for ep in policy.get("endpoints", [])] if snapshot.get("postprocess") else []
     ids = list(ids)
-    cloud = cloud_asr_endpoint_id(candidate.engine) if kind == "audio" else None
+    cloud = cloud_asr_endpoint_id(candidate.engine) if kind == "audio" and candidate is not None else None
     if cloud is not None:
         ids.append(cloud)
     return ids
@@ -300,7 +302,7 @@ def job_endpoint_ids(snapshot: dict[str, Any], kind: str, candidate: Candidate) 
 def endpoints_assigned(
     snapshot: dict[str, Any],
     kind: str,
-    candidate: Candidate,
+    candidate: Candidate | None,
     *,
     worker_id: str,
     settings: OrganizationSettings | None,
@@ -334,13 +336,15 @@ def try_claim(
     worker_id: str,
     organization_id: str,
     capabilities: list[Candidate],
+    text_jobs: bool = False,
 ) -> Claim | None:
     """Claim the oldest eligible pending job, or return None when nothing is eligible.
 
     Eligible: privacy class equal to the worker's approval (private jobs only on
     private-approved workers, cloud opt-in jobs only on non-private ones), a
-    snapshot candidate both offered and hub-approved, a worker release approved
-    for it, and every worker-assigned endpoint of the job assigned to this worker.
+    snapshot candidate both offered and hub-approved (for a text job: the worker
+    asked for text jobs), a worker release approved for it, and every
+    worker-assigned endpoint of the job assigned to this worker.
     Ineligible jobs are skipped, never modified: non-private jobs whose
     organization disabled cloud processing are failed by :func:`sweep_leases`.
     """
@@ -352,10 +356,12 @@ def try_claim(
         worker.last_seen = now
         session.add(worker)
         allowed = set(_candidates(worker.approved_capabilities)) & requested
-        if not allowed:
+        if not allowed and not text_jobs:
             return None
         settings = _settings_or_none(session, organization_id)
         approved_releases = releases.approved_tuples(session, organization_id)
+        release = worker.runtime_version
+        known_releases = {release} if release and releases.is_known(session, release) else set()
 
         pending = session.exec(
             select(Job)
@@ -366,32 +372,34 @@ def try_claim(
             )
             .order_by(Job.id)
         ).all()
-        chosen: tuple[int, int, Candidate] | None = None
+        chosen: tuple[int, int, Candidate | None] | None = None
         for job in pending:
             if job.cancel_requested or _utc(job.deadline_at) <= now or job.attempt >= job.max_attempts:
                 continue
             if cloud_denied(job, settings):
                 continue
+            if job.kind == "text" and not text_jobs:
+                continue
             snapshot = _snapshot(job)
-            pick = next(
-                (
-                    c
-                    for c in _snapshot_candidates(job)
-                    if c in allowed
-                    and releases.may_run(
-                        worker_release=worker.runtime_version,
-                        purpose=job.purpose,
-                        snapshot_release=snapshot.get("release_id"),
-                        execution_profile=job.execution_profile,
-                        candidate=c,
-                        approved=approved_releases,
-                    )
-                    and endpoints_assigned(snapshot, job.kind, c, worker_id=worker.id, settings=settings)
-                ),
-                None,
+            offered: list[Candidate | None] = (
+                [None] if job.kind == "text" else [c for c in _snapshot_candidates(job) if c in allowed]
             )
-            if pick is not None:
-                chosen = (job.id, job.attempt, pick)
+            eligible = [
+                c
+                for c in offered
+                if releases.may_run(
+                    worker_release=worker.runtime_version,
+                    purpose=job.purpose,
+                    snapshot_release=snapshot.get("release_id"),
+                    execution_profile=job.execution_profile,
+                    candidate=c,
+                    approved=approved_releases,
+                    known=known_releases,
+                )
+                and endpoints_assigned(snapshot, job.kind, c, worker_id=worker.id, settings=settings)
+            ]
+            if eligible:
+                chosen = (job.id, job.attempt, eligible[0])
                 break
 
         if chosen is not None:
@@ -405,7 +413,7 @@ def try_claim(
                     status=JobStatus.PROCESSING,
                     attempt=prior_attempt + 1,
                     worker_id=worker.id,
-                    candidate=pick.model_dump_json(),
+                    candidate=pick.model_dump_json() if pick is not None else None,
                     lease_token_hash=hash_token(token),
                     lease_until=until,
                     updated_at=now,
@@ -416,7 +424,7 @@ def try_claim(
                 session.expire_all()
                 job = session.get(Job, job_id)
                 snapshot = _snapshot(job)
-                snapshot["candidate"] = pick.model_dump(mode="json")
+                snapshot["candidate"] = pick.model_dump(mode="json") if pick is not None else None
                 claim = Claim(
                     job_id=job_id,
                     kind=job.kind,

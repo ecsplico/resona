@@ -90,7 +90,7 @@ def job_result(
         return
     name = stem or f"job-{job_id}"
     paths = OutputPaths(markdown=output_dir / f"{name}.md", result=output_dir / f"{name}.result.json")
-    meta = result_metadata(Path(name), result, job_id=job_id, private=job.private,
+    meta = result_metadata(name, result, job_id=job_id, private=job.private,
                            execution_profile=job.execution_profile, postprocess_profile=None)
     meta.pop("source")
     try:

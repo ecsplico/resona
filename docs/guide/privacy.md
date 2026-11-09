@@ -8,9 +8,10 @@ processing the default and enforces it on the hub.
 
 ## What "private" means
 
-A **private** job is processed entirely by engines on machines you control (your own hub workers,
-or this machine with `--local`). No audio or document bytes are transmitted to any third-party
-cloud service.
+A **private** job is processed entirely by engines and postprocess stages on machines you control
+(your own hub workers, or this machine with `--local`). No audio, document or text content
+(including the text of a [text job](../reference/api.md#text-jobs) and every intermediate
+transcript a postprocess step sees) is transmitted to any third-party cloud service.
 
 A **non-private** job may use cloud stages that send data to an external provider's API
 (Deepgram, ElevenLabs, OpenAI, or a cloud LLM for postprocessing). Those requests are subject to

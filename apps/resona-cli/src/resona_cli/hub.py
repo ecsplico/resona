@@ -81,7 +81,9 @@ def candidate_label(candidate: Optional[dict]) -> str:
 
 
 def policy_summary(job: JobView) -> str:
-    """One stderr line: privacy, execution profile and the candidate that ran (or will)."""
+    """One stderr line: privacy, execution profile and the candidate that ran (or will).
+    Text (postprocess-only) jobs have no candidate."""
     private = "true" if job.private else "false (cloud allowed)"
+    candidate = "none" if job.kind == "text" else candidate_label(job.candidate)
     return (f"job {job.job_id}: private={private} execution_profile={job.execution_profile} "
-            f"candidate={candidate_label(job.candidate)} status={job.status}")
+            f"candidate={candidate} status={job.status}")

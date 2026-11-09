@@ -47,6 +47,8 @@ class Worker(SQLModel, table=True):
         default=None, sa_column=Column(DateTime, nullable=True)
     )
     runtime_version: Optional[str] = Field(default=None)
+    # Reported in the heartbeat: the worker claims text (postprocess-only) jobs.
+    text_jobs: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
     revoked_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime, nullable=True)
     )
@@ -158,7 +160,7 @@ class Upload(SQLModel, table=True):
     organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
     sha256: str
     size: int
-    media_family: str  # audio | document
+    media_family: str  # audio | document | text
     media_type: str
     created_at: datetime = Field(
         default_factory=lambda: clock.now(),

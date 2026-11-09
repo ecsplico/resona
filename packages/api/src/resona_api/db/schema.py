@@ -423,6 +423,21 @@ def _v5_testbench(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 6: workers report whether they run text jobs ─────────────
+#
+# Text (postprocess-only) jobs have no capability tuple; the heartbeat reports
+# ``text_jobs`` so ``queue_reason`` can tell whether any worker would claim one.
+# On a fresh database migration 1 already created the column from the ORM metadata.
+
+def _v6_worker_text_jobs(conn: sqlite3.Connection) -> AfterCommit | None:
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(worker)")}
+    if "text_jobs" not in columns:
+        conn.execute("ALTER TABLE worker ADD COLUMN text_jobs BOOLEAN NOT NULL DEFAULT 0")
+    if "text_jobs" not in {r[1] for r in conn.execute("PRAGMA table_info(worker)")}:
+        raise SchemaError("migration 6 did not add worker.text_jobs")
+    return None
+
+
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (1, _v1_identity_settings_jobs),
@@ -430,6 +445,7 @@ MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (3, _v3_upload_links),
     (4, _v4_job_autoincrement),
     (5, _v5_testbench),
+    (6, _v6_worker_text_jobs),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]

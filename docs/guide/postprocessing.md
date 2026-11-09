@@ -313,6 +313,29 @@ resona transcribe dictation.mp3 --profile '{"name":"x","steps":[...]}'
 resona transcribe dictation.mp3
 ```
 
+### Re-run a profile
+
+Postprocessing normally runs inside an audio or document job, right after the engine. To apply a
+profile to text you already have, without transcribing again, submit a `text` job: the worker runs
+only the profile. Typical cases: a profile added after the transcript was made, or polishing with a
+local LLM that only its assigned worker can reach (the job is claimable only by that worker).
+
+```bash
+# Re-run on an earlier job's result (its text before its own postprocessing)
+resona postprocess --job 12 --profile transcript-markdown-de
+
+# Text or Markdown files
+resona postprocess notes.md --profile document-polish-de --output-dir ./polished/
+
+# On this machine, with cached hub settings
+resona postprocess notes.md --profile my-profile.json --local --output-dir ./out/
+```
+
+The profile is required and must be stored on the hub (`resona profiles push`), except with
+`--local`. The result's `raw_text` is the input, `markdown` the profile output and `raw_markdown`
+the input when the profile changed it. Over HTTP: upload the UTF-8 text to `POST /v1/uploads`, then
+`POST /v1/jobs` with `kind: "text"` and `profile` (see [Text jobs](../reference/api.md#text-jobs)).
+
 ---
 
 ## Full profile example

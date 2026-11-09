@@ -8,12 +8,17 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .policy import Endpoint, ExecutionPolicy
 
 Accelerator = Literal["metal", "cuda", "cpu"]
-JobKind = Literal["audio", "document"]
+# ``text`` jobs run only a postprocess profile on uploaded text: no engine, no candidates.
+JobKind = Literal["audio", "document", "text"]
+
+TEXT_EXECUTION_PROFILE = "-"
+"""``execution_profile`` recorded for text jobs, which run no execution profile.
+Reserved: :class:`OrganizationSettings` rejects it as an execution profile name."""
 
 
 class Candidate(BaseModel):
@@ -35,6 +40,8 @@ class ExecutionProfile(BaseModel):
     document: list[Candidate] = Field(default_factory=list)
 
     def candidates(self, kind: JobKind) -> list[Candidate]:
+        if kind == "text":
+            return []
         return self.audio if kind == "audio" else self.document
 
 
@@ -50,6 +57,12 @@ class OrganizationSettings(BaseModel):
     default_execution_profile: str = "private-auto"
     execution_profiles: dict[str, ExecutionProfile] = Field(default_factory=dict)
     endpoints: list[Endpoint] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _reserved_profile_name(self) -> OrganizationSettings:
+        if TEXT_EXECUTION_PROFILE in self.execution_profiles or self.default_execution_profile == TEXT_EXECUTION_PROFILE:
+            raise ValueError(f"execution profile name {TEXT_EXECUTION_PROFILE!r} is reserved for text jobs")
+        return self
 
     def policy(self, *, private: bool) -> ExecutionPolicy:
         return ExecutionPolicy(

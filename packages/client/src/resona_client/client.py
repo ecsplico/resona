@@ -22,20 +22,20 @@ from typing import Any, Literal, Mapping, NoReturn, Optional, Union
 import httpx
 from pydantic import BaseModel, ValidationError
 from resona_job_core import JobResult
-from resona_job_core.options import AudioOptions, DocumentOptions
+from resona_job_core.options import AudioOptions, DocumentOptions, TextOptions
 
 log = logging.getLogger(__name__)
 
-JobKind = Literal["audio", "document"]
+JobKind = Literal["audio", "document", "text"]
 JobPurpose = Literal["production", "evaluation"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _POST_JOB_ATTEMPTS = 3
 _RETRYABLE_STATUSES = frozenset({502, 503, 504})
 
-
 _OPTIONS_MODEL: dict[str, type[BaseModel]] = {
     "audio": AudioOptions,
     "document": DocumentOptions,
+    "text": TextOptions,
 }
 
 
@@ -225,7 +225,7 @@ def _checked_options(
 ) -> Optional[dict]:
     model = _OPTIONS_MODEL.get(kind)
     if model is None:
-        raise ValueError(f"unknown job kind {kind!r}; expected 'audio' or 'document'")
+        raise ValueError(f"unknown job kind {kind!r}; expected 'audio', 'document' or 'text'")
     if options is None:
         return None
     if isinstance(options, BaseModel):
@@ -376,6 +376,9 @@ class ResonaClient:
         The Idempotency-Key is generated once per call (or taken from the argument)
         and reused for every retry of the job POST, so a lost response cannot create
         a duplicate job. The upload is not repeated; the retry reuses its upload_id.
+
+        ``kind='text'`` uploads a UTF-8 text file and runs only the stored postprocess
+        ``profile`` (required by the hub) on it; no execution profile, engine or model.
         """
         _checked_options(kind, options)
         upload = self.upload(filepath)

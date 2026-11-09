@@ -294,6 +294,45 @@ def test_approval_is_per_organization_and_platform(http, fresh_org, admin_header
     assert _claim(http, _worker(other_org, release_id)).status_code == 204
 
 
+def test_text_jobs_run_on_a_known_release_without_promotion_but_never_on_an_unknown_one(
+    http, fresh_org, client_headers, store_profile
+) -> None:
+    store_profile(fresh_org, "fix", {"name": "fix", "steps": [
+        {"type": "replacements", "rules": [{"pattern": "Komma", "replacement": ","}]}]})
+    client = client_headers(fresh_org)
+    upload_id = http.post("/v1/uploads", files={"file": ("a.md", b"a Komma b\n", "text/markdown")},
+                          headers=client).json()["upload_id"]
+    submitted = http.post("/v1/jobs", json={"kind": "text", "upload_id": upload_id, "profile": "fix"},
+                          headers={**client, "Idempotency-Key": uuid.uuid4().hex})
+    assert submitted.status_code == 202, submitted.text
+    job_id = submitted.json()["job_id"]
+
+    def text_worker(release_id: str) -> dict[str, str]:
+        headers = _worker(fresh_org, release_id)
+        beat = http.post("/v1/workers/heartbeat", headers=headers, json={
+            "worker_protocol": 1, "runtime_version": release_id, "reported_capabilities": [],
+            "text_jobs": True})
+        assert beat.status_code == 200, beat.text
+        return headers
+
+    def text_claim(headers):
+        return http.post("/v1/workers/claim?wait=0", json={"capabilities": [], "text_jobs": True},
+                         headers=headers)
+
+    # A build the hub never saw (dev build, unfinished update) gets no production text.
+    unknown = text_worker("0.0.0-unapproved")
+    assert text_claim(unknown).status_code == 204
+    view = http.get(f"/v1/jobs/{job_id}", headers=client).json()
+    assert (view["status"], view["queue_reason"]) == ("pending", "release_not_approved")
+
+    # A staged release without any promoted evaluation runs it.
+    release_id = new_release_id()
+    stage(release_id)
+    staged = text_worker(release_id)
+    assert http.get(f"/v1/jobs/{job_id}", headers=client).json()["queue_reason"] == "waiting_capacity"
+    assert text_claim(staged).json()["job_id"] == job_id
+
+
 # -- worker protocol ----------------------------------------------------------------
 
 def test_incompatible_protocol_gets_426_before_any_input_download(http, fresh_org, client_headers) -> None:

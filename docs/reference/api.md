@@ -4,7 +4,7 @@ resona-api is the central hub. It accepts uploads, keeps a durable, organization
 
 - Default port: **7000**
 - Database: SQLite at `$DATA_PATH/resona.db` (single hub replica)
-- Upload limit: 200 MiB per upload (`RESONA_MAX_UPLOAD_BYTES`), enforced while streaming
+- Upload limit: 200 MiB per upload (`RESONA_MAX_UPLOAD_BYTES`), enforced while streaming; 2 MiB for text uploads (`RESONA_MAX_TEXT_UPLOAD_BYTES`)
 
 ## Authentication
 
@@ -60,7 +60,9 @@ POST /v1/uploads
 Content-Type: multipart/form-data   (field: file)
 ```
 
-Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
+Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. Both limits are enforced while streaming: the upload stops at the limit and nothing is kept. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
+
+Audio and document media are recognized by their magic bytes. A file that is neither, but is valid UTF-8 without NUL bytes (`.md`, `.txt`), is stored as a `text` upload for a [text job](#text-jobs); a text upload over `RESONA_MAX_TEXT_UPLOAD_BYTES` (default 2 MiB) → `413 too_large` as soon as the stream passes that size (the same applies to upload links). `POST /v1/audio/transcriptions` accepts media only.
 
 #### Upload through a single-use link
 
@@ -90,17 +92,23 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `kind` | string | yes | `audio` or `document` |
+| `kind` | string | yes | `audio`, `document` or `text` (must match the upload, else `422 kind_mismatch`) |
 | `upload_id` | string | yes | ID returned by `POST /v1/uploads` |
 | `execution_profile` | string | no | Execution profile from the organization settings |
 | `language` | string | no | Language code; defaults to the organization setting |
 | `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
-| `profile` | string | no | Name of a postprocess profile stored on the hub |
+| `profile` | string | no (yes for `text`) | Name of a postprocess profile stored on the hub |
 | `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`. Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
 
 Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header is required: the same key with the same request returns the same job; the same key with a different request returns `409 idempotency_conflict`.
+
+##### Text jobs
+
+A `text` job runs only a postprocess profile on an uploaded text, without an engine: use it to re-run a profile on an existing transcript (for example a new profile, or the local LLM only its assigned worker reaches). `profile` is required (`422 profile_required`); `execution_profile`, `engine` and `model` are rejected (`422 invalid_request`), and so is `purpose: evaluation`. `options` must be empty. Admission checks the profile's stages against the organization policy as for every job (`403 policy_denied`), and the snapshot records the profile revision and policy. The job's `execution_profile` is reported as `-`, a name settings reject for real execution profiles, and `candidate` stays `null`.
+
+Any approved worker of the job's privacy class that reports text support claims it, as long as every worker-assigned endpoint of the profile is assigned to that worker and its release is one the hub knows (staged, or the hub's bundled release). Text jobs need no promoted evaluation: approval measures engine output on the evaluation corpus, and a text job runs no engine (postprocess output is never gated); the code they run is the postprocess path every audio and document job already runs on that release. A worker on a release the hub never saw (a dev build, an unfinished update) gets no text jobs.
 
 ##### Document options
 
@@ -143,15 +151,15 @@ JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending
 
 | Value | Meaning |
 |-------|---------|
-| `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates with the job's worker-assigned endpoints |
-| `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release |
+| `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs) with the job's worker-assigned endpoints |
+| `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release. Text jobs: the worker's release is neither staged nor the bundled release; stage it |
 | `waiting_capacity` | An eligible worker is online and busy |
 
 `GET /v1/jobs/{id}/result/markdown` returns one character range of the result's Markdown, never the whole result: `{text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance}`. `offset` ≥ 0 (default 0); `limit` 1–32768 characters (default 32768, larger → `422`). `next_offset` is `null` once the range reaches the end; an offset past the end returns empty `text`. Concatenating `text` from offset 0 until `next_offset` is `null` reproduces `JobResult.markdown` exactly.
 
 `DELETE /v1/jobs/{id}` works in every state. On a pending or processing job it also cancels the job: the lease is fenced, so the worker's next lease call returns `409 stale_lease` and its result is rejected. The job, its idempotency keys, input and result files are gone at once; every later client read (`GET`, result, cancel, list, delete) answers `404`. The hub keeps an invisible tombstone of a deleted processing job only until its lease would have expired, to fence the worker.
 
-JobResult fields: `schema_version`, `kind`, `raw_text`, `markdown`, `raw_markdown`, `language`, `segments`, `pages`, `warnings`, `structured`, `provenance`. `markdown` is the final text. `raw_markdown` is optional (`null` or absent): it holds the engine's Markdown before postprocessing and is set only when a postprocess step changed it. For documents `raw_text` is the converter's plain text without tables, so `raw_markdown` is the unpolished reference. For audio `raw_text` is the engine's plain transcript; the worker builds `markdown` from `segments`: segment texts joined with spaces, a blank line between paragraphs. A paragraph ends at a pause of 1.5 s or more between one segment's `end` and the next `start`, or, once it is 1000 characters long, after the next segment ending a sentence (`.`, `!`, `?`, `…`, optionally followed by a closing quote or bracket); once it reaches 2000 characters, at the next segment. An engine without segment text yields `markdown` = `raw_text`. Postprocess profiles work on this Markdown, so with a profile `markdown` is the profile's output and `raw_markdown` the paragraphed transcript. Results without the field stay valid; a hub older than this field rejects results that carry it (`422 invalid_result`), so update the hub before its workers.
+JobResult fields: `schema_version`, `kind`, `raw_text`, `markdown`, `raw_markdown`, `language`, `segments`, `pages`, `warnings`, `structured`, `provenance`. `markdown` is the final text. `raw_markdown` is optional (`null` or absent): it holds the engine's Markdown before postprocessing and is set only when a postprocess step changed it. For documents `raw_text` is the converter's plain text without tables, so `raw_markdown` is the unpolished reference. For audio `raw_text` is the engine's plain transcript; the worker builds `markdown` from `segments`: segment texts joined with spaces, a blank line between paragraphs. A paragraph ends at a pause of 1.5 s or more between one segment's `end` and the next `start`, or, once it is 1000 characters long, after the next segment ending a sentence (`.`, `!`, `?`, `…`, optionally followed by a closing quote or bracket); once it reaches 2000 characters, at the next segment. An engine without segment text yields `markdown` = `raw_text`. Postprocess profiles work on this Markdown, so with a profile `markdown` is the profile's output and `raw_markdown` the paragraphed transcript. For `text` jobs `raw_text` is the uploaded text, `markdown` the profile output, `raw_markdown` the uploaded text when the profile changed it, `language` the job's language; `segments` and `pages` stay empty and provenance has no engine stage. Results without the field stay valid; a hub older than this field rejects results that carry it (`422 invalid_result`), so update the hub before its workers.
 
 #### Job state machine
 
@@ -180,6 +188,8 @@ POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
 ```
 
 A call with an expired or replaced lease, or on a cancelled or deleted job, returns `409 stale_lease`. An incompatible worker protocol returns `426`. `withdraw_capability` in a `fail` body is recorded in the job's error message only: the hub never changes a worker's approved capabilities; the worker itself stops offering the withdrawn tuple until it is prepared again.
+
+Heartbeat and claim bodies carry `text_jobs: true` from workers that run [text jobs](#text-jobs) (every current `resona-worker`; no capability tuple is needed, so a worker whose tuples are all unusable still polls for them). A claim without it never receives a text job, so older workers keep working unchanged.
 
 ---
 

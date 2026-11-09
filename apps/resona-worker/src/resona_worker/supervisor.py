@@ -3,6 +3,8 @@
 Lifecycle per job: download input (SHA-256 checked) -> run the execution
 subprocess under the lease -> apply postprocess stages, each gated by a fresh
 hub policy check -> upload the validated result or report a bounded failure.
+Text jobs (postprocess-only) skip the subprocess: the UTF-8 input goes straight
+into the postprocess stages.
 A background ``LeaseKeeper`` renews the lease for the whole job, including
 postprocess. The main thread checks it between steps and while the subprocess
 runs; on loss or cancellation the subprocess group is killed and nothing is
@@ -28,7 +30,15 @@ from typing import Any
 
 import httpx
 from pydantic import ValidationError
-from resona_job_core import Candidate, Endpoint, ExecutionPolicy, JobResult, PolicyDenied, StageProvenance
+from resona_job_core import (
+    Candidate,
+    Endpoint,
+    ExecutionPolicy,
+    JobResult,
+    PolicyDenied,
+    Provenance,
+    StageProvenance,
+)
 from resona_postprocess.llm import PostprocessStepFailed
 from resona_postprocess.pipeline import PostprocessResult, build_pipeline, step_endpoint_id
 from resona_postprocess.profile import Profile, ProfileError
@@ -212,6 +222,8 @@ class Supervisor:
         Tuples whose accelerator this host cannot use right now (a CUDA container started
         without a GPU, a missing driver) are withdrawn before the first heartbeat, so the
         hub never schedules them here and their jobs stay eligible for other workers.
+        A worker left without any tuple still claims text (postprocess-only) jobs and
+        says so once here.
         """
         self._config.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.rmtree(self._jobs_dir, ignore_errors=True)
@@ -223,6 +235,8 @@ class Supervisor:
             unavailable = {c for c in self._config.capabilities if c.accelerator == accelerator}
             self._withdrawn |= unavailable
             log.warning("%s is not available on this host; not offering %d tuple(s)", accelerator, len(unavailable))
+        if all(c in self._withdrawn for c in self._config.capabilities):
+            log.warning("no usable capability tuple on this host; serving text (postprocess-only) jobs only")
 
     def _probe_with_executor(self, accelerator: str) -> bool:
         """Ask the execution environment (where the ML frameworks live) whether ``accelerator`` works."""
@@ -283,8 +297,10 @@ class Supervisor:
             backoff = _BACKOFF_MIN
             self._worker_id = str(reply.worker_id)
             self._approved_private = reply.approved_private
+            # Text (postprocess-only) jobs need no tuple, so an approved worker without
+            # eligible tuples still claims them.
             eligible = [c for c in claimable if c in reply.approved_capabilities]
-            if not reply.approved or not eligible:
+            if not reply.approved:
                 if once:
                     return 0
                 self._sleep(_NOT_APPROVED_RETRY_SECONDS)
@@ -347,9 +363,9 @@ class Supervisor:
 
     def _run_job(self, job: ClaimedJob, keeper: LeaseKeeper, job_dir: Path) -> None:
         snapshot = job.execution_snapshot
-        if snapshot.get("kind") != job.kind or job.kind not in ("audio", "document"):
+        if snapshot.get("kind") != job.kind or job.kind not in ("audio", "document", "text"):
             raise JobFailure("invalid_snapshot", retryable=False)
-        candidate = _candidate_of(snapshot)
+        candidate = None if job.kind == "text" else _candidate_of(snapshot)
         policy_block = snapshot.get("policy") or {}
         private = bool(policy_block.get("private", True))
         if private and not self._approved_private:
@@ -370,24 +386,30 @@ class Supervisor:
             input_path = input_path.rename(job_dir / f"input{_document_suffix(input_path)}")
         profile_dict = self._fetch_postprocess(job, snapshot, keeper)
 
-        keeper.check()
-        snapshot_path = job_dir / "snapshot.json"
-        out_path = job_dir / "out.json"
-        snapshot_path.write_text(
-            json.dumps(
-                {
-                    "kind": job.kind,
-                    "candidate": candidate.model_dump(mode="json"),
-                    "language": snapshot.get("language"),
-                    "options": snapshot.get("options") or {},
-                }
-            ),
-            encoding="utf-8",
-        )
-        rc = self._run_executor(job_dir, snapshot_path, input_path, out_path, keeper, private=private)
-        _raise_for_exit(rc, candidate, job_dir / "engine.stderr")
+        if candidate is None:
+            # Text job: the input is the text; no execution subprocess, only the profile.
+            if profile_dict is None:
+                raise JobFailure("invalid_snapshot", retryable=False, message="text job without a profile")
+            result = _text_result(input_path, snapshot.get("language"))
+        else:
+            keeper.check()
+            snapshot_path = job_dir / "snapshot.json"
+            out_path = job_dir / "out.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "kind": job.kind,
+                        "candidate": candidate.model_dump(mode="json"),
+                        "language": snapshot.get("language"),
+                        "options": snapshot.get("options") or {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rc = self._run_executor(job_dir, snapshot_path, input_path, out_path, keeper, private=private)
+            _raise_for_exit(rc, candidate, job_dir / "engine.stderr")
+            result = _read_result(out_path, job.kind)
 
-        result = _read_result(out_path, job.kind)
         result = self._postprocess(job, result, snapshot, profile_dict, keeper)
         provenance = result.provenance.model_copy(
             update={
@@ -645,6 +667,21 @@ def _document_suffix(path: Path) -> str:
     if head[:4] in (b"II*\x00", b"MM\x00*"):
         return ".tif"
     raise JobFailure("unsupported_input", retryable=False, message="input could not be processed")
+
+
+def _text_result(path: Path, language: Any) -> JobResult:
+    """The unprocessed result of a text job: its UTF-8 input as ``raw_text`` and ``markdown``."""
+    try:
+        text = path.read_bytes().decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        raise JobFailure("unsupported_input", retryable=False, message="input is not UTF-8 text") from None
+    return JobResult(
+        kind="text",
+        raw_text=text,
+        markdown=text,
+        language=language if isinstance(language, str) else None,
+        provenance=Provenance(),
+    )
 
 
 def _candidate_of(snapshot: dict[str, Any]) -> Candidate:
