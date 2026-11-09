@@ -216,6 +216,97 @@ def test_symlink_staying_inside_root_is_allowed(hub, payload, tmp_path):
     assert hub.calls[0] == ("upload", (root / "real.wav").resolve())
 
 
+# ── postprocess_text ───────────────────────────────────────────────────────
+
+def test_postprocess_text_from_upload_id_submits_a_text_job(hub, payload):
+    out = payload(call(remote(hub), "postprocess_text", {
+        "upload_id": "upl_" + "c" * 24, "profile": "transcript-polish-de", "language": "de",
+    }))
+    assert out == {"job_id": 7, "status": "pending", "private": True}
+    assert len(hub.calls) == 1
+    name, (upload_id, kwargs) = hub.calls[0]
+    assert (name, upload_id) == ("submit_upload", "upl_" + "c" * 24)
+    assert kwargs["kind"] == "text" and kwargs["profile"] == "transcript-polish-de"
+    assert kwargs["language"] == "de" and kwargs["private"] is True
+    assert "execution_profile" not in kwargs and "options" not in kwargs
+
+
+@pytest.mark.parametrize("has_raw", [True, False])
+def test_postprocess_text_from_job_reads_ranges_preferring_raw_markdown(hub, payload, has_raw):
+    raw = "Befund Komma Ärztin 🩺 Absatz\n" * 3000  # several range reads
+    polished = "# Befund\n\nÄrztin.\n"
+    hub.result = JobResult(kind="audio", raw_text="raw", markdown=polished if has_raw else raw,
+                           raw_markdown=raw if has_raw else None, language="de", provenance=Provenance())
+
+    out = payload(call(remote(hub), "postprocess_text",
+                       {"job_id": 5, "profile": "transcript-polish-de", "idempotency_key": "k1"}))
+
+    assert out == {"job_id": 7, "status": "pending", "private": True}
+    reads = [args for name, args in hub.calls if name == "get_result_markdown"]
+    assert len(reads) == -(-len(raw) // MAX_RESULT_CHUNK_CHARS) > 1
+    assert all(r[0] == 5 and r[2] == MAX_RESULT_CHUNK_CHARS and r[3] == "raw" for r in reads)
+    assert hub.uploaded == [raw.encode("utf-8")]
+    name, (upload_id, kwargs) = hub.calls[-1]
+    assert (name, upload_id) == ("submit_upload", "upl_" + "b" * 24)
+    assert kwargs["kind"] == "text" and kwargs["language"] == "de"  # the earlier job's language
+    assert kwargs["idempotency_key"] == "k1"
+
+
+@pytest.mark.parametrize("profile", [None, ""])
+def test_postprocess_text_without_profile_is_profile_required(hub, error_text, profile):
+    args = {"job_id": 5} if profile is None else {"job_id": 5, "profile": profile}
+    assert "profile_required" in error_text(call(remote(hub), "postprocess_text", args))
+    assert hub.calls == []
+
+
+def test_postprocess_text_hub_profile_required_becomes_tool_error(hub, error_text):
+    hub.error = ResonaAPIError(422, "profile_required", "text jobs need a profile")
+    msg = error_text(call(remote(hub), "postprocess_text", {"upload_id": "upl_" + "c" * 24, "profile": "x"}))
+    assert "422 profile_required" in msg
+
+
+@pytest.mark.parametrize("args", [
+    {},
+    {"job_id": 5, "upload_id": "upl_" + "c" * 24},
+    {"job_id": 5, "path": "a.md"},
+    {"upload_id": "upl_" + "c" * 24, "path": "a.md"},
+])
+def test_postprocess_text_requires_exactly_one_source(hub, error_text, args):
+    error_text(call(local(hub, Path("/nonexistent")), "postprocess_text", {**args, "profile": "p"}))
+    assert hub.calls == []
+
+
+def test_postprocess_text_rejects_empty_job_result(hub, error_text):
+    hub.result = JobResult(kind="audio", raw_text="", markdown="  \n", provenance=Provenance())
+    msg = error_text(call(remote(hub), "postprocess_text", {"job_id": 5, "profile": "p"}))
+    assert "no text" in msg
+    assert not any(name in {"upload_bytes", "submit_upload"} for name, _ in hub.calls)
+
+
+@pytest.mark.parametrize("path", ["/etc/hosts", "notes.md", "https://example.com/a.md"])
+def test_postprocess_text_remote_server_rejects_paths(hub, error_text, path):
+    error_text(call(remote(hub), "postprocess_text", {"path": path, "profile": "p"}))
+    assert hub.calls == []
+
+
+def test_postprocess_text_path_is_confined_to_root(hub, payload, error_text, tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "notes.md").write_text("Befund Punkt")
+    outside = tmp_path / "secret.md"
+    outside.write_text("geheim")
+    os.symlink(outside, root / "link.md")
+    server = local(hub, root)
+
+    for path in ["../secret.md", str(outside), "link.md"]:
+        error_text(call(server, "postprocess_text", {"path": path, "profile": "p"}))
+    assert hub.calls == []
+
+    payload(call(server, "postprocess_text", {"path": "notes.md", "profile": "p"}))
+    assert hub.calls[0] == ("upload", (root / "notes.md").resolve())
+    assert hub.calls[1][1][1]["kind"] == "text"
+
+
 # ── results ────────────────────────────────────────────────────────────────
 
 def test_result_chunks_reconstruct_markdown_exactly(hub, payload):

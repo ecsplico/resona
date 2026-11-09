@@ -17,6 +17,7 @@ Two transports:
 | `upload_content(filename, content_base64, sha256)` | Upload a tiny file inline (at most 8 MiB decoded) → `{upload_id, sha256, size}`. `sha256` is the hex digest of the original file; if the decoded content does not match it, nothing is uploaded. Models copy long base64 strings unreliably, so prefer `create_upload_url` for anything but a few KB. |
 | `transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, options?, private=true, idempotency_key?)` | Submit an audio job → `{job_id, status, private}` immediately. `options`: `translate`, `word_timestamps`, `vad_filter`. |
 | `convert_document(upload_id \| path, …, options?)` | Submit a PDF/image → Markdown job → `{job_id, status, private}`. `options`: `languages` (`de`, `en`, `fr`, `it`, `es`, `ko`), `ocr`, `ocr_engine`, `page_start`, `page_end`, `pipeline`, `image_scale` (1.0–4.0, OCR raster multiplier), `ocr_min_confidence` (0–1, `rapidocr` only); see the [API reference](../reference/api.md#document-options). |
+| `postprocess_text(upload_id \| path \| job_id, profile, language?, private=true, idempotency_key?)` | Run a stored postprocess profile on text, no engine (a `text` job) → `{job_id, status, private}` immediately. `profile` is required (missing → tool error `profile_required`, nothing is sent). `upload_id`/`path` name a UTF-8 text or Markdown file (hub text cap `RESONA_MAX_TEXT_UPLOAD_BYTES`, default 2 MiB). `job_id` re-runs a profile on an earlier completed job's result without re-transcribing: the tool reads that result in hub range reads of at most 32 768 characters (`GET /v1/jobs/{id}/result/markdown?source=raw`, so the unpolished `raw_markdown` when the result has one, else `markdown`), uploads it as text and submits the job; `language` defaults to the earlier job's. Read the output with `get_job` / `get_result` as for any job. |
 | `get_job(job_id)` | Status (`pending` with `queue_reason`, `processing`, `completed`, `failed`, `cancelled`). |
 | `get_result(job_id, offset=0, limit=32768)` | One Markdown chunk plus `next_offset`, `total_chars`, language, warnings, provenance. Each call is one hub range read (`GET /v1/jobs/{id}/result/markdown`), so the full result never passes through the MCP server. Concatenating chunks from offset 0 until `next_offset` is `null` reproduces the REST `markdown` exactly. `limit` is capped at 32 768 characters. |
 | `cancel_job(job_id)` | Request cancellation; later worker output is rejected. |
@@ -36,6 +37,13 @@ transcribe_audio(upload_id=…)                  → {job_id: 12, status: "pendi
 get_job(12)                                    → … status: "completed"
 get_result(12)                                 → {markdown: "...", next_offset: 32768, total_chars: 51234}
 get_result(12, offset=32768)                   → … until next_offset is null
+```
+
+Re-polishing an earlier transcript with another stored profile:
+
+```text
+postprocess_text(job_id=12, profile="transcript-polish-de")  → {job_id: 13, status: "pending", private: true}
+get_job(13) … get_result(13)
 ```
 
 ## Local stdio

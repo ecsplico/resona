@@ -140,7 +140,7 @@ worker is `unsupported_capability`: that worker stops offering the candidate and
 GET    /v1/jobs?cursor=<opaque>&limit=<1..100>   → {items: [JobView], next_cursor}
 GET    /v1/jobs/{id}                             → JobView
 GET    /v1/jobs/{id}/result                      → JobResult (409 not_ready, 410 expired)
-GET    /v1/jobs/{id}/result/markdown?offset=&limit=  → MarkdownChunk (409 not_ready, 410 expired)
+GET    /v1/jobs/{id}/result/markdown?offset=&limit=&source=  → MarkdownChunk (409 not_ready, 410 expired)
 POST   /v1/jobs/{id}/cancel                      → JobView
 DELETE /v1/jobs/{id}                             → 204
 ```
@@ -155,7 +155,7 @@ JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending
 | `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release. Text jobs: the worker's release is neither staged nor the bundled release; stage it |
 | `waiting_capacity` | An eligible worker is online and busy |
 
-`GET /v1/jobs/{id}/result/markdown` returns one character range of the result's Markdown, never the whole result: `{text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance}`. `offset` ≥ 0 (default 0); `limit` 1–32768 characters (default 32768, larger → `422`). `next_offset` is `null` once the range reaches the end; an offset past the end returns empty `text`. Concatenating `text` from offset 0 until `next_offset` is `null` reproduces `JobResult.markdown` exactly.
+`GET /v1/jobs/{id}/result/markdown` returns one character range of the result's Markdown, never the whole result: `{text, offset, next_offset, total_chars, source, kind, language, page_count, warnings, provenance}`. `offset` ≥ 0 (default 0); `limit` 1–32768 characters (default 32768, larger → `422`). `source` is `markdown` (default) or `raw`: `raw` reads `raw_markdown` (the text before postprocessing) when the result has one and `markdown` otherwise; the response's `source` names the field read (`markdown` or `raw_markdown`). `next_offset` is `null` once the range reaches the end; an offset past the end returns empty `text`. Concatenating `text` from offset 0 until `next_offset` is `null` reproduces that field exactly.
 
 `DELETE /v1/jobs/{id}` works in every state. On a pending or processing job it also cancels the job: the lease is fenced, so the worker's next lease call returns `409 stale_lease` and its result is rejected. The job, its idempotency keys, input and result files are gone at once; every later client read (`GET`, result, cancel, list, delete) answers `404`. The hub keeps an invisible tombstone of a deleted processing job only until its lease would have expired, to fence the worker.
 

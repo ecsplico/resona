@@ -150,7 +150,9 @@ class JobPage:
 
 @dataclass(frozen=True)
 class MarkdownChunk:
-    """A character range of a result's Markdown; ``next_offset`` is None at the end."""
+    """A character range of a result's Markdown; ``next_offset`` is None at the end.
+
+    ``source`` names the result field read: ``markdown`` or ``raw_markdown``."""
 
     text: str
     offset: int
@@ -161,6 +163,7 @@ class MarkdownChunk:
     page_count: int = 0
     warnings: tuple[str, ...] = ()
     provenance: Mapping[str, Any] = field(default_factory=dict)
+    source: str = "markdown"
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "MarkdownChunk":
@@ -174,6 +177,7 @@ class MarkdownChunk:
             page_count=int(data.get("page_count") or 0),
             warnings=tuple(data.get("warnings") or ()),
             provenance=dict(data.get("provenance") or {}),
+            source=str(data.get("source") or "markdown"),
         )
 
 
@@ -521,16 +525,28 @@ class ResonaClient:
         )
         return JobResult.model_validate_json(resp.content)
 
-    def get_result_markdown(self, job_id: int, *, offset: int = 0, limit: int = 32768) -> MarkdownChunk:
+    def get_result_markdown(
+        self,
+        job_id: int,
+        *,
+        offset: int = 0,
+        limit: int = 32768,
+        source: Literal["markdown", "raw"] = "markdown",
+    ) -> MarkdownChunk:
         """One character range of a completed job's Markdown.
         GET /v1/jobs/{id}/result/markdown
 
-        ``limit`` is at most 32768 characters. Raises JobNotReady (409) before
+        ``limit`` is at most 32768 characters. ``source="raw"`` reads the result's
+        ``raw_markdown`` (before postprocessing) when present, else ``markdown``;
+        ``MarkdownChunk.source`` says which. Raises JobNotReady (409) before
         completion and ResultExpired (410) after retention.
         """
+        params: dict[str, Any] = {"offset": offset, "limit": limit}
+        if source != "markdown":
+            params["source"] = source
         resp = self._send(
             "GET", f"/v1/jobs/{job_id}/result/markdown",
-            params={"offset": offset, "limit": limit},
+            params=params,
             expected={409: JobNotReady, 410: ResultExpired},
         )
         return MarkdownChunk.from_dict(resp.json())

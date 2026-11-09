@@ -60,7 +60,7 @@ client.delete_job(ref.job_id)   # any state: fence the lease, delete job, input 
 
 `get_result()` raises `JobNotReady` (409) before completion and `ResultExpired` (410) after the 24-hour result retention.
 
-To read a large Markdown result in bounded pieces, `get_result_markdown(job_id, offset=0, limit=32768)` returns a `MarkdownChunk(text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance)` from `GET /v1/jobs/{id}/result/markdown`; `limit` is at most 32 768 characters and `next_offset` is `None` at the end. It raises the same `JobNotReady`/`ResultExpired`.
+To read a large Markdown result in bounded pieces, `get_result_markdown(job_id, offset=0, limit=32768, source="markdown")` returns a `MarkdownChunk(text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance, source)` from `GET /v1/jobs/{id}/result/markdown`; `limit` is at most 32 768 characters and `next_offset` is `None` at the end. `source="raw"` reads the unpolished `raw_markdown` when the result has one, else `markdown`; `MarkdownChunk.source` names the field read. It raises the same `JobNotReady`/`ResultExpired`.
 
 ```python
 offset, parts = 0, []
