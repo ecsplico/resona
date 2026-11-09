@@ -17,6 +17,9 @@ class FakeHub:
         self.result = JobResult(kind="audio", raw_text="raw", markdown="# x\n", provenance=Provenance())
         self.error: Optional[Exception] = None
         self.upload_link: Optional[UploadLink] = None
+        self.uploaded: list[bytes] = []
+        self.job_private = True
+        self.supports_source = True  # False: a hub from before ?source=raw
 
     def client(self, token: Optional[str] = None) -> "FakeClient":
         self.tokens.append(token)
@@ -44,6 +47,7 @@ class FakeClient:
 
     def upload_bytes(self, filename: str, data: bytes):
         self._record("upload_bytes", (filename, len(data)))
+        self.hub.uploaded.append(data)
         return Upload(upload_id="upl_" + "b" * 24, sha256="1" * 64, size=len(data))
 
     def create_upload_link(self):
@@ -65,23 +69,28 @@ class FakeClient:
     def get_job(self, job_id: int):
         self._record("get_job", job_id)
         return JobView.from_dict({"job_id": job_id, "kind": "audio", "status": "completed",
-                                  "private": True, "result_available": True})
+                                  "private": self.hub.job_private, "result_available": True})
 
     def cancel_job(self, job_id: int):
         self._record("cancel_job", job_id)
         return JobView.from_dict({"job_id": job_id, "kind": "audio", "status": "cancelled", "private": True})
 
-    def get_result_markdown(self, job_id: int, *, offset: int = 0, limit: int = 32768):
+    def get_result_markdown(self, job_id: int, *, offset: int = 0, limit: int = 32768, source: str = "markdown"):
         """Mirrors the hub's range read: only the requested slice ever leaves the hub."""
-        self._record("get_result_markdown", (job_id, offset, limit))
+        self._record("get_result_markdown", (job_id, offset, limit) if source == "markdown"
+                     else (job_id, offset, limit, source))
         result = self.hub.result
-        markdown = result.markdown
+        field = "raw_markdown" if source == "raw" and result.raw_markdown is not None else "markdown"
+        if not self.hub.supports_source:
+            field = "markdown"
+        markdown = getattr(result, field)
         end = min(offset + limit, len(markdown))
         return MarkdownChunk(
             text=markdown[offset:end], offset=offset,
             next_offset=end if end < len(markdown) else None, total_chars=len(markdown),
             kind=result.kind, language=result.language, page_count=len(result.pages),
             warnings=tuple(result.warnings), provenance=result.provenance.model_dump(mode="json"),
+            source=field if self.hub.supports_source else None,
         )
 
     def get_settings(self):

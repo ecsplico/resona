@@ -380,6 +380,17 @@ def test_get_result_markdown_reads_one_range(client):
     assert dict(route.calls.last.request.url.params) == {"offset": "3", "limit": "4"}
     assert (chunk.text, chunk.offset, chunk.next_offset, chunk.total_chars) == ("itel", 3, 7, 12)
     assert (chunk.kind, chunk.page_count, chunk.warnings) == ("document", 2, ("w",))
+    assert chunk.source is None  # a hub without the source parameter sends none
+
+
+def test_get_result_markdown_source_raw(client):
+    body = {"text": "roh", "offset": 0, "next_offset": None, "total_chars": 3, "source": "raw_markdown"}
+    with respx.mock:
+        route = respx.get(f"{BASE}/v1/jobs/9/result/markdown").mock(
+            return_value=httpx.Response(200, json=body))
+        chunk = client.get_result_markdown(9, source="raw")
+    assert route.calls.last.request.url.params["source"] == "raw"
+    assert (chunk.text, chunk.source) == ("roh", "raw_markdown")
 
 
 def test_get_result_markdown_maps_not_ready_and_expired(client):

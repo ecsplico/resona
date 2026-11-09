@@ -28,6 +28,10 @@
     "deferred": false
   },
   {
+    "name": "postprocess_text",
+    "deferred": false
+  },
+  {
     "name": "transcribe_audio",
     "deferred": false
   },
