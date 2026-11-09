@@ -9,11 +9,12 @@ import anyio
 import httpx
 import pytest
 from mcp import Client
-from resona_client.client import AudioOptions, ResonaAPIError
+from resona_client.client import AudioOptions, JobNotReady, ResonaAPIError, ResultExpired
 from resona_job_core import JobResult, Provenance
 
 from resona_mcp.server import (
     MAX_RESULT_CHUNK_CHARS,
+    MAX_TEXT_UPLOAD_BYTES,
     MAX_UPLOAD_CONTENT_BYTES,
     TOOL_NAMES,
     InputPolicy,
@@ -214,6 +215,152 @@ def test_symlink_staying_inside_root_is_allowed(hub, payload, tmp_path):
     os.symlink(root / "real.wav", root / "alias.wav")
     payload(call(local(hub, root), "transcribe_audio", {"path": "alias.wav"}))
     assert hub.calls[0] == ("upload", (root / "real.wav").resolve())
+
+
+# ── postprocess_text ───────────────────────────────────────────────────────
+
+def test_postprocess_text_from_upload_id_submits_a_text_job(hub, payload):
+    out = payload(call(remote(hub), "postprocess_text", {
+        "upload_id": "upl_" + "c" * 24, "profile": "transcript-polish-de", "language": "de",
+    }))
+    assert out == {"job_id": 7, "status": "pending", "private": True}
+    assert len(hub.calls) == 1
+    name, (upload_id, kwargs) = hub.calls[0]
+    assert (name, upload_id) == ("submit_upload", "upl_" + "c" * 24)
+    assert kwargs["kind"] == "text" and kwargs["profile"] == "transcript-polish-de"
+    assert kwargs["language"] == "de" and kwargs["private"] is True
+    assert "execution_profile" not in kwargs and "options" not in kwargs
+
+
+@pytest.mark.parametrize("has_raw", [True, False])
+def test_postprocess_text_from_job_reads_ranges_preferring_raw_markdown(hub, payload, has_raw):
+    raw = "Befund Komma Ärztin 🩺 Absatz\n" * 3000  # several range reads
+    polished = "# Befund\n\nÄrztin.\n"
+    hub.result = JobResult(kind="audio", raw_text="raw", markdown=polished if has_raw else raw,
+                           raw_markdown=raw if has_raw else None, language="de", provenance=Provenance())
+
+    out = payload(call(remote(hub), "postprocess_text",
+                       {"job_id": 5, "profile": "transcript-polish-de", "idempotency_key": "k1"}))
+
+    assert out == {"job_id": 7, "status": "pending", "private": True}
+    reads = [args for name, args in hub.calls if name == "get_result_markdown"]
+    assert len(reads) == -(-len(raw) // MAX_RESULT_CHUNK_CHARS) > 1
+    assert all(r[0] == 5 and r[2] == MAX_RESULT_CHUNK_CHARS and r[3] == "raw" for r in reads)
+    assert hub.uploaded == [raw.encode("utf-8")]
+    assert ("upload_bytes", ("job-5.transcript-polish-de.md", len(raw.encode("utf-8")))) in hub.calls
+    assert not any(name == "get_job" for name, _ in hub.calls)  # private=true needs no lookup
+    name, (upload_id, kwargs) = hub.calls[-1]
+    assert (name, upload_id) == ("submit_upload", "upl_" + "b" * 24)
+    assert kwargs["kind"] == "text" and kwargs["language"] == "de"  # the earlier job's language
+    assert kwargs["idempotency_key"] == "k1"
+
+
+@pytest.mark.parametrize("profile", [None, ""])
+def test_postprocess_text_without_profile_is_profile_required(hub, error_text, profile):
+    args = {"job_id": 5} if profile is None else {"job_id": 5, "profile": profile}
+    assert "profile_required" in error_text(call(remote(hub), "postprocess_text", args))
+    assert hub.calls == []
+
+
+def test_postprocess_text_hub_profile_required_becomes_tool_error(hub, error_text):
+    hub.error = ResonaAPIError(422, "profile_required", "text jobs need a profile")
+    msg = error_text(call(remote(hub), "postprocess_text", {"upload_id": "upl_" + "c" * 24, "profile": "x"}))
+    assert "422 profile_required" in msg
+
+
+def _nothing_sent(hub) -> bool:
+    return hub.uploaded == [] and not any(name == "submit_upload" for name, _ in hub.calls)
+
+
+@pytest.mark.parametrize("error", [
+    ResonaAPIError(404, "not_found", "Job not found"),
+    JobNotReady(409, "not_ready", "job has not completed"),
+    ResultExpired(410, "result_expired", "result was removed by retention"),
+])
+def test_postprocess_text_source_job_hub_errors_send_nothing(hub, error_text, error):
+    hub.error = error
+    msg = error_text(call(remote(hub), "postprocess_text", {"job_id": 5, "profile": "p"}))
+    assert f"{error.status} {error.code}" in msg
+    assert _nothing_sent(hub)
+
+
+@pytest.mark.parametrize("text", [
+    "x" * (MAX_TEXT_UPLOAD_BYTES + 1),          # total_chars alone exceeds the cap
+    "ä" * (MAX_TEXT_UPLOAD_BYTES // 2 + 1),     # fewer chars, but more UTF-8 bytes
+])
+def test_postprocess_text_source_job_over_text_cap_fails_early(hub, error_text, text):
+    hub.result = JobResult(kind="audio", raw_text="raw", markdown=text, provenance=Provenance())
+    msg = error_text(call(remote(hub), "postprocess_text", {"job_id": 5, "profile": "p"}))
+    assert "2 MiB" in msg
+    assert _nothing_sent(hub)
+    reads = [args for name, args in hub.calls if name == "get_result_markdown"]
+    max_reads = 1 if len(text) > MAX_TEXT_UPLOAD_BYTES else MAX_TEXT_UPLOAD_BYTES // MAX_RESULT_CHUNK_CHARS
+    assert len(reads) <= max_reads
+
+
+def test_postprocess_text_refuses_source_job_without_raw_support(hub, error_text):
+    hub.supports_source = False
+    hub.result = JobResult(kind="audio", raw_text="raw", markdown="# Befund\n",
+                           raw_markdown="Kapitel Befund", provenance=Provenance())
+    msg = error_text(call(remote(hub), "postprocess_text", {"job_id": 5, "profile": "p"}))
+    assert "source=raw" in msg
+    assert _nothing_sent(hub)
+
+
+@pytest.mark.parametrize("job_private, allowed", [(True, False), (False, True)])
+def test_postprocess_text_private_false_needs_a_non_private_source_job(hub, payload, error_text,
+                                                                       job_private, allowed):
+    hub.job_private = job_private
+    result = call(remote(hub), "postprocess_text", {"job_id": 5, "profile": "p", "private": False})
+    if allowed:
+        assert payload(result)["private"] is False
+        assert hub.calls[-1][1][1]["private"] is False
+    else:
+        assert "private" in error_text(result)
+        assert _nothing_sent(hub)
+        assert not any(name == "get_result_markdown" for name, _ in hub.calls)
+
+
+@pytest.mark.parametrize("args", [
+    {},
+    {"job_id": 5, "upload_id": "upl_" + "c" * 24},
+    {"job_id": 5, "path": "a.md"},
+    {"upload_id": "upl_" + "c" * 24, "path": "a.md"},
+])
+def test_postprocess_text_requires_exactly_one_source(hub, error_text, args):
+    error_text(call(local(hub, Path("/nonexistent")), "postprocess_text", {**args, "profile": "p"}))
+    assert hub.calls == []
+
+
+def test_postprocess_text_rejects_empty_job_result(hub, error_text):
+    hub.result = JobResult(kind="audio", raw_text="", markdown="  \n", provenance=Provenance())
+    msg = error_text(call(remote(hub), "postprocess_text", {"job_id": 5, "profile": "p"}))
+    assert "no text" in msg
+    assert not any(name in {"upload_bytes", "submit_upload"} for name, _ in hub.calls)
+
+
+@pytest.mark.parametrize("path", ["/etc/hosts", "notes.md", "https://example.com/a.md"])
+def test_postprocess_text_remote_server_rejects_paths(hub, error_text, path):
+    error_text(call(remote(hub), "postprocess_text", {"path": path, "profile": "p"}))
+    assert hub.calls == []
+
+
+def test_postprocess_text_path_is_confined_to_root(hub, payload, error_text, tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "notes.md").write_text("Befund Punkt")
+    outside = tmp_path / "secret.md"
+    outside.write_text("geheim")
+    os.symlink(outside, root / "link.md")
+    server = local(hub, root)
+
+    for path in ["../secret.md", str(outside), "link.md"]:
+        error_text(call(server, "postprocess_text", {"path": path, "profile": "p"}))
+    assert hub.calls == []
+
+    payload(call(server, "postprocess_text", {"path": "notes.md", "profile": "p"}))
+    assert hub.calls[0] == ("upload", (root / "notes.md").resolve())
+    assert hub.calls[1][1][1]["kind"] == "text"
 
 
 # ── results ────────────────────────────────────────────────────────────────

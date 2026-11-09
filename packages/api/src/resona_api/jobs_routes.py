@@ -1083,19 +1083,23 @@ def get_result_markdown(
     job_id: int,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=MAX_MARKDOWN_CHUNK_CHARS, ge=1, le=MAX_MARKDOWN_CHUNK_CHARS),
+    source: Literal["markdown", "raw"] = Query(default="markdown"),
     principal: Principal = Depends(client_principal),
     session: Session = Depends(get_db_session),
 ) -> dict[str, Any]:
     """One character range of the result's Markdown plus small result metadata,
     never the whole result.
 
+    ``source=raw`` reads ``raw_markdown`` (the text before postprocessing) when the
+    result has one, else ``markdown``; the response's ``source`` names the field read.
     ``next_offset`` is null once the range reaches the end. Same 404/409/410 rules as
     the full result; an offset past the end returns empty text.
     """
     path = _result_file(session, _owned_job(session, principal.organization_id, job_id))
     try:
         result = json.loads(path.read_bytes())
-        markdown = result.get("markdown") or ""
+        field = "raw_markdown" if source == "raw" and result.get("raw_markdown") is not None else "markdown"
+        markdown = result.get(field) or ""
     except (OSError, ValueError, AttributeError):
         raise api_error(410, CONTENT_UNAVAILABLE, "result content is unavailable") from None
     total = len(markdown)
@@ -1105,6 +1109,7 @@ def get_result_markdown(
         "offset": offset,
         "next_offset": end if end < total else None,
         "total_chars": total,
+        "source": field,
         "kind": result.get("kind"),
         "language": result.get("language"),
         "page_count": len(result.get("pages") or []),

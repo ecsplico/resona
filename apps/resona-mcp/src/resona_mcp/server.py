@@ -4,6 +4,7 @@ Every tool talks to the hub through ``resona_client.ResonaClient``; the hub deri
 organization from the client's bearer token, so the MCP layer holds no tenant state.
 Submissions return immediately; agents poll ``get_job`` and page through ``get_result``.
 No tool mutates settings or profiles, and none touches credentials or worker enrollment.
+``postprocess_text`` re-runs a stored postprocess profile on text without an engine.
 """
 import base64
 import binascii
@@ -34,6 +35,8 @@ log = logging.getLogger(__name__)
 
 MAX_UPLOAD_CONTENT_BYTES = 8 * 1024 * 1024
 MAX_RESULT_CHUNK_CHARS = 32_768
+# The hub's default text upload cap (RESONA_MAX_TEXT_UPLOAD_BYTES): larger text gets 413.
+MAX_TEXT_UPLOAD_BYTES = 2 * 1024 * 1024
 # Largest base64 text that can decode to MAX_UPLOAD_CONTENT_BYTES (padding included).
 _MAX_BASE64_CHARS = 4 * -(-MAX_UPLOAD_CONTENT_BYTES // 3)
 _UPLOAD_ID = re.compile(r"^upl_[0-9a-f]{24}$")
@@ -41,6 +44,7 @@ _UPLOAD_ID = re.compile(r"^upl_[0-9a-f]{24}$")
 TOOL_NAMES = (
     "transcribe_audio",
     "convert_document",
+    "postprocess_text",
     "get_job",
     "get_result",
     "cancel_job",
@@ -57,8 +61,10 @@ INSTRUCTIONS = (
     "verbatim with their sha256; on a local stdio server, a path under RESONA_MCP_ROOT) → "
     "transcribe_audio / convert_document (returns a job_id immediately) → poll get_job "
     "until status is completed/failed/cancelled → page through get_result with "
-    "next_offset until it is null. Jobs are private by default; the hub refuses anything "
-    "its policy does not allow."
+    "next_offset until it is null. To re-run a stored postprocess profile on an existing "
+    "transcript or text file without re-transcribing, use postprocess_text with the "
+    "earlier job_id (or a text upload_id) and a profile name; it is a job like the others. "
+    "Jobs are private by default; the hub refuses anything its policy does not allow."
 )
 
 ClientFactory = Callable[[Context], ResonaClient]
@@ -101,7 +107,15 @@ IdempotencyKey = Annotated[
     Optional[str],
     Field(default=None, max_length=200, description="Reuse the same key when retrying a submission so the hub returns the same job."),
 ]
-JobId = Annotated[int, Field(ge=1, description="Job id returned by transcribe_audio or convert_document.")]
+JobId = Annotated[int, Field(ge=1, description="Job id returned by transcribe_audio, convert_document or postprocess_text.")]
+SourceJobId = Annotated[
+    Optional[int],
+    Field(default=None, ge=1, description="A completed job whose result text to postprocess: its unpolished Markdown (raw_markdown) when it has one, else its Markdown."),
+]
+RequiredProfile = Annotated[
+    Optional[str],
+    Field(default=None, max_length=64, description="Required. Name of a stored postprocess profile on the hub."),
+]
 
 
 def _api_error(exc: ResonaAPIError) -> ToolError:
@@ -216,6 +230,88 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
             execution_profile=execution_profile, language=language, profile=profile,
             private=private, idempotency_key=idempotency_key,
         )
+
+    def read_job_text(client: ResonaClient, job_id: int) -> tuple[str, Optional[str]]:
+        """An earlier result's unpolished Markdown, read in bounded hub ranges."""
+        too_large = f"job {job_id}'s result exceeds 2 MiB (hub text upload cap)"
+        parts: list[str] = []
+        size, offset, language = 0, 0, None
+        while True:
+            chunk = client.get_result_markdown(
+                job_id, offset=offset, limit=MAX_RESULT_CHUNK_CHARS, source="raw")
+            if chunk.source is None:
+                raise ToolError("hub does not support source=raw; upgrade the hub")
+            if chunk.total_chars > MAX_TEXT_UPLOAD_BYTES:
+                raise ToolError(too_large)
+            language = chunk.language
+            parts.append(chunk.text)
+            size += len(chunk.text.encode("utf-8"))
+            if size > MAX_TEXT_UPLOAD_BYTES:
+                raise ToolError(too_large)
+            if chunk.next_offset is None:
+                break
+            if chunk.next_offset <= offset:
+                raise ToolError(f"the hub returned an inconsistent range for job {job_id}")
+            offset = chunk.next_offset
+        text = "".join(parts)
+        if not text.strip():
+            raise ToolError(f"job {job_id}'s result has no text to postprocess")
+        return text, language
+
+    @server.tool()
+    async def postprocess_text(
+        ctx: Context,
+        profile: RequiredProfile = None,
+        upload_id: UploadId = None,
+        path: LocalPath = None,
+        job_id: SourceJobId = None,
+        language: Language = None,
+        private: Private = True,
+        idempotency_key: IdempotencyKey = None,
+    ) -> dict[str, Any]:
+        """Run a stored postprocess profile on text (no engine); returns {job_id, status,
+        private} immediately.
+
+        Pass exactly one source: upload_id (a UTF-8 text/Markdown upload), path (local
+        stdio servers only) or job_id (re-run on an earlier job's result, e.g. to polish a
+        transcript again without re-transcribing). With job_id the language defaults to
+        that job's, and private=false is refused when that job is private. Fetch the
+        output with get_job / get_result like any job."""
+        if not profile:
+            raise ToolError("profile_required: postprocess_text needs the name of a stored postprocess profile")
+        if job_id is not None:
+            if upload_id is not None or path is not None:
+                raise ToolError("pass exactly one of upload_id, path or job_id")
+            local: Optional[Path] = None
+        else:
+            upload_id, local = resolve_source(upload_id, path)
+        client = client_for(ctx)
+
+        def call() -> dict[str, Any]:
+            lang = language
+            with client:
+                if job_id is not None:
+                    if not private and client.get_job(job_id).private:
+                        raise ToolError(
+                            f"job {job_id} is private; its text cannot go to non-private "
+                            "processing (use private=true)")
+                    text, source_language = read_job_text(client, job_id)
+                    lang = lang or source_language
+                    target = client.upload_bytes(
+                        f"job-{job_id}.{profile}.md", text.encode("utf-8")).upload_id
+                else:
+                    target = upload_id or client.upload(local).upload_id  # type: ignore[arg-type]
+                ref = client.submit_upload(
+                    target,
+                    kind="text",
+                    language=lang,
+                    profile=profile,
+                    private=private,
+                    idempotency_key=idempotency_key,
+                )
+            return {"job_id": ref.job_id, "status": ref.status, "private": private}
+
+        return await _run(call)
 
     @server.tool()
     async def get_job(ctx: Context, job_id: JobId) -> dict[str, Any]:
@@ -363,4 +459,4 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
 
 
 __all__ = ["InputPolicy", "build_server", "TOOL_NAMES", "MAX_UPLOAD_CONTENT_BYTES",
-           "MAX_RESULT_CHUNK_CHARS"]
+           "MAX_RESULT_CHUNK_CHARS", "MAX_TEXT_UPLOAD_BYTES"]

@@ -65,11 +65,14 @@ def claim(http, headers, caps=(MAC_AUDIO,)):
                      json={"capabilities": [c.model_dump(mode="json") for c in caps]}, headers=headers)
 
 
-def post_result(http, job_id, headers, lease, markdown="# Hallo Welt"):
-    body = json.dumps({
+def post_result(http, job_id, headers, lease, markdown="# Hallo Welt", raw_markdown=None):
+    result = {
         "schema_version": 1, "kind": "audio", "raw_text": "Hallo Welt",
         "markdown": markdown, "provenance": {"stages": []},
-    }).encode()
+    }
+    if raw_markdown is not None:
+        result["raw_markdown"] = raw_markdown
+    body = json.dumps(result).encode()
     return http.post(f"/v1/workers/jobs/{job_id}/result", content=body, headers={
         **headers, "X-Resona-Lease": lease, "Content-Type": "application/json",
         "X-Resona-Result-Sha256": hashlib.sha256(body).hexdigest(),
@@ -596,11 +599,12 @@ def test_deleted_job_tombstone_is_purged_once_its_lease_would_have_expired(
 
 # ── Bounded Markdown reads ───────────────────────────────────────────────────
 
-def _completed_job(http, fresh_org, headers, wav_bytes, markdown):
+def _completed_job(http, fresh_org, headers, wav_bytes, markdown, raw_markdown=None):
     job_id = new_job(http, headers, wav_bytes)
     _, worker = make_worker(fresh_org)
     lease = claim(http, worker).json()["lease_token"]
-    assert post_result(http, job_id, worker, lease, markdown=markdown).status_code == 200
+    assert post_result(http, job_id, worker, lease, markdown=markdown,
+                       raw_markdown=raw_markdown).status_code == 200
     return job_id
 
 
@@ -627,6 +631,23 @@ def test_markdown_range_pages_through_the_result(http, fresh_org, client_headers
     assert small["kind"] == "audio"
     past = http.get(f"/v1/jobs/{job_id}/result/markdown", params={"offset": 10**7}, headers=headers).json()
     assert (past["text"], past["next_offset"]) == ("", None)
+    assert past["source"] == "markdown"
+
+
+def test_markdown_range_source_raw_prefers_raw_markdown(http, fresh_org, client_headers, wav_bytes):
+    headers = client_headers(fresh_org)
+    url = "/v1/jobs/{}/result/markdown"
+    polished = _completed_job(http, fresh_org, headers, wav_bytes, "# Befund\n", raw_markdown="Kapitel Befund")
+    raw = http.get(url.format(polished), params={"source": "raw", "offset": 8}, headers=headers).json()
+    assert (raw["text"], raw["total_chars"], raw["source"]) == ("Befund", 14, "raw_markdown")
+    final = http.get(url.format(polished), headers=headers).json()
+    assert (final["text"], final["source"]) == ("# Befund\n", "markdown")
+
+    unpolished = _completed_job(http, fresh_org, headers, wav_bytes, "nur Text")
+    fallback = http.get(url.format(unpolished), params={"source": "raw"}, headers=headers).json()
+    assert (fallback["text"], fallback["source"]) == ("nur Text", "markdown")
+    bad = http.get(url.format(unpolished), params={"source": "raw_text"}, headers=headers)
+    assert bad.status_code == 422
 
 
 def test_markdown_range_limits_and_states(http, fresh_org, org_b, client_headers, wav_bytes):
