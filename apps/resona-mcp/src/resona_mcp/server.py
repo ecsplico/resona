@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 
 MAX_UPLOAD_CONTENT_BYTES = 8 * 1024 * 1024
 MAX_RESULT_CHUNK_CHARS = 32_768
+# The hub's default text upload cap (RESONA_MAX_TEXT_UPLOAD_BYTES): larger text gets 413.
+MAX_TEXT_UPLOAD_BYTES = 2 * 1024 * 1024
 # Largest base64 text that can decode to MAX_UPLOAD_CONTENT_BYTES (padding included).
 _MAX_BASE64_CHARS = 4 * -(-MAX_UPLOAD_CONTENT_BYTES // 3)
 _UPLOAD_ID = re.compile(r"^upl_[0-9a-f]{24}$")
@@ -231,18 +233,21 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
 
     def read_job_text(client: ResonaClient, job_id: int) -> tuple[str, Optional[str]]:
         """An earlier result's unpolished Markdown, read in bounded hub ranges."""
+        too_large = f"job {job_id}'s result exceeds 2 MiB (hub text upload cap)"
         parts: list[str] = []
         size, offset, language = 0, 0, None
         while True:
             chunk = client.get_result_markdown(
                 job_id, offset=offset, limit=MAX_RESULT_CHUNK_CHARS, source="raw")
-            if chunk.total_chars > MAX_UPLOAD_CONTENT_BYTES:
-                raise ToolError(f"job {job_id}'s result exceeds the 8 MiB postprocess_text limit")
+            if chunk.source is None:
+                raise ToolError("hub does not support source=raw; upgrade the hub")
+            if chunk.total_chars > MAX_TEXT_UPLOAD_BYTES:
+                raise ToolError(too_large)
             language = chunk.language
             parts.append(chunk.text)
             size += len(chunk.text.encode("utf-8"))
-            if size > MAX_UPLOAD_CONTENT_BYTES:
-                raise ToolError(f"job {job_id}'s result exceeds the 8 MiB postprocess_text limit")
+            if size > MAX_TEXT_UPLOAD_BYTES:
+                raise ToolError(too_large)
             if chunk.next_offset is None:
                 break
             if chunk.next_offset <= offset:
@@ -270,7 +275,8 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         Pass exactly one source: upload_id (a UTF-8 text/Markdown upload), path (local
         stdio servers only) or job_id (re-run on an earlier job's result, e.g. to polish a
         transcript again without re-transcribing). With job_id the language defaults to
-        that job's. Fetch the output with get_job / get_result like any job."""
+        that job's, and private=false is refused when that job is private. Fetch the
+        output with get_job / get_result like any job."""
         if not profile:
             raise ToolError("profile_required: postprocess_text needs the name of a stored postprocess profile")
         if job_id is not None:
@@ -285,9 +291,14 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
             lang = language
             with client:
                 if job_id is not None:
+                    if not private and client.get_job(job_id).private:
+                        raise ToolError(
+                            f"job {job_id} is private; its text cannot go to non-private "
+                            "processing (use private=true)")
                     text, source_language = read_job_text(client, job_id)
                     lang = lang or source_language
-                    target = client.upload_bytes(f"job-{job_id}.md", text.encode("utf-8")).upload_id
+                    target = client.upload_bytes(
+                        f"job-{job_id}.{profile}.md", text.encode("utf-8")).upload_id
                 else:
                     target = upload_id or client.upload(local).upload_id  # type: ignore[arg-type]
                 ref = client.submit_upload(
@@ -448,4 +459,4 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
 
 
 __all__ = ["InputPolicy", "build_server", "TOOL_NAMES", "MAX_UPLOAD_CONTENT_BYTES",
-           "MAX_RESULT_CHUNK_CHARS"]
+           "MAX_RESULT_CHUNK_CHARS", "MAX_TEXT_UPLOAD_BYTES"]

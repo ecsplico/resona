@@ -18,6 +18,8 @@ class FakeHub:
         self.error: Optional[Exception] = None
         self.upload_link: Optional[UploadLink] = None
         self.uploaded: list[bytes] = []
+        self.job_private = True
+        self.supports_source = True  # False: a hub from before ?source=raw
 
     def client(self, token: Optional[str] = None) -> "FakeClient":
         self.tokens.append(token)
@@ -67,7 +69,7 @@ class FakeClient:
     def get_job(self, job_id: int):
         self._record("get_job", job_id)
         return JobView.from_dict({"job_id": job_id, "kind": "audio", "status": "completed",
-                                  "private": True, "result_available": True})
+                                  "private": self.hub.job_private, "result_available": True})
 
     def cancel_job(self, job_id: int):
         self._record("cancel_job", job_id)
@@ -79,6 +81,8 @@ class FakeClient:
                      else (job_id, offset, limit, source))
         result = self.hub.result
         field = "raw_markdown" if source == "raw" and result.raw_markdown is not None else "markdown"
+        if not self.hub.supports_source:
+            field = "markdown"
         markdown = getattr(result, field)
         end = min(offset + limit, len(markdown))
         return MarkdownChunk(
@@ -86,7 +90,7 @@ class FakeClient:
             next_offset=end if end < len(markdown) else None, total_chars=len(markdown),
             kind=result.kind, language=result.language, page_count=len(result.pages),
             warnings=tuple(result.warnings), provenance=result.provenance.model_dump(mode="json"),
-            source=field,
+            source=field if self.hub.supports_source else None,
         )
 
     def get_settings(self):

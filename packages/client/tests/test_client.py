@@ -380,6 +380,7 @@ def test_get_result_markdown_reads_one_range(client):
     assert dict(route.calls.last.request.url.params) == {"offset": "3", "limit": "4"}
     assert (chunk.text, chunk.offset, chunk.next_offset, chunk.total_chars) == ("itel", 3, 7, 12)
     assert (chunk.kind, chunk.page_count, chunk.warnings) == ("document", 2, ("w",))
+    assert chunk.source is None  # a hub without the source parameter sends none
 
 
 def test_get_result_markdown_source_raw(client):

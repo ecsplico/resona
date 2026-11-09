@@ -152,7 +152,8 @@ class JobPage:
 class MarkdownChunk:
     """A character range of a result's Markdown; ``next_offset`` is None at the end.
 
-    ``source`` names the result field read: ``markdown`` or ``raw_markdown``."""
+    ``source`` names the result field read: ``markdown`` or ``raw_markdown``; ``None``
+    when the hub predates the ``source`` parameter (it then ignores ``source="raw"``)."""
 
     text: str
     offset: int
@@ -163,7 +164,7 @@ class MarkdownChunk:
     page_count: int = 0
     warnings: tuple[str, ...] = ()
     provenance: Mapping[str, Any] = field(default_factory=dict)
-    source: str = "markdown"
+    source: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "MarkdownChunk":
@@ -177,7 +178,7 @@ class MarkdownChunk:
             page_count=int(data.get("page_count") or 0),
             warnings=tuple(data.get("warnings") or ()),
             provenance=dict(data.get("provenance") or {}),
-            source=str(data.get("source") or "markdown"),
+            source=data.get("source"),
         )
 
 
