@@ -2492,11 +2492,11 @@ text. Matching is always case-insensitive.</p>
 </tr>
 <tr>
 <td>Absatz</td>
-<td>(newline)</td>
+<td>blank line (new Markdown paragraph)</td>
 </tr>
 <tr>
-<td>Kapitel</td>
-<td><code>#</code> (Markdown heading)</td>
+<td>Kapitel <em>Titel</em></td>
+<td><code>## Titel</code> (title ≤ 5 words, ends at <code>Absatz</code>/<code>Punkt</code>/<code>.</code> …; see <a href="../postprocessing/#default">Postprocessing</a>)</td>
 </tr>
 <tr>
 <td>Klammer auf</td>
@@ -2508,7 +2508,8 @@ text. Matching is always case-insensitive.</p>
 </tr>
 </tbody>
 </table>
-<p>In addition, the bundled defaults include German medical section headings
+<p>In addition, the bundled defaults include <code>Doppelpunkt</code>, <code>Fragezeichen</code>, <code>Ausrufezeichen</code>,
+<code>Anstrich</code> (list item), German medical section headings
 (<code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code>, <code>Procedere</code>) and common name corrections.</p>
 <div class="admonition tip">
 <p class="admonition-title">Inspecting the defaults</p>

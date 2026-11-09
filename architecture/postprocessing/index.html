@@ -1732,6 +1732,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-bundled-transcript-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bundled transcript profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-bundled-document-polish-profile" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2599,6 +2610,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-bundled-transcript-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bundled transcript profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-bundled-document-polish-profile" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2834,7 +2856,7 @@
 </code></pre></div>
 <p>A text step may return a <code>StepOutput(text, warnings)</code> instead of a string; chunked <code>llm</code> steps do.</p>
 <h2 id="the-bundled-default-profile">The bundled default profile<a class="headerlink" href="#the-bundled-default-profile" title="Permanent link">&para;</a></h2>
-<p><code>resona-postprocess</code> ships a <code>profiles/default.json</code> that covers German medical dictation out of the box. It is used automatically when no profile is specified.</p>
+<p><code>resona-postprocess</code> ships a <code>profiles/default.json</code> (rules in <code>default_replacements.json</code>) that turns German dictation commands into Markdown. It is used automatically when no profile is specified.</p>
 <table>
 <thead>
 <tr>
@@ -2852,6 +2874,10 @@
 <td><code>.</code></td>
 </tr>
 <tr>
+<td>Doppelpunkt</td>
+<td><code>:</code></td>
+</tr>
+<tr>
 <td>Ausrufezeichen</td>
 <td><code>!</code></td>
 </tr>
@@ -2861,23 +2887,28 @@
 </tr>
 <tr>
 <td>Absatz</td>
-<td>newline</td>
+<td>blank line (Markdown paragraph)</td>
 </tr>
 <tr>
-<td>Kapitel</td>
-<td><code>#</code> (heading)</td>
+<td>Anstrich</td>
+<td><code>\n-</code> (list item)</td>
 </tr>
 <tr>
-<td>Klammer auf</td>
-<td><code>(</code></td>
+<td>Kapitel <em>Titel</em></td>
+<td><code>\n\n## Titel\n\n</code></td>
 </tr>
 <tr>
-<td>Klammer zu</td>
-<td><code>)</code></td>
+<td>Klammer auf / zu, Eckige Klammer auf / zu</td>
+<td><code>(</code> <code>)</code> <code>[</code> <code>]</code></td>
 </tr>
 </tbody>
 </table>
-<p>Plus medical section headings (<code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code>, <code>Procedere</code>) and common name corrections.</p>
+<p>Every command pattern has word boundaries (<code>\b</code>); rules run case-insensitively, so without them <code>Zeitpunkt</code> became <code>Zeit.</code>. Order matters: the four medical heading rules (<code>Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere</code>, no terminator needed, an immediately spoken <code>Absatz</code>/<code>Punkt</code>/<code>Doppelpunkt</code>/<code>Komma</code> is swallowed) run first, then the general <code>Kapitel</code> rule, then brackets, then <code>Doppelpunkt</code> before <code>Punkt</code>, then <code>Absatz</code>. Three cleanup rules close the list: trailing spaces before a newline, runs of 3+ newlines → one blank line, leading/trailing whitespace of the whole text removed. Name corrections (<code>Monique</code> → <code>Monic</code>, …) come first and are part of <code>default</code> only.</p>
+<p>The general <code>Kapitel</code> rule fires only for a title of one to five words (characters other than whitespace and <code>.,;:!?()[]</code>; a <code>.</code> or <code>,</code> between digits is allowed, so <code>F32.1</code> stays whole; command words like <code>Komma</code> are excluded) followed by an optional comma and a terminator: <code>Absatz</code>, <code>Punkt</code>, <code>Doppelpunkt</code>, <code>Fragezeichen</code>, <code>Ausrufezeichen</code>, <code>!</code>, <code>?</code>, <code>:</code>, or a <code>.</code> with no digit on either side (<code>3. Mai</code> is no terminator). Negative lookbehinds skip <code>Kapitel</code> after articles, prepositions and ordinals (<code>im</code>, <code>das</code>, <code>dem</code>, <code>vom</code>, <code>zum</code>, <code>letzten</code>, …), so prose such as <code>wie im Kapitel zuvor beschrieben.</code> is untouched. Without a match the text stays as spoken. The punctuation commands absorb one adjacent punctuation mark on each side (<code>, Komma,</code> → <code>,</code>, <code>. Punkt.</code> → <code>.</code>), so Whisper's own punctuation is not doubled. Rules that consume leading whitespace use <code>(?&lt;![ \t])[ \t]*</code> instead of <code>\s*</code>: they never cross a newline (only <code>Absatz</code> and the heading rules produce line breaks) and stay linear on long space runs. Whole-word commands still hit ordinary words (<code>der wichtigste Punkt</code>, <code>im dritten Absatz</code>); rules cannot avoid that.</p>
+<p>This is a behaviour change for every organization using the bundled <code>default</code> (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). The bundled profile reaches workers as <code>source: default_replacements.json</code> and is resolved from each worker's installed <code>resona-postprocess</code>, so the snapshot hash does not cover the rule content and a mixed-release fleet can give different output for the same snapshot.</p>
+<h2 id="the-bundled-transcript-profiles">The bundled transcript profiles<a class="headerlink" href="#the-bundled-transcript-profiles" title="Permanent link">&para;</a></h2>
+<p><code>profiles/transcript-markdown-de.json</code> (<code>transcript-markdown-de</code>) is one <code>replacements</code> step with the dictation command rules of <code>default_replacements.json</code> (without the name corrections), inline because hosted profiles reject <code>source</code>; a test keeps them equal to the tail of <code>default_replacements.json</code>. No LLM, runs on any worker.</p>
+<p><code>profiles/transcript-polish-de.json</code> (<code>transcript-polish-de</code>) runs the same rules, then a chunked <code>llm</code> step on endpoint <code>local-llm</code>. Its German prompt allows only changes to capitalization (sentence starts, after headings, list items, nouns), punctuation and whitespace; it forbids changing, adding or removing any word, even one that looks misrecognized, and names numbers, units, doses, drug names, diagnoses, codes and proper names as untouchable. Settings: <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.1, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. <code>preserve_markup</code> (<code>markup_signature</code>) compares only HTML comments, the heading-level sequence and per-row table cell counts; merged paragraphs, joined list items, changed heading text or a changed word or number pass it and are only bounded by the length guard. The endpoint registration is the same as for <code>document-polish-de</code> below.</p>
 <h2 id="the-bundled-document-polish-profile">The bundled document polish profile<a class="headerlink" href="#the-bundled-document-polish-profile" title="Permanent link">&para;</a></h2>
 <p><code>profiles/document-polish-de.json</code> (<code>document-polish-de</code>) is a single chunked <code>llm</code> step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay verbatim. Settings: endpoint <code>local-llm</code>, <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.3, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. The endpoint id names no host: an org admin registers a <code>local_llm</code> endpoint with the id <code>local-llm</code> and a loopback <code>url</code> on the approved worker. It is not resolved by name from the package: upload it to the hub as an organization profile (see <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>).</p>
 <h2 id="profile-resolution">Profile resolution<a class="headerlink" href="#profile-resolution" title="Permanent link">&para;</a></h2>

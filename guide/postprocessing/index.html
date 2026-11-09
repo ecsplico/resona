@@ -961,13 +961,41 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#bundled-default-profile" class="md-nav__link">
+  <a href="#bundled-profiles" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Bundled default profile
+        Bundled profiles
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Bundled profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        default
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#transcript-markdown-de-and-transcript-polish-de" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        transcript-markdown-de and transcript-polish-de
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2593,13 +2621,41 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#bundled-default-profile" class="md-nav__link">
+  <a href="#bundled-profiles" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Bundled default profile
+        Bundled profiles
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Bundled profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        default
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#transcript-markdown-de-and-transcript-polish-de" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        transcript-markdown-de and transcript-polish-de
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2739,7 +2795,7 @@ of pipeline steps that transform the raw transcript into the final output.</p>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">&quot;rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;pattern&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;\\bKomma\\b&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;replacement&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;,&quot;</span><span class="p">},</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;pattern&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;\\bPunkt\\b&quot;</span><span class="p">,</span><span class="w">  </span><span class="nt">&quot;replacement&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.&quot;</span><span class="p">},</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;pattern&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;\\bAbsatz\\b&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;replacement&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;\n&quot;</span><span class="p">}</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;pattern&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;\\bAbsatz\\b&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;replacement&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;\n\n&quot;</span><span class="p">}</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="p">]</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="p">},</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="p">{</span>
@@ -2916,9 +2972,10 @@ alongside the transcript. The text is not modified.</p>
 </tbody>
 </table>
 <hr />
-<h2 id="bundled-default-profile">Bundled default profile<a class="headerlink" href="#bundled-default-profile" title="Permanent link">&para;</a></h2>
+<h2 id="bundled-profiles">Bundled profiles<a class="headerlink" href="#bundled-profiles" title="Permanent link">&para;</a></h2>
+<h3 id="default">default<a class="headerlink" href="#default" title="Permanent link">&para;</a></h3>
 <p>When no profile is specified, the <code>default</code> profile bundled with <code>resona-postprocess</code> is used
-automatically. It covers German medical dictation commands:</p>
+automatically. It turns German dictation commands into Markdown:</p>
 <table>
 <thead>
 <tr>
@@ -2936,88 +2993,178 @@ automatically. It covers German medical dictation commands:</p>
 <td><code>.</code></td>
 </tr>
 <tr>
-<td>Absatz</td>
-<td>(newline)</td>
+<td>Doppelpunkt</td>
+<td><code>:</code></td>
 </tr>
 <tr>
-<td>Kapitel</td>
-<td><code>#</code> (Markdown heading)</td>
+<td>Fragezeichen / Ausrufezeichen</td>
+<td><code>?</code> / <code>!</code></td>
+</tr>
+<tr>
+<td>Absatz</td>
+<td>blank line (new Markdown paragraph)</td>
+</tr>
+<tr>
+<td>Anstrich</td>
+<td>new line starting with <code>-</code> (list item)</td>
+</tr>
+<tr>
+<td>Kapitel <em>Titel</em></td>
+<td><code>## Titel</code> on its own line, followed by a blank line</td>
 </tr>
 <tr>
 <td>Klammer auf / Klammer zu</td>
 <td><code>(</code> / <code>)</code></td>
 </tr>
+<tr>
+<td>Eckige Klammer auf / zu</td>
+<td><code>[</code> / <code>]</code></td>
+</tr>
 </tbody>
 </table>
-<p>Plus medical section headings (<code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code>, <code>Procedere</code>)
-and common name corrections.</p>
+<p>Commands match whole words only: <code>Zeitpunkt</code>, <code>Standpunkt</code> and <code>Kommandant</code> stay as they are.
+Whisper often punctuates the commands itself (<code>berichtet, Komma, er</code>, <code>Schmerzen. Punkt.</code>); each
+punctuation command absorbs the punctuation right before and after it, so the result is
+<code>berichtet, er</code> and <code>Schmerzen.</code>, never <code>,,</code> or <code>..</code>. Commands never remove a line break, except
+<code>Absatz</code>, which becomes one.</p>
+<p><code>Kapitel</code> becomes a heading only when all of these hold:</p>
+<ul>
+<li>the title has at most five words and no punctuation inside (a dot or comma between digits is
+  fine, so <code>Kapitel Diagnose F32.1 Absatz</code> gives <code>## Diagnose F32.1</code>); command words such as
+  <code>Komma</code> never belong to the title;</li>
+<li>the title is followed directly (an optional comma in between) by <code>Absatz</code>, <code>Punkt</code>,
+  <code>Doppelpunkt</code>, <code>Fragezeichen</code>, <code>Ausrufezeichen</code> or by <code>.</code>, <code>!</code>, <code>?</code>, <code>:</code> (a <code>.</code> next to a
+  digit, as in <code>3. Mai</code>, does not count);</li>
+<li><code>Kapitel</code> does not follow an article, preposition or ordinal (<code>im</code>, <code>das</code>, <code>dem</code>, <code>vom</code>, <code>zum</code>,
+  <code>letzten</code>, …), so <code>wie im Kapitel zuvor beschrieben.</code> stays prose.</li>
+</ul>
+<p>Otherwise the text stays exactly as spoken: <code>Kapitel Anamnese der Patient berichtet Komma er habe
+Schmerzen Punkt</code> becomes <code>Kapitel Anamnese der Patient berichtet, er habe Schmerzen.</code>, not a
+heading. The medical section headings <code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code> and
+<code>Procedere</code> (also spoken <code>Prozedere</code>) need no terminator; a spoken <code>Absatz</code>, <code>Punkt</code>,
+<code>Doppelpunkt</code> or <code>Komma</code> right after them is dropped. Leading and trailing blank lines are
+removed. The <code>default</code> profile also carries a few name corrections.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
+</code></pre></div>
+<p>becomes</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Zum Zeitpunkt der Aufnahme
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="gu">## Anamnese</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>der Patient berichtet, er habe Schmerzen.
+</code></pre></div>
+<p>Rules cannot tell a command from the same word used in a sentence. <code>der wichtigste Punkt der
+Untersuchung</code> becomes <code>der wichtigste. der Untersuchung</code>, <code>Punkt eins</code> becomes <code>. eins</code>, and <code>im
+dritten Absatz</code> starts a new paragraph. Dictate around these words, or correct them afterwards.</p>
+<div class="admonition warning">
+<p class="admonition-title">Behaviour change of the bundled <code>default</code> profile</p>
+<p>Since the release that introduced the transcript profiles, <code>default</code> produces different
+output for the same audio: <code>Absatz</code> was a single newline and is now a blank line (new
+Markdown paragraph); <code>Kapitel</code> was <code>#</code> up to the end of the line and is now a terminated
+<code>## Titel</code> heading (or nothing, see above); commands only match whole words (before,
+<code>Zeitpunkt</code> became <code>Zeit.</code>); <code>Doppelpunkt</code>, <code>Anstrich</code> and <code>Eckige Klammer</code> are new; doubled
+punctuation is merged. This affects every job that uses <code>profile=default</code> and every
+organization with <code>polish</code> on and <code>postprocess_profile</code> <code>default</code>.</p>
+<p>The bundled <code>default</code> reaches the worker as a reference to <code>default_replacements.json</code>, which
+the worker resolves from its own installed <code>resona-postprocess</code>. Until every worker runs the
+new release, the same job can get old or new output depending on which worker claims it.</p>
+<p>To keep the old rules, store them under another name (the name <code>default</code> is reserved) and
+select that profile (<code>--profile</code>, or the organization's <code>postprocess_profile</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>git<span class="w"> </span>show<span class="w"> </span>v0.1.0:packages/postprocess/src/resona_postprocess/default_replacements.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;{name: &quot;dictation-v0-1&quot;, steps: [{type: &quot;replacements&quot;, rules: .}]}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>dictation-v0-1.json
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>dictation-v0-1<span class="w"> </span>dictation-v0-1.json
+</code></pre></div>
+</div>
+<h3 id="transcript-markdown-de-and-transcript-polish-de">transcript-markdown-de and transcript-polish-de<a class="headerlink" href="#transcript-markdown-de-and-transcript-polish-de" title="Permanent link">&para;</a></h3>
+<p><code>profiles/transcript-markdown-de.json</code> holds the same dictation rules as <code>default</code>, without the
+name corrections and without any LLM step, so it runs on every worker.
+<code>profiles/transcript-polish-de.json</code> runs the same rules, then a chunked <code>llm</code> step on the endpoint
+id <code>local-llm</code>. Its prompt allows the model to change only capitalization (sentence starts, after
+headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any
+word, not even a word that looks misrecognized; numbers, units, doses, drug names, diagnoses and
+codes stay exactly as transcribed. Settings: <code>max_length_deviation</code> 0.1, <code>preserve_markup: true</code>,
+<code>temperature</code> 0, <code>chunk_chars</code> 12000. Like <code>document-polish-de</code>, it needs an org admin to register
+a <code>local_llm</code> endpoint <code>local-llm</code> on the approved worker.</p>
+<p>The guards check less than the prompt asks for. <code>preserve_markup</code> compares only HTML comments,
+the sequence of heading levels and the cell count of every table row; it does not notice merged
+paragraphs, joined list items, a rewritten heading text or a changed word or number. A reply that
+changes such things is kept as long as it stays within the 10 % length guard. Use the polish
+profile only where a reviewer reads the result.</p>
+<p>Both carry their rules inline, because hosted profiles reject <code>source</code>. <code>resona profiles push
+&lt;name&gt; &lt;file&gt;</code> uploads a local JSON file, so take the file from the installed package. With
+<code>uv tool install</code> the package lives in the tool's own environment:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">PROFILES</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span><span class="s2">&quot;</span><span class="k">$(</span>uv<span class="w"> </span>tool<span class="w"> </span>dir<span class="k">)</span><span class="s2">/resona-cli/bin/python&quot;</span><span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from importlib import resources; print(resources.files(&#39;resona_postprocess&#39;) / &#39;profiles&#39;)&quot;</span><span class="k">)</span><span class="s2">&quot;</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-markdown-de<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PROFILES</span><span class="s2">/transcript-markdown-de.json&quot;</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-polish-de<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PROFILES</span><span class="s2">/transcript-polish-de.json&quot;</span>
+</code></pre></div>
+<p>In a repository checkout use <code>packages/postprocess/src/resona_postprocess/profiles/</code> instead.</p>
 <hr />
 <h2 id="llm-provider-examples">LLM provider examples<a class="headerlink" href="#llm-provider-examples" title="Permanent link">&para;</a></h2>
 <p>Cloud models (any step whose endpoint is not loopback) are denied in private runs. They need the organization setting <code>cloud_enabled=true</code> and a job submitted with <code>--allow-cloud</code> (the same applies to <code>--local</code> runs).</p>
 <h3 id="openai">OpenAI<a class="headerlink" href="#openai" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">}</span>
 </code></pre></div>
 <p>Requires <code>OPENAI_API_KEY</code>.</p>
 <h3 id="anthropic-claude">Anthropic Claude<a class="headerlink" href="#anthropic-claude" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-3-5-haiku-20241022&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-3-5-haiku-20241022&quot;</span><span class="p">}</span>
 </code></pre></div>
 <p>Requires <code>ANTHROPIC_API_KEY</code>.</p>
 <h3 id="local-ollama">Local Ollama<a class="headerlink" href="#local-ollama" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="p">}</span>
 </code></pre></div>
 <p>In local CLI mode you can also set <code>RESONA_LLM_MODEL=ollama/llama3</code> and <code>RESONA_LLM_API_BASE=http://localhost:11434</code> globally.</p>
 <hr />
 <h2 id="using-profiles">Using profiles<a class="headerlink" href="#using-profiles" title="Permanent link">&para;</a></h2>
 <h3 id="server-mode-resona-api">Server mode (resona-api)<a class="headerlink" href="#server-mode-resona-api" title="Permanent link">&para;</a></h3>
 <p>Pass a <code>profile</code> field when submitting a job:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Named profile (loaded from RESONA_PROFILES_DIR)</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;profile=my-profile&quot;</span><span class="w"> </span>http://localhost:7000/jobs
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Inline profile JSON</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s1">&#39;profile={&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span><span class="w"> </span>http://localhost:7000/jobs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Named profile (loaded from RESONA_PROFILES_DIR)</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;profile=my-profile&quot;</span><span class="w"> </span>http://localhost:7000/jobs
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Inline profile JSON</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s1">&#39;profile={&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span><span class="w"> </span>http://localhost:7000/jobs
 </code></pre></div>
 <p>Manage named profiles with <code>resona profiles</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile
 </code></pre></div>
 <h3 id="cli-local-mode">CLI / local mode<a class="headerlink" href="#cli-local-mode" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Named profile</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span>my-profile
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Inline JSON</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># Default profile (no flag needed)</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Named profile</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span>my-profile
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Inline JSON</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="c1"># Default profile (no flag needed)</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3
 </code></pre></div>
 <hr />
 <h2 id="full-profile-example">Full profile example<a class="headerlink" href="#full-profile-example" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with replacement + LLM structuring&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;initial_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Dr. Müller&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Befund&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Diagnose&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Medikation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Procedere&quot;</span><span class="p">],</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;replacements&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">      </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default_replacements.json&quot;</span>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;structure&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">      </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a German medical transcription assistant. Convert the following raw transcript into a structured clinical note with Markdown section headings (Verlauf, Medikation, Procedere). Preserve all clinical content exactly.&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">      </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
-<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="p">{</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with replacement + LLM structuring&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">&quot;initial_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Dr. Müller&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Befund&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Diagnose&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Medikation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Procedere&quot;</span><span class="p">],</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;replacements&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">      </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default_replacements.json&quot;</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;structure&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="w">      </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a German medical transcription assistant. Convert the following raw transcript into a structured clinical note with Markdown section headings (Verlauf, Medikation, Procedere). Preserve all clinical content exactly.&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="w">      </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="p">}</span>
 </code></pre></div>
 <p>In this profile:</p>
 <ol>
