@@ -2476,6 +2476,10 @@
 <td>Submit a PDF/image → Markdown job → <code>{job_id, status, private}</code>. <code>options</code>: <code>languages</code> (<code>de</code>, <code>en</code>, <code>fr</code>, <code>it</code>, <code>es</code>, <code>ko</code>), <code>ocr</code>, <code>ocr_engine</code>, <code>page_start</code>, <code>page_end</code>, <code>pipeline</code>, <code>image_scale</code> (1.0–4.0, OCR raster multiplier), <code>ocr_min_confidence</code> (0–1, <code>rapidocr</code> only); see the <a href="../../reference/api/#document-options">API reference</a>.</td>
 </tr>
 <tr>
+<td><code>postprocess_text(upload_id \| path \| job_id, profile, language?, private=true, idempotency_key?)</code></td>
+<td>Run a stored postprocess profile on text, no engine (a <code>text</code> job) → <code>{job_id, status, private}</code> immediately. <code>profile</code> is required (missing → tool error <code>profile_required</code>, nothing is sent). <code>upload_id</code>/<code>path</code> name a UTF-8 text or Markdown file (hub text cap <code>RESONA_MAX_TEXT_UPLOAD_BYTES</code>, default 2 MiB). <code>job_id</code> re-runs a profile on an earlier completed job's result without re-transcribing: the tool reads that result in hub range reads of at most 32 768 characters (<code>GET /v1/jobs/{id}/result/markdown?source=raw</code>, so the unpolished <code>raw_markdown</code> when the result has one, else <code>markdown</code>), uploads it as text and submits the job; <code>language</code> defaults to the earlier job's. A result over 2 MiB (the hub's default text cap) fails as soon as <code>total_chars</code> or the bytes read exceed it; hub errors on the source job (<code>404 not_found</code>, <code>409 not_ready</code>, <code>410 result_expired</code>) become tool errors and nothing is uploaded; a hub without <code>source=raw</code> support is refused rather than re-polishing the polished text. With <code>job_id</code>, <code>private=false</code> is refused when the source job is private, so a private transcript never reaches non-private processing through this tool. Read the output with <code>get_job</code> / <code>get_result</code> as for any job.</td>
+</tr>
+<tr>
 <td><code>get_job(job_id)</code></td>
 <td>Status (<code>pending</code> with <code>queue_reason</code>, <code>processing</code>, <code>completed</code>, <code>failed</code>, <code>cancelled</code>).</td>
 </tr>
@@ -2507,30 +2511,34 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>get_result(12)                                 → {markdown: &quot;...&quot;, next_offset: 32768, total_chars: 51234}
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>get_result(12, offset=32768)                   → … until next_offset is null
 </code></pre></div>
+<p>Re-polishing an earlier transcript with another stored profile:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>postprocess_text(job_id=12, profile=&quot;transcript-polish-de&quot;)  → {job_id: 13, status: &quot;pending&quot;, private: true}
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>get_job(13) … get_result(13)
+</code></pre></div>
 <h2 id="local-stdio">Local stdio<a class="headerlink" href="#local-stdio" title="Permanent link">&para;</a></h2>
 <p><code>RESONA_API_URL</code> and <code>RESONA_API_KEY</code> (an org client token from <code>resona-admin credential issue</code>) are required. <code>path</code> input is enabled only when <code>RESONA_MCP_ROOT</code> names an existing directory: the path (absolute or relative to the root) must resolve, after following symlinks, to a regular file inside the root. <code>..</code> escapes, symlinks pointing outside the root, directories and URLs are rejected. Without <code>RESONA_MCP_ROOT</code>, path input is disabled and only <code>create_upload_url</code>, <code>upload_content</code> and <code>upload_id</code> work. There is no default root. Logs go to stderr; stdout carries only the protocol.</p>
 <p>omp (<code>~/.omp/agent/mcp.json</code>) or Claude (<code>~/.claude.json</code>, <code>mcpServers</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">&quot;resona&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stdio&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resona-mcp&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stdio&quot;</span><span class="p">],</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">        </span><span class="nt">&quot;RESONA_API_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://resona.ecsplico.de&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">        </span><span class="nt">&quot;RESONA_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;organization client token&gt;&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="nt">&quot;RESONA_MCP_ROOT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Users/me/Dictations&quot;</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="p">}</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">&quot;resona&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stdio&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resona-mcp&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stdio&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="nt">&quot;RESONA_API_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://resona.ecsplico.de&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">        </span><span class="nt">&quot;RESONA_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;organization client token&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="nt">&quot;RESONA_MCP_ROOT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Users/me/Dictations&quot;</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="p">}</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="p">}</span>
 </code></pre></div>
 <p>From a workspace checkout, use <code>"command": "/path/to/resona/.venv/bin/resona-mcp"</code>.</p>
 <h2 id="hosted-streamable-http">Hosted Streamable HTTP<a class="headerlink" href="#hosted-streamable-http" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">RESONA_API_URL</span><span class="o">=</span>http://127.0.0.1:7000<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">RESONA_MCP_ALLOWED_HOSTS</span><span class="o">=</span>resona.ecsplico.de<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">RESONA_MCP_ALLOWED_ORIGINS</span><span class="o">=</span>https://resona.ecsplico.de<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>resona-mcp<span class="w"> </span>http<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--port<span class="w"> </span><span class="m">7010</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">RESONA_API_URL</span><span class="o">=</span>http://127.0.0.1:7000<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">RESONA_MCP_ALLOWED_HOSTS</span><span class="o">=</span>resona.ecsplico.de<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nv">RESONA_MCP_ALLOWED_ORIGINS</span><span class="o">=</span>https://resona.ecsplico.de<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>resona-mcp<span class="w"> </span>http<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--port<span class="w"> </span><span class="m">7010</span>
 </code></pre></div>
 <p>The endpoint is <code>/mcp</code> (Streamable HTTP). <code>resona_mcp.http:create_app()</code> returns the same ASGI app for embedding; its lifespan runs the MCP session manager, so run that lifespan when mounting it inside another application.</p>
 <ul>
@@ -2540,15 +2548,15 @@
 <li><strong>Host/Origin.</strong> <code>Host</code> must match <code>RESONA_MCP_ALLOWED_HOSTS</code> (421 otherwise) and a supplied <code>Origin</code> must match <code>RESONA_MCP_ALLOWED_ORIGINS</code> (403 otherwise). Both are comma-separated; <code>host:*</code> / <code>scheme://host:*</code> allow any port. Defaults allow loopback only.</li>
 </ul>
 <p>Client configuration for a hosted server:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">&quot;resona&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://resona.ecsplico.de/mcp&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">&quot;headers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;Authorization&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bearer ${RESONA_API_KEY}&quot;</span><span class="w"> </span><span class="p">}</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">&quot;resona&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://resona.ecsplico.de/mcp&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="nt">&quot;headers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;Authorization&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bearer ${RESONA_API_KEY}&quot;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="p">}</span>
 </code></pre></div>
 <table>
 <thead>
