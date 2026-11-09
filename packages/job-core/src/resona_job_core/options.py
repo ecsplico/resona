@@ -38,6 +38,12 @@ class AudioOptions(BaseModel):
     vad_filter: bool = True
 
 
+class TextOptions(BaseModel):
+    """Text (postprocess-only) jobs take no options: the postprocess profile is the whole job."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class DocumentOptions(BaseModel):
     """Typed document job options. Unset fields are resolved by the execution profile."""
 

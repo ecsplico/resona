@@ -13,7 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .policy import Endpoint, ExecutionPolicy
 
 Accelerator = Literal["metal", "cuda", "cpu"]
-JobKind = Literal["audio", "document"]
+# ``text`` jobs run only a postprocess profile on uploaded text: no engine, no candidates.
+JobKind = Literal["audio", "document", "text"]
 
 
 class Candidate(BaseModel):
@@ -35,6 +36,8 @@ class ExecutionProfile(BaseModel):
     document: list[Candidate] = Field(default_factory=list)
 
     def candidates(self, kind: JobKind) -> list[Candidate]:
+        if kind == "text":
+            return []
         return self.audio if kind == "audio" else self.document
 
 

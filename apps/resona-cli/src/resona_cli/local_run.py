@@ -31,6 +31,7 @@ from resona_job_core import (
     JobResult,
     OrganizationSettings,
     PolicyDenied,
+    Provenance,
     Stage,
     check_policy,
     default_settings,
@@ -67,7 +68,7 @@ class LocalSettings:
 class LocalPlan:
     kind: str
     execution_profile: str
-    candidate: Candidate
+    candidate: Optional[Candidate]  # None for text (postprocess-only) runs
     language: str
     options: dict[str, Any]
     private: bool
@@ -130,6 +131,50 @@ def plan_local(
         raise PolicyDenied("policy", "cloud processing is disabled for this organization")
     policy = settings.policy(private=private)
 
+    if kind == "text":
+        # Postprocess-only: no engine stage; the profile is the whole job.
+        if profile is None:
+            raise LocalRunError("profile_required: text jobs need --profile")
+        if execution_profile is not None or engine is not None or model is not None:
+            raise LocalRunError("invalid_request: text jobs take no execution profile, engine or model")
+        name, candidate = "", None
+    else:
+        name, runnable = _local_candidates(settings, policy, kind, execution_profile, engine, model, options)
+        candidate = runnable[0]
+
+    profile_ref = profile if profile is not None else (
+        settings.postprocess_profile if settings.polish else None)
+    pipeline = None
+    if profile_ref is not None:
+        try:
+            prof = resolve_profile(profile_ref, _PROFILES_DIR)
+        except ProfileError as e:
+            raise LocalRunError(f"invalid_profile: {e}") from None
+        pipeline = build_pipeline(prof, policy=local_policy(prof, base=policy))
+
+    return LocalPlan(
+        kind=kind,
+        execution_profile=name,
+        candidate=candidate,
+        language=language or settings.language,
+        options=options,
+        private=private,
+        pipeline=pipeline,
+        postprocess_profile=profile_ref if isinstance(profile_ref, str) else None,
+        settings_revision=local.revision,
+    )
+
+
+def _local_candidates(
+    settings: OrganizationSettings,
+    policy: Any,
+    kind: str,
+    execution_profile: Optional[str],
+    engine: Optional[str],
+    model: Optional[str],
+    options: dict[str, Any],
+) -> tuple[str, list[Candidate]]:
+    """The execution profile's approved, policy-checked candidates installed on this machine."""
     name = execution_profile or settings.default_execution_profile
     exec_profile = settings.execution_profiles.get(name)
     if exec_profile is None:
@@ -154,36 +199,48 @@ def plan_local(
     if not runnable:
         names = ", ".join(f"{c.engine}/{c.model}@{c.accelerator}" for c in candidates)
         raise LocalRunError(f"no approved candidate of {name!r} is installed here ({names})")
-
-    profile_ref = profile if profile is not None else (
-        settings.postprocess_profile if settings.polish else None)
-    pipeline = None
-    if profile_ref is not None:
-        try:
-            prof = resolve_profile(profile_ref, _PROFILES_DIR)
-        except ProfileError as e:
-            raise LocalRunError(f"invalid_profile: {e}") from None
-        pipeline = build_pipeline(prof, policy=local_policy(prof, base=policy))
-
-    return LocalPlan(
-        kind=kind,
-        execution_profile=name,
-        candidate=runnable[0],
-        language=language or settings.language,
-        options=options,
-        private=private,
-        pipeline=pipeline,
-        postprocess_profile=profile_ref if isinstance(profile_ref, str) else None,
-        settings_revision=local.revision,
-    )
+    return name, runnable
 
 
 def run_local(plan: LocalPlan, path: Path) -> JobResult:
-    """Execute one file in a fresh execution subprocess, then postprocess it."""
+    """Execute one file in a fresh execution subprocess (text runs read the file
+    instead), then postprocess it."""
+    result = _read_text(plan, path) if plan.candidate is None else _execute(plan, path)
+    provenance = result.provenance.model_copy(update={
+        "worker_id": "local", "settings_revision": plan.settings_revision})
+    result = result.model_copy(update={"provenance": provenance})
+    if plan.pipeline is None:
+        return result
+    from resona_postprocess.llm import PostprocessStepFailed
+
+    try:
+        run = plan.pipeline.run(result.markdown)
+    except PostprocessStepFailed as e:
+        raise LocalRunError(f"postprocess_failed: {e}") from None
+    skipped = run.data.get("_skipped", [])
+    return result.model_copy(update={
+        "markdown": run.text,
+        "raw_markdown": result.markdown if run.text != result.markdown else None,
+        "warnings": [*result.warnings, *run.warnings, *(f"postprocess_step_skipped:{n}" for n in skipped)],
+        "structured": {**result.structured, **{k: v for k, v in run.data.items() if k != "_skipped"}},
+    })
+
+
+def _read_text(plan: LocalPlan, path: Path) -> JobResult:
+    try:
+        text = path.read_bytes().decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError) as e:
+        raise LocalRunError(f"unsupported_input: {path.name} is not readable UTF-8 text ({e})") from None
+    return JobResult(kind="text", raw_text=text, markdown=text, language=plan.language,
+                     provenance=Provenance())
+
+
+def _execute(plan: LocalPlan, path: Path) -> JobResult:
     if importlib.util.find_spec("resona_worker") is None:
         raise LocalRunError("local execution needs resona-worker; reinstall resona-cli")
     from resona_worker.execute import subprocess_env
 
+    assert plan.candidate is not None
     with tempfile.TemporaryDirectory(prefix="resona-local-") as tmp:
         work = Path(tmp)
         snapshot = work / "snapshot.json"
@@ -203,23 +260,4 @@ def run_local(plan: LocalPlan, path: Path) -> JobResult:
         )
         if proc.returncode != 0:
             raise LocalRunError(_EXIT_MESSAGES.get(proc.returncode, f"execution failed (exit {proc.returncode})"))
-        result = JobResult.model_validate_json(out.read_text(encoding="utf-8"))
-
-    provenance = result.provenance.model_copy(update={
-        "worker_id": "local", "settings_revision": plan.settings_revision})
-    result = result.model_copy(update={"provenance": provenance})
-    if plan.pipeline is None:
-        return result
-    from resona_postprocess.llm import PostprocessStepFailed
-
-    try:
-        run = plan.pipeline.run(result.markdown)
-    except PostprocessStepFailed as e:
-        raise LocalRunError(f"postprocess_failed: {e}") from None
-    skipped = run.data.get("_skipped", [])
-    return result.model_copy(update={
-        "markdown": run.text,
-        "raw_markdown": result.markdown if run.text != result.markdown else None,
-        "warnings": [*result.warnings, *run.warnings, *(f"postprocess_step_skipped:{n}" for n in skipped)],
-        "structured": {**result.structured, **{k: v for k, v in run.data.items() if k != "_skipped"}},
-    })
+        return JobResult.model_validate_json(out.read_text(encoding="utf-8"))

@@ -9,6 +9,7 @@ from .doc import doc_files
 from .engines import engines_app
 from .eval_cli import eval_app
 from .jobs_cli import jobs_app
+from .postprocess import postprocess_files
 from .profiles import profiles_app
 from .settings_cli import settings_app
 from .watch import watch_directory
@@ -29,6 +30,7 @@ app.add_typer(worker_app, name="worker", help="Prepare, run and install an outbo
 app.command("watch")(watch_directory)
 app.command("transcribe")(transcribe_files)
 app.command("doc")(doc_files)
+app.command("postprocess")(postprocess_files)
 app.command("speech")(speak)
 
 

@@ -177,6 +177,40 @@ resona doc small-print-scan.pdf --ocr force --ocr-engine rapidocr
 
 ---
 
+## postprocess
+
+Run a postprocess profile on text without transcribing again: each input becomes a hub `text`
+job (see [Text jobs](../reference/api.md#text-jobs)) that runs only the profile. Outputs, exit
+codes and the shared flags (`--recursive`, `--output-dir`, `--force`, `--json`, `--no-wait`,
+`--timeout`, `--private`, `--allow-cloud`, `--language`, `--local`) work as for
+[`transcribe`](#transcribe). There are no `--execution-profile`, `--engine` or `--model` flags.
+
+```
+resona postprocess [INPUTS...] --profile NAME [OPTIONS]
+resona postprocess --job ID --profile NAME [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `INPUTS` | | `.md`, `.markdown` or `.txt` files, globs or directories (UTF-8, at most 2 MiB each on the hub) |
+| `--job ID` | | Instead of files: re-run on the result of an earlier job. Input is its `raw_markdown` (the text before its own postprocessing), else its `markdown`; the language defaults to that job's. Outputs are `job-<id>.md` + `job-<id>.result.json` in `--output-dir` (default: the current directory), because the hub keeps no source file names |
+| `--profile NAME` | (required) | Stored postprocess profile name; a file or inline JSON only with `--local` |
+
+An input can never be its own output: `resona postprocess notes.md` writes `notes.md` next to
+itself and is rejected (exit 2) unless `--output-dir` points elsewhere. `--local` runs the
+profile in-process with cached hub settings and the same policy checks; no execution subprocess
+is started.
+
+```bash
+# Re-run a new profile on job 12's transcript
+resona postprocess --job 12 --profile transcript-markdown-de --output-dir ./out/
+
+# Polish exported notes with the local LLM that only the assigned worker reaches
+resona postprocess ./notes/*.md --profile document-polish-de --output-dir ./polished/
+```
+
+---
+
 ## watch
 
 Watch a directory and submit each new audio file as a private hub job (or process it with

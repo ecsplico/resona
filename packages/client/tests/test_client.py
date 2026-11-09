@@ -175,6 +175,22 @@ def test_submit_job_uploads_then_posts_job_with_bearer_and_idempotency_key(audio
     c.close()
 
 
+def test_submit_text_job_sends_profile_and_rejects_media_options(tmp_path):
+    text_file = tmp_path / "befund.md"
+    text_file.write_text("Befund Komma unauffällig\n", encoding="utf-8")
+    c = ResonaClient(base_url=BASE, api_key="k")
+    with pytest.raises(ValueError):
+        c.submit_job(text_file, kind="text", profile="fix", options=AudioOptions(translate=True))
+    with respx.mock as mock:
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        respx.post(f"{BASE}/v1/jobs").mock(return_value=httpx.Response(202, json={"job_id": 5, "status": "pending"}))
+        assert c.submit_job(text_file, kind="text", profile="fix").job_id == 5
+        assert json.loads(mock.calls[1].request.content) == {
+            "kind": "text", "upload_id": "up-1", "private": True, "profile": "fix",
+        }
+    c.close()
+
+
 def test_submit_job_retries_transport_error_with_same_idempotency_key_and_upload(audio_file):
     c = ResonaClient(base_url=BASE, api_key="k")
     with respx.mock:

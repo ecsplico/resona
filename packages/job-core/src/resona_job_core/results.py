@@ -73,10 +73,14 @@ class Provenance(_Strict):
 
 class JobResult(_Strict):
     """``markdown`` is the final text. ``raw_markdown`` holds the engine's Markdown
-    before postprocessing; it is set only when a postprocess step changed it."""
+    before postprocessing; it is set only when a postprocess step changed it.
+
+    ``text`` results (postprocess-only jobs) carry the uploaded text in ``raw_text``,
+    the profile output in ``markdown`` and the input again in ``raw_markdown`` when
+    the profile changed it; they have no segments or pages."""
 
     schema_version: Literal[1] = 1
-    kind: Literal["audio", "document"]
+    kind: Literal["audio", "document", "text"]
     raw_text: str
     markdown: str
     raw_markdown: str | None = None

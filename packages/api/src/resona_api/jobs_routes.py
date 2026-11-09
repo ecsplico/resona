@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import codecs
 import hashlib
 import json
 import logging
@@ -42,6 +43,7 @@ from resona_job_core import (
     OrganizationSettings,
     PolicyDenied,
     Stage,
+    TextOptions,
     check_policy,
     document_options_conflict,
 )
@@ -74,6 +76,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Job"])
 
 MAX_UPLOAD_BYTES: int = config("RESONA_MAX_UPLOAD_BYTES", default=200 * 1024 * 1024, cast=int)
+# Text uploads (postprocess-only jobs) are far smaller than media: 2 MiB is ~300k words.
+# The worker holds the text, its output and the input copy in memory and in one result JSON.
+MAX_TEXT_UPLOAD_BYTES: int = config("RESONA_MAX_TEXT_UPLOAD_BYTES", default=2 * 1024 * 1024, cast=int)
+_TEXT_SNIFF_BYTES = 64 * 1024
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
 MAX_JOB_REQUEST_BYTES = 64 * 1024
 UPLOAD_TTL = timedelta(hours=1)
@@ -107,7 +113,7 @@ class Provenance(BaseModel):
 class JobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["audio", "document"]
+    kind: Literal["audio", "document", "text"]
     upload_id: str = Field(max_length=64)
     execution_profile: Optional[str] = Field(default=None, max_length=64)
     language: Optional[str] = Field(default=None, pattern=r"^[a-z]{2,3}$")
@@ -122,7 +128,9 @@ class JobRequest(BaseModel):
     release_id: Optional[str] = Field(default=None, pattern=r"^[0-9][0-9A-Za-z.+-]{0,63}$")
 
 
-_OPTIONS_MODEL: dict[str, type[BaseModel]] = {"audio": AudioOptions, "document": DocumentOptions}
+_OPTIONS_MODEL: dict[str, type[BaseModel]] = {"audio": AudioOptions, "document": DocumentOptions, "text": TextOptions}
+TEXT_PROFILE = "postprocess"
+"""``Job.execution_profile`` of text jobs: they run a postprocess profile only, no engine candidates."""
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -151,6 +159,7 @@ class OnlineWorker:
     approved_private: bool
     capabilities: frozenset[Candidate]
     runtime_version: str | None
+    text_jobs: bool = False
 
 
 def _online_workers(session: Session, organization_id: str, now: datetime) -> list[OnlineWorker]:
@@ -176,6 +185,7 @@ def _online_workers(session: Session, organization_id: str, now: datetime) -> li
             approved_private=worker.approved_private,
             capabilities=frozenset(approved & reported),
             runtime_version=worker.runtime_version,
+            text_jobs=worker.text_jobs,
         ))
     return online
 
@@ -205,20 +215,24 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
     """Why a pending job waits.
 
     ``no_capable_worker``: no online worker of the job's privacy class offers one of
-    its candidates (with the job's worker-assigned endpoints). ``release_not_approved``:
+    its candidates (with the job's worker-assigned endpoints); for a text job, none
+    reports that it runs text jobs with those endpoints. ``release_not_approved``:
     such workers exist, but none runs a release approved for the job.
     ``waiting_capacity``: an eligible worker is online and busy.
     """
     if job.status != JobStatus.PENDING:
         return None
     snapshot = json.loads(job.execution_snapshot or "{}")
-    wanted = [Candidate.model_validate(item) for item in snapshot.get("candidates", [])]
+    wanted: list[Candidate | None] = (
+        [None] if job.kind == "text"
+        else [Candidate.model_validate(item) for item in snapshot.get("candidates", [])]
+    )
     capable = [
         (worker, candidate)
         for worker in ctx.workers
         if worker.approved_private == job.private
         for candidate in wanted
-        if candidate in worker.capabilities
+        if (worker.text_jobs if candidate is None else candidate in worker.capabilities)
         and endpoints_assigned(snapshot, job.kind, candidate, worker_id=worker.worker_id, settings=ctx.settings)
     ]
     if not capable:
@@ -298,6 +312,33 @@ def sniff_media(head: bytes) -> tuple[str, str] | None:
     if head.startswith(b"\x1a\x45\xdf\xa3"):
         return "audio", "audio/webm"
     return None
+
+
+def sniff_text(path: Path, size: int) -> tuple[str, str] | None:
+    """``("text", "text/plain")`` for UTF-8 text without NUL bytes, else None.
+
+    Text has no magic bytes, so this runs only after :func:`sniff_media` found no
+    media. Valid text above :data:`MAX_TEXT_UPLOAD_BYTES` is 413 ``too_large``.
+    """
+    with path.open("rb") as handle:
+        head = handle.read(_TEXT_SNIFF_BYTES)
+        if b"\x00" in head:
+            return None
+        try:
+            # A multibyte character cut at the sniff boundary is not an error yet.
+            codecs.getincrementaldecoder("utf-8")().decode(head, final=size <= len(head))
+        except UnicodeDecodeError:
+            return None
+        if size > MAX_TEXT_UPLOAD_BYTES:
+            raise api_error(413, "too_large", f"text uploads are limited to {MAX_TEXT_UPLOAD_BYTES} bytes")
+        rest = handle.read()
+    if b"\x00" in rest:
+        return None
+    try:
+        (head + rest).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return "text", "text/plain"
 
 
 class _TooLarge(Exception):
@@ -397,12 +438,14 @@ def _too_large() -> Exception:
 
 
 async def receive_upload(
-    request: Request, session: Session, organization_id: str,
+    request: Request, session: Session, organization_id: str, *, accept_text: bool = False,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Stream the multipart ``file`` part into org storage as one unattached upload.
 
     Returns ``({upload_id, sha256, size}, form_fields)``; the other multipart parts
     are returned as bounded text fields for routes that take form parameters.
+    ``accept_text`` admits UTF-8 text (postprocess-only jobs) besides audio and
+    document media; routes that only process media leave it off.
     """
     ctype, params = parse_options_header(request.headers.get("content-type", ""))
     boundary = params.get(b"boundary")
@@ -435,6 +478,8 @@ async def receive_upload(
         if field.size == 0:
             raise api_error(422, "empty_upload", "the uploaded file is empty")
         media = sniff_media(field.head)
+        if media is None and accept_text:
+            media = sniff_text(staged, field.size)
         if media is None:
             raise api_error(415, "unsupported_media", "unsupported media type")
         storage.promote(staged, final)
@@ -481,7 +526,7 @@ async def create_upload(
     session: Session = Depends(get_db_session),
 ) -> dict[str, Any]:
     """Stream multipart field ``file`` to staging, hash it, sniff its media family, promote."""
-    stored, _ = await receive_upload(request, session, principal.organization_id)
+    stored, _ = await receive_upload(request, session, principal.organization_id, accept_text=True)
     return stored
 
 
@@ -553,7 +598,7 @@ async def upload_with_link(
 ) -> dict[str, Any]:
     """Spend an upload link: same multipart ``file`` contract as ``POST /v1/uploads``."""
     organization_id = _consume_upload_link(session, upload_token)
-    stored, _ = await receive_upload(request, session, organization_id)
+    stored, _ = await receive_upload(request, session, organization_id, accept_text=True)
     return stored
 
 
@@ -685,8 +730,12 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         if not req.private and not settings.cloud_enabled:
             raise PolicyDenied("policy", "cloud processing is disabled for this organization")
         policy = settings.policy(private=req.private)
-        name, candidates = _resolve_candidates(req, options, settings)
-        check_policy(policy, [_candidate_stage(c, req.kind, settings) for c in candidates])
+        if req.kind == "text":
+            # No engine stage: the postprocess profile is the job; build_pipeline checks its stages.
+            name, candidates = TEXT_PROFILE, []
+        else:
+            name, candidates = _resolve_candidates(req, options, settings)
+            check_policy(policy, [_candidate_stage(c, req.kind, settings) for c in candidates])
         postprocess = _resolve_postprocess(session, organization_id, req, settings, policy)
     except PolicyDenied as exc:
         raise api_error(403, "policy_denied", f"{exc.stage}: {exc.reason}") from None
@@ -876,6 +925,17 @@ def _release_staged(release_id: str) -> bool:
         return releases.is_known(session, release_id)
 
 
+def _check_text_request(req: JobRequest) -> None:
+    """A text job runs one stored postprocess profile and nothing else."""
+    if req.profile is None:
+        raise api_error(422, "profile_required", "text jobs need a postprocess profile name")
+    if req.execution_profile is not None or req.engine is not None or req.model is not None:
+        raise api_error(422, "invalid_request",
+                        "text jobs run no engine; execution_profile, engine and model are not accepted")
+    if req.purpose != "production":
+        raise api_error(422, "invalid_request", "evaluation jobs are audio or document jobs")
+
+
 @router.post("/v1/jobs", status_code=202)
 async def submit_job(
     request: Request,
@@ -900,6 +960,8 @@ async def submit_job(
         options = _OPTIONS_MODEL[req.kind].model_validate(req.options or {}).model_dump(mode="json", exclude_none=True)
     except ValidationError as exc:
         raise api_error(422, "invalid_options", validation_message(exc)) from None
+    if req.kind == "text":
+        _check_text_request(req)
     if req.purpose == "evaluation" and principal.role != ROLE_ORG_ADMIN:
         raise api_error(403, "forbidden", "evaluation jobs require an org_admin credential")
     if req.purpose == "evaluation":

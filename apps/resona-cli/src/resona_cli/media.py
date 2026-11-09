@@ -1,6 +1,6 @@
-"""Shared engine of ``resona transcribe`` and ``resona doc``.
+"""Shared engine of ``resona transcribe``, ``resona doc`` and ``resona postprocess``.
 
-Hub mode uploads each file as an audio/document job, then (unless ``--no-wait``)
+Hub mode uploads each file as an audio/document/text job, then (unless ``--no-wait``)
 waits and writes ``<stem>.md`` + ``<stem>.result.json``. ``--local`` runs the same
 policy path on this machine (:mod:`.local_run`). There is no automatic fallback
 between the two: an unreachable hub, a timeout or a policy denial is an error.
@@ -24,6 +24,7 @@ import typer
 from resona_client.client import (
     AudioOptions,
     DocumentOptions,
+    TextOptions,
     JobTimeout,
     JobView,
     PolicyDeniedError,
@@ -35,7 +36,7 @@ from resona_job_core import PolicyDenied
 from .hub import EXIT_ERROR, EXIT_POLICY_DENIED, candidate_label, connect_hub, policy_summary
 from .outputs import OutputExists, output_paths, result_metadata, write_result
 
-Options = Union[AudioOptions, DocumentOptions]
+Options = Union[AudioOptions, DocumentOptions, TextOptions]
 EXIT_OUTPUT_COLLISION = 2
 
 
@@ -140,13 +141,21 @@ def _reject_colliding_outputs(req: MediaRequest) -> None:
 
     Two inputs with the same stem (``a.mp3`` and ``a.wav``, or one file given twice)
     would write the same files; reject the whole run with exit 2 rather than let the
-    second result overwrite or fail after both jobs ran. Names are compared
-    case-insensitively because the default macOS filesystem is.
+    second result overwrite or fail after both jobs ran. An output that is the input
+    itself (``resona postprocess notes.md``) is rejected the same way. Names are
+    compared case-insensitively because the default macOS filesystem is.
     """
     seen: dict[str, Path] = {}
     for source in req.files:
         markdown = output_paths(source, req.output_dir).markdown
         key = str(markdown.resolve()).casefold()
+        if key == str(source.resolve()).casefold():
+            typer.echo(
+                f"Error: the output {markdown} would replace the input {source.name}; nothing was "
+                "started. Write into a different --output-dir.",
+                err=True,
+            )
+            raise typer.Exit(EXIT_OUTPUT_COLLISION)
         if key in seen:
             typer.echo(
                 f"Error: {seen[key].name} and {source.name} would both write {markdown} "
@@ -312,11 +321,12 @@ def _run_local(req: MediaRequest) -> None:
         run.finish()
 
     private = "true" if plan.private else "false (cloud allowed)"
-    typer.echo(f"local: private={private} execution_profile={plan.execution_profile} "
-               f"candidate={candidate_label(plan.candidate.model_dump())}", err=True)
+    candidate = plan.candidate.model_dump(mode="json") if plan.candidate is not None else None
+    typer.echo(f"local: private={private} execution_profile={plan.execution_profile or '-'} "
+               f"candidate={candidate_label(candidate) if candidate else 'none'}", err=True)
     fields = {"kind": plan.kind, "private": plan.private,
-              "execution_profile": plan.execution_profile,
-              "candidate": plan.candidate.model_dump(mode="json")}
+              "execution_profile": plan.execution_profile or None,
+              "candidate": candidate}
     for source in req.files:
         paths = output_paths(source, req.output_dir)
         if not req.force and paths.existing():

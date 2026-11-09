@@ -17,11 +17,13 @@ from .options import (
     Language,
     OcrEngine,
     OcrMode,
+    TextOptions,
     document_options_conflict,
 )
 from .results import BBox, JobResult, Page, PageBlock, Provenance, Segment, StageProvenance
 
 __all__ = [
+    "TextOptions",
     "CLOUD_KINDS",
     "Candidate",
     "Endpoint",

@@ -45,6 +45,8 @@ class ClaimRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     capabilities: list[Candidate] = Field(default_factory=list)
+    # Also offer text (postprocess-only) jobs; older workers omit it and never receive them.
+    text_jobs: bool = False
 
 
 class FailRequest(BaseModel):
@@ -68,6 +70,7 @@ class HeartbeatRequest(BaseModel):
 
     runtime_version: str = Field(default="", max_length=128)
     reported_capabilities: list[Candidate] = Field(default_factory=list)
+    text_jobs: bool = False
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -136,6 +139,7 @@ async def heartbeat(request: Request, principal: Principal = Depends(worker_prin
         organization_id=principal.organization_id,
         runtime_version=body.runtime_version,
         reported=body.reported_capabilities,
+        text_jobs=body.text_jobs,
     )
 
 
@@ -187,6 +191,7 @@ async def claim(
             worker_id=worker_id,
             organization_id=principal.organization_id,
             capabilities=body.capabilities,
+            text_jobs=body.text_jobs,
         )
         if result is not None:
             return JSONResponse(result.to_json(), status_code=200)

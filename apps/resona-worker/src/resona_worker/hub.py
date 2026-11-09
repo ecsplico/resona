@@ -195,6 +195,8 @@ class HubClient:
             "worker_protocol": WORKER_PROTOCOL,
             "reported_capabilities": [c.model_dump(mode="json") for c in capabilities],
             "ready": ready,
+            # Every worker runs text (postprocess-only) jobs: they need no ML dependencies.
+            "text_jobs": True,
         }
 
         def op() -> HeartbeatReply:
@@ -219,7 +221,7 @@ class HubClient:
     # -- claiming -----------------------------------------------------------
 
     def claim(self, capabilities: list[Candidate], *, wait: int) -> ClaimedJob | None:
-        body = {"capabilities": [c.model_dump(mode="json") for c in capabilities]}
+        body = {"capabilities": [c.model_dump(mode="json") for c in capabilities], "text_jobs": True}
 
         def op() -> ClaimedJob | None:
             response = self._client.post(

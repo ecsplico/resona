@@ -132,12 +132,15 @@ def test_only_cuda_tuples_drop_out_when_the_gpu_is_missing(build_supervisor, fak
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     hub = fakes.FakeHub(cuda)
     hub.approved_capabilities = [cuda]
+    hub.claimed = True  # the hub has no text job for it
     supervisor = build_supervisor(hub, capabilities=(cuda,))
 
     assert supervisor.run(once=True) == 0
 
     assert hub.heartbeat_bodies[-1] == {**hub.heartbeat_bodies[-1], "reported_capabilities": [], "ready": False}
-    assert hub.paths("/claim") == []
+    # Without a usable tuple it still polls, for text (postprocess-only) jobs only.
+    ((_, _, _, claim_body),) = hub.paths("/claim")
+    assert json.loads(claim_body) == {"capabilities": [], "text_jobs": True}
 
 
 def test_private_job_runs_offline_without_cloud_credentials(build_supervisor, fakes, monkeypatch) -> None:
@@ -270,6 +273,43 @@ def test_postprocess_profile_hash_mismatch_fails_as_invalid_snapshot(build_super
     assert failure["code"] == "invalid_snapshot"
     assert failure["retryable"] is False
     assert hub.paths("/result") == []
+
+
+def test_text_job_runs_only_the_profile_without_the_execution_subprocess(build_supervisor, fakes) -> None:
+    text = "hallo welt\n".encode()
+    snapshot = {**fakes.snapshot_for(CAND, kind="text"), "candidate": None, "candidates": []}
+    hub = fakes.FakeHub(CAND, kind="text", job_input=text, snapshot=snapshot, profile=REPLACE_PROFILE)
+    hub.approved_capabilities = []
+    # A worker without any tested tuple still takes text jobs.
+    supervisor = build_supervisor(hub, capabilities=())
+
+    assert supervisor.run(once=True) == 0
+
+    ((_, _, _, claim_body),) = hub.paths("/claim")
+    assert json.loads(claim_body) == {"capabilities": [], "text_jobs": True}
+    assert hub.heartbeat_bodies[0]["text_jobs"] is True
+    ((_, _, _, body),) = hub.paths("/result")
+    result = JobResult.model_validate_json(body)
+    assert (result.kind, result.language) == ("text", "de")
+    assert (result.raw_text, result.raw_markdown, result.markdown) == ("hallo welt\n", "hallo welt\n", "hallo Welt\n")
+    # No engine ran: the stub executor would have recorded an asr stage.
+    assert result.segments == [] and result.provenance.stages == []
+    assert result.provenance.input_sha256 == hashlib.sha256(text).hexdigest()
+    assert hub.paths("/fail") == []
+
+
+def test_text_job_input_that_is_not_utf8_fails_terminally(build_supervisor, fakes) -> None:
+    snapshot = {**fakes.snapshot_for(CAND, kind="text"), "candidate": None, "candidates": []}
+    hub = fakes.FakeHub(CAND, kind="text", job_input=b"\xc3\x28", snapshot=snapshot, profile=REPLACE_PROFILE)
+    supervisor = build_supervisor(hub, capabilities=())
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    assert (json.loads(body)["code"], json.loads(body)["retryable"]) == ("unsupported_input", False)
+    assert hub.paths("/result") == []
+
+
 
 
 def test_document_input_is_named_by_its_magic_bytes_for_the_converter(build_supervisor, fakes) -> None:

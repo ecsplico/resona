@@ -23,6 +23,7 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | `RESONA_BOOTSTRAP_ORGANIZATION_ID` | _(unset)_ | Organization that owns jobs already in an upgraded database. Required only when a pre-identity database with job rows is first migrated; startup refuses without it. Hub access uses org-scoped credentials issued by `resona-admin`, not a shared key |
 | `DATA_PATH` | `./data` | Root directory for all persistent data (SQLite DB and expiring per-organization job files) |
 | `RESONA_MAX_UPLOAD_BYTES` | `209715200` (200 MiB) | Maximum size of one upload or worker result; enforced while streaming, larger requests get `413` |
+| `RESONA_MAX_TEXT_UPLOAD_BYTES` | `2097152` (2 MiB) | Maximum size of one UTF-8 text upload (text jobs, postprocess only); larger text gets `413` |
 | `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` | Directory where the bundled and file-backed profile sources are resolved for CLI and postprocessing; hosted profile revisions are stored in the database per organization and served by `GET /profiles` |
 | `RESONA_SYNC_WAIT_SECONDS` | `60` | Seconds `POST /v1/audio/transcriptions` waits for a worker to finish the job; on timeout it answers `504` with the `job_id` while the job keeps running |
 | `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
