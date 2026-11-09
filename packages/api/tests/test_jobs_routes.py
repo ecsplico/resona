@@ -132,7 +132,7 @@ def test_upload_submit_claim_result_roundtrip(http, fresh_org, client_headers, w
 
 def _heartbeat(http, worker, reported):
     beat = http.post("/v1/workers/heartbeat", headers=worker, json={
-        "worker_protocol": 1, "runtime_version": "0.1.0", "ready": bool(reported),
+        "worker_protocol": 1, "runtime_version": hub_release_id(), "ready": bool(reported),
         "reported_capabilities": [c.model_dump(mode="json") for c in reported],
     })
     assert beat.status_code == 200

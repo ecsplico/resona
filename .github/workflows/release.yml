@@ -63,7 +63,8 @@ jobs:
         run: uv sync --all-packages --frozen
 
       # Workers report their resona-worker version as their release and the hub its
-      # resona-api version, so both must equal the tag (v0.2.0 -> 0.2.0).
+      # resona-api version; every workspace package carries the same version, and it
+      # must equal the tag (v0.2.0 -> 0.2.0). Bump with scripts/release_version.py.
       - name: Resolve and check the release id
         id: version
         env:
@@ -71,11 +72,12 @@ jobs:
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           set -euo pipefail
+          workspace=$(python3 scripts/release_version.py check)
           api=$(uv run python -c "import importlib.metadata as m; print(m.version('resona-api'))")
           worker=$(uv run python -c "import importlib.metadata as m; print(m.version('resona-worker'))")
-          if [ "$IS_TAG" = "true" ]; then version="${REF_NAME#v}"; else version="$api"; fi
-          if [ "$api" != "$version" ] || [ "$worker" != "$version" ]; then
-            echo "::error::release $version needs resona-api ($api) and resona-worker ($worker) at the same version"
+          if [ "$IS_TAG" = "true" ]; then version="${REF_NAME#v}"; else version="$workspace"; fi
+          if [ "$workspace" != "$version" ] || [ "$api" != "$version" ] || [ "$worker" != "$version" ]; then
+            echo "::error::release $version needs every workspace package ($workspace), resona-api ($api) and resona-worker ($worker) at the same version"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"

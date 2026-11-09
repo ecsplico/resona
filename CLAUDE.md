@@ -484,6 +484,8 @@ Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.t
 
 Lint: `uv run ruff check .` (pyflakes + pycodestyle error classes, config in the root `pyproject.toml`; CI runs it before the tests). Not a formatter policy: do not run `ruff format` over existing files.
 
+Release id = the version of every workspace package (all equal). After a `vX.Y.Z` tag, the next change to `main` must bump it (`just bump <next>` → `scripts/release_version.py`, all `pyproject.toml` + `uv.lock`); CI (`test.yml`) fails a commit that reuses a tagged version, because hub and workers would report an evaluated release while running other code. Tests that need the hub's own release use `releases.hub_release_id()`, never a literal. Docs: `docs/server/releases.md#version-bump`.
+
 Mocking strategy:
 - resona-engine-server: mock the transcriber at `resona_engine_server.app.get_transcriber`
 - resona-api: `TestClient` against the app with org/credential fixtures (`packages/api/tests/conftest.py`); drive queued jobs through the worker routes (claim → result) instead of mocking inference

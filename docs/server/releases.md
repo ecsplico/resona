@@ -2,7 +2,26 @@
 
 A Resona release is an immutable pin set: every wheel by name, version and SHA-256, every
 image by `sha256:` digest, every model by exact revision. Release ids are package versions
-(tag `v0.2.0` → release `0.2.0`); `resona-api` and `resona-worker` must both carry it.
+(tag `v0.2.0` → release `0.2.0`); every workspace package, in particular `resona-api` and
+`resona-worker`, carries it.
+
+## Version bump
+
+Nothing bumps the version automatically. A hub reports its `resona-api` version and a worker its
+`resona-worker` version, and the hub applies promoted evaluations per release id. A build from a
+commit after `vX.Y.Z` that still says `X.Y.Z` would therefore pass as the evaluated release while
+running other code. CI (`test.yml`) fails on such a commit: once `vX.Y.Z` is tagged, the next
+change to `main` must carry a new version.
+
+```bash
+just bump 0.3.0              # every pyproject.toml + uv.lock (scripts/release_version.py bump)
+git commit -am "chore(release): 0.3.0" && git push   # via PR
+git tag v0.3.0 <merged commit> && git push origin v0.3.0   # runs release.yml
+```
+
+`python3 scripts/release_version.py check --unreleased` runs the CI check locally. After the release
+workflow, deploy its digests: the hub via `docker-compose.coolify.yml` (both `image:` lines,
+[Coolify](coolify.md)), workers via `resona-worker update` (below).
 
 ## Release manifest
 

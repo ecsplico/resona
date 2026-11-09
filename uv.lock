@@ -5583,7 +5583,7 @@ wheels = [
 
 [[package]]
 name = "resona-api"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/api" }
 dependencies = [
     { name = "aiofiles" },
@@ -5625,7 +5625,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-asr-core"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/asr-core" }
 dependencies = [
     { name = "ffmpeg-python" },
@@ -5642,7 +5642,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-cli"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "apps/resona-cli" }
 dependencies = [
     { name = "httpx" },
@@ -5749,7 +5749,7 @@ provides-extras = ["kokoro", "documents", "whisper", "voxtral", "mlx", "whisper-
 
 [[package]]
 name = "resona-client"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/client" }
 dependencies = [
     { name = "httpx" },
@@ -5766,7 +5766,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-cloud-stt"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/cloud-stt" }
 dependencies = [
     { name = "httpx" },
@@ -5781,7 +5781,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-cloud-tts"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/cloud-tts" }
 dependencies = [
     { name = "httpx" },
@@ -5792,7 +5792,7 @@ requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
 
 [[package]]
 name = "resona-engine-docling"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-docling" }
 dependencies = [
     { name = "docling", extra = ["ocrmac", "rapidocr"] },
@@ -5809,7 +5809,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-faster-whisper"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-faster-whisper" }
 dependencies = [
     { name = "faster-whisper" },
@@ -5832,7 +5832,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-lightning-mlx"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-lightning-mlx" }
 dependencies = [
     { name = "lightning-whisper-mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -5849,7 +5849,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-mlx-whisper"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-mlx-whisper" }
 dependencies = [
     { name = "faster-whisper" },
@@ -5870,7 +5870,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-parakeet"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-parakeet" }
 dependencies = [
     { name = "nemo-toolkit", extra = ["asr"], marker = "sys_platform == 'linux'" },
@@ -5887,7 +5887,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-server"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-server" }
 dependencies = [
     { name = "fastapi", version = "0.115.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'linux' and sys_platform != 'win32'" },
@@ -5913,7 +5913,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-voxtral"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-voxtral" }
 dependencies = [
     { name = "accelerate" },
@@ -5937,7 +5937,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-whisper"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-whisper" }
 dependencies = [
     { name = "faster-whisper" },
@@ -5964,7 +5964,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-engine-whispercpp"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine-whispercpp" }
 dependencies = [
     { name = "pywhispercpp" },
@@ -5981,7 +5981,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-eval"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/eval" }
 dependencies = [
     { name = "jiwer" },
@@ -5998,7 +5998,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-job-core"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/job-core" }
 dependencies = [
     { name = "pydantic" },
@@ -6009,7 +6009,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
 
 [[package]]
 name = "resona-mcp"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "apps/resona-mcp" }
 dependencies = [
     { name = "mcp" },
@@ -6031,7 +6031,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-postprocess"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/postprocess" }
 dependencies = [
     { name = "litellm" },
@@ -6048,7 +6048,7 @@ requires-dist = [
 
 [[package]]
 name = "resona-tts-local"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/tts-local" }
 dependencies = [
     { name = "numpy" },
@@ -6082,7 +6082,7 @@ provides-extras = ["kokoro", "qwen", "piper"]
 
 [[package]]
 name = "resona-worker"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "apps/resona-worker" }
 dependencies = [
     { name = "httpx" },
@@ -6124,7 +6124,7 @@ provides-extras = ["audio-cpu", "apple", "documents", "cuda"]
 
 [[package]]
 name = "resona-workspace"
-version = "0.1.0"
+version = "0.2.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
