@@ -16,6 +16,15 @@ class JobFields:
     job_id: str
     job_key: str
     error: str
+    # Why a queued job waits (hub `queue_reason`); None when the row keeps none.
+    queue_reason: str | None = None
+
+    def cleared(self) -> dict:
+        """Payload that clears a run's job, error and queue reason."""
+        payload = {self.job_id: None, self.job_key: None, self.error: None}
+        if self.queue_reason:
+            payload[self.queue_reason] = None
+        return payload
 
 
 # recordings / documents: the row's own transcription or conversion job
@@ -23,6 +32,7 @@ ROW_JOB = JobFields("status", "hub_job_id", "hub_job_key", "error_message")
 # transcripts: re-processing the stored raw transcript with a postprocess profile
 POSTPROCESS_JOB = JobFields(
     "postprocess_status", "postprocess_job_id", "postprocess_job_key", "postprocess_error",
+    "postprocess_queue_reason",
 )
 
 
@@ -69,8 +79,8 @@ class DirectusClient:
     ) -> bool:
         """Optimistically mark a row as `active_status`. Returns True on success.
 
-        Also clears the job id, so a retried row never polls its previous job,
-        and persists `job_key` (the hub Idempotency-Key) before the job is created,
+        Also clears the job id, error and queue reason, so a retried row never
+        polls its previous job or shows its old failure, and persists `job_key` (the hub Idempotency-Key) before the job is created,
         so a resubmission after a lost create response reuses it.
 
         This is an unconditional PATCH, not a compare-and-swap — Directus has no
@@ -80,7 +90,7 @@ class DirectusClient:
         """
         data = await self.patch(
             collection, item_id,
-            {fields.status: active_status, fields.job_id: None, fields.job_key: job_key},
+            {**fields.cleared(), fields.status: active_status, fields.job_key: job_key},
         )
         return data[fields.status] == active_status
 
@@ -124,10 +134,12 @@ class DirectusClient:
         self, *, recording_id: str, text: str, language: str | None,
         segments: list | None, structured: dict | None, engine: str | None,
         provenance: dict | None,
-    ) -> None:
+    ) -> int | None:
+        """Creates or replaces the recording's transcript. A fresh transcription is
+        raw again: an earlier re-processing and its job state are dropped. Returns the
+        hub text job the old transcript still had in flight (the caller deletes it)."""
         # `language` lives on the recording, not the transcript collection —
         # accepted for a uniform call site but intentionally not POSTed.
-        # A fresh transcription is raw again: any earlier re-processing is dropped.
         payload = {
             "text": text,
             "segments": segments,
@@ -136,10 +148,14 @@ class DirectusClient:
             "provenance": provenance,
             "raw_text": None,
             "applied_profile": None,
+            "processed_text": None,
+            "postprocess_status": None,
+            "postprocess_profile": None,
+            **POSTPROCESS_JOB.cleared(),
         }
         existing = await self._client.get(
             f"{self.base_url}/items/transcripts",
-            params={"filter[recording][_eq]": recording_id, "limit": 1, "fields": "id"},
+            params={"filter[recording][_eq]": recording_id, "limit": 1, "fields": "id,postprocess_job_id"},
         )
         existing.raise_for_status()
         rows = existing.json()["data"]
@@ -154,6 +170,7 @@ class DirectusClient:
                 json={"recording": recording_id, **payload},
             )
         resp.raise_for_status()
+        return rows[0].get("postprocess_job_id") if rows else None
 
     async def write_postprocessed(
         self, transcript_id: str, *, text: str, raw_text: str, profile: str,
@@ -164,11 +181,9 @@ class DirectusClient:
             "text": text,
             "raw_text": raw_text,
             "applied_profile": profile,
+            "processed_text": text,
             "postprocess_status": "done",
-            "postprocess_error": None,
-            "postprocess_queue_reason": None,
-            "postprocess_job_id": None,
-            "postprocess_job_key": None,
+            **POSTPROCESS_JOB.cleared(),
         })
 
     async def write_document(
@@ -189,8 +204,5 @@ class DirectusClient:
     ) -> None:
         await self.patch(
             collection, item_id,
-            {
-                fields.status: "error", fields.error: message[:1000],
-                fields.job_id: None, fields.job_key: None,
-            },
+            {**fields.cleared(), fields.status: "error", fields.error: message[:1000]},
         )

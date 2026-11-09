@@ -113,6 +113,9 @@ const COLLECTIONS = {
 		// hub text job (project-worker / standalone processor), like hub_job_* on recordings.
 		plain("raw_text", "text"),
 		plain("applied_profile", "string"),
+		// the last profile run's output as delivered: the PWA asks before a re-run or
+		// restore would drop edits made to `text` since
+		plain("processed_text", "text"),
 		plain("postprocess_status", "string"),
 		plain("postprocess_profile", "string"),
 		plain("postprocess_error", "text"),
@@ -235,24 +238,42 @@ async function ensureRelations() {
 }
 
 // ── role / policy / permissions ────────────────────────────────────────────
+// Writes carry explicit field lists: the job bookkeeping (`hub_job_*`,
+// `postprocess_job_*`, `postprocess_error`, `postprocess_queue_reason`) belongs to the
+// project-worker, so a user (or a stale tab) can never point a row at another hub job.
 const PERMISSIONS = [
 	// recordings: full CRUD scoped to owner
 	{ collection: "recordings", action: "read", permissions: { user_created: OWNER } },
-	{ collection: "recordings", action: "create", permissions: {} },
-	{ collection: "recordings", action: "update", permissions: { user_created: OWNER } },
+	{
+		collection: "recordings", action: "create", permissions: {},
+		fields: ["title", "audio_file", "language", "profile", "source", "status", "duration_seconds"],
+	},
+	{
+		collection: "recordings", action: "update", permissions: { user_created: OWNER },
+		fields: ["title", "status", "error_message", "review_status", "audio_file", "duration_seconds"],
+	},
 	{ collection: "recordings", action: "delete", permissions: { user_created: OWNER } },
 	// transcripts: scoped to the parent recording's owner
 	{ collection: "transcripts", action: "read", permissions: { recording: { user_created: OWNER } } },
-	{ collection: "transcripts", action: "create", validation: { recording: { user_created: OWNER } } },
-	{ collection: "transcripts", action: "update", permissions: { recording: { user_created: OWNER } } },
+	{
+		collection: "transcripts", action: "create", validation: { recording: { user_created: OWNER } },
+		fields: ["recording", "text", "engine"],
+	},
+	{
+		collection: "transcripts", action: "update", permissions: { recording: { user_created: OWNER } },
+		// the text plus the "Nachbearbeiten" request (status `pending`) and undo (null);
+		// `processing`/`done`/`error` are the project-worker's
+		validation: { _or: [{ postprocess_status: { _null: true } }, { postprocess_status: { _eq: "pending" } }] },
+		fields: ["text", "raw_text", "applied_profile", "processed_text", "postprocess_status", "postprocess_profile"],
+	},
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
 	// corrections: write + read own; never updated or deleted by users
 	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "transcript_corrections", action: "create", validation: { recording: { user_created: OWNER } } },
 	// documents: full CRUD scoped to owner
 	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
-	{ collection: "documents", action: "create", permissions: {} },
-	{ collection: "documents", action: "update", permissions: { user_created: OWNER } },
+	{ collection: "documents", action: "create", permissions: {}, fields: ["title", "file", "status"] },
+	{ collection: "documents", action: "update", permissions: { user_created: OWNER }, fields: ["status", "error_message"] },
 	{ collection: "documents", action: "delete", permissions: { user_created: OWNER } },
 	// files: upload + read own (needed for audio/document upload + playback)
 	{ collection: "directus_files", action: "create", permissions: {} },
@@ -296,25 +317,43 @@ async function ensureUserRole() {
 		console.log(`+ access role→policy`);
 	}
 
-	// permissions on the policy
+	// permissions on the policy: created when missing, brought in line with
+	// PERMISSIONS when an older bootstrap left them different (e.g. `fields: ["*"]`)
 	const existing = await api("GET", `/permissions?filter[policy][_eq]=${policy.id}&limit=-1`);
-	const seen = new Set(existing.map(p => `${p.collection}.${p.action}`));
+	const byKey = new Map(existing.map(p => [`${p.collection}.${p.action}`, p]));
 	for (const p of PERMISSIONS) {
 		const key = `${p.collection}.${p.action}`;
-		if (seen.has(key)) {
-			console.log(`= perm ${key} exists`);
-			continue;
-		}
-		await api("POST", "/permissions", {
-			policy: policy.id,
-			collection: p.collection,
-			action: p.action,
+		const wanted = {
 			permissions: p.permissions ?? {},
 			validation: p.validation ?? {},
 			fields: p.fields ?? ["*"],
-		});
-		console.log(`+ perm ${key}`);
+		};
+		const have = byKey.get(key);
+		if (!have) {
+			await api("POST", "/permissions", { policy: policy.id, collection: p.collection, action: p.action, ...wanted });
+			console.log(`+ perm ${key}`);
+			continue;
+		}
+		const current = {
+			permissions: have.permissions ?? {},
+			validation: have.validation ?? {},
+			fields: have.fields ?? [],
+		};
+		if (stableJson(current) === stableJson(wanted)) {
+			console.log(`= perm ${key} exists`);
+			continue;
+		}
+		await api("PATCH", `/permissions/${have.id}`, wanted);
+		console.log(`~ perm ${key} updated`);
 	}
+}
+
+/** JSON with object keys sorted, so equal rules compare equal whatever their key order. */
+function stableJson(value) {
+	return JSON.stringify(value, (_, v) =>
+		v && typeof v === "object" && !Array.isArray(v)
+			? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+			: v);
 }
 
 // ── worker user + pinned static token ──────────────────────────────────────

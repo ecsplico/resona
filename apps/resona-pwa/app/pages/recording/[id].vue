@@ -4,7 +4,7 @@ import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
 import type { ContinueResult } from "~/composables/useContinueRecording";
 import type { Recording, Transcript } from "~/types/directus";
-import { postprocessRunning } from "~/utils/postprocess";
+import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
 
 const route = useRoute();
 const id = String(route.params.id);
@@ -113,6 +113,15 @@ watch([recording, transcript], ([, t]) => {
 
 const dirty = computed(() => seeded.value && edit.text.value !== edit.committed.value);
 
+// New raw content (dictation, a continued part) added after a profile ran: it goes
+// into `text` and, on the next save, onto the end of `raw_text`, so a re-run or a
+// restore keeps it.
+let rawParts: string[] = [];
+
+function noteRawPart(text: string): void {
+	if (transcript.value?.applied_profile && text.trim()) rawParts.push(text);
+}
+
 /** Persists the editor text; false when the save failed (the text stays in the editor). */
 async function saveTranscript(options: { correction?: boolean } = {}): Promise<boolean> {
 	const target = edit.text.value;
@@ -123,8 +132,12 @@ async function saveTranscript(options: { correction?: boolean } = {}): Promise<b
 		const correction = options.correction === false || transcript.value.applied_profile
 			? undefined
 			: { recording: id, engine: transcript.value.engine, language: recording.value?.language };
-		await edit.saveEdit(transcript.value.id, target, correction);
-		return !edit.error.value;
+		const raw = rawParts.length > 0 ? appendToRaw(transcript.value, rawParts) : null;
+		await edit.saveEdit(transcript.value.id, target, correction, raw === null ? {} : { raw_text: raw });
+		if (edit.error.value) return false;
+		if (raw !== null) transcript.value.raw_text = raw;
+		rawParts = [];
+		return true;
 	}
 	// No transcript row yet -> create one for this recording.
 	const created = await edit.createTranscript(id, target);
@@ -138,6 +151,7 @@ async function saveTranscript(options: { correction?: boolean } = {}): Promise<b
 function discardEdits(): void {
 	edit.text.value = edit.committed.value;
 	edit.error.value = null;
+	rawParts = [];
 }
 
 // ── Nachbearbeiten (postprocess profile on the raw transcript) ────────────
@@ -145,18 +159,25 @@ function discardEdits(): void {
 // result replaces it as a whole. Once it lands, the editor shows it.
 const postprocessing = computed(() => postprocessRunning(transcript.value));
 
+// A profile's output is shown rendered (headings, paragraphs); "Bearbeiten"
+// switches to the editor, which also opens for dictation.
+const editingProcessed = ref(false);
+const showRendered = computed(() => Boolean(transcript.value?.applied_profile) && !editingProcessed.value);
+
+function reseed(): void {
+	edit.seed(transcript.value?.text ?? "");
+	rawParts = [];
+	editingProcessed.value = false;
+}
+
 watch(postprocessing, (running, wasRunning) => {
-	if (wasRunning && !running && transcript.value) {
-		edit.seed(transcript.value.text ?? "");
-	}
+	if (wasRunning && !running && transcript.value) reseed();
 });
 
 async function onPostprocessChanged(): Promise<void> {
 	await refresh();
 	// Restoring the raw transcript changes the text right away; a request only locks it.
-	if (transcript.value && !postprocessing.value) {
-		edit.seed(transcript.value.text ?? "");
-	}
+	if (transcript.value && !postprocessing.value) reseed();
 	startPolling();
 }
 
@@ -248,6 +269,11 @@ const pttKeyLabel = isMac ? "ctrl" : "Strg";
 async function startDictation(): Promise<void> {
 	if (pttState.value !== "idle" || contActive.value) return;
 	pttError.value = null;
+	// Dictation inserts at the caret, so the rendered view gives way to the editor.
+	if (showRendered.value) {
+		editingProcessed.value = true;
+		await nextTick();
+	}
 	pttRange = editorRef.value?.insertPlaceholder() ?? null;
 	try {
 		await pttRecorder.start();
@@ -308,6 +334,7 @@ async function stopDictation(): Promise<void> {
 		}
 		pttDiag.record("upload", true, `${blob.size}B Audio → ${rawText.length} Zeichen`);
 		const text = rawText.trim();
+		if (pttRange) noteRawPart(text);
 		if (pttRange) {
 			// Trailing space so the next dictation/typing doesn't butt against it.
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text ? `${text} ` : "");
@@ -430,6 +457,7 @@ async function applyContinueResult(result: ContinueResult | null): Promise<void>
 	let saved = true;
 	if (result.text) {
 		appendParagraph(result.text);
+		noteRawPart(result.text);
 		saved = await saveTranscript({ correction: false });
 	}
 	if (result.text || result.audioMerged) recordingsList.request();
@@ -1061,8 +1089,27 @@ onUnmounted(() => {
 						:blocked="postprocessBlocked"
 						@changed="onPostprocessChanged"
 					/>
+					<div
+						v-if="transcript?.applied_profile && !postprocessing"
+						class="detail__viewbar"
+					>
+						<button
+							type="button"
+							class="detail__viewtoggle"
+							data-testid="transcript-view-toggle"
+							@click="editingProcessed = !editingProcessed"
+						>
+							{{ showRendered ? "Bearbeiten" : "Formatiert anzeigen" }}
+						</button>
+					</div>
 					<div class="detail__surface">
+						<MarkdownView
+							v-if="showRendered"
+							:text="edit.text.value"
+							data-testid="transcript-rendered"
+						/>
 						<TranscriptEditor
+							v-else
 							ref="editorRef"
 							v-model="edit.text.value"
 							:editable="!postprocessing"
@@ -1261,6 +1308,8 @@ onUnmounted(() => {
 .detail__save-state--dirty { color:var(--accent-ink,var(--accent)); font-weight:600; }
 .detail__surface { flex:1; display:flex; flex-direction:column; min-height:240px; }
 .detail__surface > :deep(*) { flex:1; }
+.detail__viewbar { display:flex; justify-content:flex-end; margin:-8px 0 -8px; }
+.detail__viewtoggle { border:none; background:transparent; padding:6px 4px; font-family:var(--font-body); font-size:var(--fs-sm); font-weight:600; color:var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
 .detail__ptt { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--white); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; transition:background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
 .detail__ptt:hover:not(:disabled) { border-color:var(--accent); }
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }

@@ -44,6 +44,11 @@ export interface Transcript {
 	raw_text?: string | null;
 	/** Profile whose output `text` is; null for the raw transcript. */
 	applied_profile?: string | null;
+	/**
+	 * The output of the last profile run as delivered, so the page can tell whether
+	 * `text` was edited since (re-run and restore replace those edits).
+	 */
+	processed_text?: string | null;
 	/** Re-processing as a hub text job: pending -> processing -> done | error. */
 	postprocess_status?: "pending" | "processing" | "done" | "error" | null;
 	postprocess_profile?: string | null;

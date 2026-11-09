@@ -55,6 +55,7 @@ async def test_claim_patches_active_status_and_clears_job(base_url):
     assert ok is True
     assert json.loads(route.calls.last.request.content) == {
         "status": "processing", "hub_job_id": None, "hub_job_key": "documents:doc-1:k",
+        "error_message": None,
     }
 
 

@@ -125,23 +125,37 @@ it via `docker compose` (the `project-worker` service).
 - **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
 - **Nachbearbeiten** (re-process a transcript with a hub postprocess profile, hub job kind
   `text`): `PostprocessPanel.vue` on the recording page lists `GET /profiles`
-  (`useProfiles`) and writes `postprocessRequest(profile)` (`app/utils/postprocess.ts`) onto
-  the transcript row; it is enabled only when the transcript is saved and no dictation /
-  continue-recording is running, and the editor is read-only (`TranscriptEditor`
-  `editable`) while the run is `pending|processing`. The profile always runs on the raw
-  transcript (`raw_text ?? text`), never on an earlier profile's output; on success `text`
-  becomes the job's `markdown`, `raw_text` keeps the raw transcript and `applied_profile`
-  the profile, so the panel can show the raw text, re-run another profile or restore the
-  raw text (`rawRestore`). Who runs it: Directus mode → the project-worker (`_run_postprocess`
-  in `worker.py`: claim → `POST /v1/uploads` with the text as `transcript.md` →
-  `POST /v1/jobs {kind:"text", profile}` → poll → write back → delete the hub job);
-  standalone → `localProcessor.runLocalCycle` from the browser with the user's hub token.
-  Same German messages in both: `profile_required`, `profile_not_found`, `invalid_profile`,
-  `policy_denied` (with the hub reason) become `postprocess_error`; a pending job's
-  `queue_reason` is stored in `postprocess_queue_reason` and shown
-  (`no_capable_worker` → "Kein passender Worker online …"). `useRecording` keeps polling
-  while a run is queued. Editing a profile's output does not record a transcript correction
-  (the engine did not write that text).
+  (`useProfiles`, which exposes a load `error` instead of a fake one-entry list) and writes
+  `postprocessRequest(profile)` (`app/utils/postprocess.ts`: only `postprocess_status:
+  "pending"` + `postprocess_profile`) onto the transcript row; it is enabled only when the
+  transcript is saved, no dictation / continue-recording is running and this device has a
+  hub token (`useHubTokenGate`; standalone needs it to run the job). The editor is
+  read-only (`TranscriptEditor` `editable`) while the run is `pending|processing`. The
+  profile always runs on the raw transcript (`raw_text ?? text`), never on an earlier
+  profile's output; on success `text` becomes the job's `markdown`, `raw_text` keeps the raw
+  transcript, `applied_profile` the profile and `processed_text` the output as delivered.
+  The page then shows `text` rendered (`MarkdownView.vue` + `utils/markdown.ts`: headings,
+  paragraphs, lists as text nodes, never `v-html`) with a "Bearbeiten" toggle to the editor;
+  dictation switches to the editor too. New raw content added after a run (PTT dictation,
+  a continued part) goes into `text` *and* is appended to `raw_text` (`appendToRaw`), so a
+  re-run or "Rohtranskript wiederherstellen" (`rawRestore`) keeps it; when `text` differs
+  from `processed_text` (`editedSinceProfile`) both ask before replacing those edits.
+  Who runs it: Directus mode → the project-worker (`_run_postprocess` in `worker.py`: claim
+  → `POST /v1/uploads` with the text as `transcript.md` → `POST /v1/jobs {kind:"text",
+  profile}` → poll → write back → delete the hub job); standalone →
+  `localProcessor.runLocalCycle` from the browser with the user's hub token. A request
+  repeated while a job runs deletes that job and submits under a fresh key; a
+  re-transcription clears the `postprocess_*` fields and deletes a text job still running
+  on the old transcript. Same German messages in both (`POSTPROCESS_ERRORS` in `worker.py`
+  is kept equal to `utils/postprocess.ts` by `worker/tests/test_postprocess.py`):
+  `profile_required`, `profile_not_found`, `invalid_profile`, `policy_denied` (with the hub
+  reason) become `postprocess_error`; a pending job's `queue_reason` is stored in
+  `postprocess_queue_reason` and shown (`no_capable_worker` → "Kein passender Worker online
+  …"). `useRecording` keeps polling while a run is queued. Editing a profile's output does
+  not record a transcript correction (the engine did not write that text). In Directus
+  mode the profile list comes from the *user's* hub token while the project-worker submits
+  with *its* `RESONA_API_KEY`: both must belong to the same hub organization, else a listed
+  profile fails with `profile_not_found`.
 - **Uploads and shares** (`useUpload.saveRecording`): the file's type is normalised
   (`utils/audioFile.ts`; phones send `""`, `application/octet-stream` or `audio/x-m4a`, and the
   file used to be stored as `<title>.webm` with that type, so Directus served an unplayable

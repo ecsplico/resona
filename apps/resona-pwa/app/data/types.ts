@@ -1,10 +1,14 @@
 import type { CorrectionEdit, Recording, ResonaDocument, Transcript } from "~/types/directus";
 
 export interface NewRecording { title: string; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
-/** Writable transcript fields: the text, plus the "Nachbearbeiten" state (see `~/utils/postprocess`). */
+/**
+ * Transcript fields the user writes: the text, plus the "Nachbearbeiten" request and
+ * undo (see `~/utils/postprocess`). The hub job fields (`postprocess_job_*`,
+ * `postprocess_error`, `postprocess_queue_reason`) belong to the processor; in
+ * Directus mode the `user` policy refuses them.
+ */
 export type TranscriptPatch = Partial<Pick<Transcript,
-	"text" | "raw_text" | "applied_profile" | "postprocess_status" | "postprocess_profile"
-	| "postprocess_error" | "postprocess_queue_reason" | "postprocess_job_id" | "postprocess_job_key">>;
+	"text" | "raw_text" | "applied_profile" | "processed_text" | "postprocess_status" | "postprocess_profile">>;
 export interface RecordingPatch { title?: string; status?: Recording["status"]; error_message?: string | null; review_status?: "editing" | "ready" }
 export interface DataStore {
 	readonly mode: "directus" | "standalone";

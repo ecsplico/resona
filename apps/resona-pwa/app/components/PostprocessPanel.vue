@@ -4,6 +4,7 @@ import type { Transcript } from "~/types/directus";
 import type { TranscriptPatch } from "~/data/types";
 import { humanizeError } from "#shared/errors";
 import {
+	editedSinceProfile,
 	postprocessRequest,
 	postprocessRunning,
 	queueReasonMessage,
@@ -22,8 +23,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{ changed: [] }>();
 
+/** Shown when this device has no hub token: the profile list needs it (and so does
+ * the standalone processor that would run the job). */
+const NO_TOKEN = "Kein Hub-Token auf diesem Gerät – unter Einstellungen → Verbindung eintragen, dann nachbearbeiten.";
+/** Asked before a re-run or restore replaces edits made to a profile's output. */
+const REPLACE_EDITS = "Der nachbearbeitete Text wurde seither geändert. Diese Änderungen werden ersetzt (neu aufgenommene Teile bleiben im Rohtranskript). Fortfahren?";
+
 const store = useDataStore();
-const { profiles, list } = useProfiles();
+const tokenGate = useHubTokenGate();
+const { profiles, error: profilesError, list } = useProfiles();
 
 const profile = ref("");
 const busy = ref(false);
@@ -35,6 +43,13 @@ const waitingReason = computed(() => queueReasonMessage(props.transcript.postpro
 const failed = computed(() =>
 	props.transcript.postprocess_status === "error" ? props.transcript.postprocess_error ?? "Nachbearbeitung fehlgeschlagen." : null,
 );
+// Why no run can be requested: the page's reason first, then a missing token or profile list.
+const runBlocked = computed(() => {
+	if (props.blocked) return props.blocked;
+	if (tokenGate.blocked.value) return NO_TOKEN;
+	if (profilesError.value) return `Profile nicht verfügbar: ${profilesError.value}`;
+	return null;
+});
 
 // Preselect the profile last run on this transcript, else the first one the hub lists.
 watch(profiles, (names) => {
@@ -44,8 +59,13 @@ watch(profiles, (names) => {
 }, { immediate: true });
 
 onMounted(() => {
-	void list();
+	if (!tokenGate.blocked.value) void list();
 });
+
+/** False when the user keeps the edits made to a profile's output. */
+function replaceEditsConfirmed(): boolean {
+	return !editedSinceProfile(props.transcript, props.transcript.text ?? "") || confirm(REPLACE_EDITS);
+}
 
 async function write(patch: TranscriptPatch): Promise<void> {
 	busy.value = true;
@@ -63,11 +83,12 @@ async function write(patch: TranscriptPatch): Promise<void> {
 }
 
 function run(): void {
-	if (!profile.value) return;
+	if (!profile.value || runBlocked.value !== null || !replaceEditsConfirmed()) return;
 	void write(postprocessRequest(profile.value));
 }
 
 function restore(): void {
+	if (!replaceEditsConfirmed()) return;
 	void write(rawRestore(props.transcript));
 }
 </script>
@@ -83,7 +104,7 @@ function restore(): void {
 				<select
 					v-model="profile"
 					class="pp__input"
-					:disabled="running || busy || profiles.length === 0"
+					:disabled="running || busy || profiles.length === 0 || tokenGate.blocked.value || profilesError !== null"
 					data-testid="postprocess-profile"
 				>
 					<option
@@ -97,7 +118,7 @@ function restore(): void {
 			</label>
 			<HButton
 				variant="secondary"
-				:disabled="running || busy || !profile || blocked !== null"
+				:disabled="running || busy || !profile || runBlocked !== null"
 				data-testid="postprocess-run"
 				@click="run"
 			>
@@ -115,11 +136,11 @@ function restore(): void {
 		</div>
 
 		<p
-			v-if="blocked && !running"
+			v-if="runBlocked && !running"
 			class="pp__hint"
 			data-testid="postprocess-blocked"
 		>
-			{{ blocked }}
+			{{ runBlocked }}
 		</p>
 		<p
 			v-if="running"

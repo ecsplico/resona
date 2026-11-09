@@ -152,7 +152,7 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 		return;
 	}
 	if (spec.kind === "audio") {
-		await upsertTranscript(row.id, {
+		const { supersededJob } = await upsertTranscript(row.id, {
 			text: result.markdown,
 			segments: result.segments,
 			structured: result.structured,
@@ -160,6 +160,8 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 			provenance: result.provenance,
 		});
 		await spec.patch(row.id, { status: "done", hub_job_id: null, hub_job_key: null });
+		// A text job still running on the previous transcript would write stale output.
+		if (supersededJob !== null) await deleteJobQuietly(hub, supersededJob);
 	}
 	else {
 		await spec.patch(row.id, { markdown: result.markdown, pages: result.pages, provenance: result.provenance, status: "done", hub_job_id: null, hub_job_key: null });
@@ -189,10 +191,16 @@ async function submitText(t: Transcript, hub: ReturnType<typeof useHub>): Promis
 		await patchTranscriptInternal(t.id, postprocessFailed("Kein Transkript-Text zum Nachbearbeiten."));
 		return;
 	}
+	// A pending row that still carries a job was re-requested while that job ran
+	// (another tab or device): the old run is superseded, so delete it on the hub and
+	// submit under a fresh key (the old key would return the old job).
+	const superseded = t.postprocess_job_id ?? null;
 	// Key persisted before the create call, as for recordings (lost response -> same job).
-	const key = t.postprocess_job_key ?? `local:transcripts:${t.id}:${crypto.randomUUID()}`;
+	const key = (superseded === null ? t.postprocess_job_key : null) ?? `local:transcripts:${t.id}:${crypto.randomUUID()}`;
 	try {
-		if (t.postprocess_job_key == null) await patchTranscriptInternal(t.id, { postprocess_job_key: key });
+		// Claim: clears the previous run's job, error and queue reason.
+		await patchTranscriptInternal(t.id, { postprocess_job_key: key, postprocess_job_id: null, postprocess_error: null, postprocess_queue_reason: null });
+		if (superseded !== null) await deleteJobQuietly(hub, superseded);
 		const file = new File([source], "transcript.md", { type: "text/markdown" });
 		const uploadId = await hub.upload(file, file.name);
 		const jobId = await hub.createJob({ kind: "text", upload_id: uploadId, profile }, key);
@@ -226,8 +234,9 @@ async function pollText(t: Transcript, hub: ReturnType<typeof useHub>): Promise<
 	}
 	if (job.status !== "completed") {
 		// Tell the user why it waits (e.g. `no_capable_worker`); written only when it changes.
-		if (job.queue_reason !== (t.postprocess_queue_reason ?? null)) {
-			await patchTranscriptInternal(t.id, { postprocess_queue_reason: job.queue_reason });
+		const reason = job.queue_reason ?? null;
+		if (reason !== (t.postprocess_queue_reason ?? null)) {
+			await patchTranscriptInternal(t.id, { postprocess_queue_reason: reason });
 		}
 		return;
 	}

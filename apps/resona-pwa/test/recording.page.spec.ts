@@ -74,6 +74,7 @@ mockNuxtImport("useRecording", () => () => ({
 
 mockNuxtImport("useProfiles", () => () => ({
 	profiles: ref(["transcript-markdown-de"]),
+	error: ref(null),
 	list: vi.fn(async () => ["transcript-markdown-de"]),
 }));
 
@@ -490,7 +491,21 @@ describe("recording detail page", () => {
 	});
 
 	describe("Nachbearbeiten", () => {
-		it("requests a run on the saved text, locks the text while it runs and shows the result", async () => {
+		const PROCESSED = "## Befund\n\nHallo Welt";
+		const area = (w: VueWrapper) => w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+
+		beforeEach(() => {
+			useHubSettings().token = "tok";
+		});
+
+		function processedTranscript(over: Partial<Transcript> = {}): Transcript {
+			return {
+				id: "t-1", recording: "rec-1", text: PROCESSED, raw_text: "Hallo Welt",
+				applied_profile: "transcript-markdown-de", processed_text: PROCESSED, postprocess_status: "done", ...over,
+			};
+		}
+
+		it("requests a run on the saved text, locks the text while it runs and shows the result rendered", async () => {
 			const w = await mountSuspended(RecordingPage);
 			await flushPromises();
 			// The panel writes the request; the page refreshes and keeps polling.
@@ -499,27 +514,27 @@ describe("recording detail page", () => {
 			});
 			await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 			await flushPromises();
-			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", expect.objectContaining({
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
 				postprocess_status: "pending", postprocess_profile: "transcript-markdown-de",
-			}));
+			});
 			expect(startPolling).toHaveBeenCalledTimes(2);
-			const area = () => w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
-			expect(area().readOnly).toBe(true);
+			expect(area(w).readOnly).toBe(true);
 			expect(w.find("[data-testid=\"push-to-talk\"]").exists()).toBe(false);
 
-			// A poll delivers the profile's output: the editor shows it, the raw text stays.
-			live.transcript!.value = {
-				...live.transcript!.value!,
-				text: "## Befund\n\nHallo Welt",
-				raw_text: "Hallo Welt",
-				applied_profile: "transcript-markdown-de",
-				postprocess_status: "done",
-			};
+			// A poll delivers the profile's output: shown rendered, the raw text stays.
+			live.transcript!.value = { ...live.transcript!.value!, ...processedTranscript() };
 			await flushPromises();
-			expect(area().readOnly).toBe(false);
-			expect(area().value).toBe("## Befund\n\nHallo Welt");
+			const rendered = w.find("[data-testid=\"transcript-rendered\"]");
+			expect(rendered.find("h3").text()).toBe("Befund");
+			expect(rendered.find("p").text()).toBe("Hallo Welt");
+			expect(w.find("[data-testid=\"transcript-edit\"]").exists()).toBe(false);
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
 			expect(w.find("[data-testid=\"postprocess-raw\"] pre").text()).toBe("Hallo Welt");
+
+			// "Bearbeiten" opens the Markdown source in the editor.
+			await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+			expect(area(w).readOnly).toBe(false);
+			expect(area(w).value).toBe(PROCESSED);
 		});
 
 		it("is blocked while the text has unsaved edits", async () => {
@@ -530,13 +545,52 @@ describe("recording detail page", () => {
 		});
 
 		it("does not store edits of a profile's output as engine corrections", async () => {
-			transcript.value = { id: "t-1", recording: "rec-1", text: "## Befund", raw_text: "Befund", applied_profile: "transcript-markdown-de" };
+			transcript.value = processedTranscript();
 			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
 			await w.find("[data-testid=\"save-transcript\"]").trigger("click");
 			await flushPromises();
 			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "## Befund gekürzt" });
 			expect(store.recordCorrection).not.toHaveBeenCalled();
+		});
+
+		it("appends a continued part to the processed text and to the raw transcript", async () => {
+			cont.finish.mockImplementation(async () => {
+				cont.phase!.value = "idle";
+				return continueResult();
+			});
+			transcript.value = processedTranscript();
+			const w = await mountSuspended(RecordingPage);
+			await recordPart(w);
+			await flushPromises();
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
+				text: `${PROCESSED}\nNeuer Teil`,
+				raw_text: "Hallo Welt\nNeuer Teil",
+			});
+			expect(w.find("[data-testid=\"postprocess-raw\"] pre").text()).toBe("Hallo Welt\nNeuer Teil");
+		});
+
+		it("dictation into the rendered view opens the editor and keeps the part for the raw transcript", async () => {
+			globalThis.fetch = vi.fn(async () => new Response(
+				JSON.stringify({ text: "diktiert" }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			)) as unknown as typeof fetch;
+			transcript.value = processedTranscript();
+			const w = await mountSuspended(RecordingPage);
+			const ptt = w.find("[data-testid=\"push-to-talk\"]");
+			await ptt.trigger("pointerdown", { pointerId: 1 });
+			await flushPromises();
+			expect(area(w).value).toContain("[…]");
+			heldFor(500);
+			await ptt.trigger("pointerup", { pointerId: 1 });
+			await vi.waitFor(() => expect(area(w).value).toBe(`${PROCESSED}diktiert `));
+			await w.find("[data-testid=\"save-transcript\"]").trigger("click");
+			await flushPromises();
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
+				text: `${PROCESSED}diktiert `,
+				raw_text: "Hallo Welt\ndiktiert",
+			});
 		});
 	});
 

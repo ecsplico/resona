@@ -1,4 +1,5 @@
 import type { Transcript } from "~/types/directus";
+import type { TranscriptPatch } from "~/data/types";
 
 /**
  * Re-processing a stored transcript with a hub postprocess profile ("Nachbearbeiten"):
@@ -41,21 +42,39 @@ export function postprocessRunning(t: Pick<Transcript, "postprocess_status"> | n
 	return t?.postprocess_status === "pending" || t?.postprocess_status === "processing";
 }
 
-/** Fields that request a run of `profile` (and clear the previous run's state). */
-export function postprocessRequest(profile: string): Partial<Transcript> {
-	return {
-		postprocess_status: "pending",
-		postprocess_profile: profile,
-		postprocess_error: null,
-		postprocess_queue_reason: null,
-		postprocess_job_id: null,
-		postprocess_job_key: null,
-	};
+/**
+ * Fields that request a run of `profile`. The processor's claim clears the previous
+ * run's job, error and queue reason (users may not write those fields).
+ */
+export function postprocessRequest(profile: string): TranscriptPatch {
+	return { postprocess_status: "pending", postprocess_profile: profile };
 }
 
 /** Fields that make the raw transcript the text again (undo a profile). */
-export function rawRestore(t: Pick<Transcript, "text" | "raw_text">): Partial<Transcript> {
-	return { text: postprocessInput(t), raw_text: null, applied_profile: null, postprocess_status: null, postprocess_error: null };
+export function rawRestore(t: Pick<Transcript, "text" | "raw_text">): TranscriptPatch {
+	return { text: postprocessInput(t), raw_text: null, applied_profile: null, processed_text: null, postprocess_status: null };
+}
+
+/**
+ * True when re-running or restoring would drop changes: a profile was applied and
+ * `text` differs from that profile's output as delivered.
+ */
+export function editedSinceProfile(t: Pick<Transcript, "applied_profile" | "processed_text">, text: string): boolean {
+	return t.applied_profile != null && text !== (t.processed_text ?? null);
+}
+
+/**
+ * `raw_text` with new raw content (dictation, a continued recording part) appended
+ * as its own paragraph, so a re-run or restore keeps it. Null when no profile is
+ * applied (then `text` is the raw transcript and nothing else needs it).
+ */
+export function appendToRaw(t: Pick<Transcript, "text" | "raw_text" | "applied_profile">, parts: string[]): string | null {
+	if (t.applied_profile == null) return null;
+	return parts.reduce((raw, part) => {
+		const piece = part.trim();
+		if (!piece) return raw;
+		return raw.length === 0 || raw.endsWith("\n") ? raw + piece : `${raw}\n${piece}`;
+	}, postprocessInput(t));
 }
 
 /** Fields written once a text job delivered `markdown` for `profile`. */
@@ -64,6 +83,7 @@ export function postprocessDone(t: Pick<Transcript, "text" | "raw_text">, markdo
 		text: markdown,
 		raw_text: postprocessInput(t),
 		applied_profile: profile,
+		processed_text: markdown,
 		postprocess_status: "done",
 		postprocess_error: null,
 		postprocess_queue_reason: null,

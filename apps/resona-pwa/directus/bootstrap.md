@@ -75,6 +75,7 @@ snapshot (§4).
 | provenance | json | nullable — hub `JobResult.provenance` (expert mode) |
 | raw_text | text | nullable — the raw transcript a postprocess profile ran on ("Nachbearbeiten"); null while `text` is raw |
 | applied_profile | string | nullable — profile whose output `text` is |
+| processed_text | text | nullable — that profile's output as delivered (the PWA asks before a re-run/restore replaces edits made since) |
 | postprocess_status | string | nullable — pending / processing / done / error; the PWA sets `pending` + `postprocess_profile`, the project-worker runs the hub text job |
 | postprocess_profile | string | nullable — requested hub profile name |
 | postprocess_error | text | nullable — German message of a failed run |
@@ -102,6 +103,12 @@ Create a role **"user"** (non-admin). Add a policy with:
 - `transcripts`: read/update/delete where `recording.user_created = $CURRENT_USER`;
   **create** validated against the same relational filter (parent recording
   owned by the current user)
+- create/update carry **explicit field lists**: the job bookkeeping (`hub_job_*`,
+  `postprocess_job_*`, `postprocess_error`, `postprocess_queue_reason`) is the
+  project-worker's, so a user can never point a row at another hub job of the
+  organization. Users may write `postprocess_status` only as `pending` or null
+  (validation). The bootstrap patches existing permissions whose fields/filters
+  differ (`~ perm … updated`), so re-running it tightens older installs.
 
 - `directus_users`: read (`id`, `hub_token`) and update (`hub_token`) where
   `id = $CURRENT_USER` — the user's own hub token, nothing else. Needs the custom

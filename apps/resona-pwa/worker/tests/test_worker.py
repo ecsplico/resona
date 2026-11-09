@@ -83,7 +83,7 @@ async def test_pending_audio_is_uploaded_and_submitted(base_url, tmp_path, recor
     }
     key = req.headers["Idempotency-Key"]
     assert bodies(patch) == [
-        {"status": "transcribing", "hub_job_id": None, "hub_job_key": key},
+        {"status": "transcribing", "hub_job_id": None, "hub_job_key": key, "error_message": None},
         {"hub_job_id": 7, "error_message": None},
     ]
     assert list(tmp_path.iterdir()) == []
@@ -137,10 +137,49 @@ async def test_completed_job_writes_transcript_and_deletes(base_url, tmp_path, r
         "recording": "rec-1", "text": "Hallo Welt",
         "segments": [{"start": 0, "end": 1, "text": "Hallo Welt"}],
         "structured": {"k": 1}, "engine": "faster-whisper", "provenance": PROV,
-        "raw_text": None, "applied_profile": None,
+        "raw_text": None, "applied_profile": None, "processed_text": None,
+        "postprocess_status": None, "postprocess_profile": None, "postprocess_job_id": None,
+        "postprocess_job_key": None, "postprocess_error": None, "postprocess_queue_reason": None,
     }
     assert bodies(patch) == [{"status": "done", "hub_job_id": None, "hub_job_key": None}]
     assert delete.called
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_retranscription_resets_reprocessing_and_deletes_its_hub_job(
+    base_url, tmp_path, recording,
+):
+    # "Neu transkribieren" while a text job (55) still runs on the old transcript.
+    row = {**recording, "status": "transcribing", "hub_job_id": 7}
+    respx.get(f"{HUB}/v1/jobs/7").mock(return_value=httpx.Response(200, json={
+        "status": "completed", "error": None, "candidate": {"engine": "faster-whisper"},
+    }))
+    respx.get(f"{HUB}/v1/jobs/7/result").mock(return_value=httpx.Response(200, json={
+        "markdown": "Neu", "segments": [], "structured": None, "provenance": None,
+    }))
+    respx.delete(f"{HUB}/v1/jobs/7").mock(return_value=httpx.Response(204))
+    old_text_job = respx.delete(f"{HUB}/v1/jobs/55").mock(return_value=httpx.Response(204))
+
+    # The transcript lookup before the write; registered before the list mocks
+    # because respx takes the first matching route.
+    respx.get(f"{base_url}/items/transcripts", params={"filter[recording][_eq]": "rec-1"}).mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "t-1", "postprocess_job_id": 55}]}),
+    )
+    mock_lists(active={"recordings": [row]})
+    written = mock_patch(base_url, "transcripts", "t-1")
+    mock_patch(base_url, "recordings", "rec-1")
+
+    assert await cycle(base_url, tmp_path) == 1
+
+    body = bodies(written)[0]
+    assert body["text"] == "Neu"
+    assert {k: v for k, v in body.items() if k.startswith("postprocess_")} == {
+        "postprocess_status": None, "postprocess_profile": None, "postprocess_job_id": None,
+        "postprocess_job_key": None, "postprocess_error": None, "postprocess_queue_reason": None,
+    }
+    assert body["raw_text"] is None and body["applied_profile"] is None
+    assert old_text_job.called
 
 
 @respx.mock
@@ -281,7 +320,7 @@ async def test_pending_document_submits_without_audio_fields(base_url, tmp_path,
     assert json.loads(req.content) == {"kind": "document", "upload_id": "up-2", "private": True}
     key = req.headers["Idempotency-Key"]
     assert bodies(patch) == [
-        {"status": "processing", "hub_job_id": None, "hub_job_key": key},
+        {"status": "processing", "hub_job_id": None, "hub_job_key": key, "error_message": None},
         {"hub_job_id": 9, "error_message": None},
     ]
 

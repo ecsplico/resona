@@ -143,7 +143,7 @@ async def _poll(
     if result is None:
         return False
     if src.kind == "audio":
-        await directus.write_transcript(
+        superseded = await directus.write_transcript(
             recording_id=row_id,
             text=result.get("markdown") or "",
             language=result.get("language"),
@@ -152,6 +152,9 @@ async def _poll(
             provenance=result.get("provenance"),
             engine=(job.get("candidate") or {}).get("engine") or engine or None,
         )
+        # A text job still running on the previous transcript would write stale output.
+        if superseded is not None:
+            await _delete_job(hub, int(superseded))
     else:
         await directus.write_document(
             row_id, markdown=result.get("markdown") or "", pages=result.get("pages"),
@@ -177,11 +180,19 @@ async def _submit_text(row: dict, directus: DirectusClient, hub: HubClient) -> b
         raise RowError(POSTPROCESS_ERRORS["profile_required"])
     if not source.strip():
         raise RowError("Kein Transkript-Text zum Nachbearbeiten.")
-    key = row.get("postprocess_job_key") or f"{POSTPROCESS_COLLECTION}:{row_id}:{uuid4().hex}"
+    # A pending row that still carries a job was re-requested while that job ran
+    # (users cannot clear the job fields): the old run is superseded, so it is
+    # deleted on the hub and the new one gets a fresh key (the old key would
+    # return the old job).
+    superseded = row.get("postprocess_job_id")
+    key = (None if superseded is not None else row.get("postprocess_job_key")) \
+        or f"{POSTPROCESS_COLLECTION}:{row_id}:{uuid4().hex}"
     if not await directus.claim(
         POSTPROCESS_COLLECTION, row_id, POSTPROCESS_ACTIVE, key, fields=POSTPROCESS_JOB,
     ):
         return False
+    if superseded is not None:
+        await _delete_job(hub, int(superseded))
     try:
         upload_id = await hub.upload_text(source, "transcript.md")
         job_id = await hub.create_job(

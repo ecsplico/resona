@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { flushPromises } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import DocumentsPage from "~/pages/documents/index.vue";
 import type { ResonaDocument } from "~/types/directus";
@@ -17,6 +17,10 @@ mockNuxtImport("useDataStore", () => () => store);
 
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
+
+// clearNuxtState empties the shared list state; a page left mounted by an earlier
+// test would then re-render with `items` undefined.
+enableAutoUnmount(afterEach);
 
 describe("documents list page", () => {
 	beforeEach(() => {

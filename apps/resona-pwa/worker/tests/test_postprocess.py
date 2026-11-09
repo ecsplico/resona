@@ -1,5 +1,7 @@
 """Re-processing a stored transcript as a hub text job, against a fake hub + Directus."""
 import json
+import re
+from pathlib import Path
 
 import httpx
 import pytest
@@ -7,7 +9,7 @@ import respx
 
 from resona_project_worker.directus import DirectusClient
 from resona_project_worker.hub import HubClient
-from resona_project_worker.worker import run_once
+from resona_project_worker.worker import POSTPROCESS_ERRORS, run_once
 
 HUB = "http://hub.test"
 DIRECTUS = "http://directus.test"
@@ -143,7 +145,7 @@ async def test_text_job_round_trip_keeps_raw_transcript(tmp_path):
     assert await cycle(tmp_path) == 1  # completed
     assert cms.patches[patches:] == [{
         "text": MARKDOWN, "raw_text": RAW, "applied_profile": "transcript-markdown-de",
-        "postprocess_status": "done", "postprocess_error": None,
+        "processed_text": MARKDOWN, "postprocess_status": "done", "postprocess_error": None,
         "postprocess_queue_reason": None, "postprocess_job_id": None, "postprocess_job_key": None,
     }]
     assert hub.deleted == [100]
@@ -247,3 +249,34 @@ async def test_empty_transcript_fails_without_calling_the_hub(tmp_path):
     assert cms.rows["t-1"]["postprocess_status"] == "error"
     assert cms.rows["t-1"]["postprocess_error"] == "Kein Transkript-Text zum Nachbearbeiten."
     assert not hub.upload_route.called
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_rerequest_while_running_deletes_the_old_job_and_submits_fresh(tmp_path):
+    # Another tab re-requested while job 55 ran: the row is pending again but still
+    # carries the old job (users cannot clear the job fields) and its last state.
+    cms = FakeDirectus(transcript(
+        postprocess_job_id=55, postprocess_job_key="transcripts:t-1:old",
+        postprocess_error="alt", postprocess_queue_reason="no_capable_worker",
+    ))
+    hub = FakeHub(queue=["waiting_capacity"])
+
+    await cycle(tmp_path)
+
+    row = cms.rows["t-1"]
+    assert hub.deleted == [55]
+    assert row["postprocess_job_id"] == 100
+    assert hub.jobs[100]["key"] != "transcripts:t-1:old"
+    assert row["postprocess_job_key"] == hub.jobs[100]["key"]
+    assert row["postprocess_error"] is None
+    assert row["postprocess_queue_reason"] == "waiting_capacity"
+
+
+def test_error_messages_match_the_pwa():
+    """The worker and the standalone processor show the same German messages."""
+    source = (Path(__file__).parents[2] / "app" / "utils" / "postprocess.ts").read_text()
+    block = re.search(r"const ERRORS: Record<string, string> = \{(.*?)\n\};", source, re.S)
+    assert block is not None
+    pwa = dict(re.findall(r'^\s*(\w+): "([^"]*)",$', block.group(1), re.M))
+    assert pwa == POSTPROCESS_ERRORS

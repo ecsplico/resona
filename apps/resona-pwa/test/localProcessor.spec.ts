@@ -28,7 +28,9 @@ vi.mock("~/data/localStore", () => ({
 		db.documents.set(id, { ...db.documents.get(id), ...patch });
 	}),
 	upsertTranscript: vi.fn(async (recordingId: string, t: Record<string, unknown>) => {
+		const supersededJob = (db.transcripts.get(recordingId)?.postprocess_job_id as number | undefined) ?? null;
 		db.transcripts.set(recordingId, { recording: recordingId, ...t });
+		return { supersededJob };
 	}),
 	listTranscriptsByPostprocess: vi.fn(async (status: string) =>
 		[...db.texts.values()].filter(t => t.postprocess_status === status).map(t => ({ ...t }))),
@@ -208,6 +210,17 @@ describe("runLocalCycle", () => {
 		});
 		expect(db.recordings.get("1")).toMatchObject({ status: "done", hub_job_id: null });
 		expect(hub.deleteJob).toHaveBeenCalledWith(7);
+	});
+
+	it("deletes the text job still running on the transcript a re-transcription replaced", async () => {
+		recording("1", { status: "transcribing", hub_job_id: 7 });
+		db.transcripts.set("1", { recording: "1", text: "alt", postprocess_status: "processing", postprocess_job_id: 55 });
+		hub.getJob.mockResolvedValue(job("completed"));
+		hub.getResult.mockResolvedValue(RESULT);
+		await runLocalCycle();
+		expect(db.transcripts.get("1")).toMatchObject({ text: "# Hallo" });
+		expect(hub.deleteJob).toHaveBeenCalledWith(7);
+		expect(hub.deleteJob).toHaveBeenCalledWith(55);
 	});
 
 	it("stores markdown and pages on a completed document", async () => {
@@ -404,6 +417,7 @@ describe("runLocalCycle: re-processing a transcript (text job)", () => {
 			text: "## Befund\n\nPatient wach",
 			raw_text: RAW,
 			applied_profile: "transcript-markdown-de",
+			processed_text: "## Befund\n\nPatient wach",
 			postprocess_status: "done",
 			postprocess_queue_reason: null,
 			postprocess_job_id: null,
@@ -459,6 +473,21 @@ describe("runLocalCycle: re-processing a transcript (text job)", () => {
 		hub.upload.mockRejectedValueOnce(new HubError(0, "network", "offline"));
 		await runLocalCycle();
 		expect(db.texts.get("t-1")).toMatchObject({ postprocess_status: "pending", postprocess_job_id: null });
-		expect(db.texts.get("t-1")!.postprocess_error).toBeUndefined();
+		expect(db.texts.get("t-1")!.postprocess_error).toBeNull();
+	});
+
+	it("a request repeated while a job runs deletes that job and submits under a fresh key", async () => {
+		text({ postprocess_job_id: 7, postprocess_job_key: "local:transcripts:t-1:old", postprocess_error: "alt", postprocess_queue_reason: "no_capable_worker" });
+		await runLocalCycle();
+		expect(hub.deleteJob).toHaveBeenCalledWith(7);
+		const [, key] = hub.createJob.mock.calls[0]!;
+		expect(key).not.toBe("local:transcripts:t-1:old");
+		expect(db.texts.get("t-1")).toMatchObject({
+			postprocess_status: "processing",
+			postprocess_job_id: 42,
+			postprocess_job_key: key,
+			postprocess_error: null,
+			postprocess_queue_reason: null,
+		});
 	});
 });

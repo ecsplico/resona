@@ -144,15 +144,16 @@ export async function patchTranscriptInternal(id: string, patch: Partial<Transcr
 /**
  * Creates the recording's transcript, or replaces the content of the existing
  * one in place (id and date_created kept). A new transcription is raw again: a
- * previous profile run (`raw_text`, `applied_profile`, `postprocess_*`) is dropped.
+ * previous profile run (`raw_text`, `applied_profile`, `postprocess_*`) is dropped,
+ * and the hub text job it still had in flight is returned so the caller can delete it.
  * A no-op when the recording was deleted meanwhile, so no orphan transcript is left behind.
  */
 export async function upsertTranscript(
 	recordingId: string,
 	t: { text: string; segments?: unknown; structured?: unknown; engine?: string | null; provenance?: Provenance | null },
-): Promise<void> {
+): Promise<{ supersededJob: number | null }> {
 	const recording = await get<LocalRecording>(recordingId, db().recordings);
-	if (!recording) return;
+	if (!recording) return { supersededJob: null };
 	const [existing] = await transcriptsOf(recordingId);
 	const ts = now();
 	const row: Transcript = {
@@ -167,6 +168,7 @@ export async function upsertTranscript(
 	if (t.engine) row.engine = t.engine;
 	if (t.provenance) row.provenance = t.provenance;
 	await set(row.id, row, db().transcripts);
+	return { supersededJob: existing?.postprocess_job_id ?? null };
 }
 
 export function createLocalStore(): DataStore {

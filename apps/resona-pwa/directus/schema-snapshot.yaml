@@ -207,7 +207,7 @@ fields:
     schema:
       name: user_created
       table: documents
-      data_type: varchar
+      data_type: char
       default_value: null
       max_length: 36
       numeric_precision: null
@@ -306,6 +306,46 @@ fields:
       foreign_key_table: null
       foreign_key_column: null
   - collection: documents
+    field: title
+    type: string
+    meta:
+      collection: documents
+      conditions: null
+      display: null
+      display_options: null
+      field: title
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 5
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: title
+      table: documents
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: documents
     field: file
     type: uuid
     meta:
@@ -322,7 +362,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 5
+      sort: 6
       special:
         - file
       translations: null
@@ -347,87 +387,6 @@ fields:
       foreign_key_table: directus_files
       foreign_key_column: id
   - collection: documents
-    field: pages
-    type: json
-    meta:
-      collection: documents
-      conditions: null
-      display: null
-      display_options: null
-      field: pages
-      group: null
-      hidden: false
-      interface: null
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: 6
-      special:
-        - cast-json
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: pages
-      table: documents
-      data_type: json
-      default_value: null
-      max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: documents
-    field: title
-    type: string
-    meta:
-      collection: documents
-      conditions: null
-      display: null
-      display_options: null
-      field: title
-      group: null
-      hidden: false
-      interface: input
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: title
-      table: documents
-      data_type: varchar
-      default_value: null
-      max_length: 255
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: documents
     field: status
     type: string
     meta:
@@ -444,7 +403,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 7
       special: null
       translations: null
       validation: null
@@ -484,7 +443,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 8
       special: null
       translations: null
       validation: null
@@ -524,7 +483,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 9
       special: null
       translations: null
       validation: null
@@ -534,6 +493,88 @@ fields:
       name: markdown
       table: documents
       data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: documents
+    field: pages
+    type: json
+    meta:
+      collection: documents
+      conditions: null
+      display: null
+      display_options: null
+      field: pages
+      group: null
+      hidden: false
+      interface: null
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 10
+      special:
+        - cast-json
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: pages
+      table: documents
+      data_type: json
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: documents
+    field: provenance
+    type: json
+    meta:
+      collection: documents
+      conditions: null
+      display: null
+      display_options: null
+      field: provenance
+      group: null
+      hidden: false
+      interface: null
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 11
+      special:
+        - cast-json
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: provenance
+      table: documents
+      data_type: json
       default_value: null
       max_length: null
       numeric_precision: null
@@ -564,7 +605,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 12
       special: null
       translations: null
       validation: null
@@ -604,7 +645,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 7
+      sort: 13
       special: null
       translations: null
       validation: null
@@ -616,47 +657,6 @@ fields:
       data_type: varchar
       default_value: null
       max_length: 255
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: documents
-    field: provenance
-    type: json
-    meta:
-      collection: documents
-      conditions: null
-      display: null
-      display_options: null
-      field: provenance
-      group: null
-      hidden: false
-      interface: null
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: 8
-      special:
-        - cast-json
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: provenance
-      table: documents
-      data_type: json
-      default_value: null
-      max_length: null
       numeric_precision: null
       numeric_scale: null
       is_nullable: true
@@ -736,7 +736,7 @@ fields:
     schema:
       name: user_created
       table: recordings
-      data_type: varchar
+      data_type: char
       default_value: null
       max_length: 36
       numeric_precision: null
@@ -835,6 +835,46 @@ fields:
       foreign_key_table: null
       foreign_key_column: null
   - collection: recordings
+    field: title
+    type: string
+    meta:
+      collection: recordings
+      conditions: null
+      display: null
+      display_options: null
+      field: title
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 5
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: title
+      table: recordings
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: recordings
     field: audio_file
     type: uuid
     meta:
@@ -851,7 +891,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 5
+      sort: 6
       special:
         - file
       translations: null
@@ -876,46 +916,6 @@ fields:
       foreign_key_table: directus_files
       foreign_key_column: id
   - collection: recordings
-    field: title
-    type: string
-    meta:
-      collection: recordings
-      conditions: null
-      display: null
-      display_options: null
-      field: title
-      group: null
-      hidden: false
-      interface: input
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: title
-      table: recordings
-      data_type: varchar
-      default_value: null
-      max_length: 255
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: recordings
     field: duration_seconds
     type: float
     meta:
@@ -932,7 +932,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 7
       special: null
       translations: null
       validation: null
@@ -972,7 +972,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 8
       special: null
       translations: null
       validation: null
@@ -1012,7 +1012,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 9
       special: null
       translations: null
       validation: null
@@ -1052,7 +1052,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 10
       special: null
       translations: null
       validation: null
@@ -1092,7 +1092,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 11
       special: null
       translations: null
       validation: null
@@ -1132,7 +1132,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 12
       special: null
       translations: null
       validation: null
@@ -1172,7 +1172,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 13
       special: null
       translations: null
       validation: null
@@ -1212,7 +1212,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 14
       special: null
       translations: null
       validation: null
@@ -1252,7 +1252,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 6
+      sort: 15
       special: null
       translations: null
       validation: null
@@ -1765,6 +1765,46 @@ fields:
       foreign_key_table: recordings
       foreign_key_column: id
   - collection: transcripts
+    field: text
+    type: text
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: text
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 3
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: text
+      table: transcripts
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
     field: structured
     type: json
     meta:
@@ -1781,7 +1821,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 3
+      sort: 4
       special:
         - cast-json
       translations: null
@@ -1822,7 +1862,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 4
+      sort: 5
       special:
         - cast-json
       translations: null
@@ -1833,130 +1873,6 @@ fields:
       name: segments
       table: transcripts
       data_type: json
-      default_value: null
-      max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: transcripts
-    field: date_created
-    type: timestamp
-    meta:
-      collection: transcripts
-      conditions: null
-      display: null
-      display_options: null
-      field: date_created
-      group: null
-      hidden: true
-      interface: null
-      note: null
-      options: null
-      readonly: true
-      required: false
-      searchable: true
-      sort: 5
-      special:
-        - date-created
-        - cast-timestamp
-      translations: null
-      validation: null
-      validation_message: null
-      width: half
-    schema:
-      name: date_created
-      table: transcripts
-      data_type: datetime
-      default_value: null
-      max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: transcripts
-    field: date_updated
-    type: timestamp
-    meta:
-      collection: transcripts
-      conditions: null
-      display: null
-      display_options: null
-      field: date_updated
-      group: null
-      hidden: true
-      interface: null
-      note: null
-      options: null
-      readonly: true
-      required: false
-      searchable: true
-      sort: 6
-      special:
-        - date-updated
-        - cast-timestamp
-      translations: null
-      validation: null
-      validation_message: null
-      width: half
-    schema:
-      name: date_updated
-      table: transcripts
-      data_type: datetime
-      default_value: null
-      max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: transcripts
-    field: text
-    type: text
-    meta:
-      collection: transcripts
-      conditions: null
-      display: null
-      display_options: null
-      field: text
-      group: null
-      hidden: false
-      interface: input-multiline
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: text
-      table: transcripts
-      data_type: text
       default_value: null
       max_length: null
       numeric_precision: null
@@ -1987,7 +1903,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 6
       special: null
       translations: null
       validation: null
@@ -2132,6 +2048,46 @@ fields:
       foreign_key_table: null
       foreign_key_column: null
   - collection: transcripts
+    field: processed_text
+    type: text
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: processed_text
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 10
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: processed_text
+      table: transcripts
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
     field: postprocess_status
     type: string
     meta:
@@ -2148,7 +2104,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 10
+      sort: 11
       special: null
       translations: null
       validation: null
@@ -2188,7 +2144,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 11
+      sort: 12
       special: null
       translations: null
       validation: null
@@ -2228,7 +2184,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 12
+      sort: 13
       special: null
       translations: null
       validation: null
@@ -2268,7 +2224,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 13
+      sort: 14
       special: null
       translations: null
       validation: null
@@ -2308,7 +2264,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 14
+      sort: 15
       special: null
       translations: null
       validation: null
@@ -2348,7 +2304,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 15
+      sort: 16
       special: null
       translations: null
       validation: null
@@ -2360,6 +2316,90 @@ fields:
       data_type: varchar
       default_value: null
       max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: date_created
+    type: timestamp
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: date_created
+      group: null
+      hidden: true
+      interface: null
+      note: null
+      options: null
+      readonly: true
+      required: false
+      searchable: true
+      sort: 17
+      special:
+        - date-created
+        - cast-timestamp
+      translations: null
+      validation: null
+      validation_message: null
+      width: half
+    schema:
+      name: date_created
+      table: transcripts
+      data_type: datetime
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: date_updated
+    type: timestamp
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: date_updated
+      group: null
+      hidden: true
+      interface: null
+      note: null
+      options: null
+      readonly: true
+      required: false
+      searchable: true
+      sort: 18
+      special:
+        - date-updated
+        - cast-timestamp
+      translations: null
+      validation: null
+      validation_message: null
+      width: half
+    schema:
+      name: date_updated
+      table: transcripts
+      data_type: datetime
+      default_value: null
+      max_length: null
       numeric_precision: null
       numeric_scale: null
       is_nullable: true
