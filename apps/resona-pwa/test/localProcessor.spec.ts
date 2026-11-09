@@ -10,6 +10,8 @@ const db = vi.hoisted(() => ({
 	documents: new Map<string, Record<string, unknown>>(),
 	files: new Map<string, Blob>(),
 	transcripts: new Map<string, Record<string, unknown>>(),
+	// Transcript rows by id, for re-processing ("Nachbearbeiten") as hub text jobs.
+	texts: new Map<string, Record<string, unknown>>(),
 }));
 
 vi.mock("~/data/localStore", () => ({
@@ -26,7 +28,14 @@ vi.mock("~/data/localStore", () => ({
 		db.documents.set(id, { ...db.documents.get(id), ...patch });
 	}),
 	upsertTranscript: vi.fn(async (recordingId: string, t: Record<string, unknown>) => {
+		const supersededJob = (db.transcripts.get(recordingId)?.postprocess_job_id as number | undefined) ?? null;
 		db.transcripts.set(recordingId, { recording: recordingId, ...t });
+		return { supersededJob };
+	}),
+	listTranscriptsByPostprocess: vi.fn(async (status: string) =>
+		[...db.texts.values()].filter(t => t.postprocess_status === status).map(t => ({ ...t }))),
+	patchTranscriptInternal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+		db.texts.set(id, { ...db.texts.get(id), ...patch });
 	}),
 }));
 
@@ -203,6 +212,17 @@ describe("runLocalCycle", () => {
 		expect(hub.deleteJob).toHaveBeenCalledWith(7);
 	});
 
+	it("deletes the text job still running on the transcript a re-transcription replaced", async () => {
+		recording("1", { status: "transcribing", hub_job_id: 7 });
+		db.transcripts.set("1", { recording: "1", text: "alt", postprocess_status: "processing", postprocess_job_id: 55 });
+		hub.getJob.mockResolvedValue(job("completed"));
+		hub.getResult.mockResolvedValue(RESULT);
+		await runLocalCycle();
+		expect(db.transcripts.get("1")).toMatchObject({ text: "# Hallo" });
+		expect(hub.deleteJob).toHaveBeenCalledWith(7);
+		expect(hub.deleteJob).toHaveBeenCalledWith(55);
+	});
+
 	it("stores markdown and pages on a completed document", async () => {
 		doc("1", { status: "processing", hub_job_id: 8 });
 		hub.getJob.mockResolvedValue(job("completed"));
@@ -339,5 +359,135 @@ describe("runLocalCycle", () => {
 		expect(submitted).toEqual(["1", "2", "3", "4", "5"]);
 		expect(db.recordings.get("6")!.status).toBe("pending");
 		expect(db.recordings.get("7")!.status).toBe("pending");
+	});
+});
+
+describe("runLocalCycle: re-processing a transcript (text job)", () => {
+	const RAW = "Kapitel Befund Absatz Patient wach";
+
+	function text(extra: Record<string, unknown> = {}) {
+		const row = {
+			id: "t-1",
+			recording: "rec-1",
+			text: RAW,
+			raw_text: null,
+			applied_profile: null,
+			postprocess_status: "pending",
+			postprocess_profile: "transcript-markdown-de",
+			postprocess_job_id: null,
+			postprocess_job_key: null,
+			postprocess_queue_reason: null,
+			date_created: "2026-01-01T00:00:00Z",
+			...extra,
+		};
+		db.texts.set(row.id, row);
+		return row;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		db.recordings.clear();
+		db.documents.clear();
+		db.texts.clear();
+		hub.hasToken.mockReturnValue(true);
+		hub.upload.mockResolvedValue("up-1");
+		hub.createJob.mockResolvedValue(42);
+		hub.deleteJob.mockResolvedValue(undefined);
+	});
+
+	it("round trip: uploads the raw text, polls, writes markdown and keeps the raw transcript", async () => {
+		text();
+		hub.getJob.mockResolvedValueOnce(job("pending", { queue_reason: "no_capable_worker" }));
+		await runLocalCycle(); // submit
+		const [file, name] = hub.upload.mock.calls[0]!;
+		expect(name).toBe("transcript.md");
+		expect(await (file as Blob).text()).toBe(RAW);
+		const [body, key] = hub.createJob.mock.calls[0]!;
+		expect(body).toEqual({ kind: "text", upload_id: "up-1", profile: "transcript-markdown-de" });
+		expect(key).toMatch(/^local:transcripts:t-1:.+/);
+		expect(db.texts.get("t-1")).toMatchObject({ postprocess_status: "processing", postprocess_job_id: 42, postprocess_job_key: key });
+
+		await runLocalCycle(); // waiting: the queue reason reaches the row
+		expect(db.texts.get("t-1")).toMatchObject({ postprocess_status: "processing", postprocess_queue_reason: "no_capable_worker" });
+
+		hub.getJob.mockResolvedValueOnce(job("completed"));
+		hub.getResult.mockResolvedValueOnce({ ...RESULT, markdown: "## Befund\n\nPatient wach" });
+		await runLocalCycle(); // completed
+		expect(db.texts.get("t-1")).toMatchObject({
+			text: "## Befund\n\nPatient wach",
+			raw_text: RAW,
+			applied_profile: "transcript-markdown-de",
+			processed_text: "## Befund\n\nPatient wach",
+			postprocess_status: "done",
+			postprocess_queue_reason: null,
+			postprocess_job_id: null,
+			postprocess_job_key: null,
+		});
+		expect(hub.deleteJob).toHaveBeenCalledWith(42);
+	});
+
+	it("re-runs on raw_text, not on the processed text", async () => {
+		text({ text: "## Befund\n\nPatient wach", raw_text: RAW, applied_profile: "transcript-markdown-de", postprocess_profile: "transcript-polish-de" });
+		await runLocalCycle();
+		expect(await (hub.upload.mock.calls[0]![0] as Blob).text()).toBe(RAW);
+		expect(hub.createJob.mock.calls[0]![0]).toMatchObject({ profile: "transcript-polish-de" });
+	});
+
+	it("maps profile_required and policy_denied at submit to German messages", async () => {
+		text();
+		hub.createJob.mockRejectedValueOnce(new HubError(403, "policy_denied", "cloud stage not allowed"));
+		await runLocalCycle();
+		expect(db.texts.get("t-1")).toMatchObject({
+			postprocess_status: "error",
+			postprocess_error: "Von der Richtlinie der Organisation abgelehnt: cloud stage not allowed",
+			postprocess_job_key: null,
+			text: RAW,
+		});
+
+		text();
+		hub.createJob.mockRejectedValueOnce(new HubError(422, "profile_required", "text jobs need a postprocess profile name"));
+		await runLocalCycle();
+		expect(db.texts.get("t-1")!.postprocess_error).toBe("Kein Nachbearbeitungsprofil gewählt.");
+	});
+
+	it("does not submit without a profile", async () => {
+		text({ postprocess_profile: null });
+		await runLocalCycle();
+		expect(hub.createJob).not.toHaveBeenCalled();
+		expect(db.texts.get("t-1")).toMatchObject({ postprocess_status: "error", postprocess_error: "Kein Nachbearbeitungsprofil gewählt." });
+	});
+
+	it("maps a job denied by policy while running", async () => {
+		text({ postprocess_status: "processing", postprocess_job_id: 7 });
+		hub.getJob.mockResolvedValueOnce(job("failed", { error: { code: "policy_denied", message: "endpoint not assigned" } }));
+		await runLocalCycle();
+		expect(db.texts.get("t-1")).toMatchObject({
+			postprocess_status: "error",
+			postprocess_error: "Von der Richtlinie der Organisation abgelehnt: endpoint not assigned",
+			text: RAW,
+		});
+	});
+
+	it("leaves the request queued while the hub is unreachable", async () => {
+		text();
+		hub.upload.mockRejectedValueOnce(new HubError(0, "network", "offline"));
+		await runLocalCycle();
+		expect(db.texts.get("t-1")).toMatchObject({ postprocess_status: "pending", postprocess_job_id: null });
+		expect(db.texts.get("t-1")!.postprocess_error).toBeNull();
+	});
+
+	it("a request repeated while a job runs deletes that job and submits under a fresh key", async () => {
+		text({ postprocess_job_id: 7, postprocess_job_key: "local:transcripts:t-1:old", postprocess_error: "alt", postprocess_queue_reason: "no_capable_worker" });
+		await runLocalCycle();
+		expect(hub.deleteJob).toHaveBeenCalledWith(7);
+		const [, key] = hub.createJob.mock.calls[0]!;
+		expect(key).not.toBe("local:transcripts:t-1:old");
+		expect(db.texts.get("t-1")).toMatchObject({
+			postprocess_status: "processing",
+			postprocess_job_id: 42,
+			postprocess_job_key: key,
+			postprocess_error: null,
+			postprocess_queue_reason: null,
+		});
 	});
 });

@@ -37,6 +37,26 @@ export interface Transcript {
 	segments?: unknown[] | null;
 	engine?: string;
 	provenance?: Provenance | null;
+	/**
+	 * The transcript a postprocess profile runs on ("Nachbearbeiten"). Null while
+	 * `text` itself is the raw transcript; set once a profile's output replaced `text`.
+	 */
+	raw_text?: string | null;
+	/** Profile whose output `text` is; null for the raw transcript. */
+	applied_profile?: string | null;
+	/**
+	 * The output of the last profile run as delivered, so the page can tell whether
+	 * `text` was edited since (re-run and restore replace those edits).
+	 */
+	processed_text?: string | null;
+	/** Re-processing as a hub text job: pending -> processing -> done | error. */
+	postprocess_status?: "pending" | "processing" | "done" | "error" | null;
+	postprocess_profile?: string | null;
+	postprocess_error?: string | null;
+	/** Hub `queue_reason` while the text job waits (e.g. `no_capable_worker`). */
+	postprocess_queue_reason?: string | null;
+	postprocess_job_id?: number | null;
+	postprocess_job_key?: string | null;
 	date_created?: string;
 	date_updated?: string;
 }

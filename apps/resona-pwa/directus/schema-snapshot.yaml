@@ -50,6 +50,30 @@ collections:
       versioning: false
     schema:
       name: recordings
+  - collection: transcript_corrections
+    meta:
+      accountability: all
+      archive_app_filter: true
+      archive_field: null
+      archive_value: null
+      collapse: open
+      collection: transcript_corrections
+      color: null
+      display_template: null
+      group: null
+      hidden: false
+      icon: null
+      item_duplication_fields: null
+      note: null
+      preview_url: null
+      singleton: false
+      sort: null
+      sort_field: null
+      translations: null
+      unarchive_value: null
+      versioning: false
+    schema:
+      name: transcript_corrections
   - collection: transcripts
     meta:
       accountability: all
@@ -75,6 +99,46 @@ collections:
     schema:
       name: transcripts
 fields:
+  - collection: directus_users
+    field: hub_token
+    type: string
+    meta:
+      collection: directus_users
+      conditions: null
+      display: null
+      display_options: null
+      field: hub_token
+      group: null
+      hidden: true
+      interface: input
+      note: Resona hub token of this user (synced across their devices)
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 1
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: hub_token
+      table: directus_users
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
   - collection: documents
     field: id
     type: uuid
@@ -242,6 +306,46 @@ fields:
       foreign_key_table: null
       foreign_key_column: null
   - collection: documents
+    field: title
+    type: string
+    meta:
+      collection: documents
+      conditions: null
+      display: null
+      display_options: null
+      field: title
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 5
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: title
+      table: documents
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: documents
     field: file
     type: uuid
     meta:
@@ -258,7 +362,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 5
+      sort: 6
       special:
         - file
       translations: null
@@ -283,87 +387,6 @@ fields:
       foreign_key_table: directus_files
       foreign_key_column: id
   - collection: documents
-    field: pages
-    type: json
-    meta:
-      collection: documents
-      conditions: null
-      display: null
-      display_options: null
-      field: pages
-      group: null
-      hidden: false
-      interface: null
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: 6
-      special:
-        - cast-json
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: pages
-      table: documents
-      data_type: json
-      default_value: null
-      max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: documents
-    field: title
-    type: string
-    meta:
-      collection: documents
-      conditions: null
-      display: null
-      display_options: null
-      field: title
-      group: null
-      hidden: false
-      interface: input
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: title
-      table: documents
-      data_type: varchar
-      default_value: null
-      max_length: 255
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: documents
     field: status
     type: string
     meta:
@@ -380,7 +403,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 7
       special: null
       translations: null
       validation: null
@@ -420,7 +443,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 8
       special: null
       translations: null
       validation: null
@@ -460,7 +483,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 9
       special: null
       translations: null
       validation: null
@@ -470,6 +493,88 @@ fields:
       name: markdown
       table: documents
       data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: documents
+    field: pages
+    type: json
+    meta:
+      collection: documents
+      conditions: null
+      display: null
+      display_options: null
+      field: pages
+      group: null
+      hidden: false
+      interface: null
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 10
+      special:
+        - cast-json
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: pages
+      table: documents
+      data_type: json
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: documents
+    field: provenance
+    type: json
+    meta:
+      collection: documents
+      conditions: null
+      display: null
+      display_options: null
+      field: provenance
+      group: null
+      hidden: false
+      interface: null
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 11
+      special:
+        - cast-json
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: provenance
+      table: documents
+      data_type: json
       default_value: null
       max_length: null
       numeric_precision: null
@@ -500,7 +605,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 12
       special: null
       translations: null
       validation: null
@@ -540,7 +645,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 7
+      sort: 13
       special: null
       translations: null
       validation: null
@@ -730,6 +835,46 @@ fields:
       foreign_key_table: null
       foreign_key_column: null
   - collection: recordings
+    field: title
+    type: string
+    meta:
+      collection: recordings
+      conditions: null
+      display: null
+      display_options: null
+      field: title
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 5
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: title
+      table: recordings
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: recordings
     field: audio_file
     type: uuid
     meta:
@@ -746,7 +891,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 5
+      sort: 6
       special:
         - file
       translations: null
@@ -771,46 +916,6 @@ fields:
       foreign_key_table: directus_files
       foreign_key_column: id
   - collection: recordings
-    field: title
-    type: string
-    meta:
-      collection: recordings
-      conditions: null
-      display: null
-      display_options: null
-      field: title
-      group: null
-      hidden: false
-      interface: input
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: title
-      table: recordings
-      data_type: varchar
-      default_value: null
-      max_length: 255
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: recordings
     field: duration_seconds
     type: float
     meta:
@@ -827,7 +932,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 7
       special: null
       translations: null
       validation: null
@@ -867,7 +972,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 8
       special: null
       translations: null
       validation: null
@@ -907,7 +1012,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 9
       special: null
       translations: null
       validation: null
@@ -947,7 +1052,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 10
       special: null
       translations: null
       validation: null
@@ -987,7 +1092,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 11
       special: null
       translations: null
       validation: null
@@ -1027,7 +1132,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 12
       special: null
       translations: null
       validation: null
@@ -1067,7 +1172,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 13
       special: null
       translations: null
       validation: null
@@ -1107,7 +1212,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: null
+      sort: 14
       special: null
       translations: null
       validation: null
@@ -1147,7 +1252,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 6
+      sort: 15
       special: null
       translations: null
       validation: null
@@ -1156,6 +1261,413 @@ fields:
     schema:
       name: hub_job_key
       table: recordings
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: id
+    type: uuid
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: id
+      group: null
+      hidden: true
+      interface: input
+      note: null
+      options: null
+      readonly: true
+      required: false
+      searchable: true
+      sort: 1
+      special:
+        - uuid
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: id
+      table: transcript_corrections
+      data_type: char
+      default_value: null
+      max_length: 36
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: false
+      is_unique: true
+      is_indexed: false
+      is_primary_key: true
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: transcript
+    type: string
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: transcript
+      group: null
+      hidden: false
+      interface: select-dropdown-m2o
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 2
+      special:
+        - m2o
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: transcript
+      table: transcript_corrections
+      data_type: char
+      default_value: null
+      max_length: 36
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: transcripts
+      foreign_key_column: id
+  - collection: transcript_corrections
+    field: recording
+    type: string
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: recording
+      group: null
+      hidden: false
+      interface: select-dropdown-m2o
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 3
+      special:
+        - m2o
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: recording
+      table: transcript_corrections
+      data_type: char
+      default_value: null
+      max_length: 36
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: recordings
+      foreign_key_column: id
+  - collection: transcript_corrections
+    field: user_created
+    type: string
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: user_created
+      group: null
+      hidden: true
+      interface: null
+      note: null
+      options: null
+      readonly: true
+      required: false
+      searchable: true
+      sort: 4
+      special:
+        - user-created
+      translations: null
+      validation: null
+      validation_message: null
+      width: half
+    schema:
+      name: user_created
+      table: transcript_corrections
+      data_type: char
+      default_value: null
+      max_length: 36
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: date_created
+    type: timestamp
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: date_created
+      group: null
+      hidden: true
+      interface: null
+      note: null
+      options: null
+      readonly: true
+      required: false
+      searchable: true
+      sort: 5
+      special:
+        - date-created
+        - cast-timestamp
+      translations: null
+      validation: null
+      validation_message: null
+      width: half
+    schema:
+      name: date_created
+      table: transcript_corrections
+      data_type: datetime
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: before
+    type: text
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: before
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 6
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: before
+      table: transcript_corrections
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: after
+    type: text
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: after
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 7
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: after
+      table: transcript_corrections
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: edits
+    type: json
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: edits
+      group: null
+      hidden: false
+      interface: null
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 8
+      special:
+        - cast-json
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: edits
+      table: transcript_corrections
+      data_type: json
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: engine
+    type: string
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: engine
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 9
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: engine
+      table: transcript_corrections
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcript_corrections
+    field: language
+    type: string
+    meta:
+      collection: transcript_corrections
+      conditions: null
+      display: null
+      display_options: null
+      field: language
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 10
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: language
+      table: transcript_corrections
       data_type: varchar
       default_value: null
       max_length: 255
@@ -1253,6 +1765,46 @@ fields:
       foreign_key_table: recordings
       foreign_key_column: id
   - collection: transcripts
+    field: text
+    type: text
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: text
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 3
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: text
+      table: transcripts
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
     field: structured
     type: json
     meta:
@@ -1269,7 +1821,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 3
+      sort: 4
       special:
         - cast-json
       translations: null
@@ -1310,7 +1862,7 @@ fields:
       readonly: false
       required: false
       searchable: true
-      sort: 4
+      sort: 5
       special:
         - cast-json
       translations: null
@@ -1323,6 +1875,447 @@ fields:
       data_type: json
       default_value: null
       max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: engine
+    type: string
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: engine
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 6
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: engine
+      table: transcripts
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: provenance
+    type: json
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: provenance
+      group: null
+      hidden: false
+      interface: null
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 7
+      special:
+        - cast-json
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: provenance
+      table: transcripts
+      data_type: json
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: raw_text
+    type: text
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: raw_text
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 8
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: raw_text
+      table: transcripts
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: applied_profile
+    type: string
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: applied_profile
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 9
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: applied_profile
+      table: transcripts
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: processed_text
+    type: text
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: processed_text
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 10
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: processed_text
+      table: transcripts
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: postprocess_status
+    type: string
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: postprocess_status
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 11
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: postprocess_status
+      table: transcripts
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: postprocess_profile
+    type: string
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: postprocess_profile
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 12
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: postprocess_profile
+      table: transcripts
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: postprocess_error
+    type: text
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: postprocess_error
+      group: null
+      hidden: false
+      interface: input-multiline
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 13
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: postprocess_error
+      table: transcripts
+      data_type: text
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: postprocess_queue_reason
+    type: string
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: postprocess_queue_reason
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 14
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: postprocess_queue_reason
+      table: transcripts
+      data_type: varchar
+      default_value: null
+      max_length: 255
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: postprocess_job_id
+    type: integer
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: postprocess_job_id
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 15
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: postprocess_job_id
+      table: transcripts
+      data_type: integer
+      default_value: null
+      max_length: null
+      numeric_precision: null
+      numeric_scale: null
+      is_nullable: true
+      is_unique: false
+      is_indexed: false
+      is_primary_key: false
+      is_generated: false
+      generation_expression: null
+      has_auto_increment: false
+      foreign_key_table: null
+      foreign_key_column: null
+  - collection: transcripts
+    field: postprocess_job_key
+    type: string
+    meta:
+      collection: transcripts
+      conditions: null
+      display: null
+      display_options: null
+      field: postprocess_job_key
+      group: null
+      hidden: false
+      interface: input
+      note: null
+      options: null
+      readonly: false
+      required: false
+      searchable: true
+      sort: 16
+      special: null
+      translations: null
+      validation: null
+      validation_message: null
+      width: full
+    schema:
+      name: postprocess_job_key
+      table: transcripts
+      data_type: varchar
+      default_value: null
+      max_length: 255
       numeric_precision: null
       numeric_scale: null
       is_nullable: true
@@ -1351,7 +2344,7 @@ fields:
       readonly: true
       required: false
       searchable: true
-      sort: 5
+      sort: 17
       special:
         - date-created
         - cast-timestamp
@@ -1393,7 +2386,7 @@ fields:
       readonly: true
       required: false
       searchable: true
-      sort: 6
+      sort: 18
       special:
         - date-updated
         - cast-timestamp
@@ -1407,86 +2400,6 @@ fields:
       data_type: datetime
       default_value: null
       max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: transcripts
-    field: text
-    type: text
-    meta:
-      collection: transcripts
-      conditions: null
-      display: null
-      display_options: null
-      field: text
-      group: null
-      hidden: false
-      interface: input-multiline
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: text
-      table: transcripts
-      data_type: text
-      default_value: null
-      max_length: null
-      numeric_precision: null
-      numeric_scale: null
-      is_nullable: true
-      is_unique: false
-      is_indexed: false
-      is_primary_key: false
-      is_generated: false
-      generation_expression: null
-      has_auto_increment: false
-      foreign_key_table: null
-      foreign_key_column: null
-  - collection: transcripts
-    field: engine
-    type: string
-    meta:
-      collection: transcripts
-      conditions: null
-      display: null
-      display_options: null
-      field: engine
-      group: null
-      hidden: false
-      interface: input
-      note: null
-      options: null
-      readonly: false
-      required: false
-      searchable: true
-      sort: null
-      special: null
-      translations: null
-      validation: null
-      validation_message: null
-      width: full
-    schema:
-      name: engine
-      table: transcripts
-      data_type: varchar
-      default_value: null
-      max_length: 255
       numeric_precision: null
       numeric_scale: null
       is_nullable: true
@@ -1554,6 +2467,48 @@ relations:
       constraint_name: null
       on_update: NO ACTION
       on_delete: SET NULL
+  - collection: transcript_corrections
+    field: transcript
+    related_collection: transcripts
+    meta:
+      junction_field: null
+      many_collection: transcript_corrections
+      many_field: transcript
+      one_allowed_collections: null
+      one_collection: transcripts
+      one_collection_field: null
+      one_deselect_action: nullify
+      one_field: null
+      sort_field: null
+    schema:
+      table: transcript_corrections
+      column: transcript
+      foreign_key_table: transcripts
+      foreign_key_column: id
+      constraint_name: null
+      on_update: NO ACTION
+      on_delete: SET NULL
+  - collection: transcript_corrections
+    field: recording
+    related_collection: recordings
+    meta:
+      junction_field: null
+      many_collection: transcript_corrections
+      many_field: recording
+      one_allowed_collections: null
+      one_collection: recordings
+      one_collection_field: null
+      one_deselect_action: nullify
+      one_field: null
+      sort_field: null
+    schema:
+      table: transcript_corrections
+      column: recording
+      foreign_key_table: recordings
+      foreign_key_column: id
+      constraint_name: null
+      on_update: NO ACTION
+      on_delete: CASCADE
   - collection: transcripts
     field: recording
     related_collection: recordings

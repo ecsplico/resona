@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import type { Ref } from "vue";
 import type { Transcript } from "~/types/directus";
+import type { TranscriptPatch } from "~/data/types";
 import { humanizeError } from "#shared/errors";
 import { diffEdits } from "~/utils/correction";
 
@@ -50,10 +51,15 @@ export function useTranscriptEdit(initialText = "") {
 
 	// With `correction`, the saved change is also stored as a correction of the
 	// engine's text (training data). That is best effort: a failure there never
-	// fails the save.
-	async function saveEdit(transcriptId: string, newText: string, correction?: CorrectionContext): Promise<void> {
+	// fails the save. `extra` fields are written in the same update as the text.
+	async function saveEdit(
+		transcriptId: string,
+		newText: string,
+		correction?: CorrectionContext,
+		extra: TranscriptPatch = {},
+	): Promise<void> {
 		const before = committed.value;
-		const saved = await persist(newText, () => useDataStore().updateTranscript(transcriptId, { text: newText }));
+		const saved = await persist(newText, () => useDataStore().updateTranscript(transcriptId, { ...extra, text: newText }));
 		if (saved === null && error.value) return;
 		const edits = correction ? diffEdits(before, newText) : [];
 		if (!correction || edits.length === 0) return;

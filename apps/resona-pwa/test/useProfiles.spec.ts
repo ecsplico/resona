@@ -39,11 +39,13 @@ describe("useProfiles", () => {
 		fetchMock.mockResolvedValue(jsonResponse({ error: "unauthorized", message: "bad token" }, 401));
 		const p = useProfiles();
 		expect(await p.list()).toEqual(["default"]);
+		expect(p.error.value).toBe("bad token");
 	});
 
 	it("falls back to [defaultProfile] on a network error", async () => {
-		fetchMock.mockRejectedValue(new TypeError("offline"));
+		fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 		const p = useProfiles();
 		expect(await p.list()).toEqual(["default"]);
+		expect(p.error.value).toBe("Server nicht erreichbar.");
 	});
 });

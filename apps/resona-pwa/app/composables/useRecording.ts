@@ -2,6 +2,7 @@ import { ref, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import { humanizeError } from "#shared/errors";
+import { postprocessRunning } from "~/utils/postprocess";
 
 function isTerminal(status: Recording["status"] | undefined): boolean {
 	return status === "done" || status === "error";
@@ -50,6 +51,12 @@ export function useRecording(id: string) {
 		}
 	}
 
+	// Nothing left to wait for: transcription terminal and no re-processing
+	// ("Nachbearbeiten") queued or running on the transcript.
+	function settled(): boolean {
+		return isTerminal(recording.value?.status) && !postprocessRunning(transcript.value);
+	}
+
 	function startPolling(intervalMs = 4000): void {
 		// Guard against multiple concurrent intervals (or a second start while the
 		// initial refresh is still in flight).
@@ -60,13 +67,13 @@ export function useRecording(id: string) {
 
 		void refresh().then(() => {
 			starting = false;
-			// Already terminal on first load (or disposed meanwhile) -> never arm the interval.
-			if (disposed || isTerminal(recording.value?.status)) {
+			// Settled on first load (or disposed meanwhile) -> never arm the interval.
+			if (disposed || settled()) {
 				return;
 			}
 			timer = setInterval(() => {
 				void refresh().then(() => {
-					if (isTerminal(recording.value?.status)) {
+					if (settled()) {
 						stopPolling();
 					}
 				});

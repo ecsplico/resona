@@ -155,6 +155,14 @@ There are **two transcription paths**:
   Optionally ("Mit besserem Modell korrigieren") the live text is re-transcribed in
   8–30 s chunks by a better hub audio engine; saving waits for pending chunks.
 
+**Nachbearbeiten**: on a recording's detail page a stored transcript can be re-processed
+with a postprocess profile stored on the hub (e.g. `transcript-markdown-de` for chapter
+headings and paragraphs, `transcript-polish-de` for an LLM polish on the worker host).
+The profile runs as a hub `text` job on the raw transcript, so no audio is re-uploaded
+and the hub's 24 h result retention does not matter; the raw transcript stays available
+next to the processed one and can be restored or re-run with another profile. Directus
+mode: the project-worker runs the job; standalone mode: the browser with the hub token.
+
 ### Standalone mode
 
 Set `NUXT_PUBLIC_DATA_MODE=standalone` to run without Directus: no CMS and no login,

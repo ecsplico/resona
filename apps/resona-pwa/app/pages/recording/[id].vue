@@ -4,12 +4,13 @@ import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
 import type { ContinueResult } from "~/composables/useContinueRecording";
 import type { Recording, Transcript } from "~/types/directus";
+import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
 
 const route = useRoute();
 const id = String(route.params.id);
 const cfg = useRuntimeConfig().public;
 
-const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
+const { recording, transcript, loading, error, refresh, startPolling, stopPolling } = useRecording(id);
 const store = useDataStore();
 const { paneInLayout } = useShell();
 // The desktop list stays mounted beside this page: ask it to reload after a change it shows.
@@ -112,23 +113,53 @@ watch([recording, transcript], ([, t]) => {
 
 const dirty = computed(() => seeded.value && edit.text.value !== edit.committed.value);
 
+// New raw content (dictation, a continued part) added after a profile ran: it goes
+// into `text` and, on the next save, onto the end of `raw_text`, so a re-run or a
+// restore keeps it.
+let rawParts: string[] = [];
+// The user changed the text in the editor since the last save/seed (as opposed to
+// dictation or a continued part, which only add raw content).
+const typed = ref(false);
+
+function noteRawPart(text: string): void {
+	if (transcript.value?.applied_profile && text.trim()) rawParts.push(text);
+}
+
 /** Persists the editor text; false when the save failed (the text stays in the editor). */
 async function saveTranscript(options: { correction?: boolean } = {}): Promise<boolean> {
 	const target = edit.text.value;
 	if (transcript.value) {
+		const t = transcript.value;
 		// The user's edits become correction data for the engine; text appended by
-		// "Weiter aufnehmen" is new content, not a correction.
-		const correction = options.correction === false
+		// "Weiter aufnehmen" is new content, not a correction, and neither is an edit
+		// of a profile's output (the engine did not write that text).
+		const correction = options.correction === false || t.applied_profile
 			? undefined
-			: { recording: id, engine: transcript.value.engine, language: recording.value?.language };
-		await edit.saveEdit(transcript.value.id, target, correction);
-		return !edit.error.value;
+			: { recording: id, engine: t.engine, language: recording.value?.language };
+		const raw = rawParts.length > 0 ? appendToRaw(t, rawParts) : null;
+		// Only raw content was added to an unedited profile output: the new text is
+		// still "the output plus raw parts", which a re-run or restore reproduces, so
+		// it becomes the baseline and those do not ask.
+		const keepsOutput = t.applied_profile != null && !typed.value
+			&& edit.committed.value === (t.processed_text ?? null);
+		await edit.saveEdit(t.id, target, correction, {
+			...(raw === null ? {} : { raw_text: raw }),
+			...(keepsOutput ? { processed_text: target } : {}),
+		});
+		if (edit.error.value) return false;
+		t.text = target;
+		if (raw !== null) t.raw_text = raw;
+		if (keepsOutput) t.processed_text = target;
+		rawParts = [];
+		typed.value = false;
+		return true;
 	}
 	// No transcript row yet -> create one for this recording.
 	const created = await edit.createTranscript(id, target);
 	if (!created) return false;
 	transcript.value = created;
 	seeded.value = true;
+	typed.value = false;
 	return true;
 }
 
@@ -136,6 +167,36 @@ async function saveTranscript(options: { correction?: boolean } = {}): Promise<b
 function discardEdits(): void {
 	edit.text.value = edit.committed.value;
 	edit.error.value = null;
+	rawParts = [];
+	typed.value = false;
+}
+
+// ── Nachbearbeiten (postprocess profile on the raw transcript) ────────────
+// While a profile runs, the text is locked (editor, dictation, continue): the
+// result replaces it as a whole. Once it lands, the editor shows it.
+const postprocessing = computed(() => postprocessRunning(transcript.value));
+
+// A profile's output is shown rendered (headings, paragraphs); "Bearbeiten"
+// switches to the editor, which also opens for dictation.
+const editingProcessed = ref(false);
+const showRendered = computed(() => Boolean(transcript.value?.applied_profile) && !editingProcessed.value);
+
+function reseed(): void {
+	edit.seed(transcript.value?.text ?? "");
+	rawParts = [];
+	typed.value = false;
+	editingProcessed.value = false;
+}
+
+watch(postprocessing, (running, wasRunning) => {
+	if (wasRunning && !running && transcript.value) reseed();
+});
+
+async function onPostprocessChanged(): Promise<void> {
+	await refresh();
+	// Restoring the raw transcript changes the text right away; a request only locks it.
+	if (transcript.value && !postprocessing.value) reseed();
+	startPolling();
 }
 
 // ── Title (editable on the detail page) ────────────────────────────────────
@@ -226,6 +287,11 @@ const pttKeyLabel = isMac ? "ctrl" : "Strg";
 async function startDictation(): Promise<void> {
 	if (pttState.value !== "idle" || contActive.value) return;
 	pttError.value = null;
+	// Dictation inserts at the caret, so the rendered view gives way to the editor.
+	if (showRendered.value) {
+		editingProcessed.value = true;
+		await nextTick();
+	}
 	pttRange = editorRef.value?.insertPlaceholder() ?? null;
 	try {
 		await pttRecorder.start();
@@ -286,6 +352,7 @@ async function stopDictation(): Promise<void> {
 		}
 		pttDiag.record("upload", true, `${blob.size}B Audio → ${rawText.length} Zeichen`);
 		const text = rawText.trim();
+		if (pttRange) noteRawPart(text);
 		if (pttRange) {
 			// Trailing space so the next dictation/typing doesn't butt against it.
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text ? `${text} ` : "");
@@ -346,7 +413,7 @@ function onPttUp(e: PointerEvent): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !contActive.value) {
+	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !contActive.value && !postprocessing.value) {
 		e.preventDefault();
 		void startDictation();
 	}
@@ -371,6 +438,13 @@ const contStartError = computed(() =>
 	cont.phase.value === "error" && !cont.hasRetainedPart.value ? cont.error.value : null,
 );
 const contNotice = ref<string | null>(null);
+// Why "Nachbearbeiten" cannot start now: it runs on the stored text, so unsaved
+// edits and dictation/continue in progress must settle first.
+const postprocessBlocked = computed(() => {
+	if (dirty.value) return "Erst speichern oder verwerfen, dann nachbearbeiten.";
+	if (pttState.value !== "idle" || contActive.value || contRetained.value) return "Erst die laufende Aufnahme abschließen.";
+	return null;
+});
 
 async function startContinue(): Promise<void> {
 	contNotice.value = null;
@@ -401,6 +475,7 @@ async function applyContinueResult(result: ContinueResult | null): Promise<void>
 	let saved = true;
 	if (result.text) {
 		appendParagraph(result.text);
+		noteRawPart(result.text);
 		saved = await saveTranscript({ correction: false });
 	}
 	if (result.text || result.audioMerged) recordingsList.request();
@@ -657,7 +732,7 @@ onUnmounted(() => {
 				<HButton
 					v-if="canEdit"
 					variant="primary"
-					:disabled="edit.saving.value || pttState !== 'idle' || contWorking || !dirty"
+					:disabled="edit.saving.value || pttState !== 'idle' || contWorking || postprocessing || !dirty"
 					data-testid="save-transcript"
 					@click="saveTranscript()"
 				>
@@ -1026,12 +1101,39 @@ onUnmounted(() => {
 						</HButton>
 					</div>
 
+					<PostprocessPanel
+						v-if="transcript"
+						:transcript="transcript"
+						:blocked="postprocessBlocked"
+						@changed="onPostprocessChanged"
+					/>
+					<div
+						v-if="transcript?.applied_profile && !postprocessing"
+						class="detail__viewbar"
+					>
+						<button
+							type="button"
+							class="detail__viewtoggle"
+							data-testid="transcript-view-toggle"
+							@click="editingProcessed = !editingProcessed"
+						>
+							{{ showRendered ? "Bearbeiten" : "Formatiert anzeigen" }}
+						</button>
+					</div>
 					<div class="detail__surface">
+						<MarkdownView
+							v-if="showRendered"
+							:text="edit.text.value"
+							data-testid="transcript-rendered"
+						/>
 						<TranscriptEditor
+							v-else
 							ref="editorRef"
 							v-model="edit.text.value"
+							:editable="!postprocessing"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
+							@typed="typed = true"
 						/>
 					</div>
 				</template>
@@ -1076,7 +1178,7 @@ onUnmounted(() => {
 			class="detail__foot"
 		>
 			<div
-				v-if="canEdit"
+				v-if="canEdit && !postprocessing"
 				class="detail__tools"
 				role="group"
 				aria-label="Diktieren und weiter aufnehmen"
@@ -1225,6 +1327,8 @@ onUnmounted(() => {
 .detail__save-state--dirty { color:var(--accent-ink,var(--accent)); font-weight:600; }
 .detail__surface { flex:1; display:flex; flex-direction:column; min-height:240px; }
 .detail__surface > :deep(*) { flex:1; }
+.detail__viewbar { display:flex; justify-content:flex-end; margin:-8px 0 -8px; }
+.detail__viewtoggle { border:none; background:transparent; padding:6px 4px; font-family:var(--font-body); font-size:var(--fs-sm); font-weight:600; color:var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
 .detail__ptt { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--white); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; transition:background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
 .detail__ptt:hover:not(:disabled) { border-color:var(--accent); }
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
