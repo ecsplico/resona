@@ -92,7 +92,7 @@ export function createDirectusStore(): DataStore {
 
 		async updateTranscript(id, patch) {
 			const { client } = useDirectus();
-			await client.request(updateItem("transcripts", id, { text: patch.text }));
+			await client.request(updateItem("transcripts", id, patch));
 		},
 
 		async recordCorrection(input) {

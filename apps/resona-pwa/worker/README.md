@@ -32,6 +32,21 @@ clears both too. The state machine matches the PWA's
 standalone processor
 (`app/data/localProcessor.ts`).
 
+### Re-processing transcripts ("Nachbearbeiten", hub job kind `text`)
+
+A third pass runs over `transcripts` rows whose `postprocess_status` the PWA set to
+`pending` (with `postprocess_profile`). Same reclaim/submit/poll rules, on the
+`postprocess_*` fields (active status `processing`, job in `postprocess_job_id`, key
+in `postprocess_job_key`): the raw transcript (`raw_text`, else `text`) is uploaded as
+`transcript.md` and submitted as `POST /v1/jobs {kind: "text", profile}`. On
+`completed`, `text` becomes the result `markdown`, `raw_text` keeps the raw
+transcript and `applied_profile` the profile. While the job waits, its
+`queue_reason` (e.g. `no_capable_worker` when the worker serving a `local-llm`
+profile is offline) is written to `postprocess_queue_reason`. Hub errors
+`profile_required`, `profile_not_found`, `invalid_profile` and `policy_denied` (with
+the hub's reason) become a German `postprocess_error`; text and raw transcript stay
+untouched on failure.
+
 ## Configuration
 
 | Env | Default | |

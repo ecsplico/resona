@@ -11,8 +11,10 @@ import type { JSONContent } from "@tiptap/vue-3";
 // `getText({ blockSeparator })` round-trips losslessly.
 const BLOCK = "\n";
 
-const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string }>(), {
+// `editable: false` locks the text (e.g. while a postprocess profile rewrites it).
+const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; editable?: boolean }>(), {
 	placeholder: "",
+	editable: true,
 });
 
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
@@ -29,6 +31,7 @@ function toContent(text: string): JSONContent {
 
 const editor = useEditor({
 	content: toContent(props.modelValue),
+	editable: props.editable,
 	extensions: [
 		StarterKit,
 		Placeholder.configure({ placeholder: props.placeholder }),
@@ -50,6 +53,10 @@ watch(() => props.modelValue, (value) => {
 		return;
 	}
 	e.commands.setContent(toContent(value), { emitUpdate: false });
+});
+
+watch(() => props.editable, (value) => {
+	editor.value?.setEditable(value, false);
 });
 
 // Insert dictated text at the caret and leave the cursor at the end of the

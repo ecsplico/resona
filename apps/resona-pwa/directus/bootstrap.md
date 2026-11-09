@@ -72,6 +72,14 @@ snapshot (§4).
 | segments | json | nullable |
 | engine | string | |
 | date_created / date_updated | timestamp | special fields |
+| provenance | json | nullable — hub `JobResult.provenance` (expert mode) |
+| raw_text | text | nullable — the raw transcript a postprocess profile ran on ("Nachbearbeiten"); null while `text` is raw |
+| applied_profile | string | nullable — profile whose output `text` is |
+| postprocess_status | string | nullable — pending / processing / done / error; the PWA sets `pending` + `postprocess_profile`, the project-worker runs the hub text job |
+| postprocess_profile | string | nullable — requested hub profile name |
+| postprocess_error | text | nullable — German message of a failed run |
+| postprocess_queue_reason | string | nullable — hub `queue_reason` while the text job waits (`no_capable_worker`, …) |
+| postprocess_job_id / postprocess_job_key | integer / string | nullable — in-flight hub text job and its Idempotency-Key (like `hub_job_*` on recordings) |
 
 ### `documents`
 | Field | Type | Notes |

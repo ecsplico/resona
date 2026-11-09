@@ -4,12 +4,13 @@ import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
 import type { ContinueResult } from "~/composables/useContinueRecording";
 import type { Recording, Transcript } from "~/types/directus";
+import { postprocessRunning } from "~/utils/postprocess";
 
 const route = useRoute();
 const id = String(route.params.id);
 const cfg = useRuntimeConfig().public;
 
-const { recording, transcript, loading, error, startPolling, stopPolling } = useRecording(id);
+const { recording, transcript, loading, error, refresh, startPolling, stopPolling } = useRecording(id);
 const store = useDataStore();
 const { paneInLayout } = useShell();
 // The desktop list stays mounted beside this page: ask it to reload after a change it shows.
@@ -117,8 +118,9 @@ async function saveTranscript(options: { correction?: boolean } = {}): Promise<b
 	const target = edit.text.value;
 	if (transcript.value) {
 		// The user's edits become correction data for the engine; text appended by
-		// "Weiter aufnehmen" is new content, not a correction.
-		const correction = options.correction === false
+		// "Weiter aufnehmen" is new content, not a correction, and neither is an edit
+		// of a profile's output (the engine did not write that text).
+		const correction = options.correction === false || transcript.value.applied_profile
 			? undefined
 			: { recording: id, engine: transcript.value.engine, language: recording.value?.language };
 		await edit.saveEdit(transcript.value.id, target, correction);
@@ -136,6 +138,26 @@ async function saveTranscript(options: { correction?: boolean } = {}): Promise<b
 function discardEdits(): void {
 	edit.text.value = edit.committed.value;
 	edit.error.value = null;
+}
+
+// ── Nachbearbeiten (postprocess profile on the raw transcript) ────────────
+// While a profile runs, the text is locked (editor, dictation, continue): the
+// result replaces it as a whole. Once it lands, the editor shows it.
+const postprocessing = computed(() => postprocessRunning(transcript.value));
+
+watch(postprocessing, (running, wasRunning) => {
+	if (wasRunning && !running && transcript.value) {
+		edit.seed(transcript.value.text ?? "");
+	}
+});
+
+async function onPostprocessChanged(): Promise<void> {
+	await refresh();
+	// Restoring the raw transcript changes the text right away; a request only locks it.
+	if (transcript.value && !postprocessing.value) {
+		edit.seed(transcript.value.text ?? "");
+	}
+	startPolling();
 }
 
 // ── Title (editable on the detail page) ────────────────────────────────────
@@ -346,7 +368,7 @@ function onPttUp(e: PointerEvent): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !contActive.value) {
+	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !contActive.value && !postprocessing.value) {
 		e.preventDefault();
 		void startDictation();
 	}
@@ -371,6 +393,13 @@ const contStartError = computed(() =>
 	cont.phase.value === "error" && !cont.hasRetainedPart.value ? cont.error.value : null,
 );
 const contNotice = ref<string | null>(null);
+// Why "Nachbearbeiten" cannot start now: it runs on the stored text, so unsaved
+// edits and dictation/continue in progress must settle first.
+const postprocessBlocked = computed(() => {
+	if (dirty.value) return "Erst speichern oder verwerfen, dann nachbearbeiten.";
+	if (pttState.value !== "idle" || contActive.value || contRetained.value) return "Erst die laufende Aufnahme abschließen.";
+	return null;
+});
 
 async function startContinue(): Promise<void> {
 	contNotice.value = null;
@@ -657,7 +686,7 @@ onUnmounted(() => {
 				<HButton
 					v-if="canEdit"
 					variant="primary"
-					:disabled="edit.saving.value || pttState !== 'idle' || contWorking || !dirty"
+					:disabled="edit.saving.value || pttState !== 'idle' || contWorking || postprocessing || !dirty"
 					data-testid="save-transcript"
 					@click="saveTranscript()"
 				>
@@ -1026,10 +1055,17 @@ onUnmounted(() => {
 						</HButton>
 					</div>
 
+					<PostprocessPanel
+						v-if="transcript"
+						:transcript="transcript"
+						:blocked="postprocessBlocked"
+						@changed="onPostprocessChanged"
+					/>
 					<div class="detail__surface">
 						<TranscriptEditor
 							ref="editorRef"
 							v-model="edit.text.value"
+							:editable="!postprocessing"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
 						/>
@@ -1076,7 +1112,7 @@ onUnmounted(() => {
 			class="detail__foot"
 		>
 			<div
-				v-if="canEdit"
+				v-if="canEdit && !postprocessing"
 				class="detail__tools"
 				role="group"
 				aria-label="Diktieren und weiter aufnehmen"

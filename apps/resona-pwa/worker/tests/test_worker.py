@@ -12,21 +12,23 @@ HUB = "http://hub.test"
 
 
 def mock_lists(*, pending=None, active=None, stale=None):
-    """Directus list endpoints for both collections, keyed by collection name."""
+    """Directus list endpoints for all polled collections, keyed by collection name
+    (transcripts filter on `postprocess_status`)."""
     pending, active, stale = pending or {}, active or {}, stale or {}
 
     def handler(request, collection):
         params = request.url.params
+        status = params.get("filter[status][_eq]") or params.get("filter[postprocess_status][_eq]")
         if "filter[date_updated][_lt]" in params:
             data = stale.get(collection, [])
-        elif params["filter[status][_eq]"] == "pending":
+        elif status == "pending":
             data = pending.get(collection, [])
         else:
             data = active.get(collection, [])
         return httpx.Response(200, json={"data": data})
 
     return respx.get(
-        host="directus.test", path__regex=r"^/items/(?P<collection>recordings|documents)$",
+        host="directus.test", path__regex=r"^/items/(?P<collection>recordings|documents|transcripts)$",
     ).mock(side_effect=handler)
 
 
@@ -135,6 +137,7 @@ async def test_completed_job_writes_transcript_and_deletes(base_url, tmp_path, r
         "recording": "rec-1", "text": "Hallo Welt",
         "segments": [{"start": 0, "end": 1, "text": "Hallo Welt"}],
         "structured": {"k": 1}, "engine": "faster-whisper", "provenance": PROV,
+        "raw_text": None, "applied_profile": None,
     }
     assert bodies(patch) == [{"status": "done", "hub_job_id": None, "hub_job_key": None}]
     assert delete.called

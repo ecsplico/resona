@@ -107,6 +107,18 @@ const COLLECTIONS = {
 		plain("engine", "string"),
 		// hub JobResult.provenance: worker, model, seconds per stage (expert mode)
 		{ field: "provenance", type: "json", schema: {}, meta: { special: ["cast-json"] } },
+		// Re-processing with a hub postprocess profile ("Nachbearbeiten"): `raw_text`
+		// keeps the transcript the profile runs on (null = `text` is raw), `applied_profile`
+		// names the profile whose output `text` is. The postprocess_* fields carry the
+		// hub text job (project-worker / standalone processor), like hub_job_* on recordings.
+		plain("raw_text", "text"),
+		plain("applied_profile", "string"),
+		plain("postprocess_status", "string"),
+		plain("postprocess_profile", "string"),
+		plain("postprocess_error", "text"),
+		plain("postprocess_queue_reason", "string"),
+		plain("postprocess_job_id", "integer"),
+		plain("postprocess_job_key", "string"),
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 	],

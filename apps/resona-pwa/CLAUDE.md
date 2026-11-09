@@ -123,6 +123,25 @@ it via `docker compose` (the `project-worker` service).
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
 - **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
+- **Nachbearbeiten** (re-process a transcript with a hub postprocess profile, hub job kind
+  `text`): `PostprocessPanel.vue` on the recording page lists `GET /profiles`
+  (`useProfiles`) and writes `postprocessRequest(profile)` (`app/utils/postprocess.ts`) onto
+  the transcript row; it is enabled only when the transcript is saved and no dictation /
+  continue-recording is running, and the editor is read-only (`TranscriptEditor`
+  `editable`) while the run is `pending|processing`. The profile always runs on the raw
+  transcript (`raw_text ?? text`), never on an earlier profile's output; on success `text`
+  becomes the job's `markdown`, `raw_text` keeps the raw transcript and `applied_profile`
+  the profile, so the panel can show the raw text, re-run another profile or restore the
+  raw text (`rawRestore`). Who runs it: Directus mode → the project-worker (`_run_postprocess`
+  in `worker.py`: claim → `POST /v1/uploads` with the text as `transcript.md` →
+  `POST /v1/jobs {kind:"text", profile}` → poll → write back → delete the hub job);
+  standalone → `localProcessor.runLocalCycle` from the browser with the user's hub token.
+  Same German messages in both: `profile_required`, `profile_not_found`, `invalid_profile`,
+  `policy_denied` (with the hub reason) become `postprocess_error`; a pending job's
+  `queue_reason` is stored in `postprocess_queue_reason` and shown
+  (`no_capable_worker` → "Kein passender Worker online …"). `useRecording` keeps polling
+  while a run is queued. Editing a profile's output does not record a transcript correction
+  (the engine did not write that text).
 - **Uploads and shares** (`useUpload.saveRecording`): the file's type is normalised
   (`utils/audioFile.ts`; phones send `""`, `application/octet-stream` or `audio/x-m4a`, and the
   file used to be stored as `<title>.webm` with that type, so Directus served an unplayable
@@ -262,8 +281,12 @@ cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
   duration_seconds, language, profile, status (pending|transcribing|done|error),
   error_message, source (batch|live), review_status (editing|ready)` — **NO `engine`
   field**. `review_status` is the user's review workflow, independent of `status`.
-- **transcripts**: `id, recording, text, structured, segments, engine, date_created,
-  date_updated` — the `engine` field lives **HERE**, not on recordings.
+- **transcripts**: `id, recording, text, structured, segments, engine, provenance, date_created,
+  date_updated` — the `engine` field lives **HERE**, not on recordings. Re-processing
+  ("Nachbearbeiten") adds `raw_text` (the raw transcript a profile ran on; null while `text`
+  is raw), `applied_profile`, `postprocess_status (pending|processing|done|error)`,
+  `postprocess_profile`, `postprocess_error`, `postprocess_queue_reason`,
+  `postprocess_job_id`, `postprocess_job_key` (bootstrap adds them to existing installs).
 - **recordings** also has `hub_job_id` (integer, the in-flight hub job) and `hub_job_key`
   (string, the hub Idempotency-Key of the current submission attempt; persisted before
   `POST /v1/jobs`, kept by stale recovery, cleared on `done`/`error`).

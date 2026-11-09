@@ -130,10 +130,22 @@ export async function patchDocumentInternal(id: string, patch: Partial<ResonaDoc
 	await patchRow<ResonaDocument>(db().documents, id, patch, null);
 }
 
+/** Transcripts whose re-processing ("Nachbearbeiten") is in `status`, oldest first. */
+export async function listTranscriptsByPostprocess(status: "pending" | "processing"): Promise<Transcript[]> {
+	const rows = await values<Transcript>(db().transcripts);
+	return rows.filter(t => t.postprocess_status === status).sort(byCreatedAsc);
+}
+
+/** Processor-side patch of any transcript field; a no-op when the transcript was deleted meanwhile. */
+export async function patchTranscriptInternal(id: string, patch: Partial<Transcript>): Promise<void> {
+	await patchRow<Transcript>(db().transcripts, id, patch, null);
+}
+
 /**
  * Creates the recording's transcript, or replaces the content of the existing
- * one in place (id and date_created kept). A no-op when the recording was
- * deleted meanwhile, so no orphan transcript is left behind.
+ * one in place (id and date_created kept). A new transcription is raw again: a
+ * previous profile run (`raw_text`, `applied_profile`, `postprocess_*`) is dropped.
+ * A no-op when the recording was deleted meanwhile, so no orphan transcript is left behind.
  */
 export async function upsertTranscript(
 	recordingId: string,
@@ -245,7 +257,7 @@ export function createLocalStore(): DataStore {
 		},
 
 		async updateTranscript(id, patch) {
-			await patchRow<Transcript>(db().transcripts, id, { text: patch.text }, "Transkript nicht gefunden");
+			await patchRow<Transcript>(db().transcripts, id, patch, "Transkript nicht gefunden");
 		},
 
 		async recordCorrection(input) {

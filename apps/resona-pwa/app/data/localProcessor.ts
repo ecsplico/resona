@@ -1,12 +1,20 @@
-import type { Recording, ResonaDocument } from "~/types/directus";
+import type { Recording, ResonaDocument, Transcript } from "~/types/directus";
 import { HubError, type HubJob } from "~/composables/useHub";
 import {
 	listByStatus,
+	listTranscriptsByPostprocess,
 	patchDocumentInternal,
 	patchRecordingInternal,
+	patchTranscriptInternal,
 	readFile,
 	upsertTranscript,
 } from "~/data/localStore";
+import {
+	postprocessDone,
+	postprocessErrorMessage,
+	postprocessFailed,
+	postprocessInput,
+} from "~/utils/postprocess";
 
 /**
  * Standalone-mode processor: drives locally stored recordings/documents through
@@ -168,6 +176,94 @@ async function isolated(work: () => Promise<void>): Promise<void> {
 	}
 }
 
+// ── Re-processing a stored transcript as a hub text job ("Nachbearbeiten") ──
+
+async function submitText(t: Transcript, hub: ReturnType<typeof useHub>): Promise<void> {
+	const profile = t.postprocess_profile;
+	const source = postprocessInput(t);
+	if (!profile) {
+		await patchTranscriptInternal(t.id, postprocessFailed(postprocessErrorMessage("profile_required") as string));
+		return;
+	}
+	if (!source.trim()) {
+		await patchTranscriptInternal(t.id, postprocessFailed("Kein Transkript-Text zum Nachbearbeiten."));
+		return;
+	}
+	// Key persisted before the create call, as for recordings (lost response -> same job).
+	const key = t.postprocess_job_key ?? `local:transcripts:${t.id}:${crypto.randomUUID()}`;
+	try {
+		if (t.postprocess_job_key == null) await patchTranscriptInternal(t.id, { postprocess_job_key: key });
+		const file = new File([source], "transcript.md", { type: "text/markdown" });
+		const uploadId = await hub.upload(file, file.name);
+		const jobId = await hub.createJob({ kind: "text", upload_id: uploadId, profile }, key);
+		await patchTranscriptInternal(t.id, { postprocess_status: "processing", postprocess_job_id: jobId, postprocess_error: null });
+	}
+	catch (err) {
+		if (isTransient(err)) return;
+		const mapped = err instanceof HubError ? postprocessErrorMessage(err.code, err.message) : null;
+		await patchTranscriptInternal(t.id, postprocessFailed(mapped ?? (err instanceof Error ? err.message : String(err))));
+	}
+}
+
+async function pollText(t: Transcript, hub: ReturnType<typeof useHub>): Promise<void> {
+	const jobId = t.postprocess_job_id as number;
+	let job;
+	try {
+		job = await hub.getJob(jobId);
+	}
+	catch (err) {
+		if (isTransient(err)) return;
+		const message = jobReadErrorMessage(err, "job");
+		if (message === null) throw err;
+		await patchTranscriptInternal(t.id, postprocessFailed(message));
+		return;
+	}
+	const failure = jobFailureMessage(job);
+	if (failure !== null) {
+		const mapped = job.error?.code === "policy_denied" ? postprocessErrorMessage("policy_denied", job.error.message) : null;
+		await patchTranscriptInternal(t.id, postprocessFailed(mapped ?? failure));
+		return;
+	}
+	if (job.status !== "completed") {
+		// Tell the user why it waits (e.g. `no_capable_worker`); written only when it changes.
+		if (job.queue_reason !== (t.postprocess_queue_reason ?? null)) {
+			await patchTranscriptInternal(t.id, { postprocess_queue_reason: job.queue_reason });
+		}
+		return;
+	}
+	let result;
+	try {
+		result = await hub.getResult(jobId);
+	}
+	catch (err) {
+		if (isTransient(err)) return;
+		const message = jobReadErrorMessage(err, "result");
+		if (message === null) throw err;
+		await patchTranscriptInternal(t.id, postprocessFailed(message));
+		return;
+	}
+	await patchTranscriptInternal(t.id, postprocessDone(t, result.markdown ?? "", t.postprocess_profile ?? ""));
+	await deleteJobQuietly(hub, jobId);
+}
+
+async function runTextJobs(hub: ReturnType<typeof useHub>): Promise<void> {
+	const active = await listTranscriptsByPostprocess("processing");
+	for (const t of active) {
+		if (t.postprocess_job_id == null) {
+			await isolated(() => patchTranscriptInternal(t.id, { postprocess_status: "pending" }));
+		}
+	}
+	const pending = (await listTranscriptsByPostprocess("pending")).slice(0, MAX_SUBMIT_PER_CYCLE);
+	for (const t of pending) {
+		await isolated(() => submitText(t, hub));
+	}
+	for (const t of active) {
+		if (t.postprocess_job_id != null) {
+			await isolated(() => pollText(t, hub));
+		}
+	}
+}
+
 export async function runLocalCycle(): Promise<void> {
 	if (typeof navigator !== "undefined" && navigator.onLine === false) return;
 	const hub = useHub();
@@ -190,4 +286,5 @@ export async function runLocalCycle(): Promise<void> {
 			}
 		}
 	}
+	await runTextJobs(hub);
 }

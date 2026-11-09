@@ -13,12 +13,14 @@ class HubError(Exception):
     (any `httpx.TransportError`; the worker leaves rows untouched on 0 and on
     other transient statuses and retries next cycle). `code` is the hub's
     `error` code, else `http_<status>` (or `unreachable` / `timeout` for status 0).
+    `detail` is the hub's own message from the error body, if any.
     """
 
-    def __init__(self, message: str, *, status: int, code: str):
+    def __init__(self, message: str, *, status: int, code: str, detail: str | None = None):
         super().__init__(message)
         self.status = status
         self.code = code
+        self.detail = detail
 
 
 def _error_fields(resp: httpx.Response) -> tuple[str | None, str]:
@@ -68,13 +70,22 @@ class HubClient:
             detail, code = _error_fields(resp)
             msg = f"Hub-Anfrage fehlgeschlagen (HTTP {resp.status_code})"
             raise HubError(
-                f"{msg}: {detail}" if detail else msg, status=resp.status_code, code=code,
+                f"{msg}: {detail}" if detail else msg,
+                status=resp.status_code, code=code, detail=detail,
             )
         return resp
 
     async def upload(self, path: Path, filename: str) -> str:
         with open(path, "rb") as f:
             resp = await self._request("POST", "/v1/uploads", files={"file": (filename, f)})
+        return resp.json()["upload_id"]
+
+    async def upload_text(self, text: str, filename: str) -> str:
+        """Uploads `text` as UTF-8; the hub sniffs it as a `text` upload."""
+        resp = await self._request(
+            "POST", "/v1/uploads",
+            files={"file": (filename, text.encode("utf-8"), "text/markdown")},
+        )
         return resp.json()["upload_id"]
 
     async def create_job(

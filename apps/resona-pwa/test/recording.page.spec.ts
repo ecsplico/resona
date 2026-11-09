@@ -13,9 +13,9 @@ import { useRecordingsRefresh } from "~/composables/useShell";
 // editor is stubbed with a plain textarea that honours the same v-model +
 // insertText/insertPlaceholder/replaceBetween contract the page relies on.
 mockComponent("TranscriptEditor", () => ({
-	props: ["modelValue", "placeholder"],
+	props: ["modelValue", "placeholder", "editable"],
 	emits: ["update:modelValue"],
-	setup(props: { modelValue?: string }, { emit, expose }: { emit: (e: string, v: string) => void; expose: (api: unknown) => void }) {
+	setup(props: { modelValue?: string; editable?: boolean }, { emit, expose }: { emit: (e: string, v: string) => void; expose: (api: unknown) => void }) {
 		expose({
 			insertText: (text: string) => {
 				const cur = props.modelValue ?? "";
@@ -42,6 +42,7 @@ mockComponent("TranscriptEditor", () => ({
 		return () => h("textarea", {
 			"data-testid": "transcript-edit",
 			"value": props.modelValue ?? "",
+			"readonly": props.editable === false,
 			"onInput": (e: Event) => emit("update:modelValue", (e.target as HTMLTextAreaElement).value),
 		});
 	},
@@ -55,17 +56,25 @@ const refresh = vi.hoisted(() => vi.fn(async () => {}));
 const startPolling = vi.hoisted(() => vi.fn());
 const stopPolling = vi.hoisted(() => vi.fn());
 
-// The page's live recording ref, so specs can simulate a polling update.
-const live = vi.hoisted(() => ({ recording: null as Ref<Recording | null> | null }));
+// The page's live recording/transcript refs, so specs can simulate a polling update.
+const live = vi.hoisted(() => ({
+	recording: null as Ref<Recording | null> | null,
+	transcript: null as Ref<Transcript | null> | null,
+}));
 
 mockNuxtImport("useRecording", () => () => ({
 	recording: (live.recording = ref(recording.value)),
-	transcript: ref(transcript.value),
+	transcript: (live.transcript = ref(transcript.value)),
 	loading: ref(loading.value),
 	error: ref(error.value),
 	refresh,
 	startPolling,
 	stopPolling,
+}));
+
+mockNuxtImport("useProfiles", () => () => ({
+	profiles: ref(["transcript-markdown-de"]),
+	list: vi.fn(async () => ["transcript-markdown-de"]),
 }));
 
 const store = vi.hoisted(() => ({
@@ -74,6 +83,7 @@ const store = vi.hoisted(() => ({
 	deleteRecording: vi.fn(async () => {}),
 	createTranscript: vi.fn(async () => ({ id: "t-new", recording: "rec-1", text: "" })),
 	updateTranscript: vi.fn(async () => {}),
+	recordCorrection: vi.fn(async () => {}),
 }));
 mockNuxtImport("useDataStore", () => () => store);
 
@@ -477,6 +487,57 @@ describe("recording detail page", () => {
 		expect(globalThis.fetch).not.toHaveBeenCalled();
 		const fail = usePttDiagnostics().entries.value.find(e => !e.ok);
 		expect(fail?.detail).toBe("Kein Hub-Token – in Einstellungen → Verbindung eintragen");
+	});
+
+	describe("Nachbearbeiten", () => {
+		it("requests a run on the saved text, locks the text while it runs and shows the result", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await flushPromises();
+			// The panel writes the request; the page refreshes and keeps polling.
+			refresh.mockImplementationOnce(async () => {
+				live.transcript!.value = { ...live.transcript!.value!, postprocess_status: "pending", postprocess_profile: "transcript-markdown-de" };
+			});
+			await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
+			await flushPromises();
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", expect.objectContaining({
+				postprocess_status: "pending", postprocess_profile: "transcript-markdown-de",
+			}));
+			expect(startPolling).toHaveBeenCalledTimes(2);
+			const area = () => w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+			expect(area().readOnly).toBe(true);
+			expect(w.find("[data-testid=\"push-to-talk\"]").exists()).toBe(false);
+
+			// A poll delivers the profile's output: the editor shows it, the raw text stays.
+			live.transcript!.value = {
+				...live.transcript!.value!,
+				text: "## Befund\n\nHallo Welt",
+				raw_text: "Hallo Welt",
+				applied_profile: "transcript-markdown-de",
+				postprocess_status: "done",
+			};
+			await flushPromises();
+			expect(area().readOnly).toBe(false);
+			expect(area().value).toBe("## Befund\n\nHallo Welt");
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+			expect(w.find("[data-testid=\"postprocess-raw\"] pre").text()).toBe("Hallo Welt");
+		});
+
+		it("is blocked while the text has unsaved edits", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+			expect(w.find("[data-testid=\"postprocess-run\"]").attributes("disabled")).toBeDefined();
+			expect(w.find("[data-testid=\"postprocess-blocked\"]").exists()).toBe(true);
+		});
+
+		it("does not store edits of a profile's output as engine corrections", async () => {
+			transcript.value = { id: "t-1", recording: "rec-1", text: "## Befund", raw_text: "Befund", applied_profile: "transcript-markdown-de" };
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
+			await w.find("[data-testid=\"save-transcript\"]").trigger("click");
+			await flushPromises();
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "## Befund gekürzt" });
+			expect(store.recordCorrection).not.toHaveBeenCalled();
+		});
 	});
 
 	describe("continue recording", () => {
