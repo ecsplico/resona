@@ -1,6 +1,7 @@
 """Bundled German dictation rules and the transcript Markdown profiles."""
 
 import json
+import time
 from importlib import resources
 from types import SimpleNamespace
 
@@ -53,15 +54,86 @@ def test_issue_example_heading_paragraph_and_punctuation() -> None:
     )
 
 
-@pytest.mark.parametrize("terminator", ["Absatz", "Punkt", "Doppelpunkt", ".", "!", "?", ":", "Absatz."])
+@pytest.mark.parametrize("terminator", [
+    "Absatz", "Punkt", "Doppelpunkt", "Fragezeichen", "Ausrufezeichen",
+    ".", "!", "?", ":", "Absatz.", ", Absatz.",
+])
 def test_heading_ends_at_terminator(terminator: str) -> None:
-    sep = "" if terminator[0] in ".!?:" else " "
+    sep = "" if terminator[0] in ".!?:," else " "
     text = f"Kapitel Befunde{sep}{terminator} der Rest bleibt Fließtext Punkt Noch ein Satz Punkt"
     assert _rules(text) == "## Befunde\n\nder Rest bleibt Fließtext. Noch ein Satz."
 
 
-def test_heading_without_terminator_does_not_swallow_the_text() -> None:
-    assert "##" not in _rules("Kapitel Anamnese der Patient berichtet ohne Ende")
+@pytest.mark.parametrize("text", [
+    "Kapitel Anamnese der Patient berichtet ohne Ende",
+    "Der Befund ist unauffällig, wie im Kapitel zuvor beschrieben.",
+    "Die Ergebnisse im Kapitel 3 zeigt die Tabelle.",
+    "Wie im letzten Kapitel. Weiter so.",
+    "Kapitel Anamnese der Patient kam am 3. Mai.",
+])
+def test_kapitel_without_short_terminated_title_stays_as_spoken(text: str) -> None:
+    assert _rules(text) == text
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    # A title longer than five words is not a heading, even with a terminator.
+    (
+        "Kapitel Anamnese der Patient berichtet Komma er habe Schmerzen Punkt",
+        "Kapitel Anamnese der Patient berichtet, er habe Schmerzen.",
+    ),
+    ("Kapitel Eins zwei drei vier fünf sechs Absatz Text", "Kapitel Eins zwei drei vier fünf sechs\n\nText"),
+    # Prose use of "Kapitel" after an article or preposition is left alone.
+    ("Ich lese das Kapitel und schreibe Absatz Neu", "Ich lese das Kapitel und schreibe\n\nNeu"),
+    # A dot followed by a digit is no terminator.
+    ("Kapitel Anamnese der Patient kam am 3. Mai Punkt", "Kapitel Anamnese der Patient kam am 3. Mai."),
+])
+def test_kapitel_heading_is_not_built_from_prose(text: str, expected: str) -> None:
+    assert _rules(text) == expected
+
+
+def test_heading_title_keeps_codes_and_up_to_five_words() -> None:
+    assert _rules("Kapitel Diagnose F32.1 Absatz Text") == "## Diagnose F32.1\n\nText"
+    assert _rules("Kapitel Psychosoziale Situation und Familie Absatz Text Punkt") == (
+        "## Psychosoziale Situation und Familie\n\nText."
+    )
+
+
+def test_whisper_punctuated_commands_do_not_double_punctuation() -> None:
+    text = (
+        "Zum Zeitpunkt der Aufnahme. Kapitel Anamnese, Absatz. "
+        "Der Patient berichtet, Komma, er habe Schmerzen. Punkt."
+    )
+    assert _rules(text) == (
+        "Zum Zeitpunkt der Aufnahme.\n\n## Anamnese\n\nDer Patient berichtet, er habe Schmerzen."
+    )
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Text, Komma weiter", "Text, weiter"),
+    ("Text. Punkt", "Text."),
+    ("Er sagte Komma.", "Er sagte,"),
+    ("Wirklich, Fragezeichen. Ja. Ausrufezeichen!", "Wirklich? Ja!"),
+    ("Siehe unten, Doppelpunkt. Liste", "Siehe unten: Liste"),
+])
+def test_commands_absorb_adjacent_punctuation(text: str, expected: str) -> None:
+    assert _rules(text) == expected
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Kapitel Verlauf Komma stabil", "## Verlauf\n\nstabil"),
+    ("Kapitel Verlauf, Komma, stabil.", "## Verlauf\n\nstabil."),
+    ("Erster Satz Punkt\nZweiter Satz Komma weiter Punkt", "Erster Satz.\nZweiter Satz, weiter."),
+    ("Liste\nKomma weiter", "Liste\n, weiter"),
+])
+def test_commands_do_not_eat_newlines(text: str, expected: str) -> None:
+    assert _rules(text) == expected
+
+
+def test_long_whitespace_runs_stay_linear() -> None:
+    text = "Anfang" + " " * 50_000 + "Komma Ende" + " " * 50_000 + "Kapitel"
+    start = time.perf_counter()
+    assert _rules(text) == "Anfang, Ende" + " " * 50_000 + "Kapitel"
+    assert time.perf_counter() - start < 2
 
 
 def test_absatz_is_a_markdown_paragraph() -> None:

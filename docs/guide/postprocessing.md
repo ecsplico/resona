@@ -146,12 +146,28 @@ automatically. It turns German dictation commands into Markdown:
 | Eckige Klammer auf / zu | `[` / `]` |
 
 Commands match whole words only: `Zeitpunkt`, `Standpunkt` and `Kommandant` stay as they are.
-A spoken heading ends at the next `Absatz`, `Punkt`, `Doppelpunkt` or at `.`, `!`, `?`, `:`;
-without such a terminator on the same line, `Kapitel` is left as spoken instead of turning the
-rest of the transcript into a heading. The medical section headings `Verlauf`, `Medikation`,
-`Psychopathologischer Befund` and `Procedere` (also spoken `Prozedere`) need no terminator.
-Leading and trailing blank lines are removed. The `default` profile also carries a few name
-corrections.
+Whisper often punctuates the commands itself (`berichtet, Komma, er`, `Schmerzen. Punkt.`); each
+punctuation command absorbs the punctuation right before and after it, so the result is
+`berichtet, er` and `Schmerzen.`, never `,,` or `..`. Commands never remove a line break, except
+`Absatz`, which becomes one.
+
+`Kapitel` becomes a heading only when all of these hold:
+
+- the title has at most five words and no punctuation inside (a dot or comma between digits is
+  fine, so `Kapitel Diagnose F32.1 Absatz` gives `## Diagnose F32.1`); command words such as
+  `Komma` never belong to the title;
+- the title is followed directly (an optional comma in between) by `Absatz`, `Punkt`,
+  `Doppelpunkt`, `Fragezeichen`, `Ausrufezeichen` or by `.`, `!`, `?`, `:` (a `.` next to a
+  digit, as in `3. Mai`, does not count);
+- `Kapitel` does not follow an article, preposition or ordinal (`im`, `das`, `dem`, `vom`, `zum`,
+  `letzten`, …), so `wie im Kapitel zuvor beschrieben.` stays prose.
+
+Otherwise the text stays exactly as spoken: `Kapitel Anamnese der Patient berichtet Komma er habe
+Schmerzen Punkt` becomes `Kapitel Anamnese der Patient berichtet, er habe Schmerzen.`, not a
+heading. The medical section headings `Verlauf`, `Medikation`, `Psychopathologischer Befund` and
+`Procedere` (also spoken `Prozedere`) need no terminator; a spoken `Absatz`, `Punkt`,
+`Doppelpunkt` or `Komma` right after them is dropped. Leading and trailing blank lines are
+removed. The `default` profile also carries a few name corrections.
 
 ```text
 Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
@@ -167,24 +183,61 @@ Zum Zeitpunkt der Aufnahme
 der Patient berichtet, er habe Schmerzen.
 ```
 
+Rules cannot tell a command from the same word used in a sentence. `der wichtigste Punkt der
+Untersuchung` becomes `der wichtigste. der Untersuchung`, `Punkt eins` becomes `. eins`, and `im
+dritten Absatz` starts a new paragraph. Dictate around these words, or correct them afterwards.
+
+!!! warning "Behaviour change of the bundled `default` profile"
+    Since the release that introduced the transcript profiles, `default` produces different
+    output for the same audio: `Absatz` was a single newline and is now a blank line (new
+    Markdown paragraph); `Kapitel` was `#` up to the end of the line and is now a terminated
+    `## Titel` heading (or nothing, see above); commands only match whole words (before,
+    `Zeitpunkt` became `Zeit.`); `Doppelpunkt`, `Anstrich` and `Eckige Klammer` are new; doubled
+    punctuation is merged. This affects every job that uses `profile=default` and every
+    organization with `polish` on and `postprocess_profile` `default`.
+
+    The bundled `default` reaches the worker as a reference to `default_replacements.json`, which
+    the worker resolves from its own installed `resona-postprocess`. Until every worker runs the
+    new release, the same job can get old or new output depending on which worker claims it.
+
+    To keep the old rules, store them under another name (the name `default` is reserved) and
+    select that profile (`--profile`, or the organization's `postprocess_profile`):
+
+    ```bash
+    git show v0.1.0:packages/postprocess/src/resona_postprocess/default_replacements.json \
+      | jq '{name: "dictation-v0-1", steps: [{type: "replacements", rules: .}]}' > dictation-v0-1.json
+    resona profiles push dictation-v0-1 dictation-v0-1.json
+    ```
+
 ### transcript-markdown-de and transcript-polish-de
 
 `profiles/transcript-markdown-de.json` holds the same dictation rules as `default`, without the
 name corrections and without any LLM step, so it runs on every worker.
 `profiles/transcript-polish-de.json` runs the same rules, then a chunked `llm` step on the endpoint
-id `local-llm` that may only fix capitalization (sentence starts, after headings, list items, nouns),
-punctuation and obvious transcription slips. It must not add, remove, summarize, rephrase or reorder
-content, or change headings, paragraphs or list items (`preserve_markup: true`,
-`max_length_deviation` 0.2, `temperature` 0, `chunk_chars` 12000). Like `document-polish-de`, it needs an org
-admin to register a `local_llm` endpoint `local-llm` on the approved worker.
+id `local-llm`. Its prompt allows the model to change only capitalization (sentence starts, after
+headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any
+word, not even a word that looks misrecognized; numbers, units, doses, drug names, diagnoses and
+codes stay exactly as transcribed. Settings: `max_length_deviation` 0.1, `preserve_markup: true`,
+`temperature` 0, `chunk_chars` 12000. Like `document-polish-de`, it needs an org admin to register
+a `local_llm` endpoint `local-llm` on the approved worker.
 
-Both carry their rules inline, because hosted profiles reject `source`. Upload them to a hub
-under their own name:
+The guards check less than the prompt asks for. `preserve_markup` compares only HTML comments,
+the sequence of heading levels and the cell count of every table row; it does not notice merged
+paragraphs, joined list items, a rewritten heading text or a changed word or number. A reply that
+changes such things is kept as long as it stays within the 10 % length guard. Use the polish
+profile only where a reviewer reads the result.
+
+Both carry their rules inline, because hosted profiles reject `source`. `resona profiles push
+<name> <file>` uploads a local JSON file, so take the file from the installed package. With
+`uv tool install` the package lives in the tool's own environment:
 
 ```bash
-python -c "from importlib import resources; print(resources.files('resona_postprocess').joinpath('profiles/transcript-markdown-de.json').read_text())" > transcript-markdown-de.json
-resona profiles push transcript-markdown-de transcript-markdown-de.json
+PROFILES="$("$(uv tool dir)/resona-cli/bin/python" -c "from importlib import resources; print(resources.files('resona_postprocess') / 'profiles')")"
+resona profiles push transcript-markdown-de "$PROFILES/transcript-markdown-de.json"
+resona profiles push transcript-polish-de "$PROFILES/transcript-polish-de.json"
 ```
+
+In a repository checkout use `packages/postprocess/src/resona_postprocess/profiles/` instead.
 
 ---
 
