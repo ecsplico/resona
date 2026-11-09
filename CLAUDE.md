@@ -208,9 +208,11 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `chunking.py` — `split_markdown(text, chunk_chars)` (block boundaries; never cuts a pipe table or fenced code block; chunks concatenate to the input), `markup_signature` (HTML comments, heading levels, table row cell counts), `length_deviation`
 - `pipeline.py` — `PostprocessPipeline`: composable step chain; `PostprocessResult{text, data, warnings}` (text steps may return `StepOutput(text, warnings)`); `build_pipeline(profile, *, policy)` validates every LLM stage against the policy before returning (`PolicyDenied` on denial); `local_policy(profile, *, private)` builds the policy for local CLI runs only; `run()` re-raises `PolicyDenied` and `PostprocessStepFailed`
 - `profile.py` — `Profile` dataclass (name, description, initial_prompt, steps); `resolve_profile(ref, profiles_dir)` accepts a name, inline JSON string, file path, or `Profile`/dict; `list_profiles(dir)`, `bundled_default()`; validates the chunking keys (`chunk_chars` ≥ 1000, `max_attempts` 1–10, `max_length_deviation`, `preserve_markup`, `timeout`)
-- `profiles/default.json` — bundled default profile with German dictation replacements (Komma, Punkt, Absatz, medical headings, name corrections)
+- `profiles/default.json` — bundled default profile: German dictation commands → Markdown via `default_replacements.json` + name corrections
+- `profiles/transcript-markdown-de.json` — rules only (no LLM): the dictation command rules of `default_replacements.json` inline (hosted profiles reject `source`; `tests/test_dictation_rules.py` keeps them equal to the tail of that file)
+- `profiles/transcript-polish-de.json` — same inline rules, then a chunked llm step on endpoint `local-llm` (capitalization/punctuation/whitespace only, no word may change, numbers/units/doses/drug names/diagnoses/codes explicitly untouchable; 12000 chars, 3 attempts, 10 % length guard, markup guard, temperature 0)
 - `profiles/document-polish-de.json` — OCR-correction-only chunked llm step on endpoint `local-llm` (an org admin registers a loopback `local_llm` endpoint under that id on the approved worker; 12000 chars, 3 attempts, 30 % length guard, markup guard); uploaded to a hub with `resona profiles push`, see `docs/server/linux-worker.md#llm-polish-on-the-worker-host`. Polished results keep the engine's Markdown in `JobResult.raw_markdown`
-- `default_replacements.json` — bundled replacement rules used by the default profile
+- `default_replacements.json` — bundled dictation rules (case-insensitive, every command `\b`-bounded). Order matters: name corrections, the four medical `Kapitel` headings, general `Kapitel <Titel>` → `\n\n## Titel\n\n` (title 1–5 words without punctuation or command words, optional comma, then `Absatz`/`Punkt`/`Doppelpunkt`/`Fragezeichen`/`Ausrufezeichen`/`!?:`/a `.` not next to a digit; lookbehinds skip prose `im/das/dem/… Kapitel`; else not applied), brackets, `Doppelpunkt` before `Punkt`, punctuation commands absorbing one adjacent mark on each side (no `,,`/`..`), `Absatz` → `\n\n`, then whitespace cleanup (3+ newlines collapsed, text stripped). Leading whitespace is `(?<![ \t])[ \t]*`, never `\s*`: commands must not eat newlines
 
 ### resona-api
 - `app.py` — FastAPI lifespan: validates env, takes the single-hub lock (`hublock.acquire()`, released on shutdown), runs `migrate` (`db/engine.create_db_and_tables`), removes legacy `MD_PATH` result exports once, starts `maintenance.maintenance_loop()` as an asyncio task (cancelled on shutdown). Mounts health, jobs, worker, audio, profiles, settings, streaming, evaluations and admin (`/v1/admin` + static `/admin`) routers; `errors.install_error_handlers` renders `{error, message}` bodies at the top level. The hub runs no inference for queued jobs
@@ -368,8 +370,8 @@ Step types:
 |--------|---------|
 | Komma | , |
 | Punkt | . |
-| Absatz | (newline) |
-| Kapitel | # (heading) |
+| Absatz | (blank line) |
+| Kapitel *Titel* | `## Titel` (own line; title ≤ 5 words, ends at Absatz/Punkt/Doppelpunkt/Fragezeichen/Ausrufezeichen/.!?:) |
 | Klammer auf/zu | ( ) |
 
 Plus medical section headings (Verlauf, Medikation, Psychopathologischer Befund, Procedere) and name corrections.

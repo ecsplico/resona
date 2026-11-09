@@ -14,12 +14,13 @@ The bundled `default` profile applies these rules automatically with no configur
 |--------|---------|
 | Komma | `,` |
 | Punkt | `.` |
-| Absatz | (newline) |
-| Kapitel | `#` (Markdown heading) |
+| Absatz | blank line (new Markdown paragraph) |
+| Kapitel *Titel* | `## Titel` (title ≤ 5 words, ends at `Absatz`/`Punkt`/`.` …; see [Postprocessing](postprocessing.md#default)) |
 | Klammer auf | `(` |
 | Klammer zu | `)` |
 
-In addition, the bundled defaults include German medical section headings
+In addition, the bundled defaults include `Doppelpunkt`, `Fragezeichen`, `Ausrufezeichen`,
+`Anstrich` (list item), German medical section headings
 (`Verlauf`, `Medikation`, `Psychopathologischer Befund`, `Procedere`) and common name corrections.
 
 !!! tip "Inspecting the defaults"
