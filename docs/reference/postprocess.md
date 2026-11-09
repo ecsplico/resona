@@ -18,8 +18,8 @@ specified and activates German medical dictation rules with no configuration nee
 |--------|---------|
 | Komma | `,` |
 | Punkt | `.` |
-| Absatz | (newline) |
-| Kapitel | `#` (heading) |
+| Absatz | blank line (new paragraph) |
+| Kapitel *Titel* | `## Titel` (title ≤ 5 words with a terminator, see the postprocessing guide) |
 | Klammer auf / Klammer zu | `(` / `)` |
 | Medikation, Verlauf, Procedere, ... | Section headings |
 

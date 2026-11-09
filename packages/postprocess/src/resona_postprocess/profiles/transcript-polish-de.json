@@ -1,0 +1,106 @@
+{
+  "name": "transcript-polish-de",
+  "description": "Deutsche Diktatbefehle → Markdown, danach nur Groß-/Kleinschreibung und Zeichensetzung über ein lokales LLM (kein Wort wird geändert).",
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "replacements",
+      "name": "dictation-markdown",
+      "rules": [
+        {
+          "pattern": "(?<![ \\t])[ \\t]*(?<!\\bim )(?<!\\bin )(?<!\\bins )(?<!\\bam )(?<!\\ban )(?<!\\bans )(?<!\\bdem )(?<!\\bden )(?<!\\bdas )(?<!\\bdes )(?<!\\bder )(?<!\\bdie )(?<!\\bein )(?<!\\beine )(?<!\\beinem )(?<!\\beinen )(?<!\\beines )(?<!\\bvom )(?<!\\bzum )(?<!\\bzur )(?<!\\bbeim )(?<!\\bdiesem )(?<!\\bdieses )(?<!\\bjedem )(?<!\\bwelchem )(?<!\\bletzten )(?<!\\bnächsten )(?<!\\bvorigen )(?<!\\bvorherigen )(?<!\\bfolgenden )(?<!\\bersten )(?<!\\bzweiten )(?<!\\bdritten )(?<!\\bselben )(?<!\\bgleichen )(?<!\\bneuen )(?<!\\bganzen )\\bKapitel[ \\t]+Verlauf\\b[ \\t.,:]*(?:\\b(?:Absatz|Punkt|Doppel[ \\t.,-]*punkt|Komma)\\b[.,:]?)?[ \\t]*",
+          "replacement": "\n\n## Verlauf\n\n"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]*(?<!\\bim )(?<!\\bin )(?<!\\bins )(?<!\\bam )(?<!\\ban )(?<!\\bans )(?<!\\bdem )(?<!\\bden )(?<!\\bdas )(?<!\\bdes )(?<!\\bder )(?<!\\bdie )(?<!\\bein )(?<!\\beine )(?<!\\beinem )(?<!\\beinen )(?<!\\beines )(?<!\\bvom )(?<!\\bzum )(?<!\\bzur )(?<!\\bbeim )(?<!\\bdiesem )(?<!\\bdieses )(?<!\\bjedem )(?<!\\bwelchem )(?<!\\bletzten )(?<!\\bnächsten )(?<!\\bvorigen )(?<!\\bvorherigen )(?<!\\bfolgenden )(?<!\\bersten )(?<!\\bzweiten )(?<!\\bdritten )(?<!\\bselben )(?<!\\bgleichen )(?<!\\bneuen )(?<!\\bganzen )\\bKapitel[ \\t]+Medikation\\b[ \\t.,:]*(?:\\b(?:Absatz|Punkt|Doppel[ \\t.,-]*punkt|Komma)\\b[.,:]?)?[ \\t]*",
+          "replacement": "\n\n## Medikation\n\n"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]*(?<!\\bim )(?<!\\bin )(?<!\\bins )(?<!\\bam )(?<!\\ban )(?<!\\bans )(?<!\\bdem )(?<!\\bden )(?<!\\bdas )(?<!\\bdes )(?<!\\bder )(?<!\\bdie )(?<!\\bein )(?<!\\beine )(?<!\\beinem )(?<!\\beinen )(?<!\\beines )(?<!\\bvom )(?<!\\bzum )(?<!\\bzur )(?<!\\bbeim )(?<!\\bdiesem )(?<!\\bdieses )(?<!\\bjedem )(?<!\\bwelchem )(?<!\\bletzten )(?<!\\bnächsten )(?<!\\bvorigen )(?<!\\bvorherigen )(?<!\\bfolgenden )(?<!\\bersten )(?<!\\bzweiten )(?<!\\bdritten )(?<!\\bselben )(?<!\\bgleichen )(?<!\\bneuen )(?<!\\bganzen )\\bKapitel[ \\t]+Psychopathologischer[ \\t]*Befund\\b[ \\t.,:]*(?:\\b(?:Absatz|Punkt|Doppel[ \\t.,-]*punkt|Komma)\\b[.,:]?)?[ \\t]*",
+          "replacement": "\n\n## Psychopathologischer Befund\n\n"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]*(?<!\\bim )(?<!\\bin )(?<!\\bins )(?<!\\bam )(?<!\\ban )(?<!\\bans )(?<!\\bdem )(?<!\\bden )(?<!\\bdas )(?<!\\bdes )(?<!\\bder )(?<!\\bdie )(?<!\\bein )(?<!\\beine )(?<!\\beinem )(?<!\\beinen )(?<!\\beines )(?<!\\bvom )(?<!\\bzum )(?<!\\bzur )(?<!\\bbeim )(?<!\\bdiesem )(?<!\\bdieses )(?<!\\bjedem )(?<!\\bwelchem )(?<!\\bletzten )(?<!\\bnächsten )(?<!\\bvorigen )(?<!\\bvorherigen )(?<!\\bfolgenden )(?<!\\bersten )(?<!\\bzweiten )(?<!\\bdritten )(?<!\\bselben )(?<!\\bgleichen )(?<!\\bneuen )(?<!\\bganzen )\\bKapitel[ \\t]+Pro[cz]edere\\b[ \\t.,:]*(?:\\b(?:Absatz|Punkt|Doppel[ \\t.,-]*punkt|Komma)\\b[.,:]?)?[ \\t]*",
+          "replacement": "\n\n## Procedere\n\n"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]*(?<!\\bim )(?<!\\bin )(?<!\\bins )(?<!\\bam )(?<!\\ban )(?<!\\bans )(?<!\\bdem )(?<!\\bden )(?<!\\bdas )(?<!\\bdes )(?<!\\bder )(?<!\\bdie )(?<!\\bein )(?<!\\beine )(?<!\\beinem )(?<!\\beinen )(?<!\\beines )(?<!\\bvom )(?<!\\bzum )(?<!\\bzur )(?<!\\bbeim )(?<!\\bdiesem )(?<!\\bdieses )(?<!\\bjedem )(?<!\\bwelchem )(?<!\\bletzten )(?<!\\bnächsten )(?<!\\bvorigen )(?<!\\bvorherigen )(?<!\\bfolgenden )(?<!\\bersten )(?<!\\bzweiten )(?<!\\bdritten )(?<!\\bselben )(?<!\\bgleichen )(?<!\\bneuen )(?<!\\bganzen )\\bKapitel[ \\t]+((?!(?:Komma|Punkt|Absatz|Doppel[ \\t.,-]*punkt|Fragezeichen|Ausrufezeichen|Kapitel|Anstrich|Klammer|Eckige|Hashtag)\\b)(?:[^\\s.,;:!?()\\[\\]]|(?<=\\d)[.,](?=\\d))+(?:[ \\t]+(?!(?:Komma|Punkt|Absatz|Doppel[ \\t.,-]*punkt|Fragezeichen|Ausrufezeichen|Kapitel|Anstrich|Klammer|Eckige|Hashtag)\\b)(?:[^\\s.,;:!?()\\[\\]]|(?<=\\d)[.,](?=\\d))+){0,4}?)[ \\t]*,?[ \\t]*(?:\\b(?:Absatz|Punkt|Doppel[ \\t.,-]*punkt|Fragezeichen|Ausrufezeichen)\\b[.,:!?]?|(?:(?<!\\d)\\.|[!?:])(?!\\d))[ \\t]*",
+          "replacement": "\n\n## \\1\n\n"
+        },
+        {
+          "pattern": "(?<![ \\t.])[ \\t.]*\\bEckige[ \\t.,]*Klammer[ \\t.,]*auf\\b[ \\t.,]*",
+          "replacement": " ["
+        },
+        {
+          "pattern": "(?<![ \\t.])[ \\t.]*\\bEckige[ \\t.,]*Klammer[ \\t.,]*zu\\b[ \\t.,]*",
+          "replacement": "] "
+        },
+        {
+          "pattern": "(?<![ \\t.])[ \\t.]*\\bKlammer[ \\t.,]*auf\\b[ \\t.,]*",
+          "replacement": " ("
+        },
+        {
+          "pattern": "(?<![ \\t.])[ \\t.]*\\bKlammer[ \\t.,]*zu\\b[ \\t.,]*",
+          "replacement": ") "
+        },
+        {
+          "pattern": "(?<![ \\t])(?:[ \\t]*[.,:])?[ \\t]*\\bDoppel[ \\t.,-]*punkt\\b[.,:]?",
+          "replacement": ":"
+        },
+        {
+          "pattern": "(?<![ \\t])(?:[ \\t]*[,])?[ \\t]*\\bKomma\\b[,.]?",
+          "replacement": ","
+        },
+        {
+          "pattern": "(?<![ \\t])(?:[ \\t]*[.,])?[ \\t]*\\bPunkt\\b[.,]?",
+          "replacement": "."
+        },
+        {
+          "pattern": "(?<![ \\t])(?:[ \\t]*[.,!])?[ \\t]*\\bAusrufezeichen\\b[.,!]?",
+          "replacement": "!"
+        },
+        {
+          "pattern": "(?<![ \\t])(?:[ \\t]*[.,?])?[ \\t]*\\bFragezeichen\\b[.,?]?",
+          "replacement": "?"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]*\\bHashtag\\b[ \\t]*",
+          "replacement": " #"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]*\\bAnstrich\\b[ \\t.,:]*",
+          "replacement": "\n- "
+        },
+        {
+          "pattern": "(?<!\\s)\\s*\\bAbsatz\\b[.,]?\\s*",
+          "replacement": "\n\n"
+        },
+        {
+          "pattern": "(?<![ \\t])[ \\t]+\\n",
+          "replacement": "\n"
+        },
+        {
+          "pattern": "\\n{3,}",
+          "replacement": "\n\n"
+        },
+        {
+          "pattern": "\\A\\s+|(?<!\\s)\\s+\\Z",
+          "replacement": ""
+        }
+      ]
+    },
+    {
+      "type": "llm",
+      "name": "transcript-polish",
+      "endpoint": "local-llm",
+      "chunk_chars": 12000,
+      "max_attempts": 3,
+      "max_length_deviation": 0.1,
+      "preserve_markup": true,
+      "temperature": 0,
+      "max_tokens": 8192,
+      "timeout": 600,
+      "prompt": "Du überarbeitest einen Ausschnitt eines deutschen diktierten Transkripts im Markdown-Format. Diktatbefehle wurden bereits in Überschriften, Absätze, Listen und Satzzeichen umgesetzt. Gib ausschließlich den überarbeiteten Ausschnitt zurück, ohne Einleitung, ohne Erklärung, ohne Codeblock.\n\nDu darfst NUR ändern:\n- Groß- und Kleinschreibung, insbesondere am Satzanfang, nach Überschriften, nach Absätzen und am Anfang von Listenpunkten, sowie bei Substantiven.\n- Zeichensetzung und Leerzeichen (Kommas, Punkte, Leerzeichen vor oder nach Satzzeichen).\n\nVerboten:\n- Irgendein Wort ändern, ersetzen, ergänzen oder streichen, auch wenn es falsch erkannt wirkt. Jedes Wort bleibt in derselben Reihenfolge und Schreibweise stehen; nur seine Groß- oder Kleinschreibung darf sich ändern.\n- Zahlen, Einheiten, Dosierungen, Medikamentennamen, Diagnosen, Codes (zum Beispiel ICD-Codes wie F32.1) und Eigennamen ändern. Sie bleiben exakt so, wie sie im Text stehen, ohne jede Ausnahme.\n- Inhalte hinzufügen, weglassen, zusammenfassen, umformulieren oder umstellen.\n- Überschriften, Absätze oder Listenpunkte hinzufügen, entfernen, zusammenlegen oder in ihrer Ebene ändern; jede Zeile, die mit \"#\" oder \"- \" beginnt, bleibt eine solche Zeile.\n\nWenn nichts zu korrigieren ist, gib den Ausschnitt unverändert zurück."
+    }
+  ]
+}
