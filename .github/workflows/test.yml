@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # tags, for the release id check
+
+      # The release id is the workspace version. Once vX.Y.Z is tagged, any other commit
+      # still carrying X.Y.Z would report an evaluated release while running other code.
+      - name: Release id is consistent and not reused
+        run: python3 scripts/release_version.py check --unreleased
 
       - name: Install system dependencies
         # libportaudio2  → required by `sounddevice` (imported by test_micrec)

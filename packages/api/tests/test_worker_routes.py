@@ -113,7 +113,7 @@ def set_job(job_id: int, **changes) -> None:
 def heartbeat(http, headers, *, protocol=1, caps=(CAND,), extra=None):
     body = {
         "worker_protocol": protocol,
-        "runtime_version": "0.1.0",
+        "runtime_version": hub_release_id(),
         "reported_capabilities": [c.model_dump(mode="json") for c in caps],
         **(extra or {}),
     }

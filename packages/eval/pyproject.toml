@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-eval"
-version = "0.1.0"
+version = "0.2.0"
 description = "Resona quality control: evaluation corpus, WER/CER and document scoring, regression gate and baselines. No ML dependencies."
 license = { text = "Apache-2.0" }
 authors = [

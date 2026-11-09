@@ -179,6 +179,13 @@ pull:
         --profile faster-whisper --profile whisper --profile voxtral \
         pull
 
+# ── Release ───────────────────────────────────────────────────────────
+# Release id = workspace version (docs/server/releases.md#version-bump)
+
+# Set every workspace package and uv.lock to VERSION (e.g. just bump 0.3.0)
+bump version:
+    python3 scripts/release_version.py bump {{ version }}
+
 # ── Tests ─────────────────────────────────────────────────────────────
 
 # Run all tests (pass extra args: just test -k test_transcribe)
