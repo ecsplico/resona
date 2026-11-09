@@ -19,7 +19,7 @@ of pipeline steps that transform the raw transcript into the final output.
       "rules": [
         {"pattern": "\\bKomma\\b", "replacement": ","},
         {"pattern": "\\bPunkt\\b",  "replacement": "."},
-        {"pattern": "\\bAbsatz\\b", "replacement": "\n"}
+        {"pattern": "\\bAbsatz\\b", "replacement": "\n\n"}
       ]
     },
     {
@@ -126,21 +126,65 @@ Extracted data is stored in `job.structured` (server) or `PostprocessResult.data
 
 ---
 
-## Bundled default profile
+## Bundled profiles
+
+### default
 
 When no profile is specified, the `default` profile bundled with `resona-postprocess` is used
-automatically. It covers German medical dictation commands:
+automatically. It turns German dictation commands into Markdown:
 
 | Spoken | Written |
 |--------|---------|
 | Komma | `,` |
 | Punkt | `.` |
-| Absatz | (newline) |
-| Kapitel | `#` (Markdown heading) |
+| Doppelpunkt | `:` |
+| Fragezeichen / Ausrufezeichen | `?` / `!` |
+| Absatz | blank line (new Markdown paragraph) |
+| Anstrich | new line starting with `- ` (list item) |
+| Kapitel *Titel* | `## Titel` on its own line, followed by a blank line |
 | Klammer auf / Klammer zu | `(` / `)` |
+| Eckige Klammer auf / zu | `[` / `]` |
 
-Plus medical section headings (`Verlauf`, `Medikation`, `Psychopathologischer Befund`, `Procedere`)
-and common name corrections.
+Commands match whole words only: `Zeitpunkt`, `Standpunkt` and `Kommandant` stay as they are.
+A spoken heading ends at the next `Absatz`, `Punkt`, `Doppelpunkt` or at `.`, `!`, `?`, `:`;
+without such a terminator on the same line, `Kapitel` is left as spoken instead of turning the
+rest of the transcript into a heading. The medical section headings `Verlauf`, `Medikation`,
+`Psychopathologischer Befund` and `Procedere` (also spoken `Prozedere`) need no terminator.
+Leading and trailing blank lines are removed. The `default` profile also carries a few name
+corrections.
+
+```text
+Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
+```
+
+becomes
+
+```markdown
+Zum Zeitpunkt der Aufnahme
+
+## Anamnese
+
+der Patient berichtet, er habe Schmerzen.
+```
+
+### transcript-markdown-de and transcript-polish-de
+
+`profiles/transcript-markdown-de.json` holds the same dictation rules as `default`, without the
+name corrections and without any LLM step, so it runs on every worker.
+`profiles/transcript-polish-de.json` runs the same rules, then a chunked `llm` step on the endpoint
+id `local-llm` that may only fix capitalization (sentence starts, after headings, list items, nouns),
+punctuation and obvious transcription slips. It must not add, remove, summarize, rephrase or reorder
+content, or change headings, paragraphs or list items (`preserve_markup: true`,
+`max_length_deviation` 0.2, `temperature` 0, `chunk_chars` 12000). Like `document-polish-de`, it needs an org
+admin to register a `local_llm` endpoint `local-llm` on the approved worker.
+
+Both carry their rules inline, because hosted profiles reject `source`. Upload them to a hub
+under their own name:
+
+```bash
+python -c "from importlib import resources; print(resources.files('resona_postprocess').joinpath('profiles/transcript-markdown-de.json').read_text())" > transcript-markdown-de.json
+resona profiles push transcript-markdown-de transcript-markdown-de.json
+```
 
 ---
 

@@ -1,0 +1,93 @@
+{
+  "name": "transcript-markdown-de",
+  "description": "Deutsche Diktatbefehle → Markdown (Kapitel → ##-Überschrift, Absatz, Anstrich, Satzzeichen), ohne LLM.",
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "replacements",
+      "name": "dictation-markdown",
+      "rules": [
+        {
+          "pattern": "\\s*\\bKapitel\\s+Verlauf\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Verlauf\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+Medikation\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Medikation\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+Psychopathologischer\\s*Befund\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Psychopathologischer Befund\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+Pro[cz]edere\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Procedere\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+(.+?)\\s*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?|[.!?:])\\s*",
+          "replacement": "\n\n## \\1\n\n"
+        },
+        {
+          "pattern": "[\\s.]*\\bEckige[\\s.,]*Klammer[\\s.,]*auf\\b[\\s.,]*",
+          "replacement": " ["
+        },
+        {
+          "pattern": "[\\s.]*\\bEckige[\\s.,]*Klammer[\\s.,]*zu\\b[\\s.,]*",
+          "replacement": "] "
+        },
+        {
+          "pattern": "[\\s.]*\\bKlammer[\\s.,]*auf\\b[\\s.,]*",
+          "replacement": " ("
+        },
+        {
+          "pattern": "[\\s.]*\\bKlammer[\\s.,]*zu\\b[\\s.,]*",
+          "replacement": ") "
+        },
+        {
+          "pattern": "\\s*\\bDoppel[\\s.,]*punkt\\b:?",
+          "replacement": ":"
+        },
+        {
+          "pattern": "\\s*\\bKomma\\b,?",
+          "replacement": ","
+        },
+        {
+          "pattern": "\\s*\\bPunkt\\b\\.?",
+          "replacement": "."
+        },
+        {
+          "pattern": "\\s*\\bAusrufezeichen\\b!?",
+          "replacement": "!"
+        },
+        {
+          "pattern": "\\s*\\bFragezeichen\\b\\??",
+          "replacement": "?"
+        },
+        {
+          "pattern": "\\s*\\bHashtag\\b\\s*",
+          "replacement": " #"
+        },
+        {
+          "pattern": "[ \\t]*\\bAnstrich\\b[\\s.,:]*",
+          "replacement": "\n- "
+        },
+        {
+          "pattern": "\\s*\\bAbsatz\\b[.,]?\\s*",
+          "replacement": "\n\n"
+        },
+        {
+          "pattern": "[ \\t]+\\n",
+          "replacement": "\n"
+        },
+        {
+          "pattern": "\\n{3,}",
+          "replacement": "\n\n"
+        },
+        {
+          "pattern": "\\A\\s+|\\s+\\Z",
+          "replacement": ""
+        }
+      ]
+    }
+  ]
+}

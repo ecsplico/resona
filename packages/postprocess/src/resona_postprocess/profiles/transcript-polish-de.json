@@ -1,0 +1,106 @@
+{
+  "name": "transcript-polish-de",
+  "description": "Deutsche Diktatbefehle → Markdown, danach Groß-/Kleinschreibung und Zeichensetzung über ein lokales LLM (keine inhaltlichen Änderungen).",
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "replacements",
+      "name": "dictation-markdown",
+      "rules": [
+        {
+          "pattern": "\\s*\\bKapitel\\s+Verlauf\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Verlauf\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+Medikation\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Medikation\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+Psychopathologischer\\s*Befund\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Psychopathologischer Befund\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+Pro[cz]edere\\b[\\s.,:]*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?)?\\s*",
+          "replacement": "\n\n## Procedere\n\n"
+        },
+        {
+          "pattern": "\\s*\\bKapitel\\s+(.+?)\\s*(?:\\b(?:Absatz|Punkt|Doppel[\\s.,]*punkt)\\b[.,:]?|[.!?:])\\s*",
+          "replacement": "\n\n## \\1\n\n"
+        },
+        {
+          "pattern": "[\\s.]*\\bEckige[\\s.,]*Klammer[\\s.,]*auf\\b[\\s.,]*",
+          "replacement": " ["
+        },
+        {
+          "pattern": "[\\s.]*\\bEckige[\\s.,]*Klammer[\\s.,]*zu\\b[\\s.,]*",
+          "replacement": "] "
+        },
+        {
+          "pattern": "[\\s.]*\\bKlammer[\\s.,]*auf\\b[\\s.,]*",
+          "replacement": " ("
+        },
+        {
+          "pattern": "[\\s.]*\\bKlammer[\\s.,]*zu\\b[\\s.,]*",
+          "replacement": ") "
+        },
+        {
+          "pattern": "\\s*\\bDoppel[\\s.,]*punkt\\b:?",
+          "replacement": ":"
+        },
+        {
+          "pattern": "\\s*\\bKomma\\b,?",
+          "replacement": ","
+        },
+        {
+          "pattern": "\\s*\\bPunkt\\b\\.?",
+          "replacement": "."
+        },
+        {
+          "pattern": "\\s*\\bAusrufezeichen\\b!?",
+          "replacement": "!"
+        },
+        {
+          "pattern": "\\s*\\bFragezeichen\\b\\??",
+          "replacement": "?"
+        },
+        {
+          "pattern": "\\s*\\bHashtag\\b\\s*",
+          "replacement": " #"
+        },
+        {
+          "pattern": "[ \\t]*\\bAnstrich\\b[\\s.,:]*",
+          "replacement": "\n- "
+        },
+        {
+          "pattern": "\\s*\\bAbsatz\\b[.,]?\\s*",
+          "replacement": "\n\n"
+        },
+        {
+          "pattern": "[ \\t]+\\n",
+          "replacement": "\n"
+        },
+        {
+          "pattern": "\\n{3,}",
+          "replacement": "\n\n"
+        },
+        {
+          "pattern": "\\A\\s+|\\s+\\Z",
+          "replacement": ""
+        }
+      ]
+    },
+    {
+      "type": "llm",
+      "name": "transcript-polish",
+      "endpoint": "local-llm",
+      "chunk_chars": 12000,
+      "max_attempts": 3,
+      "max_length_deviation": 0.2,
+      "preserve_markup": true,
+      "temperature": 0,
+      "max_tokens": 8192,
+      "timeout": 600,
+      "prompt": "Du überarbeitest einen Ausschnitt eines deutschen diktierten Transkripts im Markdown-Format. Diktatbefehle wurden bereits in Überschriften, Absätze, Listen und Satzzeichen umgesetzt. Gib ausschließlich den überarbeiteten Ausschnitt zurück, ohne Einleitung, ohne Erklärung, ohne Codeblock.\n\nKorrigiere NUR:\n- Groß- und Kleinschreibung, insbesondere am Satzanfang, nach Überschriften, nach Absätzen und am Anfang von Listenpunkten, sowie bei Substantiven.\n- Zeichensetzung (Kommas, Punkte, Leerzeichen vor oder nach Satzzeichen).\n- Offensichtliche Erkennungsfehler einzelner Wörter, wenn das gemeinte Wort eindeutig ist.\n\nVerboten:\n- Inhalte hinzufügen, weglassen, zusammenfassen, umformulieren oder umstellen.\n- Überschriften, Absätze oder Listenpunkte hinzufügen, entfernen, zusammenlegen oder in ihrer Ebene ändern; jede Zeile, die mit \"#\" oder \"- \" beginnt, bleibt eine solche Zeile.\n- Fachbegriffe, Medikamentennamen, Dosierungen, Zahlen und Namen ändern, wenn nicht eindeutig ein Erkennungsfehler vorliegt.\n\nWenn nichts zu korrigieren ist, gib den Ausschnitt unverändert zurück."
+    }
+  ]
+}

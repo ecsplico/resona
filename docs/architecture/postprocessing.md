@@ -123,20 +123,27 @@ A text step may return a `StepOutput(text, warnings)` instead of a string; chunk
 
 ## The bundled default profile
 
-`resona-postprocess` ships a `profiles/default.json` that covers German medical dictation out of the box. It is used automatically when no profile is specified.
+`resona-postprocess` ships a `profiles/default.json` (rules in `default_replacements.json`) that turns German dictation commands into Markdown. It is used automatically when no profile is specified.
 
 | Spoken | Written |
 |--------|---------|
 | Komma | `,` |
 | Punkt | `.` |
+| Doppelpunkt | `:` |
 | Ausrufezeichen | `!` |
 | Fragezeichen | `?` |
-| Absatz | newline |
-| Kapitel | `#` (heading) |
-| Klammer auf | `(` |
-| Klammer zu | `)` |
+| Absatz | blank line (Markdown paragraph) |
+| Anstrich | `\n- ` (list item) |
+| Kapitel *Titel* | `\n\n## Titel\n\n` |
+| Klammer auf / zu, Eckige Klammer auf / zu | `(` `)` `[` `]` |
 
-Plus medical section headings (`Verlauf`, `Medikation`, `Psychopathologischer Befund`, `Procedere`) and common name corrections.
+Every command pattern has word boundaries (`\b`); rules run case-insensitively, so without them `Zeitpunkt` became `Zeit.`. Order matters: the four medical heading rules (`Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere`, no terminator needed, an immediately spoken terminator is swallowed) run first, then the general `Kapitel` rule, whose title ends at the first `Absatz`, `Punkt`, `Doppelpunkt` or `.!?:` on the same line (no terminator → the rule does not fire), then brackets, then `Doppelpunkt` before `Punkt`, then `Absatz`. Three cleanup rules close the list: trailing spaces before a newline, runs of 3+ newlines → one blank line, leading/trailing whitespace of the whole text removed. Name corrections (`Monique` → `Monic`, …) come first and are part of `default` only.
+
+## The bundled transcript profiles
+
+`profiles/transcript-markdown-de.json` (`transcript-markdown-de`) is one `replacements` step with the dictation command rules of `default_replacements.json` (without the name corrections), inline because hosted profiles reject `source`; a test keeps them equal to the tail of `default_replacements.json`. No LLM, runs on any worker.
+
+`profiles/transcript-polish-de.json` (`transcript-polish-de`) runs the same rules, then a chunked `llm` step on endpoint `local-llm`. Its German prompt allows only capitalization (sentence starts, after headings, list items, nouns), punctuation and obvious transcription slips, and forbids adding, removing, summarizing, rephrasing or reordering content and changing headings, paragraphs or list items. Settings: `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.2, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. The endpoint registration is the same as for `document-polish-de` below.
 
 ## The bundled document polish profile
 
