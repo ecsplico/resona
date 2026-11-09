@@ -34,7 +34,7 @@ from resona_client.client import (
 from resona_job_core import PolicyDenied
 
 from .hub import EXIT_ERROR, EXIT_POLICY_DENIED, candidate_label, connect_hub, policy_summary
-from .outputs import OutputExists, output_paths, result_metadata, write_result
+from .outputs import OutputExists, OutputPaths, output_paths, result_metadata, write_result
 
 Options = Union[AudioOptions, DocumentOptions, TextOptions]
 EXIT_OUTPUT_COLLISION = 2
@@ -57,6 +57,17 @@ class MediaRequest:
     profile: Optional[str]
     options: Options
     local: bool
+    # Inserted before ``.md``/``.result.json``: ``<stem>.<output_suffix>.md``.
+    output_suffix: Optional[str] = None
+    # Reported instead of the input path (``--json`` ``input``, frontmatter ``source``)
+    # when the input is a temporary file, e.g. ``job:12`` for ``resona postprocess --job 12``.
+    input_label: Optional[str] = None
+
+    def paths(self, source: Path) -> OutputPaths:
+        return output_paths(source, self.output_dir, self.output_suffix)
+
+    def source_name(self, source: Path) -> str:
+        return self.input_label or source.name
 
 
 @dataclass
@@ -64,11 +75,12 @@ class _Run:
     """Per-file outcomes; rendered as JSON on stdout with ``--json``."""
 
     as_json: bool
+    input_label: Optional[str] = None
     records: list[dict[str, Any]] = field(default_factory=list)
     exit_code: int = 0
 
     def add(self, source: Path, **values: Any) -> dict[str, Any]:
-        record = {"input": str(source), **values}
+        record = {"input": self.input_label or str(source), **values}
         self.records.append(record)
         return record
 
@@ -141,21 +153,13 @@ def _reject_colliding_outputs(req: MediaRequest) -> None:
 
     Two inputs with the same stem (``a.mp3`` and ``a.wav``, or one file given twice)
     would write the same files; reject the whole run with exit 2 rather than let the
-    second result overwrite or fail after both jobs ran. An output that is the input
-    itself (``resona postprocess notes.md``) is rejected the same way. Names are
-    compared case-insensitively because the default macOS filesystem is.
+    second result overwrite or fail after both jobs ran. Names are compared
+    case-insensitively because the default macOS filesystem is.
     """
     seen: dict[str, Path] = {}
     for source in req.files:
-        markdown = output_paths(source, req.output_dir).markdown
+        markdown = req.paths(source).markdown
         key = str(markdown.resolve()).casefold()
-        if key == str(source.resolve()).casefold():
-            typer.echo(
-                f"Error: the output {markdown} would replace the input {source.name}; nothing was "
-                "started. Write into a different --output-dir.",
-                err=True,
-            )
-            raise typer.Exit(EXIT_OUTPUT_COLLISION)
         if key in seen:
             typer.echo(
                 f"Error: {seen[key].name} and {source.name} would both write {markdown} "
@@ -184,11 +188,11 @@ def _run_hub(req: MediaRequest) -> None:
     if not req.no_wait:
         _reject_colliding_outputs(req)
     client = connect_hub()
-    run = _Run(as_json=req.as_json)
+    run = _Run(as_json=req.as_json, input_label=req.input_label)
     submitted: list[tuple[Path, int]] = []
     try:
         for source in req.files:
-            paths = output_paths(source, req.output_dir)
+            paths = req.paths(source)
             if not req.no_wait and not req.force and paths.existing():
                 message = f"{paths.existing()[0]} exists (use --force to overwrite)"
                 typer.echo(f"Skipped {source.name}: {message}", err=True)
@@ -277,8 +281,8 @@ def _wait_and_write(client: ResonaClient, req: MediaRequest, run: _Run, source: 
         run.failed(EXIT_POLICY_DENIED if error.get("code") == "policy_denied" else EXIT_ERROR)
         return
     result = client.get_result(job_id)
-    paths = output_paths(source, req.output_dir)
-    meta = result_metadata(source, result, job_id=job_id, private=job.private,
+    paths = req.paths(source)
+    meta = result_metadata(req.source_name(source), result, job_id=job_id, private=job.private,
                            execution_profile=job.execution_profile, postprocess_profile=profile)
     try:
         write_result(paths, result, meta, force=req.force)
@@ -297,7 +301,7 @@ def _run_local(req: MediaRequest) -> None:
     from .local_run import LocalRunError, load_local_settings, plan_local, run_local
 
     _reject_colliding_outputs(req)
-    run = _Run(as_json=req.as_json)
+    run = _Run(as_json=req.as_json, input_label=req.input_label)
     local = load_local_settings()
     try:
         plan = plan_local(
@@ -328,7 +332,7 @@ def _run_local(req: MediaRequest) -> None:
               "execution_profile": plan.execution_profile or None,
               "candidate": candidate}
     for source in req.files:
-        paths = output_paths(source, req.output_dir)
+        paths = req.paths(source)
         if not req.force and paths.existing():
             message = f"{paths.existing()[0]} exists (use --force to overwrite)"
             typer.echo(f"Skipped {source.name}: {message}", err=True)
@@ -338,7 +342,7 @@ def _run_local(req: MediaRequest) -> None:
         try:
             with _spinner(f"Processing {source.name} locally…"):
                 result = run_local(plan, source)
-            meta = result_metadata(source, result, job_id=None, private=plan.private,
+            meta = result_metadata(req.source_name(source), result, job_id=None, private=plan.private,
                                    execution_profile=plan.execution_profile,
                                    postprocess_profile=plan.postprocess_profile)
             write_result(paths, result, meta, force=req.force)

@@ -8,7 +8,7 @@ from .policy import (
     check_policy,
     is_loopback_url,
 )
-from .settings import Candidate, ExecutionProfile, OrganizationSettings, default_settings
+from .settings import TEXT_EXECUTION_PROFILE, Candidate, ExecutionProfile, OrganizationSettings, default_settings
 from .options import (
     DEFAULT_OCR_ENGINE,
     AudioOptions,
@@ -23,7 +23,6 @@ from .options import (
 from .results import BBox, JobResult, Page, PageBlock, Provenance, Segment, StageProvenance
 
 __all__ = [
-    "TextOptions",
     "CLOUD_KINDS",
     "Candidate",
     "Endpoint",
@@ -33,6 +32,7 @@ __all__ = [
     "OrganizationSettings",
     "PolicyDenied",
     "Stage",
+    "TEXT_EXECUTION_PROFILE",
     "check_policy",
     "default_settings",
     "is_loopback_url",
@@ -42,6 +42,7 @@ __all__ = [
     "Language",
     "OcrEngine",
     "OcrMode",
+    "TextOptions",
     "DEFAULT_OCR_ENGINE",
     "document_options_conflict",
     "BBox",

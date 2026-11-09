@@ -43,6 +43,7 @@ from resona_job_core import (
     OrganizationSettings,
     PolicyDenied,
     Stage,
+    TEXT_EXECUTION_PROFILE,
     TextOptions,
     check_policy,
     document_options_conflict,
@@ -79,7 +80,7 @@ MAX_UPLOAD_BYTES: int = config("RESONA_MAX_UPLOAD_BYTES", default=200 * 1024 * 1
 # Text uploads (postprocess-only jobs) are far smaller than media: 2 MiB is ~300k words.
 # The worker holds the text, its output and the input copy in memory and in one result JSON.
 MAX_TEXT_UPLOAD_BYTES: int = config("RESONA_MAX_TEXT_UPLOAD_BYTES", default=2 * 1024 * 1024, cast=int)
-_TEXT_SNIFF_BYTES = 64 * 1024
+_TEXT_TYPE = ("text", "text/plain")
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
 MAX_JOB_REQUEST_BYTES = 64 * 1024
 UPLOAD_TTL = timedelta(hours=1)
@@ -129,8 +130,6 @@ class JobRequest(BaseModel):
 
 
 _OPTIONS_MODEL: dict[str, type[BaseModel]] = {"audio": AudioOptions, "document": DocumentOptions, "text": TextOptions}
-TEXT_PROFILE = "postprocess"
-"""``Job.execution_profile`` of text jobs: they run a postprocess profile only, no engine candidates."""
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -196,6 +195,7 @@ class QueueContext:
 
     workers: list[OnlineWorker]
     approved_releases: set[tuple[str, str, str]]
+    known_releases: set[str]
     settings: OrganizationSettings | None
 
 
@@ -207,6 +207,7 @@ def _queue_context(session: Session, organization_id: str, now: datetime) -> Que
     return QueueContext(
         workers=_online_workers(session, organization_id, now),
         approved_releases=releases.approved_tuples(session, organization_id),
+        known_releases=releases.known_releases(session),
         settings=settings,
     )
 
@@ -217,7 +218,8 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
     ``no_capable_worker``: no online worker of the job's privacy class offers one of
     its candidates (with the job's worker-assigned endpoints); for a text job, none
     reports that it runs text jobs with those endpoints. ``release_not_approved``:
-    such workers exist, but none runs a release approved for the job.
+    such workers exist, but none runs a release approved for the job (for a text
+    job: a release the hub knows, staged or bundled).
     ``waiting_capacity``: an eligible worker is online and busy.
     """
     if job.status != JobStatus.PENDING:
@@ -245,6 +247,7 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
             execution_profile=job.execution_profile,
             candidate=candidate,
             approved=ctx.approved_releases,
+            known=ctx.known_releases,
         )
         for worker, candidate in capable
     )
@@ -314,35 +317,43 @@ def sniff_media(head: bytes) -> tuple[str, str] | None:
     return None
 
 
-def sniff_text(path: Path, size: int) -> tuple[str, str] | None:
-    """``("text", "text/plain")`` for UTF-8 text without NUL bytes, else None.
+class _TextSniffer:
+    """Incremental check that a streamed file is UTF-8 text without NUL bytes.
 
-    Text has no magic bytes, so this runs only after :func:`sniff_media` found no
-    media. Valid text above :data:`MAX_TEXT_UPLOAD_BYTES` is 413 ``too_large``.
+    Text has no magic bytes, so it is the family of last resort: a file is text only
+    when :func:`sniff_media` found no media and every chunk decoded. ``viable``
+    turns False at the first NUL byte or invalid UTF-8 sequence.
     """
-    with path.open("rb") as handle:
-        head = handle.read(_TEXT_SNIFF_BYTES)
-        if b"\x00" in head:
-            return None
+
+    def __init__(self) -> None:
+        self._decoder = codecs.getincrementaldecoder("utf-8")()
+        self.viable = True
+
+    def feed(self, chunk: bytes) -> None:
+        if not self.viable:
+            return
+        if b"\x00" in chunk:
+            self.viable = False
+            return
         try:
-            # A multibyte character cut at the sniff boundary is not an error yet.
-            codecs.getincrementaldecoder("utf-8")().decode(head, final=size <= len(head))
+            self._decoder.decode(chunk)
         except UnicodeDecodeError:
-            return None
-        if size > MAX_TEXT_UPLOAD_BYTES:
-            raise api_error(413, "too_large", f"text uploads are limited to {MAX_TEXT_UPLOAD_BYTES} bytes")
-        rest = handle.read()
-    if b"\x00" in rest:
-        return None
-    try:
-        (head + rest).decode("utf-8")
-    except UnicodeDecodeError:
-        return None
-    return "text", "text/plain"
+            self.viable = False
+
+    def finish(self) -> bool:
+        """Whether the whole stream was text (a multibyte character cut at the end is not)."""
+        if self.viable:
+            try:
+                self._decoder.decode(b"", final=True)
+            except UnicodeDecodeError:
+                self.viable = False
+        return self.viable
 
 
 class _TooLarge(Exception):
-    pass
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 class _BadForm(Exception):
@@ -353,11 +364,16 @@ class _FileField:
     """Multipart callbacks that stream the single ``file`` part into ``target``, hashing it.
 
     Other parts are small text form fields, collected into ``fields`` (bounded count and size).
+    With ``text_limit`` the file may also be text (``text``): once it is past
+    ``text_limit`` bytes, still valid text and not media by its magic bytes, the
+    stream stops with :class:`_TooLarge` instead of reaching ``limit``.
     """
 
-    def __init__(self, target, limit: int) -> None:
+    def __init__(self, target, limit: int, *, text_limit: int | None = None) -> None:
         self._target = target
         self._limit = limit
+        self._text_limit = text_limit
+        self.text = _TextSniffer() if text_limit is not None else None
         self._field = b""
         self._value = b""
         self._name: bytes | None = None
@@ -417,9 +433,15 @@ class _FileField:
         chunk = data[start:end]
         self.size += len(chunk)
         if self.size > self._limit:
-            raise _TooLarge
+            raise _TooLarge(f"upload exceeds {self._limit} bytes")
         if len(self.head) < _SNIFF_BYTES:
             self.head += chunk[: _SNIFF_BYTES - len(self.head)]
+            if self.text is not None and len(self.head) >= _SNIFF_BYTES and sniff_media(self.head) is not None:
+                self.text = None  # media: the text cap does not apply
+        if self.text is not None:
+            self.text.feed(chunk)
+            if self.text.viable and self.size > self._text_limit and sniff_media(self.head) is None:
+                raise _TooLarge(f"text uploads are limited to {self._text_limit} bytes")
         self.digest.update(chunk)
         self._target.write(chunk)
 
@@ -433,8 +455,8 @@ class _FileField:
         self._active = False
 
 
-def _too_large() -> Exception:
-    return api_error(413, "too_large", f"upload exceeds {MAX_UPLOAD_BYTES} bytes")
+def _too_large(message: str | None = None) -> Exception:
+    return api_error(413, "too_large", message or f"upload exceeds {MAX_UPLOAD_BYTES} bytes")
 
 
 async def receive_upload(
@@ -445,7 +467,8 @@ async def receive_upload(
     Returns ``({upload_id, sha256, size}, form_fields)``; the other multipart parts
     are returned as bounded text fields for routes that take form parameters.
     ``accept_text`` admits UTF-8 text (postprocess-only jobs) besides audio and
-    document media; routes that only process media leave it off.
+    document media, capped at :data:`MAX_TEXT_UPLOAD_BYTES` while streaming; routes
+    that only process media leave it off.
     """
     ctype, params = parse_options_header(request.headers.get("content-type", ""))
     boundary = params.get(b"boundary")
@@ -461,14 +484,14 @@ async def receive_upload(
     staged = storage.staging_path(final)
     try:
         with staged.open("wb") as target:
-            field = _FileField(target, limit)
+            field = _FileField(target, limit, text_limit=MAX_TEXT_UPLOAD_BYTES if accept_text else None)
             parser = MultipartParser(boundary, field.callbacks())
             try:
                 async for chunk in request.stream():
                     parser.write(chunk)
                 parser.finalize()
-            except _TooLarge:
-                raise _too_large() from None
+            except _TooLarge as exc:
+                raise _too_large(exc.message) from None
             except _BadForm:
                 raise api_error(422, "invalid_upload", "form fields are too many, too large or not text") from None
             except MultipartParseError:
@@ -478,8 +501,8 @@ async def receive_upload(
         if field.size == 0:
             raise api_error(422, "empty_upload", "the uploaded file is empty")
         media = sniff_media(field.head)
-        if media is None and accept_text:
-            media = sniff_text(staged, field.size)
+        if media is None and field.text is not None and field.text.finish():
+            media = _TEXT_TYPE
         if media is None:
             raise api_error(415, "unsupported_media", "unsupported media type")
         storage.promote(staged, final)
@@ -732,7 +755,7 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         policy = settings.policy(private=req.private)
         if req.kind == "text":
             # No engine stage: the postprocess profile is the job; build_pipeline checks its stages.
-            name, candidates = TEXT_PROFILE, []
+            name, candidates = TEXT_EXECUTION_PROFILE, []
         else:
             name, candidates = _resolve_candidates(req, options, settings)
             check_policy(policy, [_candidate_stage(c, req.kind, settings) for c in candidates])

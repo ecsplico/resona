@@ -41,13 +41,13 @@ def test_postprocess_job_reruns_profile_on_unpolished_markdown(tmp_path, monkeyp
     client.submit_job.side_effect = submit
     client.wait_for_job.return_value = JobView.from_dict({
         "job_id": 13, "kind": "text", "status": "completed", "private": True,
-        "execution_profile": "postprocess", "candidate": None})
+        "execution_profile": "-", "candidate": None})
     rerun = JobResult(kind="text", raw_text="Befund Komma ok", markdown="Befund, ok",
                       raw_markdown="Befund Komma ok", language="de", provenance={"stages": []})
     client.get_result.side_effect = [client.get_result.return_value, rerun]
 
     with patch("resona_client.client.ResonaClient.from_config", return_value=client):
-        result = runner.invoke(app, ["postprocess", "--job", "12", "--profile", "transcript-markdown-de"])
+        result = runner.invoke(app, ["postprocess", "--job", "12", "--profile", "transcript-markdown-de", "--json"])
 
     assert result.exit_code == 0, result.output
     assert client.get_result.call_args_list[0].args == (12,)
@@ -56,9 +56,13 @@ def test_postprocess_job_reruns_profile_on_unpolished_markdown(tmp_path, monkeyp
     assert (kwargs["engine"], kwargs["model"], kwargs["execution_profile"]) == (None, None, None)
     assert kwargs["language"] == "de"  # the earlier job's language
     assert uploaded == ["Befund Komma ok"]
-    assert (tmp_path / "job-12.md").read_text().rstrip().endswith("Befund, ok")
-    assert json.loads((tmp_path / "job-12.result.json").read_text())["kind"] == "text"
-    assert "candidate=none" in result.output
+    # The profile is part of the output name; the input is the job, not the deleted temp file.
+    markdown = (tmp_path / "job-12.transcript-markdown-de.md").read_text()
+    assert markdown.rstrip().endswith("Befund, ok") and "job:12" in markdown
+    assert json.loads((tmp_path / "job-12.transcript-markdown-de.result.json").read_text())["kind"] == "text"
+    (record,) = json.loads(result.stdout)["jobs"]
+    assert record["input"] == "job:12" and record["markdown"].endswith("job-12.transcript-markdown-de.md")
+    assert "candidate=none" in result.stderr
 
 
 def test_postprocess_needs_files_or_job_but_not_both(tmp_path):
@@ -69,7 +73,7 @@ def test_postprocess_needs_files_or_job_but_not_both(tmp_path):
         assert result.exit_code == 1 and "either text files or --job" in result.output
 
 
-def test_postprocess_local_runs_profile_in_process_without_overwriting_the_input(tmp_path, monkeypatch):
+def test_postprocess_writes_profile_named_outputs_next_to_the_input(tmp_path, monkeypatch):
     note = tmp_path / "befund.md"
     note.write_text("Befund Komma ok\n", encoding="utf-8")
     profile = tmp_path / "fix.json"
@@ -77,17 +81,30 @@ def test_postprocess_local_runs_profile_in_process_without_overwriting_the_input
     execution = MagicMock()
     monkeypatch.setattr("resona_cli.local_run.subprocess.run", execution)
 
-    clash = runner.invoke(app, ["postprocess", str(note), "--local", "--profile", str(profile)])
-    assert clash.exit_code == 2 and "would replace the input" in clash.output
-    assert note.read_text(encoding="utf-8") == "Befund Komma ok\n"
-
-    out = tmp_path / "out"
-    out.mkdir()
-    result = runner.invoke(app, ["postprocess", str(note), "--local", "--profile", str(profile),
-                                 "--output-dir", str(out)])
+    result = runner.invoke(app, ["postprocess", str(note), "--local", "--profile", str(profile)])
 
     assert result.exit_code == 0, result.output
     execution.assert_not_called()
-    stored = JobResult.model_validate_json((out / "befund.result.json").read_text())
+    assert note.read_text(encoding="utf-8") == "Befund Komma ok\n"
+    stored = JobResult.model_validate_json((tmp_path / "befund.fix.result.json").read_text())
     assert (stored.kind, stored.raw_text, stored.markdown) == ("text", "Befund Komma ok\n", "Befund, ok\n")
     assert stored.raw_markdown == "Befund Komma ok\n" and stored.provenance.worker_id == "local"
+    assert (tmp_path / "befund.fix.md").read_text().rstrip().endswith("Befund, ok")
+
+    # Existing outputs are kept unless --force; with --force they are replaced.
+    again = runner.invoke(app, ["postprocess", str(note), "--local", "--profile", str(profile)])
+    assert again.exit_code == 1 and "use --force" in again.output
+    forced = runner.invoke(app, ["postprocess", str(note), "--local", "--profile", str(profile), "--force"])
+    assert forced.exit_code == 0, forced.output
+
+
+@pytest.mark.parametrize(("profile", "label"), [
+    ("transcript-markdown-de", "transcript-markdown-de"),
+    ("profiles/fix.json", "fix"),
+    ('{"name": "inline fix", "steps": []}', "inline-fix"),
+    ('{"steps": []}', "postprocess"),
+])
+def test_profile_label_names_outputs_by_profile(profile, label):
+    from resona_cli.postprocess import profile_label
+
+    assert profile_label(profile) == label

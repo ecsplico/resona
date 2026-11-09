@@ -127,7 +127,7 @@ def test_tuples_on_an_unavailable_accelerator_are_never_offered(build_supervisor
     assert hub.paths("/fail") == []
 
 
-def test_only_cuda_tuples_drop_out_when_the_gpu_is_missing(build_supervisor, fakes, monkeypatch) -> None:
+def test_only_cuda_tuples_drop_out_when_the_gpu_is_missing(build_supervisor, fakes, monkeypatch, caplog) -> None:
     cuda = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     hub = fakes.FakeHub(cuda)
@@ -141,6 +141,8 @@ def test_only_cuda_tuples_drop_out_when_the_gpu_is_missing(build_supervisor, fak
     # Without a usable tuple it still polls, for text (postprocess-only) jobs only.
     ((_, _, _, claim_body),) = hub.paths("/claim")
     assert json.loads(claim_body) == {"capabilities": [], "text_jobs": True}
+    assert [r.getMessage() for r in caplog.records].count(
+        "no usable capability tuple on this host; serving text (postprocess-only) jobs only") == 1
 
 
 def test_private_job_runs_offline_without_cloud_credentials(build_supervisor, fakes, monkeypatch) -> None:
@@ -308,8 +310,6 @@ def test_text_job_input_that_is_not_utf8_fails_terminally(build_supervisor, fake
     ((_, _, _, body),) = hub.paths("/fail")
     assert (json.loads(body)["code"], json.loads(body)["retryable"]) == ("unsupported_input", False)
     assert hub.paths("/result") == []
-
-
 
 
 def test_document_input_is_named_by_its_magic_bytes_for_the_converter(build_supervisor, fakes) -> None:

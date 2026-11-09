@@ -160,7 +160,7 @@ class Upload(SQLModel, table=True):
     organization_id: str = Field(foreign_key="organization.id", index=True, nullable=False)
     sha256: str
     size: int
-    media_family: str  # audio | document
+    media_family: str  # audio | document | text
     media_type: str
     created_at: datetime = Field(
         default_factory=lambda: clock.now(),

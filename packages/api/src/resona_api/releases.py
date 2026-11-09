@@ -8,6 +8,8 @@ at startup so it can run evaluation jobs without being staged first. Every
 release, bundled or staged, runs production jobs only for the (execution profile,
 platform) tuples approved by promoting a measured evaluation; a release without
 such an approval runs evaluation, testbench and text (postprocess-only) jobs only.
+Text jobs still need a *known* release (staged or bundled): a build the hub never
+saw (a dev build, an unfinished update) never receives production text.
 """
 
 from __future__ import annotations
@@ -123,6 +125,11 @@ def is_known(session: Session, release_id: str) -> bool:
     return release_id == hub_release_id() or session.get(Release, release_id) is not None
 
 
+def known_releases(session: Session) -> set[str]:
+    """Every staged or bundled release id (see :func:`is_known`)."""
+    return set(session.exec(select(Release.release_id)).all()) | {hub_release_id()}
+
+
 def approved_tuples(session: Session, organization_id: str) -> set[tuple[str, str, str]]:
     """``(execution_profile, platform, release_id)`` approved for production in this organization."""
     rows = session.exec(
@@ -139,6 +146,7 @@ def may_run(
     execution_profile: str,
     candidate: Candidate | None,
     approved: set[tuple[str, str, str]],
+    known: set[str],
 ) -> bool:
     """Whether a worker on ``worker_release`` may run this job with ``candidate``.
 
@@ -147,20 +155,23 @@ def may_run(
     production jobs need a promoted evaluation of ``(execution_profile, platform,
     worker_release)``.
 
-    Text jobs (``candidate`` None) run on any reporting release. Release approval
-    measures engine output (ASR/OCR) on the evaluation corpus; a text job runs no
-    engine, and postprocess output is never gated (a report with a postprocess
-    profile is measurement-only), so no promotion could ever approve one. The
-    postprocess code they run is the same that already runs after every audio or
-    document job on that release; their safety comes from the admission and
-    per-stage policy checks, not from release approval.
+    Text jobs (``candidate`` None) run on any *known* release (``known``: staged or
+    bundled, see :func:`known_releases`), without a promoted evaluation. Release
+    approval measures engine output (ASR/OCR) on the evaluation corpus; a text job
+    runs no engine, and postprocess output is never gated (a report with a
+    postprocess profile is measurement-only), so no promotion could ever approve
+    one. Requiring a known release still keeps builds the hub never saw (dev
+    builds, an update whose ``prepare`` never finished) away from production text.
+    Their remaining safety comes from the admission and per-stage policy checks.
     """
     if not worker_release:
         return False
     if purpose == "evaluation":
         return worker_release == snapshot_release
-    if purpose == "testbench" or candidate is None:
+    if purpose == "testbench":
         return True
+    if candidate is None:
+        return worker_release in known
     return (execution_profile, platform_of(candidate), worker_release) in approved
 
 
@@ -189,6 +200,7 @@ __all__ = [
     "hub_release_id",
     "hub_version",
     "is_known",
+    "known_releases",
     "may_run",
     "parse_manifest",
     "platform_of",

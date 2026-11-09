@@ -222,6 +222,8 @@ class Supervisor:
         Tuples whose accelerator this host cannot use right now (a CUDA container started
         without a GPU, a missing driver) are withdrawn before the first heartbeat, so the
         hub never schedules them here and their jobs stay eligible for other workers.
+        A worker left without any tuple still claims text (postprocess-only) jobs and
+        says so once here.
         """
         self._config.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.rmtree(self._jobs_dir, ignore_errors=True)
@@ -233,6 +235,8 @@ class Supervisor:
             unavailable = {c for c in self._config.capabilities if c.accelerator == accelerator}
             self._withdrawn |= unavailable
             log.warning("%s is not available on this host; not offering %d tuple(s)", accelerator, len(unavailable))
+        if all(c in self._withdrawn for c in self._config.capabilities):
+            log.warning("no usable capability tuple on this host; serving text (postprocess-only) jobs only")
 
     def _probe_with_executor(self, accelerator: str) -> bool:
         """Ask the execution environment (where the ML frameworks live) whether ``accelerator`` works."""

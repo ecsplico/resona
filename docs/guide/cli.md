@@ -193,17 +193,23 @@ resona postprocess --job ID --profile NAME [OPTIONS]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `INPUTS` | | `.md`, `.markdown` or `.txt` files, globs or directories (UTF-8, at most 2 MiB each on the hub) |
-| `--job ID` | | Instead of files: re-run on the result of an earlier job. Input is its `raw_markdown` (the text before its own postprocessing), else its `markdown`; the language defaults to that job's. Outputs are `job-<id>.md` + `job-<id>.result.json` in `--output-dir` (default: the current directory), because the hub keeps no source file names |
+| `--job ID` | | Instead of files: re-run on the result of an earlier job. Input is its `raw_markdown` (the text before its own postprocessing), else its `markdown`; the language defaults to that job's. Outputs are `job-<id>.<profile>.md` + `job-<id>.<profile>.result.json` in `--output-dir` (default: the current directory), because the hub keeps no source file names; `--json` reports the input as `job:<id>` |
 | `--profile NAME` | (required) | Stored postprocess profile name; a file or inline JSON only with `--local` |
 
-An input can never be its own output: `resona postprocess notes.md` writes `notes.md` next to
-itself and is rejected (exit 2) unless `--output-dir` points elsewhere. `--local` runs the
-profile in-process with cached hub settings and the same policy checks; no execution subprocess
-is started.
+Outputs carry the profile in their name and sit next to the input unless `--output-dir` is
+given: `resona postprocess notes.md --profile fix` writes `notes.fix.md` +
+`notes.fix.result.json`, so the input is never replaced and runs of different profiles sit side
+by side. The profile part is the stored profile's name, a profile file's stem, or an inline JSON
+profile's `name` (`postprocess` if it has none), reduced to file-name-safe characters. Existing
+outputs are kept unless `--force`. `--local` runs the profile in-process with cached hub settings
+and the same policy checks; no execution subprocess is started.
 
 ```bash
 # Re-run a new profile on job 12's transcript
-resona postprocess --job 12 --profile transcript-markdown-de --output-dir ./out/
+resona postprocess --job 12 --profile transcript-markdown-de   # -> job-12.transcript-markdown-de.md
+
+# Fix dictation commands in a note, next to it -> befund.fix.md
+resona postprocess befund.md --profile fix
 
 # Polish exported notes with the local LLM that only the assigned worker reaches
 resona postprocess ./notes/*.md --profile document-polish-de --output-dir ./polished/

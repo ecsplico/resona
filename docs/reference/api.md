@@ -60,9 +60,9 @@ POST /v1/uploads
 Content-Type: multipart/form-data   (field: file)
 ```
 
-Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
+Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. Both limits are enforced while streaming: the upload stops at the limit and nothing is kept. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
 
-Audio and document media are recognized by their magic bytes. A file that is neither, but is valid UTF-8 without NUL bytes (`.md`, `.txt`), is stored as a `text` upload for a [text job](#text-jobs); text uploads over `RESONA_MAX_TEXT_UPLOAD_BYTES` (default 2 MiB) → `413 too_large`. `POST /v1/audio/transcriptions` accepts media only.
+Audio and document media are recognized by their magic bytes. A file that is neither, but is valid UTF-8 without NUL bytes (`.md`, `.txt`), is stored as a `text` upload for a [text job](#text-jobs); a text upload over `RESONA_MAX_TEXT_UPLOAD_BYTES` (default 2 MiB) → `413 too_large` as soon as the stream passes that size (the same applies to upload links). `POST /v1/audio/transcriptions` accepts media only.
 
 #### Upload through a single-use link
 
@@ -106,9 +106,9 @@ Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header 
 
 ##### Text jobs
 
-A `text` job runs only a postprocess profile on an uploaded text, without an engine: use it to re-run a profile on an existing transcript (for example a new profile, or the local LLM only its assigned worker reaches). `profile` is required (`422 profile_required`); `execution_profile`, `engine` and `model` are rejected (`422 invalid_request`), and so is `purpose: evaluation`. `options` must be empty. Admission checks the profile's stages against the organization policy as for every job (`403 policy_denied`), and the snapshot records the profile revision and policy. The job's `execution_profile` is reported as `postprocess` and `candidate` stays `null`.
+A `text` job runs only a postprocess profile on an uploaded text, without an engine: use it to re-run a profile on an existing transcript (for example a new profile, or the local LLM only its assigned worker reaches). `profile` is required (`422 profile_required`); `execution_profile`, `engine` and `model` are rejected (`422 invalid_request`), and so is `purpose: evaluation`. `options` must be empty. Admission checks the profile's stages against the organization policy as for every job (`403 policy_denied`), and the snapshot records the profile revision and policy. The job's `execution_profile` is reported as `-`, a name settings reject for real execution profiles, and `candidate` stays `null`.
 
-Any approved worker of the job's privacy class that reports text support claims it, as long as every worker-assigned endpoint of the profile is assigned to that worker. Text jobs need no release approval: approval measures engine output on the evaluation corpus, and a text job runs no engine (postprocess output is never gated); the code they run is the postprocess path every audio and document job already runs on that release.
+Any approved worker of the job's privacy class that reports text support claims it, as long as every worker-assigned endpoint of the profile is assigned to that worker and its release is one the hub knows (staged, or the hub's bundled release). Text jobs need no promoted evaluation: approval measures engine output on the evaluation corpus, and a text job runs no engine (postprocess output is never gated); the code they run is the postprocess path every audio and document job already runs on that release. A worker on a release the hub never saw (a dev build, an unfinished update) gets no text jobs.
 
 ##### Document options
 
@@ -152,7 +152,7 @@ JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending
 | Value | Meaning |
 |-------|---------|
 | `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs) with the job's worker-assigned endpoints |
-| `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release. Never for text jobs |
+| `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release. Text jobs: the worker's release is neither staged nor the bundled release; stage it |
 | `waiting_capacity` | An eligible worker is online and busy |
 
 `GET /v1/jobs/{id}/result/markdown` returns one character range of the result's Markdown, never the whole result: `{text, offset, next_offset, total_chars, kind, language, page_count, warnings, provenance}`. `offset` ≥ 0 (default 0); `limit` 1–32768 characters (default 32768, larger → `422`). `next_offset` is `null` once the range reaches the end; an offset past the end returns empty `text`. Concatenating `text` from offset 0 until `next_offset` is `null` reproduces `JobResult.markdown` exactly.

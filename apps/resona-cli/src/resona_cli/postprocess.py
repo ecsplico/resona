@@ -1,11 +1,17 @@
 """``resona postprocess``: text files or an earlier job's result -> hub text jobs
-(or ``--local``) -> ``<stem>.md``.
+(or ``--local``) -> ``<stem>.<profile>.md``.
 
-A text job runs only a postprocess profile; nothing is transcribed again. With
+A text job runs only a postprocess profile; nothing is transcribed again. Outputs
+carry the profile in their name (``notes.md --profile fix`` -> ``notes.fix.md`` +
+``notes.fix.result.json`` next to the input), so the default never replaces the
+input and runs of different profiles on one input sit side by side. With
 ``--job`` the earlier job's unpolished Markdown (``raw_markdown``, else
-``markdown``) is the input and the output stem is ``job-<id>``: the hub does not
-keep source file names.
+``markdown``) is the input, the output stem is ``job-<id>.<profile>`` in the
+current directory (the hub does not keep source file names) and the input is
+reported as ``job:<id>``.
 """
+import json
+import re
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -28,6 +34,23 @@ def _job_text(job_id: int) -> tuple[str, str | None]:
     return text, result.language
 
 
+def profile_label(profile: str) -> str:
+    """The profile's part of the output name: its name, a profile file's stem, or an
+    inline JSON profile's ``name``; reduced to file-name-safe characters."""
+    text = profile.strip()
+    if text.startswith("{"):
+        try:
+            name = json.loads(text).get("name")
+        except (ValueError, AttributeError):
+            name = None
+        label = name if isinstance(name, str) else ""
+    elif "/" in text or text.lower().endswith(".json"):
+        label = Path(text).stem
+    else:
+        label = text
+    return re.sub(r"[^\w.-]+", "-", label).strip(".-") or "postprocess"
+
+
 def postprocess_files(
     inputs: Optional[list[str]] = typer.Argument(
         None, help="Text/Markdown files, glob patterns, or directories.", metavar="[INPUTS]..."),
@@ -38,8 +61,8 @@ def postprocess_files(
     recursive: bool = typer.Option(False, "--recursive", "-r",
         help="Recurse into directories / use `**` in glob patterns."),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir",
-        help="Directory for <stem>.md and <stem>.result.json (default: next to each input; "
-             "the current directory with --job)."),
+        help="Directory for <stem>.<profile>.md and <stem>.<profile>.result.json (default: next to "
+             "each input; the current directory with --job)."),
     force: bool = typer.Option(False, "--force", help="Overwrite existing outputs."),
     as_json: bool = typer.Option(False, "--json", help="Print a JSON report on stdout."),
     no_wait: bool = typer.Option(False, "--no-wait", help="Submit and print job IDs; do not wait."),
@@ -56,12 +79,13 @@ def postprocess_files(
 ):
     """Run a postprocess profile on text without transcribing again.
 
-    Writes <stem>.md and <stem>.result.json. Nothing falls back automatically: an
-    unreachable hub, a timeout or a policy denial is reported as an error.
+    Writes <stem>.<profile>.md and <stem>.<profile>.result.json. Nothing falls back
+    automatically: an unreachable hub, a timeout or a policy denial is reported as an error.
     """
     want_private = check_privacy_flags(private, allow_cloud)
     if (job is None) == (not inputs):
         fail("give either text files or --job <id>, not both")
+    input_label = None
     with tempfile.TemporaryDirectory(prefix="resona-postprocess-") as tmp:
         if job is not None:
             source = Path(tmp) / f"job-{job}.md"
@@ -70,6 +94,7 @@ def postprocess_files(
             language = language or job_language
             files = [source]
             output_dir = output_dir or Path.cwd()
+            input_label = f"job:{job}"
         else:
             files = expand_inputs(inputs or [], recursive, EXTENSIONS)
             if not files:
@@ -91,4 +116,6 @@ def postprocess_files(
             profile=profile,
             options=TextOptions(),
             local=local,
+            output_suffix=profile_label(profile),
+            input_label=input_label,
         ))

@@ -763,7 +763,8 @@ def new_text_job(http, headers, profile="fix") -> int:
     return resp.json()["job_id"]
 
 
-def test_text_job_completes_through_worker_routes_on_any_release(http, fresh_org, client_headers, store_profile):
+def test_text_job_completes_through_worker_routes_on_an_unpromoted_release(
+        http, fresh_org, client_headers, store_profile):
     revision = store_profile(fresh_org, "fix", RULES)
     headers = client_headers(fresh_org)
     job_id = new_text_job(http, headers)
@@ -772,10 +773,11 @@ def test_text_job_completes_through_worker_routes_on_any_release(http, fresh_org
     assert snapshot["postprocess"]["revision"] == revision and snapshot["policy"]["private"] is True
     assert http.get(f"/v1/jobs/{job_id}", headers=headers).json()["queue_reason"] == "no_capable_worker"
 
-    # No promoted evaluation covers this release: text jobs still run (no engine output to gate).
+    # No promoted evaluation covers the bundled release: text jobs still run (no engine
+    # output to gate). An unknown release never gets them: test_releases.py.
     with Session(engine) as session:
         worker_id, token = enroll_worker(session, "text-worker", fresh_org)
-        approve_worker(session, worker_id, private=True, capabilities=[]).runtime_version = "0.0.0-unapproved"
+        approve_worker(session, worker_id, private=True, capabilities=[]).runtime_version = hub_release_id()
         session.commit()
     worker = {"Authorization": f"Bearer {token}", "X-Resona-Worker-Protocol": "1"}
     # A worker that does not ask for text jobs (older release) never receives one.
@@ -836,11 +838,60 @@ def test_text_job_without_profile_or_with_engine_is_422(http, fresh_org, client_
     assert resp.status_code == 422 and error_code(resp) == code
 
 
-def test_text_upload_is_not_an_audio_job_and_has_its_own_size_cap(http, fresh_org, client_headers, monkeypatch):
+def _upload_files(org_id: str) -> list:
+    with Session(engine) as session:
+        directory = storage.upload_path(session.get(Organization, org_id).storage_id, "upl_x").parent
+    return sorted(directory.iterdir()) if directory.exists() else []
+
+
+def test_text_upload_is_not_an_audio_job_and_has_its_own_size_cap(
+        http, fresh_org, client_headers, monkeypatch, wav_bytes):
     headers = client_headers(fresh_org)
     upload_id = upload(http, headers, TEXT, name="a.md", ctype="text/markdown").json()["upload_id"]
     resp = submit(http, headers, {"kind": "audio", "upload_id": upload_id})
     assert resp.status_code == 422 and error_code(resp) == "kind_mismatch"
-    monkeypatch.setattr(jobs_routes, "MAX_TEXT_UPLOAD_BYTES", len(TEXT) - 1)
-    big = upload(http, headers, TEXT, name="a.md", ctype="text/markdown")
-    assert big.status_code == 413 and error_code(big) == "too_large"
+    before = _upload_files(fresh_org)
+    monkeypatch.setattr(jobs_routes, "MAX_TEXT_UPLOAD_BYTES", 64)
+    big = TEXT * 1000
+    for response in (
+        upload(http, headers, big, name="a.md", ctype="text/markdown"),
+        _link_upload(http, http.post("/v1/upload-links", headers=headers).json(), big,
+                     name="a.md", ctype="text/markdown"),
+    ):
+        assert response.status_code == 413 and error_code(response) == "too_large"
+        body = response.json()
+        assert "64 bytes" in (body.get("message") or body["detail"]["message"])
+    assert _upload_files(fresh_org) == before  # staging removed
+    # The text cap never applies to media, however small it is.
+    assert len(wav_bytes) > 64
+    assert upload(http, headers, wav_bytes).status_code == 201
+
+
+class _Sink:
+    def __init__(self) -> None:
+        self.written = 0
+
+    def write(self, chunk: bytes) -> None:
+        self.written += len(chunk)
+
+
+def _stream(field, chunks) -> None:
+    field._name = b"file"
+    field._headers_finished()
+    for chunk in chunks:
+        field._part_data(chunk, 0, len(chunk))
+
+
+def test_oversized_text_stops_at_the_text_cap_while_streaming():
+    sink = _Sink()
+    field = jobs_routes._FileField(sink, 1_000_000, text_limit=100)
+    with pytest.raises(jobs_routes._TooLarge):
+        _stream(field, [b"x" * 60] * 1000)
+    # Stopped at the chunk that crossed 100 bytes, not after the whole 60 kB.
+    assert sink.written == 60 and field.size == 120
+
+    # Not text (a NUL byte, invalid UTF-8) or media by magic bytes: the media cap applies.
+    for first in (b"\x00" * 60, b"\xc3\x28" * 30, b"%PDF-1.7\n" + b"x" * 51):
+        sink = _Sink()
+        _stream(jobs_routes._FileField(sink, 1_000_000, text_limit=100), [first] + [b"x" * 60] * 10)
+        assert sink.written == 660

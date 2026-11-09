@@ -37,11 +37,13 @@ class OutputExists(Exception):
         self.path = path
 
 
-def output_paths(source: Path, output_dir: Optional[Path]) -> OutputPaths:
+def output_paths(source: Path, output_dir: Optional[Path], suffix: Optional[str] = None) -> OutputPaths:
+    """``<stem>.md`` + ``<stem>.result.json``; with ``suffix`` the stem is ``<stem>.<suffix>``."""
     directory = output_dir or source.parent
+    stem = f"{source.stem}.{suffix}" if suffix else source.stem
     return OutputPaths(
-        markdown=directory / f"{source.stem}.md",
-        result=directory / f"{source.stem}.result.json",
+        markdown=directory / f"{stem}.md",
+        result=directory / f"{stem}.result.json",
     )
 
 
@@ -79,13 +81,13 @@ def _backup(path: Path) -> Optional[Path]:
         return backup
 
 
-def result_metadata(source: Path, result: JobResult, *, job_id: Optional[int],
+def result_metadata(source: str, result: JobResult, *, job_id: Optional[int],
                     private: bool, execution_profile: Optional[str],
                     postprocess_profile: Optional[str]) -> dict[str, Any]:
-    """Frontmatter for the Markdown file, taken from the result's provenance."""
+    """Frontmatter for the Markdown file (``source``: the input's name), taken from the result's provenance."""
     primary = next((s for s in result.provenance.stages if s.stage in ("asr", "layout", "ocr")), None)
     return {
-        "source": source.name,
+        "source": source,
         "kind": result.kind,
         "job_id": job_id,
         "language": result.language,

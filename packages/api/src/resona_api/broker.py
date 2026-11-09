@@ -360,6 +360,8 @@ def try_claim(
             return None
         settings = _settings_or_none(session, organization_id)
         approved_releases = releases.approved_tuples(session, organization_id)
+        release = worker.runtime_version
+        known_releases = {release} if release and releases.is_known(session, release) else set()
 
         pending = session.exec(
             select(Job)
@@ -392,6 +394,7 @@ def try_claim(
                     execution_profile=job.execution_profile,
                     candidate=c,
                     approved=approved_releases,
+                    known=known_releases,
                 )
                 and endpoints_assigned(snapshot, job.kind, c, worker_id=worker.id, settings=settings)
             ]
