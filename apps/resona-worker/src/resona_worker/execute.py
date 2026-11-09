@@ -107,6 +107,13 @@ _DEVICE = {"metal": "mps", "cuda": "cuda", "cpu": "cpu"}
 # command-buffer OOM (``kIOGPUCommandBufferCallbackErrorOutOfMemory``).
 OOM_MARKERS = ("memoryerror", "[metal::malloc]", "out of memory", "outofmemory")
 
+# A pause of at least this long between two segments starts a new paragraph.
+PARAGRAPH_PAUSE_SECONDS = 1.5
+# A paragraph this long ends after the next segment that ends a sentence; at twice this
+# length (engines without punctuation) it ends at the next segment.
+PARAGRAPH_MAX_CHARS = 1000
+_SENTENCE_END = re.compile(r"[.!?…][\"'»«“”’)\]]*$")
+
 
 def mentions_out_of_memory(text: str) -> bool:
     lowered = text.lower()
@@ -216,6 +223,42 @@ def _segment(seg: Any) -> Segment:
     return Segment(start=float(start), end=float(end), text=str(text).strip())
 
 
+def audio_markdown(segments: list[Segment], text: str) -> str:
+    """Markdown for an audio transcript: segments joined with spaces, paragraphs blank-line separated.
+
+    A paragraph ends at a pause of ``PARAGRAPH_PAUSE_SECONDS`` or more, or once it is
+    ``PARAGRAPH_MAX_CHARS`` long, after the next segment ending a sentence (at twice that
+    length, at the next segment). Without segment text (engines that return none) the
+    plain transcript is the Markdown.
+    """
+    paragraphs: list[list[str]] = []
+    paragraph_chars = 0
+    previous_end = 0.0
+    for seg in segments:
+        if not seg.text:
+            continue
+        if paragraphs:
+            open_paragraph = paragraphs[-1]
+            pause = seg.start - previous_end >= PARAGRAPH_PAUSE_SECONDS
+            sentence_done = _SENTENCE_END.search(open_paragraph[-1]) is not None
+            too_long = paragraph_chars >= 2 * PARAGRAPH_MAX_CHARS or (
+                paragraph_chars >= PARAGRAPH_MAX_CHARS and sentence_done
+            )
+            starts_paragraph = pause or too_long
+        else:
+            starts_paragraph = True
+        if starts_paragraph:
+            paragraphs.append([seg.text])
+            paragraph_chars = len(seg.text)
+        else:
+            paragraphs[-1].append(seg.text)
+            paragraph_chars += len(" ") + len(seg.text)
+        previous_end = seg.end
+    if not paragraphs:
+        return text
+    return "\n\n".join(" ".join(paragraph) for paragraph in paragraphs)
+
+
 def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
     from resona_asr_core.audio import load_audio_path
     from resona_asr_core.model_cache import configure_model_cache
@@ -264,7 +307,7 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
     return JobResult(
         kind="audio",
         raw_text=text,
-        markdown=text,
+        markdown=audio_markdown(segments, text),
         language=out.get("language") or snapshot.get("language"),
         segments=segments,
         provenance=Provenance(

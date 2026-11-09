@@ -1,12 +1,15 @@
-"""Postprocess output reaches the uploaded result: extract data, skipped steps, endpoint provenance."""
+"""Postprocess output reaches the uploaded result: extract data, skipped steps, endpoint provenance, audio paragraphs."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from resona_job_core import Candidate, JobResult
 from resona_postprocess import llm as llm_module
+
+from resona_worker import execute
 
 CAND = Candidate(engine="faster-whisper", model="tiny", model_revision="rev1", accelerator="cpu")
 LOCAL_POLICY = {
@@ -108,3 +111,38 @@ def test_bookkeeping_key_never_leaks_into_structured(fakes, build_supervisor, mo
         "postprocess_step_skipped:fields"
     ]
 
+
+# Runs the real executor with a stub engine, so the supervisor postprocesses the Markdown
+# that ``execute.audio_markdown`` built from the segments.
+SEGMENTED_EXECUTOR = r'''
+import sys
+from resona_worker import execute
+
+class Engine:
+    def __init__(self, device, modelname):
+        pass
+
+    def transcribe(self, audio, **kwargs):
+        return {"text": "Hallo welt. Tschüss welt.", "language": "de", "segments": [
+            {"start": 0.0, "end": 1.0, "text": "Hallo welt."},
+            {"start": 3.0, "end": 4.0, "text": "Tschüss welt."},
+        ]}
+
+execute._load_engine = lambda name: Engine
+sys.exit(execute.main(sys.argv[1:]))
+'''
+
+
+def test_profile_output_replaces_the_paragraphed_audio_markdown(fakes, build_supervisor, executor_script) -> None:
+    executor_script.write_text(SEGMENTED_EXECUTOR, encoding="utf-8")
+    wav = Path(execute.__file__).parent / "fixtures" / "de_short.wav"
+    profile = _profile({"type": "replacements", "rules": [{"pattern": "welt", "replacement": "Welt"}]})
+    hub = fakes.FakeHub(CAND, job_input=wav.read_bytes(), profile=profile)
+
+    assert build_supervisor(hub, capabilities=(CAND,)).run(once=True) == 0
+
+    ((_, _, _, body),) = hub.paths("/result")
+    result = JobResult.model_validate_json(body)
+    assert result.markdown == "Hallo Welt.\n\nTschüss Welt."
+    assert result.raw_markdown == "Hallo welt.\n\nTschüss welt."
+    assert result.raw_text == "Hallo welt. Tschüss welt."

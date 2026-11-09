@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from resona_job_core import JobResult, Provenance, StageProvenance
+from resona_job_core import JobResult, Provenance, Segment, StageProvenance
 
 from resona_worker import execute
 from resona_worker.execute import ExitCode, main, subprocess_env
@@ -174,6 +174,65 @@ def test_provenance_records_the_loaded_snapshot_revision(tmp_path: Path, monkeyp
         "49e6aa286ad60c14352c404340ded53710378a11",
         "cpu",
     )
+
+
+def _transcribe_with(tmp_path: Path, monkeypatch, out: dict) -> JobResult:
+    class Engine:
+        def __init__(self, device: str, modelname: str) -> None:
+            pass
+
+        def transcribe(self, audio, **kwargs):
+            return out
+
+    monkeypatch.setattr(execute, "_load_engine", lambda name: Engine)
+    result = tmp_path / "out.json"
+
+    code = main(["--snapshot", str(_audio_snapshot(tmp_path)), "--input", str(DE_SHORT), "--out", str(result)])
+
+    assert code == ExitCode.OK
+    return JobResult.model_validate_json(result.read_text())
+
+
+def test_audio_markdown_breaks_paragraphs_at_pauses_and_keeps_raw_text(tmp_path: Path, monkeypatch) -> None:
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": " Guten Tag."},
+        {"start": 2.3, "end": 4.0, "text": " Wie geht es?"},
+        {"start": 5.5, "end": 7.0, "text": " Danke, gut."},  # 1.5 s pause: new paragraph
+        {"start": 7.2, "end": 7.4, "text": " "},
+        {"start": 9.0, "end": 10.0, "text": " Tschüss."},  # pause measured from the last spoken segment
+    ]
+    text = "Guten Tag. Wie geht es? Danke, gut. Tschüss."
+
+    result = _transcribe_with(tmp_path, monkeypatch, {"text": text, "language": "de", "segments": segments})
+
+    assert result.markdown == "Guten Tag. Wie geht es?\n\nDanke, gut.\n\nTschüss."
+    assert result.raw_text == text
+
+
+def test_audio_markdown_ends_long_paragraphs_at_a_sentence_end(tmp_path: Path, monkeypatch) -> None:
+    sentence = "x" * (execute.PARAGRAPH_MAX_CHARS // 2) + "."
+    unfinished = "y" * (execute.PARAGRAPH_MAX_CHARS // 2) + ":"  # a colon does not end a sentence
+    texts = [sentence, unfinished, sentence, sentence]
+    segments = [{"start": float(i), "end": i + 0.9, "text": t} for i, t in enumerate(texts)]
+
+    result = _transcribe_with(tmp_path, monkeypatch, {"text": " ".join(texts), "segments": segments})
+
+    # Over the limit after the unfinished second segment, so the paragraph ends after the next sentence.
+    assert result.markdown == f"{sentence} {unfinished} {sentence}\n\n{sentence}"
+
+
+def test_audio_markdown_without_punctuation_breaks_at_twice_the_limit() -> None:
+    texts = ["a" * execute.PARAGRAPH_MAX_CHARS, "b" * (execute.PARAGRAPH_MAX_CHARS - 1), "c", "d"]
+    segments = [Segment(start=float(i), end=i + 0.9, text=t) for i, t in enumerate(texts)]
+
+    # 1000 + " " + 999 = 2000 characters: the third segment opens a new paragraph.
+    assert execute.audio_markdown(segments, "") == f"{texts[0]} {texts[1]}\n\nc d"
+
+
+def test_audio_markdown_without_segments_is_the_plain_transcript(tmp_path: Path, monkeypatch) -> None:
+    result = _transcribe_with(tmp_path, monkeypatch, {"text": " Guten Tag. ", "segments": []})
+
+    assert result.markdown == result.raw_text == "Guten Tag."
 
 
 def test_cuda_candidate_on_a_host_without_cuda_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:
