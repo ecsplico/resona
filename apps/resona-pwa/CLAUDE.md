@@ -139,7 +139,10 @@ it via `docker compose` (the `project-worker` service).
   dictation switches to the editor too. New raw content added after a run (PTT dictation,
   a continued part) goes into `text` *and* is appended to `raw_text` (`appendToRaw`), so a
   re-run or "Rohtranskript wiederherstellen" (`rawRestore`) keeps it; when `text` differs
-  from `processed_text` (`editedSinceProfile`) both ask before replacing those edits.
+  from `processed_text` (`editedSinceProfile`) both ask before replacing those edits. A save
+  that only added raw parts to an unedited output (no `typed` event from `TranscriptEditor`
+  since the last save, which the exposed dictation/append methods never emit) also writes
+  `processed_text`, so nothing would be lost and no prompt appears.
   Who runs it: Directus mode → the project-worker (`_run_postprocess` in `worker.py`: claim
   → `POST /v1/uploads` with the text as `transcript.md` → `POST /v1/jobs {kind:"text",
   profile}` → poll → write back → delete the hub job); standalone →

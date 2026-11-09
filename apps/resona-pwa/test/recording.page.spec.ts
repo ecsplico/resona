@@ -14,8 +14,8 @@ import { useRecordingsRefresh } from "~/composables/useShell";
 // insertText/insertPlaceholder/replaceBetween contract the page relies on.
 mockComponent("TranscriptEditor", () => ({
 	props: ["modelValue", "placeholder", "editable"],
-	emits: ["update:modelValue"],
-	setup(props: { modelValue?: string; editable?: boolean }, { emit, expose }: { emit: (e: string, v: string) => void; expose: (api: unknown) => void }) {
+	emits: ["update:modelValue", "typed"],
+	setup(props: { modelValue?: string; editable?: boolean }, { emit, expose }: { emit: (e: string, v?: string) => void; expose: (api: unknown) => void }) {
 		expose({
 			insertText: (text: string) => {
 				const cur = props.modelValue ?? "";
@@ -43,7 +43,11 @@ mockComponent("TranscriptEditor", () => ({
 			"data-testid": "transcript-edit",
 			"value": props.modelValue ?? "",
 			"readonly": props.editable === false,
-			"onInput": (e: Event) => emit("update:modelValue", (e.target as HTMLTextAreaElement).value),
+			// Input is the user typing; the exposed methods above are not.
+			"onInput": (e: Event) => {
+				emit("typed");
+				emit("update:modelValue", (e.target as HTMLTextAreaElement).value);
+			},
 		});
 	},
 }));
@@ -567,6 +571,7 @@ describe("recording detail page", () => {
 			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
 				text: `${PROCESSED}\nNeuer Teil`,
 				raw_text: "Hallo Welt\nNeuer Teil",
+				processed_text: `${PROCESSED}\nNeuer Teil`,
 			});
 			expect(w.find("[data-testid=\"postprocess-raw\"] pre").text()).toBe("Hallo Welt\nNeuer Teil");
 		});
@@ -590,6 +595,85 @@ describe("recording detail page", () => {
 			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
 				text: `${PROCESSED}diktiert `,
 				raw_text: "Hallo Welt\ndiktiert",
+				processed_text: `${PROCESSED}diktiert `,
+			});
+		});
+
+		describe("asks before a re-run or restore drops saved edits", () => {
+			let confirm: ReturnType<typeof vi.fn>;
+
+			beforeEach(() => {
+				confirm = vi.fn(() => false);
+				vi.stubGlobal("confirm", confirm);
+				cont.finish.mockImplementation(async () => {
+					cont.phase!.value = "idle";
+					return continueResult();
+				});
+			});
+
+			afterEach(() => {
+				vi.unstubAllGlobals();
+			});
+
+			async function saveTypedEdit(w: VueWrapper): Promise<void> {
+				await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+				await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
+				await w.find("[data-testid=\"save-transcript\"]").trigger("click");
+				await flushPromises();
+			}
+
+			it("asks before re-running after a saved edit", async () => {
+				transcript.value = processedTranscript();
+				const w = await mountSuspended(RecordingPage);
+				await saveTypedEdit(w);
+				store.updateTranscript.mockClear();
+				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
+				await flushPromises();
+				expect(confirm).toHaveBeenCalledTimes(1);
+				expect(store.updateTranscript).not.toHaveBeenCalled();
+			});
+
+			it("asks before restoring the raw transcript after a saved edit", async () => {
+				transcript.value = processedTranscript();
+				const w = await mountSuspended(RecordingPage);
+				await saveTypedEdit(w);
+				store.updateTranscript.mockClear();
+				await w.find("[data-testid=\"postprocess-restore\"]").trigger("click");
+				await flushPromises();
+				expect(confirm).toHaveBeenCalledTimes(1);
+				expect(store.updateTranscript).not.toHaveBeenCalled();
+			});
+
+			it("does not ask when only a continued part was added", async () => {
+				transcript.value = processedTranscript();
+				const w = await mountSuspended(RecordingPage);
+				await recordPart(w);
+				await flushPromises();
+				store.updateTranscript.mockClear();
+				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
+				await flushPromises();
+				expect(confirm).not.toHaveBeenCalled();
+				expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
+					postprocess_status: "pending", postprocess_profile: "transcript-markdown-de",
+				});
+			});
+
+			it("asks when a continued part was added on top of typed edits", async () => {
+				transcript.value = processedTranscript();
+				const w = await mountSuspended(RecordingPage);
+				await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+				await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
+				await recordPart(w);
+				await flushPromises();
+				expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
+					text: "## Befund gekürzt\nNeuer Teil",
+					raw_text: "Hallo Welt\nNeuer Teil",
+				});
+				store.updateTranscript.mockClear();
+				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
+				await flushPromises();
+				expect(confirm).toHaveBeenCalledTimes(1);
+				expect(store.updateTranscript).not.toHaveBeenCalled();
 			});
 		});
 	});

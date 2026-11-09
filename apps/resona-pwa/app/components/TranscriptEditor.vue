@@ -17,7 +17,23 @@ const props = withDefaults(defineProps<{ modelValue: string; placeholder?: strin
 	editable: true,
 });
 
-const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+// `typed`: the user changed the text (keyboard, paste, cut, undo); not emitted for
+// changes made through the exposed methods (dictation, appended parts).
+const emit = defineEmits<{ "update:modelValue": [value: string]; "typed": [] }>();
+
+// True while an exposed method runs its commands; onUpdate fires synchronously
+// inside them, so their updates are told apart from user input.
+let programmatic = false;
+
+function viaApi(run: () => void): void {
+	programmatic = true;
+	try {
+		run();
+	}
+	finally {
+		programmatic = false;
+	}
+}
 
 function toContent(text: string): JSONContent {
 	return {
@@ -38,6 +54,7 @@ const editor = useEditor({
 	],
 	onUpdate: ({ editor }) => {
 		const text = editor.getText({ blockSeparator: BLOCK });
+		if (!programmatic) emit("typed");
 		if (text !== props.modelValue) {
 			emit("update:modelValue", text);
 		}
@@ -70,7 +87,7 @@ function insertText(text: string): void {
 	const { from } = e.state.selection;
 	const before = from > 0 ? e.state.doc.textBetween(Math.max(0, from - 1), from, BLOCK, " ") : "";
 	const lead = before.length > 0 && !/\s$/.test(before) ? " " : "";
-	e.chain().focus().insertContent(lead + text).run();
+	viaApi(() => e.chain().focus().insertContent(lead + text).run());
 }
 
 function focus(): void {
@@ -83,7 +100,7 @@ function insertPlaceholder(): { from: number; to: number } | null {
 	const e = editor.value;
 	if (!e) return null;
 	const from = e.state.selection.from;
-	e.chain().focus().insertContent("[…]").run();
+	viaApi(() => e.chain().focus().insertContent("[…]").run());
 	return { from, to: from + 3 };
 }
 
@@ -92,10 +109,10 @@ function replaceBetween(from: number, to: number, text: string): void {
 	const e = editor.value;
 	if (!e) return;
 	if (text) {
-		e.chain().focus().insertContentAt({ from, to }, text).run();
+		viaApi(() => e.chain().focus().insertContentAt({ from, to }, text).run());
 	}
 	else {
-		e.chain().focus().deleteRange({ from, to }).run();
+		viaApi(() => e.chain().focus().deleteRange({ from, to }).run());
 	}
 }
 
@@ -110,7 +127,7 @@ function appendParagraph(text: string): void {
 	const end = doc.content.size;
 	const last = doc.lastChild;
 	const from = last && last.type.name === "paragraph" && last.content.size === 0 ? end - last.nodeSize : end;
-	e.commands.insertContentAt({ from, to: end }, toContent(text).content ?? [], { updateSelection: false });
+	viaApi(() => e.commands.insertContentAt({ from, to: end }, toContent(text).content ?? [], { updateSelection: false }));
 }
 
 defineExpose({ insertText, insertPlaceholder, replaceBetween, appendParagraph, focus });

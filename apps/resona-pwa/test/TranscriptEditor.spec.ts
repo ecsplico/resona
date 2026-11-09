@@ -47,6 +47,27 @@ describe("TranscriptEditor (TipTap)", () => {
 		return w.emitted("update:modelValue")!.at(-1)![0] as string;
 	}
 
+	it("emits typed for user edits, never for the exposed methods (dictation, appended parts)", async () => {
+		const w = await mountEditor("erste zeile");
+		await nextTick();
+		const vm = w.vm as unknown as EditorApi & {
+			insertPlaceholder: () => { from: number; to: number } | null;
+			replaceBetween: (from: number, to: number, text: string) => void;
+		};
+		vm.insertText("diktiert");
+		vm.appendParagraph("neuer teil");
+		const range = vm.insertPlaceholder()!;
+		vm.replaceBetween(range.from, range.to, "satz");
+		await nextTick();
+		expect(w.emitted("typed")).toBeUndefined();
+
+		// A transaction dispatched on the view, as keyboard input is.
+		const editor = (w.find(".ProseMirror").element as unknown as { editor: { view: { state: { tr: { insertText: (t: string) => unknown } }; dispatch: (tr: unknown) => void } } }).editor;
+		editor.view.dispatch(editor.view.state.tr.insertText("!"));
+		await nextTick();
+		expect(w.emitted("typed")).toHaveLength(1);
+	});
+
 	it("appendParagraph adds a paragraph at the end and keeps the caret where it was", async () => {
 		const w = await mountEditor("erste zeile\nzweite zeile");
 		await nextTick();

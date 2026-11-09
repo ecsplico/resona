@@ -117,6 +117,9 @@ const dirty = computed(() => seeded.value && edit.text.value !== edit.committed.
 // into `text` and, on the next save, onto the end of `raw_text`, so a re-run or a
 // restore keeps it.
 let rawParts: string[] = [];
+// The user changed the text in the editor since the last save/seed (as opposed to
+// dictation or a continued part, which only add raw content).
+const typed = ref(false);
 
 function noteRawPart(text: string): void {
 	if (transcript.value?.applied_profile && text.trim()) rawParts.push(text);
@@ -126,17 +129,29 @@ function noteRawPart(text: string): void {
 async function saveTranscript(options: { correction?: boolean } = {}): Promise<boolean> {
 	const target = edit.text.value;
 	if (transcript.value) {
+		const t = transcript.value;
 		// The user's edits become correction data for the engine; text appended by
 		// "Weiter aufnehmen" is new content, not a correction, and neither is an edit
 		// of a profile's output (the engine did not write that text).
-		const correction = options.correction === false || transcript.value.applied_profile
+		const correction = options.correction === false || t.applied_profile
 			? undefined
-			: { recording: id, engine: transcript.value.engine, language: recording.value?.language };
-		const raw = rawParts.length > 0 ? appendToRaw(transcript.value, rawParts) : null;
-		await edit.saveEdit(transcript.value.id, target, correction, raw === null ? {} : { raw_text: raw });
+			: { recording: id, engine: t.engine, language: recording.value?.language };
+		const raw = rawParts.length > 0 ? appendToRaw(t, rawParts) : null;
+		// Only raw content was added to an unedited profile output: the new text is
+		// still "the output plus raw parts", which a re-run or restore reproduces, so
+		// it becomes the baseline and those do not ask.
+		const keepsOutput = t.applied_profile != null && !typed.value
+			&& edit.committed.value === (t.processed_text ?? null);
+		await edit.saveEdit(t.id, target, correction, {
+			...(raw === null ? {} : { raw_text: raw }),
+			...(keepsOutput ? { processed_text: target } : {}),
+		});
 		if (edit.error.value) return false;
-		if (raw !== null) transcript.value.raw_text = raw;
+		t.text = target;
+		if (raw !== null) t.raw_text = raw;
+		if (keepsOutput) t.processed_text = target;
 		rawParts = [];
+		typed.value = false;
 		return true;
 	}
 	// No transcript row yet -> create one for this recording.
@@ -144,6 +159,7 @@ async function saveTranscript(options: { correction?: boolean } = {}): Promise<b
 	if (!created) return false;
 	transcript.value = created;
 	seeded.value = true;
+	typed.value = false;
 	return true;
 }
 
@@ -152,6 +168,7 @@ function discardEdits(): void {
 	edit.text.value = edit.committed.value;
 	edit.error.value = null;
 	rawParts = [];
+	typed.value = false;
 }
 
 // ── Nachbearbeiten (postprocess profile on the raw transcript) ────────────
@@ -167,6 +184,7 @@ const showRendered = computed(() => Boolean(transcript.value?.applied_profile) &
 function reseed(): void {
 	edit.seed(transcript.value?.text ?? "");
 	rawParts = [];
+	typed.value = false;
 	editingProcessed.value = false;
 }
 
@@ -1115,6 +1133,7 @@ onUnmounted(() => {
 							:editable="!postprocessing"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
+							@typed="typed = true"
 						/>
 					</div>
 				</template>
