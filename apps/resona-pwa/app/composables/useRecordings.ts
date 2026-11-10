@@ -42,11 +42,21 @@ export function useRecordings() {
 		return list(lastOpts);
 	}
 
+	/** Deletes a recording through the data store and drops its row; throws if the store refuses. */
+	async function remove(id: string): Promise<void> {
+		await useDataStore().deleteRecording(id);
+		// A list request still in flight was sent before the delete and would bring the row back.
+		latestRequest++;
+		pending.value = false;
+		items.value = items.value.filter(r => r.id !== id);
+	}
+
 	return {
 		items,
 		pending,
 		error,
 		list,
 		refresh,
+		remove,
 	};
 }

@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import type { Recording } from "~/types/directus";
+import type { HMenuItem } from "~/components/hearth/HMenu.vue";
+
+/** The ⋯ menu's actions, handed to the parent as one `action` event. */
+export type RowAction = "share" | "export" | "delete";
 
 const props = defineProps<{ recording: Recording; selected?: boolean }>();
 
-defineEmits<{ open: []; copy: [] }>();
+const emit = defineEmits<{ "open": []; "copy": []; "menu-open": []; "action": [action: RowAction] }>();
+
+// Export only makes sense once there is a transcript to write.
+const menuItems = computed<HMenuItem<RowAction>[]>(() => [
+	{ id: "share", label: "Teilen" },
+	...(props.recording.status === "done" ? [{ id: "export" as const, label: "Als Markdown exportieren" }] : []),
+	{ id: "delete", label: "Löschen", danger: true },
+]);
 
 function formatDuration(seconds?: number): string {
 	if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
@@ -76,6 +87,12 @@ const meta = computed(() => formatMeta(props.recording));
 					<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
 				</svg>
 			</button>
+			<HMenu
+				label="Weitere Aktionen"
+				:items="menuItems"
+				@open="emit('menu-open')"
+				@select="emit('action', $event)"
+			/>
 		</template>
 	</HListRow>
 </template>

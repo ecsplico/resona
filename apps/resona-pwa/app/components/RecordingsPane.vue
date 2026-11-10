@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { isNavigationFailure } from "vue-router";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
+import type { RowAction } from "~/components/RecordingListItem.vue";
+import { humanizeError } from "#shared/errors";
 
-const { items, pending, error, list, refresh } = useRecordings();
+const { items, pending, error, list, refresh, remove } = useRecordings();
 const recorder = useRecorder();
 const { saveRecording } = useUpload();
-const { copy, toText } = useExport();
+const { copy, toText, downloadMarkdown } = useExport();
 const store = useDataStore();
 const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
@@ -76,20 +79,193 @@ function openRecording(recording: Recording): void {
 	void openRoute(`/recording/${recording.id}`);
 }
 
-async function copyRecording(recording: Recording): Promise<void> {
-	// The list doesn't carry transcripts, so fetch this recording's transcript on
-	// demand and copy title + text (same shape as the detail page). Untranscribed
-	// rows have nothing to fetch — fall back to the title.
-	let transcript: Transcript | null = null;
-	if (recording.status === "done") {
-		try {
-			transcript = await store.getTranscript(recording.id);
-		}
-		catch {
-			// fall through: copy title-only below
-		}
+// The list doesn't carry transcripts, so the row actions fetch this recording's
+// transcript on demand. Untranscribed rows have nothing to fetch.
+async function transcriptOf(recording: Recording): Promise<Transcript | null> {
+	if (recording.status !== "done") return null;
+	try {
+		return await store.getTranscript(recording.id);
 	}
-	void copy(transcript ? toText(recording, transcript) : recording.title);
+	catch {
+		return null;
+	}
+}
+
+/** Title + text (same shape as the detail page), or only the title without a transcript. */
+async function shareTextOf(recording: Recording): Promise<string> {
+	const transcript = await transcriptOf(recording);
+	return transcript ? toText(recording, transcript) : recording.title;
+}
+
+// Short confirmation for row actions that have no visible result of their own.
+const actionNotice = ref<string | null>(null);
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function notify(message: string): void {
+	actionNotice.value = message;
+	if (noticeTimer) clearTimeout(noticeTimer);
+	noticeTimer = setTimeout(() => {
+		actionNotice.value = null;
+		noticeTimer = null;
+	}, 4000);
+}
+
+async function copyRecording(recording: Recording): Promise<void> {
+	void copy(await shareTextOf(recording));
+}
+
+async function copyForShare(text: string, message: string): Promise<void> {
+	try {
+		await copy(text);
+		notify(message);
+	}
+	catch {
+		notify("Teilen ist hier nicht möglich.");
+	}
+}
+
+// iOS only honours `navigator.share` called synchronously inside the tap, so
+// "Teilen" cannot await the transcript. Opening the row menu prefetches the
+// share text of a transcribed recording into this cache (by recording id);
+// untranscribed rows share their title, which needs no fetch. Entries go when
+// the row leaves the list or stops being done, on an explicit list refresh
+// (another view changed a recording) and when the recording is deleted.
+const shareTexts = new Map<string, string>();
+const shareFetches = new Map<string, Promise<void>>();
+let shareGeneration = 0;
+
+function prefetchShareText(recording: Recording): void {
+	if (recording.status !== "done" || shareTexts.has(recording.id) || shareFetches.has(recording.id)) return;
+	const generation = shareGeneration;
+	const request = shareTextOf(recording).then((text) => {
+		if (generation === shareGeneration) shareTexts.set(recording.id, text);
+	}).finally(() => {
+		if (shareFetches.get(recording.id) === request) shareFetches.delete(recording.id);
+	});
+	shareFetches.set(recording.id, request);
+}
+
+function clearShareTexts(): void {
+	shareGeneration++;
+	shareTexts.clear();
+	shareFetches.clear();
+}
+
+watch(items, (rows) => {
+	const done = new Set(rows.filter(r => r.status === "done").map(r => r.id));
+	for (const id of shareTexts.keys()) {
+		if (!done.has(id)) shareTexts.delete(id);
+	}
+});
+
+function shareRecording(recording: Recording): void {
+	const text = recording.status === "done" ? shareTexts.get(recording.id) : recording.title;
+	if (text === undefined) {
+		prefetchShareText(recording);
+		notify("Wird vorbereitet … bitte erneut tippen.");
+		return;
+	}
+	if (typeof navigator === "undefined" || typeof navigator.share !== "function") {
+		void copyForShare(text, "Teilen wird nicht unterstützt – Text kopiert.");
+		return;
+	}
+	navigator.share({ title: recording.title || "Aufnahme", text }).catch((err: unknown) => {
+		if (err instanceof Error && err.name === "AbortError") return;
+		// e.g. NotAllowedError when the browser no longer counts the tap as user activation
+		void copyForShare(text, "Teilen nicht möglich – Text kopiert.");
+	});
+}
+
+async function exportRecording(recording: Recording): Promise<void> {
+	downloadMarkdown(recording, await transcriptOf(recording));
+}
+
+// Delete: the menu asks, this dialog confirms, then the row goes through the data store.
+const deleteTarget = ref<Recording | null>(null);
+const deleting = ref(false);
+const deleteError = ref<string | null>(null);
+const deleteDialog = ref<HTMLElement | null>(null);
+let focusBeforeDelete: HTMLElement | null = null;
+
+async function askDelete(recording: Recording): Promise<void> {
+	focusBeforeDelete = typeof document !== "undefined" ? document.activeElement as HTMLElement | null : null;
+	deleteError.value = null;
+	deleteTarget.value = recording;
+	await nextTick();
+	deleteDialog.value?.querySelector<HTMLElement>("[data-testid=\"cancel-delete\"]")?.focus();
+}
+
+const rowActions: Record<RowAction, (recording: Recording) => void> = {
+	share: shareRecording,
+	export: recording => void exportRecording(recording),
+	delete: recording => void askDelete(recording),
+};
+
+function onRowAction(recording: Recording, action: RowAction): void {
+	rowActions[action](recording);
+}
+
+function closeDeleteDialog(): void {
+	deleteTarget.value = null;
+	deleteError.value = null;
+	focusBeforeDelete?.focus();
+	focusBeforeDelete = null;
+}
+
+function cancelDelete(): void {
+	if (deleting.value) return;
+	closeDeleteDialog();
+}
+
+// The dialog is modal (`aria-modal`): Tab and Shift+Tab cycle through its enabled buttons.
+function trapDeleteFocus(event: KeyboardEvent): void {
+	const focusable = Array.from(deleteDialog.value?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? []);
+	if (focusable.length === 0) {
+		event.preventDefault();
+		return;
+	}
+	const first = focusable[0]!;
+	const last = focusable[focusable.length - 1]!;
+	const active = document.activeElement as HTMLElement | null;
+	const inside = active !== null && focusable.includes(active);
+	if (event.shiftKey && (!inside || active === first)) {
+		event.preventDefault();
+		last.focus();
+	}
+	else if (!event.shiftKey && (!inside || active === last)) {
+		event.preventDefault();
+		first.focus();
+	}
+}
+
+async function confirmDelete(): Promise<void> {
+	const recording = deleteTarget.value;
+	if (!recording || deleting.value) return;
+	deleting.value = true;
+	deleteError.value = null;
+	try {
+		// Desktop: the recording may be open in the right pane. Leave it first, so its
+		// leave guard (unsaved edits) can still run and veto; a vetoed or failed
+		// navigation cancels the delete.
+		if (selectedId.value === recording.id) {
+			const result = await navigateTo("/", { replace: true });
+			if (result === false || isNavigationFailure(result)) {
+				deleting.value = false;
+				closeDeleteDialog();
+				return;
+			}
+		}
+		await remove(recording.id);
+		shareTexts.delete(recording.id);
+		deleteTarget.value = null;
+		focusBeforeDelete = null;
+	}
+	catch (err) {
+		deleteError.value = humanizeError(err, "Aufnahme konnte nicht gelöscht werden.");
+	}
+	finally {
+		deleting.value = false;
+	}
 }
 
 async function startRecording(): Promise<void> {
@@ -177,10 +353,15 @@ function onDiscard(): void {
 
 // Other views (the detail page) ask for a reload after changing a recording.
 watch(useRecordingsRefresh().signal, () => {
+	clearShareTexts();
 	void refresh();
 });
 
 onBeforeUnmount(() => {
+	if (noticeTimer) {
+		clearTimeout(noticeTimer);
+		noticeTimer = null;
+	}
 	if (pollTimer) {
 		clearInterval(pollTimer);
 		pollTimer = null;
@@ -304,6 +485,16 @@ onMounted(() => {
 				{{ error }}
 			</p>
 
+			<p
+				class="pane__status"
+				:class="{ 'pane__status--idle': !actionNotice }"
+				role="status"
+				aria-live="polite"
+				data-testid="action-notice"
+			>
+				{{ actionNotice }}
+			</p>
+
 			<div
 				v-if="queued.length > 0"
 				class="h-list"
@@ -354,6 +545,8 @@ onMounted(() => {
 					:selected="recording.id === selectedId"
 					@open="openRecording(recording)"
 					@copy="void copyRecording(recording)"
+					@menu-open="prefetchShareText(recording)"
+					@action="onRowAction(recording, $event)"
 				/>
 			</div>
 		</div>
@@ -480,6 +673,64 @@ onMounted(() => {
 			@save="onSave"
 			@discard="onDiscard"
 		/>
+
+		<div
+			v-if="deleteTarget"
+			ref="deleteDialog"
+			class="confirm"
+			role="alertdialog"
+			aria-modal="true"
+			aria-labelledby="delete-dialog-title"
+			aria-describedby="delete-dialog-text"
+			data-testid="delete-dialog"
+			@keydown.esc="cancelDelete"
+			@keydown.tab="trapDeleteFocus"
+		>
+			<div
+				class="confirm__scrim"
+				@click="cancelDelete"
+			/>
+			<div class="confirm__box">
+				<p
+					id="delete-dialog-title"
+					class="confirm__title"
+				>
+					Aufnahme löschen?
+				</p>
+				<p
+					id="delete-dialog-text"
+					class="confirm__text"
+				>
+					„{{ deleteTarget.title || "Aufnahme" }}“ wird mit dem Transkript gelöscht. Das lässt sich nicht rückgängig machen.
+				</p>
+				<p
+					v-if="deleteError"
+					class="pane__error"
+					data-testid="delete-error"
+				>
+					{{ deleteError }}
+				</p>
+				<div class="confirm__actions">
+					<HButton
+						variant="secondary"
+						:disabled="deleting"
+						data-testid="cancel-delete"
+						@click="cancelDelete"
+					>
+						Abbrechen
+					</HButton>
+					<HButton
+						class="confirm__delete"
+						variant="primary"
+						:disabled="deleting"
+						data-testid="confirm-delete"
+						@click="confirmDelete"
+					>
+						{{ deleting ? "Wird gelöscht…" : "Löschen" }}
+					</HButton>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>
 
@@ -539,4 +790,16 @@ onMounted(() => {
 .dock__action--record:active .dock__record { transform:scale(0.96); }
 
 .pane__upload-input { display:none; }
+.pane__status { margin:0; padding:10px 14px; border-radius:var(--r-md); background:var(--bg-sunken); color:var(--fg1); font-size:var(--fs-sm); }
+/* Stays in the DOM (live region) but takes no room while there is nothing to say. */
+.pane__status--idle { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0, 0, 0, 0); }
+
+/* Delete confirmation: centred card over a scrim, above the dock. */
+.confirm { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; }
+.confirm__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); }
+.confirm__box { position:relative; width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px; padding:24px; border-radius:var(--r-lg); background:var(--white); box-shadow:var(--shadow-deep); }
+.confirm__title { margin:0; font-family:var(--font-display); font-size:var(--fs-lg); font-weight:600; color:var(--fg1); }
+.confirm__text { margin:0; font-size:var(--fs-md); line-height:1.5; color:var(--fg2); overflow-wrap:anywhere; }
+.confirm__actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+.confirm__actions .confirm__delete { background:var(--danger); }
 </style>

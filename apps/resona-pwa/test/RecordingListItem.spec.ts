@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { flushPromises } from "@vue/test-utils";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import RecordingListItem from "~/components/RecordingListItem.vue";
 import type { Recording } from "~/types/directus";
@@ -52,6 +53,39 @@ describe("RecordingListItem", () => {
 		await copyBtn.trigger("click");
 		expect(w.emitted("copy")).toBeTruthy();
 		expect(w.emitted("open")).toBeFalsy();
+	});
+
+	it("opens the overflow menu next to copy without opening the recording", async () => {
+		const w = await mountSuspended(RecordingListItem, {
+			props: { recording: sample },
+		});
+		const trigger = w.find("[aria-haspopup=\"menu\"]");
+		expect(trigger.attributes("aria-label")).toBe("Weitere Aktionen");
+		await trigger.trigger("click");
+		await flushPromises();
+		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Als Markdown exportieren", "Löschen"]);
+		expect(w.emitted("open")).toBeFalsy();
+		expect(w.emitted("menu-open")).toHaveLength(1);
+	});
+
+	it.each(["share", "export", "delete"] as const)("emits action %s from the menu without emitting open", async (item) => {
+		const w = await mountSuspended(RecordingListItem, {
+			props: { recording: sample },
+		});
+		await w.find("[aria-haspopup=\"menu\"]").trigger("click");
+		await flushPromises();
+		await w.find(`[data-testid="menu-${item}"]`).trigger("click");
+		expect(w.emitted("action")).toEqual([[item]]);
+		expect(w.emitted("open")).toBeFalsy();
+	});
+
+	it("offers no Markdown export before the recording is transcribed", async () => {
+		const w = await mountSuspended(RecordingListItem, {
+			props: { recording: { ...sample, status: "pending" } },
+		});
+		await w.find("[aria-haspopup=\"menu\"]").trigger("click");
+		await flushPromises();
+		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Löschen"]);
 	});
 
 	it("emits open when the row is selected", async () => {
