@@ -15,8 +15,8 @@
 # The release workflow pushes ghcr.io/ecsplico/resona-hub and
 # ghcr.io/ecsplico/resona-engine-faster-whisper; bump the `image:` lines to the
 # digests from that release's release-manifest.json (docs/server/coolify.md).
-# Current hub: sha256:790e4178… = ghcr.io/ecsplico/resona-hub:0.1.0-0302bb1 (linux/amd64, commit 0302bb1).
-# Current engine: sha256:36263b71… = ghcr.io/ecsplico/resona-engine-faster-whisper:0.1.0 (index, linux/amd64).
+# Current hub: sha256:50ab25d2… = ghcr.io/ecsplico/resona-hub:0.2.0 (linux/amd64, release v0.2.0, commit 6abf985).
+# Current engine: sha256:7d06bf40… = ghcr.io/ecsplico/resona-engine-faster-whisper:0.2.0 (linux/amd64, release v0.2.0).
 # The packages are private: the host pulls with a read:packages-only token (docs/server/coolify.md).
 #
 # No variable is required: defaults serve https://resona-hub.ecsplico.de.
@@ -39,7 +39,7 @@ x-hardening: &hardening
 services:
   hub:
     <<: *hardening
-    image: ghcr.io/ecsplico/resona-hub@sha256:790e41784b7dc3403d6ba77b03fbac72e207c1c037cbc644ec177dc019fa693c
+    image: ghcr.io/ecsplico/resona-hub@sha256:50ab25d27af6c799e509b62e5f4f79ee13fe80845aef89a563d7837a577762f4
     restart: unless-stopped
     stop_grace_period: 30s
     expose: ['7000']
@@ -75,7 +75,7 @@ services:
 
   mcp:
     <<: *hardening
-    image: ghcr.io/ecsplico/resona-hub@sha256:790e41784b7dc3403d6ba77b03fbac72e207c1c037cbc644ec177dc019fa693c
+    image: ghcr.io/ecsplico/resona-hub@sha256:50ab25d27af6c799e509b62e5f4f79ee13fe80845aef89a563d7837a577762f4
     command: ['resona-mcp', 'http', '--host', '0.0.0.0', '--port', '7010']
     restart: unless-stopped
     depends_on:
@@ -100,7 +100,7 @@ services:
   # cache volume and /tmp. The first start downloads the model into `hf-cache`.
   engine-faster-whisper:
     <<: *hardening
-    image: ghcr.io/ecsplico/resona-engine-faster-whisper@sha256:36263b712a283df24752d2f596dbf1214a411d8372e612a3275d7142ab27811e
+    image: ghcr.io/ecsplico/resona-engine-faster-whisper@sha256:7d06bf405254a2dc2cfe6d257a560b2221a2d8b6e0e03bbce313ad2127f5ee33
     restart: unless-stopped
     expose: ['7001']
     networks: [default]

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-postprocess"
-version = "0.2.0"
+version = "0.2.1"
 description = "Postprocessing pipeline for Resona — composable steps: regex replacements, LLM transforms (litellm), and structured extraction"
 readme = "README.md"
 license = { text = "Apache-2.0" }

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-whispercpp"
-version = "0.2.0"
+version = "0.2.1"
 description = "whisper.cpp backend for Resona — Metal/Accelerate-accelerated transcription via pywhispercpp"
 readme = "README.md"
 license = { text = "Apache-2.0" }

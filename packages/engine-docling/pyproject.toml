@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-docling"
-version = "0.2.0"
+version = "0.2.1"
 description = "Document conversion (PDF/image to Markdown with OCR) for Resona, backed by in-process Docling. Not an audio engine: not registered in resona.engines."
 license = { text = "Apache-2.0" }
 authors = [
