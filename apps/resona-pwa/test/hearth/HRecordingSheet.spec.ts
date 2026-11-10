@@ -59,6 +59,18 @@ describe("HRecordingSheet", () => {
 		expect(labelled.find("#h-rec-title").text()).toBe("Weiter aufnehmen");
 	});
 
+	it("reads PAUSIERT and stills the pulse dot while paused", async () => {
+		const running = await mountSuspended(HRecordingSheet, {
+			props: { elapsed: 0, levels: [], label: "Weiter aufnehmen" },
+		});
+		expect(running.find("[data-testid=\"pulse\"]").classes()).not.toContain("is-paused");
+		const paused = await mountSuspended(HRecordingSheet, {
+			props: { elapsed: 0, levels: [], label: "Weiter aufnehmen", paused: true },
+		});
+		expect(paused.find("#h-rec-title").text()).toBe("PAUSIERT");
+		expect(paused.find("[data-testid=\"pulse\"]").classes()).toContain("is-paused");
+	});
+
 	it("renders one waveform bar per level value", async () => {
 		const w = await mountSuspended(HRecordingSheet, {
 			props: { elapsed: 0, levels: [0.1, 0.4, 0.9, 0.2, 0.6] },

@@ -65,20 +65,17 @@ describe("RecordingListItem", () => {
 		await flushPromises();
 		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Als Markdown exportieren", "Löschen"]);
 		expect(w.emitted("open")).toBeFalsy();
+		expect(w.emitted("menu-open")).toHaveLength(1);
 	});
 
-	it.each([
-		["share", "share"],
-		["export", "export"],
-		["delete", "delete"],
-	] as const)("emits %s from the menu without emitting open", async (item, event) => {
+	it.each(["share", "export", "delete"] as const)("emits action %s from the menu without emitting open", async (item) => {
 		const w = await mountSuspended(RecordingListItem, {
 			props: { recording: sample },
 		});
 		await w.find("[aria-haspopup=\"menu\"]").trigger("click");
 		await flushPromises();
 		await w.find(`[data-testid="menu-${item}"]`).trigger("click");
-		expect(w.emitted(event)).toHaveLength(1);
+		expect(w.emitted("action")).toEqual([[item]]);
 		expect(w.emitted("open")).toBeFalsy();
 	});
 

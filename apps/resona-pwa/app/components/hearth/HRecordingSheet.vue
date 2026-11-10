@@ -60,7 +60,7 @@ function togglePause(): void {
 				id="h-rec-title"
 				class="h-rec__eyebrow"
 			>
-				{{ label ?? "AUFNAHME LÄUFT" }}
+				{{ paused ? "PAUSIERT" : label ?? "AUFNAHME LÄUFT" }}
 			</p>
 
 			<div
@@ -77,7 +77,11 @@ function togglePause(): void {
 			</div>
 
 			<div class="h-rec__timer">
-				<span class="h-rec__pulse" />
+				<span
+					class="h-rec__pulse"
+					:class="{ 'is-paused': paused }"
+					data-testid="pulse"
+				/>
 				<span
 					class="h-rec__time"
 					data-testid="timer"
@@ -179,6 +183,9 @@ function togglePause(): void {
 .h-rec__bar { flex:0 0 auto; width:4px; min-height:4px; border-radius:999px; background:var(--accent); }
 .h-rec__timer { display:flex; align-items:center; gap:10px; }
 .h-rec__pulse { width:10px; height:10px; border-radius:50%; background:#B85032; animation:h-rec-pulse 1.4s ease-in-out infinite; }
+/* Paused: the dot holds still and dims, so the sheet no longer signals "recording". */
+.h-rec__pulse.is-paused { animation:none; opacity:.4; }
+@media (prefers-reduced-motion:reduce) { .h-rec__pulse { animation:none; } }
 .h-rec__time { font-family:var(--font-mono); font-size:32px; font-weight:600; letter-spacing:0.04em; }
 .h-rec__controls { display:flex; align-items:center; justify-content:center; gap:28px; }
 .h-rec__btn { border:none; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--white); }

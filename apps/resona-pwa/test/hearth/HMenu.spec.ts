@@ -26,6 +26,7 @@ describe("HMenu", () => {
 		expect(w.find("[role=\"menu\"]").exists()).toBe(true);
 		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Als Markdown exportieren", "Löschen"]);
 		expect(document.activeElement).toBe(w.find("[data-testid=\"menu-share\"]").element);
+		expect(w.emitted("open")).toHaveLength(1);
 		w.unmount();
 	});
 
@@ -50,12 +51,17 @@ describe("HMenu", () => {
 		w.unmount();
 	});
 
-	it("closes on a tap outside without selecting anything", async () => {
+	it("closes on a tap outside without selecting anything or taking focus", async () => {
 		const w = await mountOpen();
-		document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+		const outside = document.createElement("button");
+		document.body.appendChild(outside);
+		outside.focus();
+		outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
 		await flushPromises();
 		expect(w.find("[role=\"menu\"]").exists()).toBe(false);
 		expect(w.emitted("select")).toBeFalsy();
+		expect(document.activeElement).toBe(outside);
+		outside.remove();
 		w.unmount();
 	});
 

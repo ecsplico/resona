@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { buildDebugPayload, runDiagnose } from "~/utils/debugProbe";
+import { buildDebugPayload, describeError, runDiagnose } from "~/utils/debugProbe";
+import { RECORDER_MIME_CANDIDATES } from "~/composables/useRecorder";
 import type { DebugReport, ProbeCheck, ProbeState } from "~/utils/debugProbe";
 
 // Diagnostics screen. "Mobil-Diagnose" checks everything live dictation and
@@ -13,10 +14,6 @@ const cfg = useRuntimeConfig().public;
 const hub = useHub();
 const pttDiag = usePttDiagnostics();
 const liveSettings = useLiveSettings();
-
-function describeError(err: unknown): string {
-	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-}
 
 const { back } = useBackNav();
 
@@ -44,8 +41,7 @@ const mediaDevicesSupported = typeof navigator !== "undefined" && !!navigator.me
 const mediaRecorderSupported = typeof MediaRecorder !== "undefined";
 const audioContextSupported = typeof AudioContext !== "undefined" || typeof (globalThis as Record<string, unknown>).webkitAudioContext !== "undefined";
 
-const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-const mimeSupport = computed(() => MIME_CANDIDATES.map(type => ({
+const mimeSupport = computed(() => RECORDER_MIME_CANDIDATES.map(type => ({
 	type,
 	supported: mediaRecorderSupported && typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(type),
 })));
@@ -274,8 +270,9 @@ async function sendReport(): Promise<void> {
 	if (!diagReport.value || sendState.value.state === "sending") return;
 	sendState.value = { state: "sending", detail: "" };
 	try {
-		// Plain fetch, not $fetch: keeps this temporary route out of the typed
-		// Nitro route union (see the calendar note in CLAUDE.md).
+		// Plain fetch, not $fetch: the route is typed into Nitro's route union
+		// from its file either way, but a plain fetch adds no call that TS has
+		// to resolve against that union (see the Nitro route note in CLAUDE.md).
 		const resp = await fetch("/api/debug-report", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },

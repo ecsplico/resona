@@ -1,18 +1,17 @@
-<script lang="ts">
-</script>
-
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends string">
 import { nextTick, onBeforeUnmount, ref, useId } from "vue";
 
-export interface HMenuItem {
-	id: string;
+export interface HMenuItem<Id extends string = string> {
+	id: Id;
 	label: string;
 	/** Destructive action (Löschen): drawn in the danger colour. */
 	danger?: boolean;
 }
 
-const props = defineProps<{ label: string; items: HMenuItem[] }>();
-const emit = defineEmits<{ select: [id: string] }>();
+const props = defineProps<{ label: string; items: HMenuItem<T>[] }>();
+// `open` fires when the menu opens, so the owner can prepare what an item needs
+// synchronously (e.g. the text `navigator.share` must get inside the tap).
+const emit = defineEmits<{ open: []; select: [id: T] }>();
 
 const GAP = 4;
 const EDGE = 8;
@@ -79,6 +78,7 @@ async function openMenu(focus: "first" | "last"): Promise<void> {
 	if (open.value) return;
 	open.value = true;
 	listen(true);
+	emit("open");
 	await nextTick();
 	place();
 	focusItem(focus === "first" ? 0 : -1);
@@ -137,7 +137,7 @@ function onMenuKeydown(event: KeyboardEvent): void {
 	}
 }
 
-function choose(item: HMenuItem): void {
+function choose(item: HMenuItem<T>): void {
 	close(true);
 	emit("select", item.id);
 }

@@ -25,14 +25,17 @@ server (`nuxt build` → `node .output/server`), **not** `nuxt generate` static 
 strips the server). Keep secrets in `runtimeConfig` (the private, non-`public` block).
 
 **Temporary exception (diagnostics):** `server/api/debug-report.post.ts` accepts the
-redacted mobile diagnostics report from `/debug` → "Mobil-Diagnose" → "An Server senden"
-(≤ 32 KB JSON object, else 413/400). It re-redacts it (`shared/debugReport.ts`: no tokens,
-no transcript text), writes one stdout line `[resona-debug] {"id","receivedAt","report"}`
-(Coolify logs) and returns `{id}`. It stores nothing. Remove it once mobile live dictation
-and on-device title suggestion are diagnosed. The checks live in `app/utils/debugProbe.ts`
-(`runDiagnose` must be called synchronously from the click so its comparison AudioContext
-is created inside the user gesture; it streams ~2 s of mic PCM to the hub `/v1/listen`). The
-client posts with plain `fetch`, not `$fetch`, to stay out of the typed route union.
+redacted mobile diagnostics report from `/debug` → "Mobil-Diagnose" → "An Server senden".
+It is public and unauthenticated, so it allows 10 reports per client IP per 10 minutes
+(in-memory fixed window, 429 beyond) and caps the body at 32 KB while reading it (413 even
+when Content-Length is missing or wrong; 400 unless a JSON object). It re-redacts the report
+(`shared/debugReport.ts`: no tokens, no transcript text), writes one stdout line
+`[resona-debug] {"id","receivedAt","report"}` (Coolify logs) and returns `{id}`. It stores
+nothing. Remove it once mobile live dictation and on-device title suggestion are diagnosed.
+The checks live in `app/utils/debugProbe.ts` (`runDiagnose` must be called synchronously
+from the click so its comparison AudioContext is created inside the user gesture; it
+streams ~2 s of mic PCM to the hub `/v1/listen`). The client posts with plain `fetch`; the
+route still adds `/api/debug-report` to Nitro's typed route union (see below).
 
 ## How to start
 
@@ -290,13 +293,23 @@ server/                              # the sanctioned Nitro OAuth layer (server 
 Component auto-import is `pathPrefix: false` — components resolve by filename
 (`<HButton>`, `<QueuedListItem>`), regardless of subdirectory.
 
-Row overflow menu: `hearth/HMenu.vue` (menu button, `aria-haspopup="menu"`, arrow/Home/End,
-Escape and outside tap close and return focus; the menu is `position: fixed` because `.h-list`
-clips with `overflow: hidden`; clicks are stopped so the row never opens). `RecordingsPane`
-handles the row actions: Teilen = `navigator.share({title, text})`, without it (or on refusal)
-the text is copied with a status note; Löschen asks in a confirm dialog and then calls
-`useRecordings().remove(id)` (`DataStore.deleteRecording` + drop the row, invalidating a list
-request still in flight); deleting the recording open in the right pane navigates to `/`.
+Row overflow menu: `hearth/HMenu.vue` (menu button, `aria-haspopup="menu"`, arrow/Home/End;
+Escape, Tab and choosing an item close it and return focus to the button, an outside tap
+closes it without moving focus; it emits `open` when it opens; the menu is
+`position: fixed` because `.h-list` clips with `overflow: hidden`; clicks are stopped so
+the row never opens). `RecordingListItem` emits one `action` event with a typed
+`RowAction` (`share` | `export` | `delete`) plus `menu-open`; `RecordingsPane` maps each
+action to its handler. Teilen = `navigator.share({title, text})`, called synchronously in
+the tap (iOS drops the user activation across an await): opening the menu of a done
+recording prefetches its share text into a per-id cache (pruned when the row leaves the
+list or stops being done, cleared on an explicit list refresh, dropped on delete); a tap
+before it arrived only shows "Wird vorbereitet … bitte erneut tippen.". Without
+`navigator.share` (or on refusal) the text is copied with a status note. Löschen asks in a
+modal confirm dialog (Tab/Shift+Tab stay inside, Escape cancels, focus returns to the menu
+button) and then calls `useRecordings().remove(id)` (`DataStore.deleteRecording` + drop the
+row, invalidating a list request still in flight). Deleting the recording open in the right
+pane first navigates to `/`, so that page's leave guard runs; a vetoed or failed navigation
+cancels the delete.
 
 ### Calendar integration (Google + pluggable)
 
@@ -314,12 +327,15 @@ h3 **sealed session cookie** — no DB. The browser flow: `/calendar` connects v
 date/text filter, and "Transkribieren" opens `/live?title=<event – date>` so the
 recording is pre-named from the event.
 
-**One Nitro route path on purpose** (`/api/calendar`, GET+DELETE; provider via
-`?provider=`, OAuth provider carried in `state`): Nitro's typed `$fetch`
-recurses over the route-path union, and extra paths push unrelated bare-string
-`$fetch` calls (e.g. `useProfiles`) into a TS "excessive stack depth" error.
-Keep client calls to the **literal** `/api/calendar` string (exact match is
-cheap). The Google OAuth redirect URI is `<origin>/api/calendar`.
+**Keep Nitro route paths minimal** (`/api/calendar`, GET+DELETE; provider via
+`?provider=`, OAuth provider carried in `state`): Nitro types every `server/api/**`
+file into the route-path union its typed `$fetch` recurses over, and a growing union
+has pushed unrelated bare-string `$fetch` calls (e.g. `useProfiles`) into a TS
+"excessive stack depth" error. The temporary `/api/debug-report` route is the one known
+exception: with these two paths `bun run typecheck` passes, and no client code calls it
+through `$fetch`. Don't add further routes. Keep client calls to the **literal**
+`/api/calendar` string (exact match is cheap). The Google OAuth redirect URI is
+`<origin>/api/calendar`.
 
 ## Directus schema (source of truth: `directus/bootstrap.md`)
 
@@ -411,8 +427,10 @@ for PWA-manifest/service-worker changes).
 
 - Don't import from / reach into the monorepo's Python code (`packages/*`, other `apps/*`) — HTTP only.
 - Don't put server logic in the PWA beyond the one sanctioned thin Nitro OAuth layer
-  (`server/api/**`, confidential Google token exchange/refresh only) — it's otherwise a
-  pure SPA: no page rendering (`ssr: false`), no business logic server-side.
+  (`server/api/**`, confidential Google token exchange/refresh only) and the temporary
+  diagnostics route `server/api/debug-report.post.ts` (rate-limited, size-capped, logs a
+  redacted report, stores nothing; to be removed) — it's otherwise a pure SPA: no page
+  rendering (`ssr: false`), no business logic server-side.
 - Don't deploy via `nuxt generate` (static) now that Nitro routes exist — use the Nitro
   Node/serverless server (`nuxt build` → `node .output/server`).
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createApp, toWebHandler } from "h3";
+import { request as httpRequest, createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createApp, toNodeListener, toWebHandler } from "h3";
 import { buildDebugPayload, guessDeviceOs, runDiagnose } from "~/utils/debugProbe";
 import type { DebugReport } from "~/utils/debugProbe";
 import { DEBUG_REPORT_MAX_BYTES } from "#shared/debugReport";
@@ -136,12 +138,15 @@ describe("runDiagnose", () => {
 describe("POST /api/debug-report", () => {
 	const handler = toWebHandler(createApp().use("/api/debug-report", debugReportRoute));
 
-	function post(body: string): Promise<Response> {
+	// Each test sends from its own client IP so the per-IP rate limit (module
+	// state of the route) never leaks between tests.
+	function post(body: BodyInit, ip: string): Promise<Response> {
 		return handler(new Request("http://localhost/api/debug-report", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
 			body,
-		}));
+			duplex: "half",
+		} as RequestInit));
 	}
 
 	afterEach(() => {
@@ -150,7 +155,7 @@ describe("POST /api/debug-report", () => {
 
 	it("logs one redacted [resona-debug] line and returns an id", async () => {
 		const log = vi.spyOn(console, "log").mockImplementation(() => {});
-		const resp = await post(JSON.stringify({ checks: [{ detail: `wss://h/v1/listen?token=${TOKEN}` }], token: TOKEN, transcript: DICTATED }));
+		const resp = await post(JSON.stringify({ checks: [{ detail: `wss://h/v1/listen?token=${TOKEN}` }], token: TOKEN, transcript: DICTATED }), "10.0.0.1");
 		expect(resp.status).toBe(200);
 		const { id } = await resp.json() as { id: string };
 		expect(id).toMatch(/^[\da-f]{8}$/);
@@ -164,15 +169,77 @@ describe("POST /api/debug-report", () => {
 
 	it("rejects a body over 32 KB without logging", async () => {
 		const log = vi.spyOn(console, "log").mockImplementation(() => {});
-		const resp = await post(JSON.stringify({ pad: "x".repeat(DEBUG_REPORT_MAX_BYTES) }));
+		const resp = await post(JSON.stringify({ pad: "x".repeat(DEBUG_REPORT_MAX_BYTES) }), "10.0.0.2");
 		expect(resp.status).toBe(413);
 		expect(log).not.toHaveBeenCalled();
 	});
 
 	it("rejects a body that is not a JSON object", async () => {
 		const log = vi.spyOn(console, "log").mockImplementation(() => {});
-		expect((await post("not json")).status).toBe(400);
-		expect((await post("[1,2]")).status).toBe(400);
+		expect((await post("not json", "10.0.0.3")).status).toBe(400);
+		expect((await post("[1,2]", "10.0.0.3")).status).toBe(400);
 		expect(log).not.toHaveBeenCalled();
+	});
+
+	it("stops reading an oversized chunked body without Content-Length at the cap", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		const chunk = new TextEncoder().encode("x".repeat(8 * 1024));
+		let pulled = 0;
+		let cancelled = false;
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulled += 1;
+				if (pulled > 1000) {
+					controller.close();
+					return;
+				}
+				controller.enqueue(chunk);
+			},
+			cancel() {
+				cancelled = true;
+			},
+		});
+		const resp = await post(body, "10.0.0.4");
+		expect(resp.status).toBe(413);
+		// 32 KB cap / 8 KB chunks: the fifth chunk crosses it (plus a little read-ahead).
+		expect(pulled).toBeLessThanOrEqual(7);
+		expect(cancelled).toBe(true);
+		expect(log).not.toHaveBeenCalled();
+	});
+
+	it("answers 429 to the 11th report of one client within the window", async () => {
+		vi.spyOn(console, "log").mockImplementation(() => {});
+		const statuses: number[] = [];
+		for (let i = 0; i < 11; i++) {
+			statuses.push((await post("{}", "10.0.0.5")).status);
+		}
+		expect(statuses.slice(0, 10)).toEqual(Array.from({ length: 10 }, () => 200));
+		expect(statuses[10]).toBe(429);
+		expect((await post("{}", "10.0.0.6")).status).toBe(200);
+	});
+
+	it("caps a chunked body on the Node server path too", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		const server = createServer(toNodeListener(createApp().use("/api/debug-report", debugReportRoute)));
+		await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const { port } = server.address() as AddressInfo;
+			const status = await new Promise<number>((resolve, reject) => {
+				const req = httpRequest({ host: "127.0.0.1", port, path: "/api/debug-report", method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.0.0.7" } }, (res) => {
+					res.resume();
+					resolve(res.statusCode ?? 0);
+				});
+				req.on("error", reject);
+				// Chunked (no Content-Length), twice the cap.
+				const chunk = "x".repeat(8 * 1024);
+				for (let i = 0; i < 8; i++) req.write(chunk);
+				req.end();
+			});
+			expect(status).toBe(413);
+			expect(log).not.toHaveBeenCalled();
+		}
+		finally {
+			await new Promise(resolve => server.close(resolve));
+		}
 	});
 });

@@ -1,15 +1,17 @@
 import { ref, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 
+/** Container formats the recorder tries, in order; it takes the first the browser supports. */
+export const RECORDER_MIME_CANDIDATES = [
+	"audio/webm;codecs=opus",
+	"audio/webm",
+	"audio/ogg;codecs=opus",
+	"audio/mp4",
+] as const;
+
 function getSupportedMime(): string {
-	const candidates = [
-		"audio/webm;codecs=opus",
-		"audio/webm",
-		"audio/ogg;codecs=opus",
-		"audio/mp4",
-	];
 	if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
-		for (const type of candidates) {
+		for (const type of RECORDER_MIME_CANDIDATES) {
 			if (MediaRecorder.isTypeSupported(type)) {
 				return type;
 			}

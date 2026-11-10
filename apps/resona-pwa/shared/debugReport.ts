@@ -83,3 +83,37 @@ export function parseDebugReport(raw: string | null | undefined): DebugReportPar
 	}
 	return { ok: true, report: parsed as Record<string, unknown> };
 }
+
+/** Reports one client may send per window before the route answers 429. */
+export const DEBUG_REPORT_RATE_LIMIT = 10;
+export const DEBUG_REPORT_RATE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Fixed-window counter per client key (the route keys by IP). Every call
+ * prunes expired windows, so the map holds only clients seen within the last
+ * window. In-memory only: a restart forgets it, which is fine for a temporary,
+ * single-instance diagnostics route.
+ */
+export function createRateLimiter(limit = DEBUG_REPORT_RATE_LIMIT, windowMs = DEBUG_REPORT_RATE_WINDOW_MS) {
+	const windows = new Map<string, { start: number; count: number }>();
+	return {
+		/** Count one request for `key`; false once `limit` is exceeded in its window. */
+		allow(key: string, now = Date.now()): boolean {
+			for (const [k, w] of windows) {
+				if (now - w.start >= windowMs) {
+					windows.delete(k);
+				}
+			}
+			const w = windows.get(key);
+			if (!w) {
+				windows.set(key, { start: now, count: 1 });
+				return true;
+			}
+			w.count += 1;
+			return w.count <= limit;
+		},
+		get size(): number {
+			return windows.size;
+		},
+	};
+}

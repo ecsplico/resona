@@ -12,6 +12,7 @@
  */
 import { DEBUG_REPORT_MAX_BYTES, byteLength, redactDebugReport } from "#shared/debugReport";
 import { floatTo16kPCM } from "~/utils/pcm";
+import { RECORDER_MIME_CANDIDATES } from "~/composables/useRecorder";
 
 export type ProbeState = "ok" | "fail" | "warn" | "info";
 
@@ -61,7 +62,8 @@ function nav(): (Navigator & AnyRecord) | undefined {
 	return (globalThis as { navigator?: Navigator }).navigator as (Navigator & AnyRecord) | undefined;
 }
 
-function describe(err: unknown): string {
+/** `Name: message` of an Error, else its string form; shown in checks and on `/debug`. */
+export function describeError(err: unknown): string {
 	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
 }
 
@@ -187,7 +189,7 @@ async function wakeLockCheck(): Promise<ProbeCheck> {
 		await res.value.release().catch(() => {});
 		return { ...base, state: "ok", detail: "Anfrage erfolgreich (wieder freigegeben)" };
 	}
-	return { ...base, state: "warn", detail: res.timedOut ? "Anfrage hängt (>3 s)" : `Anfrage abgelehnt: ${describe(res.error)}` };
+	return { ...base, state: "warn", detail: res.timedOut ? "Anfrage hängt (>3 s)" : `Anfrage abgelehnt: ${describeError(res.error)}` };
 }
 
 // ── Microphone + audio pipeline ───────────────────────────────────────────
@@ -203,14 +205,15 @@ async function micPermissionCheck(): Promise<ProbeCheck> {
 		const state = res.value.state;
 		return { ...base, state: state === "denied" ? "fail" : state === "granted" ? "ok" : "info", detail: state };
 	}
-	return { ...base, state: "info", detail: res.timedOut ? "Abfrage hängt" : `nicht abfragbar: ${describe(res.error)}` };
+	return { ...base, state: "info", detail: res.timedOut ? "Abfrage hängt" : `nicht abfragbar: ${describeError(res.error)}` };
 }
 
 function audioContextCtor(): typeof AudioContext | undefined {
 	return (g().AudioContext ?? g().webkitAudioContext) as typeof AudioContext | undefined;
 }
 
-const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac", "audio/wav"];
+// The recorder's own candidates first, then formats other browsers may offer instead.
+const MIME_CANDIDATES: readonly string[] = [...RECORDER_MIME_CANDIDATES, "audio/mp4;codecs=mp4a.40.2", "audio/aac", "audio/wav"];
 
 function mimeCheck(): ProbeCheck {
 	const MR = g().MediaRecorder as typeof MediaRecorder | undefined;
@@ -219,8 +222,8 @@ function mimeCheck(): ProbeCheck {
 		return { ...base, state: "fail", detail: "MediaRecorder fehlt: Live-Audio wird nicht gespeichert" };
 	}
 	const supported = typeof MR.isTypeSupported === "function" ? MIME_CANDIDATES.filter(t => MR.isTypeSupported(t)) : [];
-	// useRecorder takes the first of its four candidates that is supported.
-	const chosen = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(t => supported.includes(t)) ?? "";
+	// useRecorder takes the first of its candidates that is supported.
+	const chosen = RECORDER_MIME_CANDIDATES.find(t => supported.includes(t)) ?? "";
 	return {
 		...base,
 		state: supported.length ? "ok" : "warn",
@@ -254,7 +257,7 @@ async function runPcmWindow(ctx: AudioContext, stream: MediaStream, keep: Int16A
 		nodes = { source, processor };
 	}
 	catch (err) {
-		run.error = describe(err);
+		run.error = describeError(err);
 		return run;
 	}
 	await new Promise(resolve => setTimeout(resolve, PCM_WINDOW_MS));
@@ -312,7 +315,7 @@ async function mediaRecorderRun(stream: MediaStream): Promise<{ check: ProbeChec
 		rec = new MR(stream, mime ? { mimeType: mime } : undefined);
 	}
 	catch (err) {
-		return { ...noop, check: { ...base, state: "fail", detail: `Konstruktor: ${describe(err)}` } };
+		return { ...noop, check: { ...base, state: "fail", detail: `Konstruktor: ${describeError(err)}` } };
 	}
 	let bytes = 0;
 	let chunks = 0;
@@ -322,13 +325,13 @@ async function mediaRecorderRun(stream: MediaStream): Promise<{ check: ProbeChec
 		bytes += e.data?.size ?? 0;
 	};
 	rec.onerror = (e: Event) => {
-		recError = describe((e as unknown as { error?: unknown }).error ?? e.type);
+		recError = describeError((e as unknown as { error?: unknown }).error ?? e.type);
 	};
 	try {
 		rec.start(250);
 	}
 	catch (err) {
-		return { ...noop, check: { ...base, state: "fail", detail: `start(): ${describe(err)}` } };
+		return { ...noop, check: { ...base, state: "fail", detail: `start(): ${describeError(err)}` } };
 	}
 	const check: ProbeCheck = { ...base, state: "info", detail: "läuft…" };
 	async function stop(): Promise<void> {
@@ -339,7 +342,7 @@ async function mediaRecorderRun(stream: MediaStream): Promise<{ check: ProbeChec
 			if (rec.state !== "inactive") rec.stop();
 		}
 		catch (err) {
-			recError = describe(err);
+			recError = describeError(err);
 		}
 		await settle(stopped, 2000);
 		check.state = recError ? "fail" : bytes > 0 ? "ok" : "warn";
@@ -376,7 +379,7 @@ async function audioChecks(gestureCtx: AudioContext | null, push: (c: ProbeCheck
 			group: "Mikrofon",
 			label: "getUserMedia",
 			state: "fail",
-			detail: gum.timedOut ? "keine Antwort in 15 s (Dialog nicht bestätigt?)" : describe(gum.error),
+			detail: gum.timedOut ? "keine Antwort in 15 s (Dialog nicht bestätigt?)" : describeError(gum.error),
 		});
 		await closeContext(gestureCtx);
 		return pcm;
@@ -418,7 +421,7 @@ async function audioChecks(gestureCtx: AudioContext | null, push: (c: ProbeCheck
 			let resumeNote = "";
 			if (liveCtx.state === "suspended") {
 				const res = await settle(liveCtx.resume(), 2000);
-				resumeNote = res.timedOut ? " · resume() hängt >2 s" : res.error ? ` · resume() abgelehnt: ${describe(res.error)}` : " · resume() ok";
+				resumeNote = res.timedOut ? " · resume() hängt >2 s" : res.error ? ` · resume() abgelehnt: ${describeError(res.error)}` : " · resume() ok";
 			}
 			push({
 				id: "audio-context",
@@ -479,7 +482,7 @@ async function hubChecks(deps: DiagnoseDeps): Promise<{ checks: ProbeCheck[]; en
 		group: "Hub",
 		label: "Hub erreichbar (/health)",
 		state: health.value?.ok ? "ok" : "fail",
-		detail: health.value ? `HTTP ${health.value.status}` : health.timedOut ? "keine Antwort in 8 s" : describe(health.error),
+		detail: health.value ? `HTTP ${health.value.status}` : health.timedOut ? "keine Antwort in 8 s" : describeError(health.error),
 	});
 	checks.push({
 		id: "hub-token",
@@ -491,7 +494,7 @@ async function hubChecks(deps: DiagnoseDeps): Promise<{ checks: ProbeCheck[]; en
 	let engines: ListenEngineLite[] = [];
 	const res = await settle(deps.hubFetch("/v1/listen/engines"), 8000);
 	if (!res.value) {
-		checks.push({ id: "listen-engines", group: "Hub", label: "/v1/listen/engines", state: "fail", detail: res.timedOut ? "keine Antwort in 8 s" : describe(res.error) });
+		checks.push({ id: "listen-engines", group: "Hub", label: "/v1/listen/engines", state: "fail", detail: res.timedOut ? "keine Antwort in 8 s" : describeError(res.error) });
 		return { checks, engines };
 	}
 	const body = await res.value.text().catch(() => "");
@@ -557,7 +560,7 @@ async function socketCheck(deps: DiagnoseDeps, engines: ListenEngineLite[], pcm:
 			sock = new WS(url.toString());
 		}
 		catch (err) {
-			resolve({ code: null, reason: "", wasClean: null, closedMs: null, timedOut: false, ctorError: describe(err) });
+			resolve({ code: null, reason: "", wasClean: null, closedMs: null, timedOut: false, ctorError: describeError(err) });
 			return;
 		}
 		sock.binaryType = "arraybuffer";
@@ -672,7 +675,7 @@ async function webSpeechCheck(language: string): Promise<ProbeCheck> {
 	if (fn) {
 		const res = await settle((Ctor[fn] as (o: unknown) => Promise<string>).call(Ctor, opts), 5000);
 		result = res.value ?? null;
-		error = res.timedOut ? "hängt >5 s" : res.error ? describe(res.error) : null;
+		error = res.timedOut ? "hängt >5 s" : res.error ? describeError(res.error) : null;
 	}
 	const data = { ctor: ctorName, staticAvailability: fn, install: typeof Ctor.install === "function", processLocally, result, error };
 	if (!fn) {
@@ -698,7 +701,7 @@ async function promptApiCheck(language: string): Promise<ProbeCheck[]> {
 		const withLang = await settle(LM.availability(opts), 5000);
 		const plain = await settle(LM.availability(), 5000);
 		const params = LM.params ? await settle(LM.params(), 5000) : null;
-		const fmt = (r: { value?: string; error?: unknown; timedOut: boolean }) => r.value ?? (r.timedOut ? "hängt" : describe(r.error));
+		const fmt = (r: { value?: string; error?: unknown; timedOut: boolean }) => r.value ?? (r.timedOut ? "hängt" : describeError(r.error));
 		out.push({
 			...base,
 			state: withLang.value === "available" ? "ok" : "warn",
@@ -714,7 +717,7 @@ async function promptApiCheck(language: string): Promise<ProbeCheck[]> {
 			group: "Gerät-KI",
 			label: "Summarizer API (headline)",
 			state: res.value === "available" ? "ok" : "info",
-			detail: res.value ?? (res.timedOut ? "hängt" : describe(res.error)),
+			detail: res.value ?? (res.timedOut ? "hängt" : describeError(res.error)),
 		});
 	}
 	else {
@@ -748,7 +751,7 @@ export function runDiagnose(deps: DiagnoseDeps): Promise<DebugReport> {
 		}
 	}
 	catch (err) {
-		gestureState = `Fehler: ${describe(err)}`;
+		gestureState = `Fehler: ${describeError(err)}`;
 	}
 	return diagnose(deps, gestureCtx, gestureState);
 }
