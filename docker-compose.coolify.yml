@@ -1,25 +1,34 @@
 # Coolify deployment of the Resona hub (Docker Compose build pack, "Raw Compose
 # Deployment" ON). Runbook: docs/server/coolify.md.
 #
-# Hub only: job API + SQLite + pull-worker broker (`hub`) and the hosted MCP server
-# (`mcp`, same image) behind Coolify's Caddy proxy. No models, GPUs, Docker socket,
-# privileges or published ports; SQLite lives on the `resona-data` volume and is
-# never exposed. Inference runs on approved pull workers that connect outbound over
-# HTTPS. In raw mode Coolify adds no networks/labels, so the proxy wiring (Caddy
-# labels, `coolify` network) is declared here.
+# Hub: job API + SQLite + pull-worker broker (`hub`) and the hosted MCP server
+# (`mcp`, same image) behind Coolify's Caddy proxy, plus one internal live
+# recognizer (`engine-faster-whisper`, CPU) for `WS /v1/listen` live dictation.
+# No GPUs, Docker socket, privileges or published ports; SQLite lives on the
+# `resona-data` volume and is never exposed. Queued jobs run on approved pull
+# workers that connect outbound over HTTPS. In raw mode Coolify adds no
+# networks/labels, so the proxy wiring (Caddy labels, `coolify` network) is
+# declared here. The engine has no labels and is not on the `coolify` network:
+# only the hub reaches it, over the compose-internal `default` network.
 #
-# Image: the released hub image from GHCR, pinned by digest (never a mutable tag).
-# The release workflow pushes ghcr.io/ecsplico/resona-hub; bump both `image:` lines
-# to the digest from that release's release-manifest.json (docs/server/coolify.md).
-# Current: sha256:790e4178… = ghcr.io/ecsplico/resona-hub:0.1.0-0302bb1 (linux/amd64, commit 0302bb1).
-# The package is private: the host pulls with a read:packages-only token (docs/server/coolify.md).
+# Images: released images from GHCR, pinned by digest (never a mutable tag).
+# The release workflow pushes ghcr.io/ecsplico/resona-hub and
+# ghcr.io/ecsplico/resona-engine-faster-whisper; bump the `image:` lines to the
+# digests from that release's release-manifest.json (docs/server/coolify.md).
+# Current hub: sha256:790e4178… = ghcr.io/ecsplico/resona-hub:0.1.0-0302bb1 (linux/amd64, commit 0302bb1).
+# Current engine: sha256:36263b71… = ghcr.io/ecsplico/resona-engine-faster-whisper:0.1.0 (index, linux/amd64).
+# The packages are private: the host pulls with a read:packages-only token (docs/server/coolify.md).
 #
-# No variable is required: defaults serve https://resona.ecsplico.de.
+# No variable is required: defaults serve https://resona-hub.ecsplico.de.
 #   RESONA_PUBLIC_URL        public origin (Caddy site, CORS, MCP Origin allowlist)
 #   RESONA_PUBLIC_HOST       its host name (MCP Host allowlist)
 #   RESONA_MAX_UPLOAD_BYTES  upload / worker-result cap, enforced by the app
+#   RESONA_ENGINE_URLS       live engine-server(s) the hub probes, comma-separated,
+#                            first reachable wins (default: the internal engine)
+#   DEFAULT_FASTWHISPER_MODEL, FASTWHISPER_*  internal engine model and CPU knobs
+#   ENGINE_CPUS, ENGINE_MEM_LIMIT             internal engine resource limits
 #   LOGLEVEL                 uvicorn log level (access lines carry no query strings)
-# An optional CPU fallback worker is deliberately absent; see docs/server/coolify.md.
+# An optional CPU fallback *worker* (queued jobs) is deliberately absent; see docs/server/coolify.md.
 
 x-hardening: &hardening
   read_only: true
@@ -42,6 +51,10 @@ services:
       RESONA_MAX_UPLOAD_BYTES: ${RESONA_MAX_UPLOAD_BYTES:-209715200}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://resona.ecsplico.de,${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}}
       RESONA_PUBLIC_URL: ${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}
+      # Live recognizer(s) behind WS /v1/listen. Point at a GPU engine-server with
+      # e.g. "https://<gpu-host>,http://engine-faster-whisper:7001" (first
+      # reachable wins; the internal CPU engine stays the fallback).
+      RESONA_ENGINE_URLS: ${RESONA_ENGINE_URLS:-http://engine-faster-whisper:7001}
       LOGLEVEL: ${LOGLEVEL:-info}
     healthcheck:
       test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/health', timeout=3)"]
@@ -81,8 +94,44 @@ services:
       - caddy_0.reverse_proxy.flush_interval=-1
       - caddy_ingress_network=coolify
 
+  # Internal live recognizer for WS /v1/listen. No labels, no `coolify` network,
+  # no published port: reachable only from the hub. Runs as the image's root
+  # user on a read-only root filesystem; the only writable paths are the model
+  # cache volume and /tmp. The first start downloads the model into `hf-cache`.
+  engine-faster-whisper:
+    <<: *hardening
+    image: ghcr.io/ecsplico/resona-engine-faster-whisper@sha256:36263b712a283df24752d2f596dbf1214a411d8372e612a3275d7142ab27811e
+    restart: unless-stopped
+    expose: ['7001']
+    networks: [default]
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    # The Coolify host (6 cores, 16 GB) is shared with other apps: cap the engine.
+    cpus: ${ENGINE_CPUS:-3}
+    mem_limit: ${ENGINE_MEM_LIMIT:-3g}
+    environment:
+      RESONA_ENGINE: faster-whisper
+      DEFAULT_FASTWHISPER_MODEL: ${DEFAULT_FASTWHISPER_MODEL:-small}
+      # int8 + greedy decoding keep `small` near real time on 3 cores.
+      FASTWHISPER_COMPUTE_TYPE: ${FASTWHISPER_COMPUTE_TYPE:-int8}
+      FASTWHISPER_BEAM_SIZE: ${FASTWHISPER_BEAM_SIZE:-1}
+      # Match ENGINE_CPUS; 0 (auto) would size the pool for all host cores.
+      FASTWHISPER_CPU_THREADS: ${FASTWHISPER_CPU_THREADS:-3}
+      FASTWHISPER_BATCHED: ${FASTWHISPER_BATCHED:-true}
+      FASTWHISPER_BATCH_SIZE: ${FASTWHISPER_BATCH_SIZE:-4}
+      PYTHONDONTWRITEBYTECODE: '1'
+      LOGLEVEL: ${LOGLEVEL:-info}
+    healthcheck:
+      test: ['CMD', 'python3.12', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7001/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # the first start downloads the model weights
+      start_period: 600s
+
 volumes:
   resona-data:
+  hf-cache:
 
 networks:
   coolify:

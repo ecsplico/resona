@@ -100,7 +100,17 @@ result `markdown`; documents → `markdown` + `pages`), then the hub job is dele
 state machine and German error messages as the standalone `localProcessor.ts`. Env:
 `RESONA_API_URL`, `RESONA_API_KEY` (required hub client token), `WORKER_ENGINE` (empty =
 hub default), `WORKER_POLL_INTERVAL`, `WORKER_BATCH`, `WORKER_STALE_MINUTES`. Build/run
-it via `docker compose` (the `project-worker` service).
+it via `docker compose` (the `project-worker` service). A derived title (`title_auto`) is
+best effort: a failed title write is logged (no text) and never marks the row `error`.
+
+### Backup
+
+`backup/` (`Dockerfile` on `restic/restic`, script `backup.sh` = `resona-backup`) is the
+`backup` service of `docker-compose.coolify.yml`, active only with compose profile `backup`:
+SQLite dumps of Directus (and optionally the hub volume) + uploads → encrypted restic
+snapshot in S3, daily at `BACKUP_TIME` (`HH:MM`, 00:00–23:59), with retention. `last-success`
+lives in the `backup-state` volume; the healthcheck stays healthy until the first backup
+of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
 
 ## Backends
 
@@ -131,15 +141,50 @@ it via `docker compose` (the `project-worker` service).
   the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
   On-device Web Speech exists only in desktop Chrome ≥ 139 (Safari/iOS has no
   `available()`/`processLocally` → `unsupported`; Chrome on Android hard-codes
-  `unavailable`); non-ready states surface as `DEVICE_SPEECH_HINTS` (drawer label + start error).
+  `unavailable`); non-ready states are worded once in `DEVICE_SPEECH_HINTS`
+  (`useDeviceSpeech.ts`), used by the drawer label, the `start()` error and the live notice.
   Live correction (`settings.correction`, `useLiveCorrection`): PCM is cut into blocks of
   `chunkSeconds` at final boundaries, each re-transcribed sequentially via hub
   `transcribeSync` (`correctionEngine`, empty → hub default); the page renders blocks
   (`live__block--corrected`/`--pending`), save awaits `finish()` (≤90 s, prompt shows
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
+  Start checks (`live.vue`, notice `data-testid="live-notice"` + `data-kind`): no hub token,
+  401/403 (token rejected), unreachable hub (start re-checks first), other HTTP error, hub
+  without live engine, and device source `unsupported|unavailable` (start disabled) or
+  `downloadable|downloading` (no auto-start) each get their own German message (device ones
+  from `DEVICE_SPEECH_HINTS`). `useLive`
+  exposes `closeInfo` ({code, reason} of the last close, cleared on reconnect);
+  `describeClose(info)` words it, and after 3 failed reconnects `error` names it.
+  Title: `suggestTitle(text, {calendarTitle, date})` (preset > `deriveTitle`, see
+  **Automatic titles**, else `Diktat dd.mm.yyyy HH:mm`) is shown from the *final* (or
+  corrected) text once `LIVE_SUGGESTION_MIN_WORDS` (20, about 10–15 s) meaningful words are in,
+  so it does not flip with every early word; a calendar preset shows none. On stop the save
+  field gets exactly the shown suggestion (frozen: a correction finishing later never changes
+  it), without one the rule title of the captured text. Then, from
+  `TITLE_REFINE_MIN_WORDS` (6) words, `useTitleJob().suggestTitleRemote` (hub `kind:"text"`
+  job, profile `title-de`, first 4000 chars, reads `structured.title.title`, always deletes the
+  job, null on any failure) may replace it ("Titel wird verfeinert…"); a typed title or save
+  aborts it and is never overwritten. A title field cleared before saving saves under
+  `suggestTitle` again.
+- **Automatic titles**: one rule, `deriveTitle(text)` (`app/utils/titleSuggestion.ts`, no
+  network): first Markdown heading, else the first sentence/clause (a line break ends it;
+  list markers, link targets, filler and dictation-command words dropped, no leading/trailing
+  function word), ≤ 6 words / 60 chars; null without usable words. The project-worker ports
+  it (`worker/src/resona_project_worker/title.py`, `derive_title`); both specs run the cases
+  in `shared/titleSuggestion.cases.json`, so change the rule, the port and the fixture
+  together. Title is optional in `SaveSheet` (also for shares without a name): a recording
+  saved without one gets `placeholderTitle()` (`Aufnahme dd.mm.yyyy HH:mm`; live dictations
+  use `Diktat …`) and, when it will be transcribed, `recordings.title_auto = true`. Once the
+  job completes the project-worker or `localProcessor` replaces the title with
+  `deriveTitle(markdown)` and clears the flag (no usable text → placeholder and flag stay).
+  Both write conditionally on `title_auto` (worker: `set_auto_title`, a batch update filtered
+  on `title_auto = true`; `localProcessor`: `replaceAutoTitle`, checked inside the IndexedDB
+  write transaction), so a rename (which sends `title_auto: false`) made while the job
+  completes wins (Directus: except a rename landing inside that one update request). Not
+  used yet: refining that title with the `title-de` hub job (`useTitleJob`) after
+  transcription, as the live page does.
 - **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
-- **Automatic titles**: the title is optional in `SaveSheet` (also for shares without a name) and on the live page. A recording saved without one gets `placeholderTitle()` (`Aufnahme DD.MM.YYYY HH:MM`); when it will be transcribed it also gets `recordings.title_auto = true`, and once the job completes the project-worker (`worker/.../title.py`, `set_auto_title`: batch update filtered on `title_auto = true`) or `localProcessor` (`setAutoTitleInternal`: conditional write in the same IndexedDB transaction) replaces the title with `suggestTitle(markdown)` and clears the flag (no usable text → placeholder stays). A manual rename clears `title_auto`, so it wins over a later fill (Directus: except a rename inside the one update request). Live page: once the *final* (or corrected) text has `SUGGESTION_MIN_WORDS` (20, ≈ 10–15 s of dictation) it shows `Titelvorschlag: …`, updated as dictation goes on; on stop the title field is prefilled with exactly that shown suggestion, else `placeholderTitle()` (finished correction never changes the field); a calendar `?title=` always wins (no suggestion shown) and typed input is never replaced. The rule lives in `app/utils/titleSuggestion.ts` and is mirrored in Python; both run the cases in `shared/titleSuggestion.cases.json`, so change the rule in both and in the fixture.
 - **Nachbearbeiten** (re-process a transcript with a hub postprocess profile, hub job kind
   `text`): `PostprocessPanel.vue` on the recording page lists `GET /profiles`
   (`useProfiles`, which exposes a load `error` instead of a fake one-entry list) and writes
@@ -182,25 +227,34 @@ it via `docker compose` (the `project-worker` service).
   Content-Type) and the stored filename gets the matching extension. A `duration_seconds` of
   0 is replaced by the real length (`probeDuration`: `<audio>` metadata, fallback
   `decodeAudioData`; recorder callers pass their own elapsed time).
-- **Continue recording** (`useContinueRecording`, own `useRecorder`): a new part of an
-  existing recording is transcribed on its own as a hub job (upload → `createJob` with a
-  per-attempt `continue:recordings:<id>:<uuid>` key → `getJob` every 2 s, no timeout →
-  `getResult` → `deleteJob`), reusing `localProcessor.ts`'s exported job-status helpers;
-  the caller appends the returned text. Then the stored audio + the part are merged
-  (`utils/audioMerge.ts` `mergeToWav`: OfflineAudioContext decode, mono, 16 kHz, PCM16
-  WAV, ~2 MB/min) and saved via `DataStore.replaceAudio` (Directus keeps the old file:
-  no `directus_files` delete permission; the local store deletes the old blob). A failed
-  transcription keeps the part for `retry`; a failed merge still returns the text
-  (`audioMerged:false`, `mergeError`). Works in both data modes, needs the page open
-  (`beforeunload` guard while recording/transcribing/merging; the detail page adds a
-  route-leave/update `confirm` while a part is in flight or kept for retry). The page
-  appends via `TranscriptEditor.appendParagraph` (caret and undo stay) and saves the part on
-  its own (`autosavePart`: the part placed into the last *saved* text, so unsaved typing is
-  never written along); push-to-talk results are autosaved the same way
-  (`utils/correction.ts` `textSplice` + `rebaseInsertion`; a dictation inside unsaved typing
-  stays unsaved). `dirty` counts only typed edits (the editor's `typed` event) and parts
-  whose own save failed, so pure dictation never triggers the leave dialog; a dictation
-  still recording/transcribing gets a leave `confirm`. `useTranscriptEdit` serializes all
+- **Re-dictation** (`useRedictation`, own `useRecorder`, record bar `HRecordBar` in place of the
+  player dock): parts are recorded one at a time, but a stopped part never blocks. Its audio
+  is appended to the stored audio strictly in stop order (`utils/audioMerge.ts` `mergeToWav`:
+  OfflineAudioContext decode, mono, 16 kHz, PCM16 WAV, ~2 MB/min; saved via
+  `DataStore.replaceAudio`, Directus keeps the old file, the local store deletes the old blob),
+  and its text comes from its own hub job
+  (upload → `createJob` with a per-attempt `redictation:recordings:<id>:<uuid>` key → `getJob`
+  every 2 s, no timeout → `getResult` → `deleteJob`, `localProcessor.ts` helpers; the job is
+  deleted however the attempt ends) in the
+  background, while the next part, typing and saving stay free. A part keeps its audio blob
+  until its text landed and its audio is saved: a failed job keeps the part for
+  `retry`/`discard`, a failed append lands the text but keeps the part as "Audio nicht
+  gespeichert" for `retryAudio` (appended at the end then); a throwing append never breaks the
+  chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
+  page adds a route-leave/update `confirm`.
+- **Dictation chips** (`utils/dictationPart.ts`, TipTap inline atom, attrs `partId` + `status`
+  `recording|transcribing|error`): push-to-talk and every re-dictated part put a chip at the
+  caret (or the end when not editing); it moves with edits and adds nothing to the plain text
+  (`renderText: ""`), so `v-model` and `dirty` ignore it. Chip insert/status/remove never
+  enter the undo history; a plugin keeps exactly one chip per running dictation (a deleted
+  chip is put back, a chip of a finished dictation brought back by undo/redo is removed).
+  `TranscriptEditor.resolveDictationPart` replaces it with the text (re-dictation: own
+  paragraph) as one undo step, never emitting `typed`, and returns `{base, at, inserted}`;
+  the page saves only that part on its own (`autosavePart` + `utils/correction.ts`
+  `rebaseInsertion` onto the last *saved* text, so unsaved typing is never written along; a
+  part inside unsaved typing stays unsaved). `dirty` counts only typed edits (the editor's
+  `typed` event) and parts whose own save failed, so pure dictation never triggers the leave
+  dialog; a dictation or re-dictation still in flight gets a leave `confirm`. `useTranscriptEdit` serializes all
   writes (`enqueue`; `saving` is true from the click, a second click joins the running
   save), never writes into the editor text and never rolls back; the correction diff runs
   after the next paint, not awaited.
@@ -266,7 +320,7 @@ app/
 │   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
 │   │                                # useDeviceSpeech: on-device Web Speech live source
 │   │                                # useLiveCorrection: re-transcribes live blocks via the hub
-│   │                                # useContinueRecording: record more onto a recording
+│   │                                # useRedictation: record more parts onto a recording (background hub jobs)
 ├── data/
 │   ├── types.ts                     # DataStore interface shared by both backends
 │   ├── directusStore.ts             # DataStore over Directus (directus mode)
@@ -274,7 +328,7 @@ app/
 │   └── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
 ├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
-│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden), ... (design system)
+│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids, `pending` live-region count), ... (design system)
 │   ├── AppHeader                    # wordmark, ServerStatus, section tabs, settings cog
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Löschen)

@@ -30,6 +30,13 @@ services:
       PUBLIC_URL: ${PWA_ORIGIN}/directus
       REFRESH_TOKEN_COOKIE_SECURE: "true"
       REFRESH_TOKEN_COOKIE_SAME_SITE: lax
+      # Session length. The refresh-token cookie's maxAge is REFRESH_TOKEN_TTL
+      # (Directus has no separate cookie TTL for it); every /auth/refresh starts a
+      # new REFRESH_TOKEN_TTL window, so this is an idle limit. SESSION_COOKIE_TTL
+      # only applies to "session" mode logins and is kept in step.
+      ACCESS_TOKEN_TTL: ${DIRECTUS_ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${DIRECTUS_REFRESH_TOKEN_TTL:-30d}
+      SESSION_COOKIE_TTL: ${DIRECTUS_SESSION_COOKIE_TTL:-30d}
       AUTH_PROVIDERS: keycloak
       AUTH_KEYCLOAK_DRIVER: openid
       # refresh-token cookie (the PWA exchanges it via /auth/refresh, mode json);
@@ -39,6 +46,12 @@ services:
       AUTH_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-resona-pwa}
       AUTH_KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?set KEYCLOAK_CLIENT_SECRET}
       AUTH_KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL:-https://keycloak.ecsplico.de/realms/ecsplico/.well-known/openid-configuration}
+      # Directus refreshes the stored Keycloak refresh token on EVERY /auth/refresh
+      # (openid driver refresh()); invalid_grant there = 401 = logged out. Without
+      # offline_access that token dies with Keycloak's SSO session (realm default
+      # 30 min idle / 10 h max). offline_access yields an offline token bound to
+      # "Offline Session Idle" (default 30 d) instead. Realm steps: docs/server/coolify.md.
+      AUTH_KEYCLOAK_SCOPE: ${KEYCLOAK_SCOPE:-openid profile email offline_access}
       AUTH_KEYCLOAK_IDENTIFIER_KEY: email
       AUTH_KEYCLOAK_ALLOW_PUBLIC_REGISTRATION: "true"
       AUTH_KEYCLOAK_DEFAULT_ROLE_ID: ${DIRECTUS_USER_ROLE_ID:?set DIRECTUS_USER_ROLE_ID}
@@ -144,9 +157,62 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Opt-in encrypted off-site backup (COMPOSE_PROFILES=backup): consistent SQLite
+  # dump of Directus + uploads → restic repository on S3-compatible storage, daily
+  # with retention. The hub's resona-data volume can be added; runbook and restore
+  # drill: docs/server/pwa-backups.md. Credentials are checked by the script, so
+  # deployments without the profile need none of them.
+  backup:
+    profiles: [backup]
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    volumes:
+      # rw only so SQLite can take its shared lock; the dump connection is read-only.
+      - directus-db:/source/directus/database
+      - directus-uploads:/source/directus/uploads:ro
+      - backup-cache:/root/.cache/restic
+      # last-success / first-due survive restarts, so the healthcheck keeps its history.
+      - backup-state:/state
+      # Optional: the hub's resona-data volume (same Docker host). Set HUB_DATA_VOLUME
+      # to its real Docker name; unset mounts an empty placeholder that is ignored.
+      - hub-data:/source/hub
+    tmpfs:
+      - /dumps
+    environment:
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_HUB: ${HUB_DATA_VOLUME:+true}
+      TZ: ${BACKUP_TZ:-Europe/Berlin}
+      BACKUP_TIME: ${BACKUP_TIME:-02:30}
+      BACKUP_ON_START: ${BACKUP_ON_START:-true}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-6}
+      BACKUP_HOST_TAG: ${BACKUP_HOST_TAG:-resona-pwa}
+    healthcheck:
+      # unhealthy once the last successful backup is older than 26 h; until the first
+      # backup of a start is due (+2 h grace) a missing or old one counts as healthy
+      test: ["CMD", "/usr/local/bin/resona-backup", "healthy"]
+      interval: 15m
+      timeout: 10s
+      retries: 1
+      start_period: 2h
+    depends_on:
+      directus:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   directus-db:
   directus-uploads:
+  backup-cache:
+  backup-state:
+  hub-data:
+    name: ${HUB_DATA_VOLUME:-resona-pwa-backup-no-hub}
 
 networks:
   coolify:

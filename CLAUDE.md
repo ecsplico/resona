@@ -11,7 +11,7 @@ resona/
 ├── pyproject.toml          ← workspace root
 ├── uv.lock
 ├── docker-compose.resona.yml
-├── docker-compose.coolify.yml ← public hub on Coolify (hub + hosted MCP, Caddy labels, /data volume); docs/server/coolify.md
+├── docker-compose.coolify.yml ← public hub on Coolify (hub + hosted MCP + CPU live engine engine-faster-whisper, Caddy labels, /data volume); docs/server/coolify.md
 ├── docker-compose.cpu-standalone.yml ← CPU-only single host from one compose path: hub + faster-whisper (live) + opt-in cpu-private worker (profile `worker`); docs/server/cpu-standalone.md
 ├── docker-compose.mac.yml  ← Apple Silicon single host: dockerized api + native engine (scripts/run-native-engine.sh); docs/server/mac-stack.md
 ├── benchmarks/             ← standalone backend speed+accuracy benchmark (not a workspace member; scores via resona-eval)
@@ -215,6 +215,7 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `profiles/transcript-markdown-de.json` — rules only (no LLM): the dictation command rules of `default_replacements.json` inline (hosted profiles reject `source`; `tests/test_dictation_rules.py` keeps them equal to the tail of that file)
 - `profiles/transcript-polish-de.json` — same inline rules, then a chunked llm step on endpoint `local-llm` (capitalization/punctuation/whitespace only, no word may change, numbers/units/doses/drug names/diagnoses/codes explicitly untouchable; 12000 chars, 3 attempts, 10 % length guard, markup guard, temperature 0)
 - `profiles/document-polish-de.json` — OCR-correction-only chunked llm step on endpoint `local-llm` (an org admin registers a loopback `local_llm` endpoint under that id on the approved worker; 12000 chars, 3 attempts, 30 % length guard, markup guard); uploaded to a hub with `resona profiles push`, see `docs/server/linux-worker.md#llm-polish-on-the-worker-host`. Polished results keep the engine's Markdown in `JobResult.raw_markdown`
+- `profiles/title-de.json` — single `extract` step `title` on endpoint `local-llm` (temperature 0, max_tokens 64, timeout 30): JSON `{"title": "..."}`, 3–8 topic words, no names or identifying data, the text's language. Extract data is keyed by step name, so the title lands at `JobResult.structured.title.title`; a failed step is skipped (`postprocess_step_skipped:title`), not fatal. Pushed with `resona profiles push`; the PWA (`useTitleJob`) sends at most the first 4000 characters
 - `default_replacements.json` — bundled dictation rules (case-insensitive, every command `\b`-bounded). Order matters: name corrections, the four medical `Kapitel` headings, general `Kapitel <Titel>` → `\n\n## Titel\n\n` (title 1–5 words without punctuation or command words, optional comma, then `Absatz`/`Punkt`/`Doppelpunkt`/`Fragezeichen`/`Ausrufezeichen`/`!?:`/a `.` not next to a digit; lookbehinds skip prose `im/das/dem/… Kapitel`; else not applied), brackets, `Doppelpunkt` before `Punkt`, punctuation commands absorbing one adjacent mark on each side (no `,,`/`..`), `Absatz` → `\n\n`, then whitespace cleanup (3+ newlines collapsed, text stripped). Leading whitespace is `(?<![ \t])[ \t]*`, never `\s*`: commands must not eat newlines
 
 ### resona-api

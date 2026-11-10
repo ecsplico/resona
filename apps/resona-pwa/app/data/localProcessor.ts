@@ -7,10 +7,10 @@ import {
 	patchRecordingInternal,
 	patchTranscriptInternal,
 	readFile,
-	setAutoTitleInternal,
+	replaceAutoTitle,
 	upsertTranscript,
 } from "~/data/localStore";
-import { suggestTitle } from "~/utils/titleSuggestion";
+import { deriveTitle } from "~/utils/titleSuggestion";
 import {
 	postprocessDone,
 	postprocessErrorMessage,
@@ -162,9 +162,9 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 			provenance: result.provenance,
 		});
 		await spec.patch(row.id, { status: "done", hub_job_id: null, hub_job_key: null });
-		// Atomic on the stored row: a rename during the awaits above cleared title_auto and wins.
-		const title = (row as Recording).title_auto ? suggestTitle(result.markdown) : null;
-		if (title !== null) await setAutoTitleInternal(row.id, title);
+		// `title_auto` is re-checked inside the write, so a rename during completion wins.
+		const title = (row as Recording).title_auto ? deriveTitle(result.markdown) : null;
+		if (title !== null) await replaceAutoTitle(row.id, title);
 		// A text job still running on the previous transcript would write stale output.
 		if (supersededJob !== null) await deleteJobQuietly(hub, supersededJob);
 	}

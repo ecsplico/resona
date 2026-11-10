@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { NewRecording } from "~/data/types";
-import { placeholderTitle, suggestTitle } from "~/utils/titleSuggestion";
-import type { ListenEngine } from "~/composables/useHub";
+import { HubError, type ListenEngine } from "~/composables/useHub";
+import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
+import { describeClose } from "~/composables/useLive";
+import { LIVE_SUGGESTION_MIN_WORDS, meaningfulWordCount, suggestTitle, TITLE_REFINE_MIN_WORDS } from "~/utils/titleSuggestion";
 
 const cfg = useRuntimeConfig().public;
 const nav = useBackNav();
@@ -20,14 +22,51 @@ const source = computed(() => (settings.source === "device" ? device : hubLive))
 
 const listenEngines = ref<ListenEngine[]>([]);
 const listenDefault = ref<string | null>(null);
-const listenLoaded = ref(false);
 const selectedListenEngine = computed(() => {
 	const name = settings.hubEngine || listenDefault.value;
 	return listenEngines.value.find(e => e.name === name);
 });
-const noHubLive = computed(() =>
-	settings.source === "hub" && listenLoaded.value && listenEngines.value.length === 0,
+
+// Why the hub source cannot stream, and whether it blocks start: the blocking ones
+// need a settings change; "unreachable"/"error" are re-checked when the user presses start.
+type HubIssue = "no-token" | "unauthorized" | "no-engine" | "unreachable" | "error";
+const HUB_ISSUES: Record<HubIssue, { blocking: boolean; text: (detail?: string) => string }> = {
+	"no-token": { blocking: true, text: () => "Auf diesem Gerät ist kein Hub-Token hinterlegt – in Einstellungen → Verbindung eintragen." },
+	"unauthorized": { blocking: true, text: () => "Der Hub lehnt das Token dieses Geräts ab (ungültig oder widerrufen) – in Einstellungen → Verbindung ein neues eintragen." },
+	"no-engine": { blocking: true, text: () => "Der Hub hat keinen Live-Erkenner – in Einstellungen → Live die lokale Erkennung wählen." },
+	"unreachable": { blocking: false, text: () => "Der Hub ist nicht erreichbar – Netzwerkverbindung prüfen und erneut starten." },
+	"error": { blocking: false, text: detail => `Die Live-Erkenner des Hubs konnten nicht geladen werden (${detail}).` },
+};
+const hubIssue = ref<{ kind: HubIssue; detail?: string } | null>(null);
+const deviceAvailability = ref<DeviceSpeechAvailability | null>(null);
+// Both checks have run; until then start stays disabled.
+const checked = ref(false);
+
+const deviceUnsupported = computed(() =>
+	settings.source === "device"
+	&& (deviceAvailability.value === "unsupported" || deviceAvailability.value === "unavailable"),
 );
+const startBlocked = computed(() => {
+	if (settings.source === "device") {
+		return deviceUnsupported.value;
+	}
+	const issue = hubIssue.value;
+	return issue !== null && HUB_ISSUES[issue.kind].blocking;
+});
+const startNotice = computed<{ kind: string; text: string } | null>(() => {
+	if (settings.source === "device") {
+		const state = deviceAvailability.value;
+		if (state === "unsupported" || state === "unavailable") {
+			return { kind: "device-unsupported", text: `${DEVICE_SPEECH_HINTS[state]} – in Einstellungen → Live den Hub als Quelle wählen.` };
+		}
+		if (state === "downloadable" || state === "downloading") {
+			return { kind: `device-${state}`, text: `${DEVICE_SPEECH_HINTS[state]}.` };
+		}
+		return null;
+	}
+	const issue = hubIssue.value;
+	return issue ? { kind: issue.kind, text: HUB_ISSUES[issue.kind].text(issue.detail) } : null;
+});
 
 const recorder = useRecorder();
 const store = useDataStore();
@@ -38,6 +77,8 @@ const showTitlePrompt = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const title = ref(presetTitle);
+// Set once the user types in the title field; suggestions never replace their input.
+const titleEdited = ref(false);
 const capturedBlob = ref<Blob | null>(null);
 const capturedDuration = ref(0);
 const capturedText = ref("");
@@ -60,31 +101,84 @@ const rollingText = computed(() => {
 	return f || p;
 });
 
-// Title suggestion from the FINAL recognized text only (partials still change);
-// with correction active the corrected stream is the final source. It appears
-// once enough final text exists (about 10-15 s of dictation), so it doesn't flip
-// with every early word. A calendar title always wins, so then nothing competes.
-const SUGGESTION_MIN_WORDS = 20;
-const finalText = computed(() => (correctionActive.value ? correction.text.value : source.value.final.value));
-const suggestedTitle = computed(() => {
-	if (presetTitle || finalText.value.split(/\s+/).filter(Boolean).length < SUGGESTION_MIN_WORDS) {
-		return null;
+// Title suggestion from the final text (issue #4), shown once enough words are in so
+// it does not flip with every early word. A calendar preset wins, so no competing
+// suggestion is shown or applied then.
+const ruleTitleSuggestion = computed(() => {
+	if (presetTitle.trim()) {
+		return "";
 	}
-	return suggestTitle(finalText.value);
+	const text = correctionActive.value ? correction.text.value : source.value.final.value;
+	return meaningfulWordCount(text) >= LIVE_SUGGESTION_MIN_WORDS ? suggestTitle(text) : "";
 });
-// Set once the user types in the title field; later suggestions never replace it.
-const titleTouched = ref(false);
+// Frozen on stop: a correction finishing later never changes the save field; only the
+// model title below may still replace it.
+const stoppedTitleSuggestion = ref("");
+const liveTitleSuggestion = computed(() => (sessionActive.value ? ruleTitleSuggestion.value : stoppedTitleSuggestion.value));
+// After stop a small hub model may refine the rule suggestion (title-de text job).
+const titleJob = useTitleJob();
+const remoteTitle = ref<string | null>(null);
+const titleRefining = ref(false);
+let titleAbort: AbortController | null = null;
+const shownSuggestion = computed(() => remoteTitle.value || liveTitleSuggestion.value);
+watch(shownSuggestion, (suggestion) => {
+	if (suggestion && !titleEdited.value) {
+		title.value = suggestion;
+	}
+});
 
-// The save prompt gets exactly the suggestion shown during recording; none
-// shown (silence, aborted recording) -> the date/time placeholder.
-function prefillTitle(suggestion: string | null): string {
-	if (presetTitle) {
-		return presetTitle;
+// The save dialog gets exactly the suggestion shown during recording; without one
+// (too little text) the rule title of the captured text, else the preset or
+// "Diktat <Datum Uhrzeit>".
+function applySuggestedTitle(): void {
+	if (!titleEdited.value) {
+		title.value = shownSuggestion.value || suggestTitle(capturedText.value, { calendarTitle: presetTitle });
 	}
-	if (titleTouched.value) {
-		return title.value;
+}
+
+function cancelTitleRefinement(): void {
+	titleAbort?.abort();
+	titleAbort = null;
+	titleRefining.value = false;
+}
+
+// Best effort: null, an abort or a failed correction keep the rule suggestion silently.
+async function refineTitle(): Promise<void> {
+	cancelTitleRefinement();
+	if (presetTitle.trim() || titleEdited.value || !useHub().hasToken()) {
+		return;
 	}
-	return suggestion ?? placeholderTitle(new Date());
+	const ctrl = new AbortController();
+	titleAbort = ctrl;
+	titleRefining.value = true;
+	try {
+		if (correctionDone) {
+			await correctionDone;
+		}
+		const text = capturedText.value;
+		if (ctrl.signal.aborted || meaningfulWordCount(text) < TITLE_REFINE_MIN_WORDS) {
+			return;
+		}
+		const remote = await titleJob.suggestTitleRemote(text, { language: cfg.defaultLanguage, signal: ctrl.signal });
+		if (remote && !ctrl.signal.aborted && !titleEdited.value) {
+			remoteTitle.value = remote;
+		}
+	}
+	catch {
+		// correction failed: confirmSave reports it; keep the rule title
+	}
+	finally {
+		if (titleAbort === ctrl) {
+			titleAbort = null;
+			titleRefining.value = false;
+		}
+	}
+}
+
+function onTitleInput(value: string): void {
+	title.value = value;
+	titleEdited.value = true;
+	cancelTitleRefinement();
 }
 
 function copyTranscript(): void {
@@ -100,19 +194,51 @@ const sourceError = computed(() => source.value.error.value);
 const showReconnect = computed(() =>
 	sessionActive.value && !sourceError.value && source.value.status.value === "CLOSED",
 );
+const reconnectText = computed(() => {
+	const info = settings.source === "hub" ? hubLive.closeInfo.value : null;
+	return info
+		? `Verbindung unterbrochen: ${describeClose(info)} – Wiederverbindung…`
+		: "Verbindung unterbrochen – Wiederverbindung…";
+});
 
 async function loadListenEngines(): Promise<void> {
+	listenEngines.value = [];
+	listenDefault.value = null;
+	hubIssue.value = null;
+	const hub = useHub();
+	if (!hub.hasToken()) {
+		hubIssue.value = { kind: "no-token" };
+		return;
+	}
 	try {
-		const res = await useHub().listListenEngines();
+		const res = await hub.listListenEngines();
 		listenEngines.value = res.engines;
 		listenDefault.value = res.default;
+		if (res.engines.length === 0) {
+			hubIssue.value = { kind: "no-engine" };
+		}
+	}
+	catch (err) {
+		if (!(err instanceof HubError) || err.status === 0 || err.status === 502 || err.status === 503 || err.status === 504) {
+			// fetch failure, or a proxy in front of a hub that is down
+			hubIssue.value = { kind: "unreachable" };
+		}
+		else if (err.status === 401 || err.status === 403) {
+			hubIssue.value = { kind: "unauthorized" };
+		}
+		else {
+			hubIssue.value = { kind: "error", detail: `HTTP ${err.status}${err.message ? `: ${err.message}` : ""}` };
+		}
+	}
+}
+
+async function checkDevice(): Promise<void> {
+	try {
+		deviceAvailability.value = await device.availability(cfg.defaultLanguage);
 	}
 	catch {
-		// unreachable hub: treat as offering nothing
-		listenEngines.value = [];
-		listenDefault.value = null;
+		deviceAvailability.value = "unavailable";
 	}
-	listenLoaded.value = true;
 }
 
 async function loadCorrectionEngines(): Promise<void> {
@@ -160,11 +286,19 @@ async function startSource(language: string): Promise<void> {
 }
 
 async function startLive(): Promise<void> {
-	if (sessionActive.value || noHubLive.value) {
+	if (sessionActive.value || startBlocked.value) {
 		return;
 	}
+	if (settings.source === "hub" && hubIssue.value) {
+		// transient issue (unreachable / server error): check again before starting
+		await loadListenEngines();
+		if (hubIssue.value || sessionActive.value) {
+			return;
+		}
+	}
 	sessionActive.value = true;
-	titleTouched.value = false;
+	cancelTitleRefinement();
+	remoteTitle.value = null;
 
 	const language = cfg.defaultLanguage;
 
@@ -200,6 +334,7 @@ async function startLive(): Promise<void> {
 }
 
 async function stopLive(): Promise<void> {
+	stoppedTitleSuggestion.value = ruleTitleSuggestion.value;
 	sessionActive.value = false;
 	capturedDuration.value = recorder.elapsed.value;
 	capturedBlob.value = await recorder.stop();
@@ -208,8 +343,6 @@ async function stopLive(): Promise<void> {
 	// the last partial that arrived just before the user pressed stop).
 	// Snapshot BEFORE source.stop(), which removes the data watcher immediately.
 	capturedText.value = source.value.fullText.value.trim();
-	// Same suggestion the user saw during recording; read before source.stop().
-	const liveSuggestion = suggestedTitle.value;
 	const liveLabel = settings.source === "device"
 		? "web-speech"
 		: settings.hubEngine || listenDefault.value || "hub-live";
@@ -234,8 +367,9 @@ async function stopLive(): Promise<void> {
 	unsubscribeFinal?.();
 	unsubscribeFinal = null;
 	capture.stop();
-	title.value = prefillTitle(liveSuggestion);
+	applySuggestedTitle();
 	showTitlePrompt.value = true;
+	void refineTitle();
 }
 
 async function confirmSave(): Promise<void> {
@@ -244,14 +378,16 @@ async function confirmSave(): Promise<void> {
 	}
 	saving.value = true;
 	saveError.value = null;
+	// Save what the dialog shows: a correction finishing during the save must not swap the title.
+	titleEdited.value = true;
+	cancelTitleRefinement();
 	try {
 		if (correctionDone) {
 			await correctionDone;
 		}
 		const blob = capturedBlob.value && capturedBlob.value.size > 0 ? capturedBlob.value : null;
-		const recordingTitle = title.value.trim()
-			|| suggestTitle(capturedText.value)
-			|| placeholderTitle(new Date());
+		// A cleared field saves under the rule suggestion (else "Diktat <Datum Uhrzeit>").
+		const recordingTitle = title.value.trim() || suggestTitle(capturedText.value, { calendarTitle: presetTitle });
 		const input: NewRecording = {
 			title: recordingTitle,
 			language: cfg.defaultLanguage,
@@ -280,12 +416,18 @@ function cancelSave(): void {
 	void nav.leaveTo("/");
 }
 
+onBeforeUnmount(cancelTitleRefinement);
+
 onMounted(async () => {
-	if (settings.correction) {
-		await Promise.all([loadListenEngines(), loadCorrectionEngines()]);
-	}
-	else {
-		await loadListenEngines();
+	await Promise.all([
+		loadListenEngines(),
+		settings.correction ? loadCorrectionEngines() : Promise.resolve(),
+		settings.source === "device" ? checkDevice() : Promise.resolve(),
+	]);
+	checked.value = true;
+	// A device pack that is not installed yet would only fail; wait for the user.
+	if (settings.source === "device" && deviceAvailability.value !== "available") {
+		return;
 	}
 	await startLive();
 });
@@ -333,17 +475,17 @@ onMounted(async () => {
 			class="live__reconnect"
 			data-testid="reconnect-banner"
 		>
-			Verbindung unterbrochen – Wiederverbindung…
+			{{ reconnectText }}
 		</div>
 
 		<div class="live__body">
 			<div class="live__column">
 				<p
-					v-if="sessionActive && suggestedTitle"
+					v-if="(sessionActive || showTitlePrompt) && shownSuggestion"
 					class="live__suggestion"
-					data-testid="title-suggestion"
+					data-testid="live-title-suggestion"
 				>
-					Titelvorschlag: {{ suggestedTitle }}
+					Titelvorschlag: {{ shownSuggestion }}
 				</p>
 				<div
 					v-if="rollingText"
@@ -411,11 +553,13 @@ onMounted(async () => {
 		</div>
 
 		<p
-			v-if="noHubLive"
+			v-if="startNotice"
 			class="live__notice"
-			data-testid="live-no-hub-stream"
+			data-testid="live-notice"
+			:data-kind="startNotice.kind"
+			role="status"
 		>
-			Dieser Hub bietet kein Live-Streaming an – in Einstellungen → Live die lokale Erkennung wählen.
+			{{ startNotice.text }}
 		</p>
 
 		<div
@@ -427,7 +571,7 @@ onMounted(async () => {
 				type="button"
 				data-testid="start-live"
 				aria-label="Aufnahme starten"
-				:disabled="noHubLive || !listenLoaded"
+				:disabled="startBlocked || !checked"
 				@click="startLive"
 			>
 				<svg
@@ -481,12 +625,19 @@ onMounted(async () => {
 			data-testid="save-prompt"
 		>
 			<HField
-				v-model="title"
+				:model-value="title"
 				class="live__title"
 				label="Titel"
 				data-testid="title-input"
-				@update:model-value="titleTouched = true"
+				@update:model-value="onTitleInput"
 			/>
+			<p
+				v-if="titleRefining"
+				class="live__pending"
+				data-testid="live-title-refining"
+			>
+				Titel wird verfeinert…
+			</p>
 			<p
 				v-if="correctionPending > 0"
 				class="live__pending"

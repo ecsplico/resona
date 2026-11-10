@@ -76,13 +76,14 @@ async function deleteFile(fileId: string | undefined): Promise<void> {
 // Read-modify-write inside one readwrite transaction, so a processor patch and
 // a UI patch of the same row cannot overwrite each other. A missing row is not
 // written: it throws `notFound`, or resolves silently when `notFound` is null.
-// A function patch sees the stored row; returning null writes nothing.
+// A row failing `when` is left as is (not an error).
 // (Executor form instead of Promise.withResolvers: iOS Safari < 17.4.)
 async function patchRow<T extends { id: string; date_updated?: string }>(
 	store: UseStore,
 	id: string,
-	patch: Partial<T> | ((row: T) => Partial<T> | null),
+	patch: Partial<T>,
 	notFound: string | null,
+	when?: (row: T) => boolean,
 ): Promise<void> {
 	const found = await store<boolean>("readwrite", os => new Promise<boolean>((resolve, reject) => {
 		const req = os.get(id);
@@ -93,12 +94,11 @@ async function patchRow<T extends { id: string; date_updated?: string }>(
 				resolve(false);
 				return;
 			}
-			const changes = typeof patch === "function" ? patch(row) : patch;
-			if (changes === null) {
+			if (when && !when(row)) {
 				resolve(true);
 				return;
 			}
-			os.put({ ...row, ...changes, id: row.id, date_updated: now() }, id);
+			os.put({ ...row, ...patch, id: row.id, date_updated: now() }, id);
 			resolve(promisifyRequest(os.transaction).then(() => true));
 		};
 	}));
@@ -126,17 +126,17 @@ export async function readFile(fileId: string): Promise<Blob | null> {
 	return new File([file.bytes], file.name, { type: file.type });
 }
 
-/**
- * Replace an automatic title, only while the stored row still has `title_auto`
- * (checked in the same transaction, so a concurrent rename always wins).
- */
-export async function setAutoTitleInternal(id: string, title: string): Promise<void> {
-	await patchRow<LocalRecording>(db().recordings, id, row => (row.title_auto ? { title, title_auto: false } : null), null);
-}
-
 /** Processor-side patch of any recording field; a no-op when the recording was deleted meanwhile. */
 export async function patchRecordingInternal(id: string, patch: Partial<Recording>): Promise<void> {
 	await patchRow<LocalRecording>(db().recordings, id, patch, null);
+}
+
+/**
+ * Replaces a placeholder title with one derived from the transcript, only while the
+ * row still has `title_auto` (checked in the same transaction, so a rename wins).
+ */
+export async function replaceAutoTitle(id: string, title: string): Promise<void> {
+	await patchRow<LocalRecording>(db().recordings, id, { title, title_auto: false }, null, row => row.title_auto === true);
 }
 
 /** Processor-side patch of any document field; a no-op when the document was deleted meanwhile. */

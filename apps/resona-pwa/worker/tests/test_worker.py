@@ -1,4 +1,5 @@
 import json
+import logging
 
 import httpx
 import pytest
@@ -146,8 +147,11 @@ async def test_completed_job_writes_transcript_and_deletes(base_url, tmp_path, r
 
 
 async def _complete_recording(
-    base_url, tmp_path, recording, markdown, *, title_applied=True, title_updates=None, **flags,
+    base_url, tmp_path, recording, markdown, *,
+    title_applied=True, title_status=200, title_updates=None, **flags,
 ):
+    """Completes rec-1's job. The guarded title update answers `title_status`;
+    `title_applied=False` = no row matched (renamed meanwhile)."""
     row = {**recording, "status": "transcribing", "hub_job_id": 7, **flags}
     mock_lists(active={"recordings": [row]})
     respx.get(f"{HUB}/v1/jobs/7").mock(return_value=httpx.Response(200, json={
@@ -168,7 +172,9 @@ async def _complete_recording(
     patch = mock_patch(base_url, "recordings", "rec-1")
     # Guarded auto-title update: empty `data` = the row was renamed meanwhile.
     title_route = respx.patch(f"{base_url}/items/recordings").mock(
-        return_value=httpx.Response(200, json={"data": [{"id": "rec-1"}] if title_applied else []})
+        return_value=httpx.Response(
+            title_status, json={"data": [{"id": "rec-1"}] if title_applied else []},
+        )
     )
     assert await cycle(base_url, tmp_path) == 1
     if title_updates is not None:
@@ -182,12 +188,12 @@ async def test_auto_title_replaces_placeholder_and_clears_flag(base_url, tmp_pat
     updates = []
     sent = await _complete_recording(
         base_url, tmp_path, recording,
-        "Heute besprechen wir die Quartalsplanung für das Marketing.",
+        "Kontrolle nach Knie-OP rechts. Patient beschwerdefrei.",
         title="Aufnahme 10.11.2026 09:05", title_auto=True, title_updates=updates,
     )
     assert updates == [{
         "query": {"filter": {"id": {"_eq": "rec-1"}, "title_auto": {"_eq": True}}},
-        "data": {"title": "Heute besprechen wir die Quartalsplanung", "title_auto": False},
+        "data": {"title": "Kontrolle nach Knie-OP rechts", "title_auto": False},
     }]
     assert all("title" not in body for body in sent)
     assert {"status": "done", "hub_job_id": None, "hub_job_key": None} in sent
@@ -199,7 +205,7 @@ async def test_auto_title_replaces_placeholder_and_clears_flag(base_url, tmp_pat
 async def test_title_is_kept_without_auto_flag(base_url, tmp_path, recording, flags):
     updates = []
     sent = await _complete_recording(
-        base_url, tmp_path, recording, "Heute besprechen wir die Quartalsplanung.",
+        base_url, tmp_path, recording, "Kontrolle nach Knie-OP rechts.",
         title_updates=updates, **flags,
     )
     assert all("title" not in body for body in sent)
@@ -224,13 +230,32 @@ async def test_auto_title_untouched_without_suggestion(base_url, tmp_path, recor
 async def test_renamed_row_keeps_its_title_and_job_still_completes(base_url, tmp_path, recording):
     updates = []
     sent = await _complete_recording(
-        base_url, tmp_path, recording, "Heute besprechen wir die Quartalsplanung.",
+        base_url, tmp_path, recording, "Kontrolle nach Knie-OP rechts.",
         title="Aufnahme 10.11.2026 09:05", title_auto=True,
         title_applied=False, title_updates=updates,
     )
     assert len(updates) == 1
     assert all("title" not in body for body in sent)
     assert {"status": "done", "hub_job_id": None, "hub_job_key": None} in sent
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_failed_derived_title_is_logged_and_never_fails_the_row(
+    base_url, tmp_path, recording, caplog,
+):
+    markdown = "Kontrolle nach Knie-OP rechts. Patient beschwerdefrei."
+    updates = []
+    with caplog.at_level(logging.WARNING, logger="resona_project_worker.worker"):
+        sent = await _complete_recording(
+            base_url, tmp_path, recording, markdown,
+            title="Aufnahme 10.11.2026 09:05", title_auto=True,
+            title_status=500, title_updates=updates,
+        )
+    assert len(updates) == 1
+    assert sent == [{"status": "done", "hub_job_id": None, "hub_job_key": None}]
+    assert "could not apply derived title to recordings rec-1" in caplog.text
+    assert "Knie" not in caplog.text
 
 
 @respx.mock

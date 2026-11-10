@@ -1,0 +1,16 @@
+{
+  "name": "title-de",
+  "description": "Kurzer Titelvorschlag (3–8 Wörter) für ein Diktat oder Dokument über ein kleines lokales LLM; Ergebnis in structured.title.title",
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "extract",
+      "name": "title",
+      "endpoint": "local-llm",
+      "temperature": 0,
+      "max_tokens": 64,
+      "timeout": 30,
+      "prompt": "Du schlägst einen kurzen Titel für den folgenden Text vor (ein Diktat oder Dokument, meist aus der Medizin). Antworte ausschließlich mit einem JSON-Objekt der Form {\"title\": \"...\"}, ohne Einleitung, ohne Erklärung, ohne Codeblock.\n\nRegeln für den Titel:\n- 3 bis 8 Wörter.\n- Beschreibe das Thema bzw. die Art des Textes, z. B. \"Befund Kontrolluntersuchung Knie\" oder \"Arztbrief Entlassung nach Pneumonie\".\n- Keine Namen von Patientinnen, Patienten oder anderen Personen, keine Geburtsdaten, Adressen, Telefonnummern, Fallnummern oder andere identifizierende Angaben.\n- Keine Anführungszeichen im Titel und kein Satzzeichen am Ende.\n- Schreibe den Titel in der Sprache des Textes.\n- Nur der Anfang des Textes ist mitgeschickt; erfinde nichts, was nicht darin steht."
+    }
+  ]
+}

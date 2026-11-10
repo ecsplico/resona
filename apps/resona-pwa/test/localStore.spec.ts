@@ -8,7 +8,7 @@ import {
 	patchDocumentInternal,
 	patchRecordingInternal,
 	readFile,
-	setAutoTitleInternal,
+	replaceAutoTitle,
 	upsertTranscript,
 } from "~/data/localStore";
 import type { NewRecording } from "~/data/types";
@@ -281,18 +281,21 @@ describe("createLocalStore", () => {
 			expect(row).toMatchObject({ id: rec.id, status: "transcribing", hub_job_id: 42, title: "Job" });
 		});
 
-		it("setAutoTitleInternal replaces a flagged title and clears the flag", async () => {
-			const rec = await store.createRecording(input("Aufnahme 10.11.2026 09:05", { title_auto: true }), null, "a.webm");
-			await setAutoTitleInternal(rec.id, "Wundkontrolle");
-			expect(await store.getRecording(rec.id)).toMatchObject({ title: "Wundkontrolle", title_auto: false });
+		it("replaceAutoTitle writes only while title_auto is set", async () => {
+			const auto = await store.createRecording({ ...input("Aufnahme 10.11.2026 09:05"), title_auto: true }, null, "a.webm");
+			const renamed = await store.createRecording({ ...input("Mein Titel"), title_auto: false }, null, "m.webm");
+			await replaceAutoTitle(auto.id, "Befund Knie");
+			await replaceAutoTitle(renamed.id, "Befund Knie");
+			await expect(replaceAutoTitle("gone", "x")).resolves.toBeUndefined();
+			expect(await store.getRecording(auto.id)).toMatchObject({ title: "Befund Knie", title_auto: false });
+			expect(await store.getRecording(renamed.id)).toMatchObject({ title: "Mein Titel", title_auto: false });
 		});
 
-		it("setAutoTitleInternal never overwrites a renamed recording", async () => {
-			const rec = await store.createRecording(input("Aufnahme 10.11.2026 09:05", { title_auto: true }), null, "a.webm");
+		it("replaceAutoTitle never overwrites a recording renamed through the store", async () => {
+			const rec = await store.createRecording({ ...input("Aufnahme 10.11.2026 09:05"), title_auto: true }, null, "a.webm");
 			await store.updateRecording(rec.id, { title: "Visite Herr M.", title_auto: false });
-			await setAutoTitleInternal(rec.id, "Wundkontrolle");
+			await replaceAutoTitle(rec.id, "Wundkontrolle");
 			expect(await store.getRecording(rec.id)).toMatchObject({ title: "Visite Herr M.", title_auto: false });
-			await expect(setAutoTitleInternal("gone", "x")).resolves.toBeUndefined();
 		});
 
 		it("internal patches of a deleted row are no-ops", async () => {

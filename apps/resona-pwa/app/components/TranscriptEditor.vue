@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import { watch } from "vue";
-import { EditorContent, useEditor } from "@tiptap/vue-3";
+import { EditorContent, getTextBetween, getTextSerializersFromSchema, useEditor } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { JSONContent } from "@tiptap/vue-3";
+import { closeHistory } from "@tiptap/pm/history";
+import { TextSelection } from "@tiptap/pm/state";
+import {
+	DICTATION_PART,
+	DICTATION_PART_ADD,
+	DICTATION_PART_DROP,
+	DictationPart,
+	findDictationPart,
+	insertDictationNode,
+	type DictationPartStatus,
+} from "~/utils/dictationPart";
 
 // The transcript is stored as plain text (Directus `text` field). TipTap is used
 // purely as the editing surface: we map plain text ↔ paragraphs so exports, copy
@@ -18,7 +29,7 @@ const props = withDefaults(defineProps<{ modelValue: string; placeholder?: strin
 });
 
 // `typed`: the user changed the text (keyboard, paste, cut, undo); not emitted for
-// changes made through the exposed methods (dictation, appended parts).
+// changes made through the exposed methods (dictation, appended parts, chips).
 const emit = defineEmits<{ "update:modelValue": [value: string]; "typed": [] }>();
 
 // True while an exposed method runs its commands; onUpdate fires synchronously
@@ -51,6 +62,7 @@ const editor = useEditor({
 	extensions: [
 		StarterKit,
 		Placeholder.configure({ placeholder: props.placeholder }),
+		DictationPart,
 	],
 	onUpdate: ({ editor }) => {
 		const text = editor.getText({ blockSeparator: BLOCK });
@@ -94,26 +106,112 @@ function focus(): void {
 	editor.value?.chain().focus().run();
 }
 
-// Insert a placeholder at the current cursor position. Returns the range
-// [from, to) so the caller can replace it later with replaceBetween().
-function insertPlaceholder(): { from: number; to: number } | null {
-	const e = editor.value;
-	if (!e) return null;
-	const from = e.state.selection.from;
-	viaApi(() => e.chain().focus().insertContent("[…]").run());
-	return { from, to: from + 3 };
+// ── Dictation parts ────────────────────────────────────────────────────────
+// A dictation in flight is a chip (`dictationPart` node) in the document: it
+// moves with the user's edits and adds nothing to the emitted text. All chip
+// changes are programmatic and kept out of the undo history; only the text that
+// replaces a chip is one undoable step.
+
+function hasFocus(): boolean {
+	return editor.value?.isFocused ?? false;
 }
 
-// Replace the range [from, to) with text, or delete it when text is empty.
-function replaceBetween(from: number, to: number, text: string): void {
+/** Shows a chip for `partId` at the caret, or at the end of the text. */
+function insertDictationPart(partId: string, at: "caret" | "end"): void {
 	const e = editor.value;
-	if (!e) return;
-	if (text) {
-		viaApi(() => e.chain().focus().insertContentAt({ from, to }, text).run());
+	if (!e || findDictationPart(e.state.doc, partId) !== null) return;
+	const node = e.schema.nodes[DICTATION_PART]!.create({ partId, status: "recording" });
+	const tr = insertDictationNode(e.state.tr, node, at === "caret" ? e.state.selection.from : null);
+	viaApi(() => e.view.dispatch(tr.setMeta(DICTATION_PART_ADD, partId).setMeta("addToHistory", false)));
+}
+
+function setDictationPartStatus(partId: string, status: DictationPartStatus): void {
+	const e = editor.value;
+	const pos = e ? findDictationPart(e.state.doc, partId) : null;
+	if (!e || pos === null) return;
+	const node = e.state.doc.nodeAt(pos)!;
+	if (node.attrs.status === status) return;
+	const tr = e.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, status });
+	viaApi(() => e.view.dispatch(tr.setMeta("addToHistory", false)));
+}
+
+/** Removes the chip of `partId` (outside the undo history); returns where it was. */
+function removeDictationPart(partId: string): number | null {
+	const e = editor.value;
+	const pos = e ? findDictationPart(e.state.doc, partId) : null;
+	if (!e || pos === null) return null;
+	const tr = e.state.tr.delete(pos, pos + 1).setMeta(DICTATION_PART_DROP, partId).setMeta("addToHistory", false);
+	viaApi(() => e.view.dispatch(tr));
+	return pos;
+}
+
+/**
+ * Replaces the chip with `text` as one undoable step. Inline (push-to-talk): the
+ * text is separated by a space from a word right before it and followed by one
+ * unless whitespace follows. `paragraph` (re-dictation): the text becomes its own
+ * paragraph(s), splitting the paragraph the chip stands in. Returns where it went
+ * in the emitted plain text: `base` (the text without it), the offset `at` and the
+ * exact `inserted` string, so `base` with `inserted` at `at` is the new text. Null
+ * when there is no such chip; an empty `text` only removes the chip.
+ */
+function resolveDictationPart(
+	partId: string,
+	text: string,
+	options: { paragraph?: boolean } = {},
+): { base: string; at: number; inserted: string } | null {
+	const e = editor.value;
+	const chipAt = e ? findDictationPart(e.state.doc, partId) : null;
+	if (!e || chipAt === null) return null;
+	const base = e.getText({ blockSeparator: BLOCK });
+	// Where the user's selection was relative to the chip: an end right before it
+	// (or earlier) stays before the inserted text, one after it moves along.
+	const selection = e.state.selection instanceof TextSelection ? e.state.selection : null;
+	const pos = removeDictationPart(partId)!;
+	if (!text) return null;
+	const { doc } = e.state;
+	const at = getTextBetween(doc, { from: 0, to: pos }, {
+		blockSeparator: BLOCK,
+		textSerializers: getTextSerializersFromSchema(e.schema),
+	}).length;
+	const $pos = doc.resolve(pos);
+	const before = doc.textBetween($pos.start(), pos, BLOCK, "");
+	const after = doc.textBetween(pos, $pos.end(), BLOCK, "");
+	const tr = e.state.tr;
+	let inserted: string;
+	if (options.paragraph) {
+		// Split off the text after the chip, then open an empty paragraph after the
+		// text before it; each line of `text` is one paragraph (`BLOCK`).
+		let cur = pos;
+		if (after.length > 0) tr.split(cur);
+		if (before.length > 0) {
+			tr.split(cur);
+			cur += 2;
+		}
+		text.split(BLOCK).forEach((line, i) => {
+			if (i > 0) {
+				tr.split(cur);
+				cur += 2;
+			}
+			if (line) {
+				tr.insertText(line, cur);
+				cur += line.length;
+			}
+		});
+		inserted = (before.length > 0 ? BLOCK : "") + text + (after.length > 0 ? BLOCK : "");
 	}
 	else {
-		viaApi(() => e.chain().focus().deleteRange({ from, to }).run());
+		const lead = before.length > 0 && !/\s$/.test(before) ? " " : "";
+		const trail = after.length > 0 && /^\s/.test(after) ? "" : " ";
+		inserted = lead + text + trail;
+		tr.insertText(inserted, pos);
 	}
+	if (selection) {
+		const keep = (x: number) => (x <= chipAt ? tr.mapping.map(x, -1) : tr.mapping.map(x - 1, 1));
+		tr.setSelection(TextSelection.create(tr.doc, keep(selection.anchor), keep(selection.head)));
+	}
+	// Its own undo step, not merged into typing right before it.
+	viaApi(() => e.view.dispatch(closeHistory(tr)));
+	return { base, at, inserted };
 }
 
 // Append `text` as a new paragraph at the end of the document without moving
@@ -130,7 +228,16 @@ function appendParagraph(text: string): void {
 	viaApi(() => e.commands.insertContentAt({ from, to: end }, toContent(text).content ?? [], { updateSelection: false }));
 }
 
-defineExpose({ insertText, insertPlaceholder, replaceBetween, appendParagraph, focus });
+defineExpose({
+	insertText,
+	appendParagraph,
+	focus,
+	hasFocus,
+	insertDictationPart,
+	setDictationPartStatus,
+	resolveDictationPart,
+	removeDictationPart,
+});
 </script>
 
 <template>
@@ -147,4 +254,13 @@ defineExpose({ insertText, insertPlaceholder, replaceBetween, appendParagraph, f
 .tt-editor :deep(.ProseMirror p) { margin:0 0 0.6em; }
 .tt-editor :deep(.ProseMirror p:last-child) { margin-bottom:0; }
 .tt-editor :deep(.ProseMirror p.is-editor-empty:first-child::before) { content:attr(data-placeholder); float:left; height:0; pointer-events:none; color:var(--fg3); }
+/* Dictation chip: the label is generated, so the node holds no text to copy or paste. */
+.tt-editor :deep(.dictation-part) { display:inline-flex; align-items:center; gap:6px; margin:0 2px; padding:1px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent-ink); font-size:13px; font-weight:600; line-height:1.6; white-space:nowrap; vertical-align:baseline; user-select:none; cursor:default; }
+.tt-editor :deep(.dictation-part::before) { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; animation:dictation-pulse 1.2s var(--motion-ease) infinite alternate; }
+.tt-editor :deep(.dictation-part::after) { content:attr(data-label) "…"; }
+.tt-editor :deep(.dictation-part--error) { background:var(--tomato-soft); color:var(--tomato-deep); }
+.tt-editor :deep(.dictation-part--error::before) { animation:none; }
+.tt-editor :deep(.dictation-part--error::after) { content:attr(data-label); }
+@keyframes dictation-pulse { from { opacity:1; } to { opacity:0.3; } }
+@media (prefers-reduced-motion:reduce) { .tt-editor :deep(.dictation-part::before) { animation:none; } }
 </style>

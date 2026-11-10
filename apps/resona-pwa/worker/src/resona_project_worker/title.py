@@ -1,62 +1,119 @@
-"""Deterministic title suggestion from a transcript.
+"""Deterministic recording title from a transcript (no model, no network).
 
-Mirrors `app/utils/titleSuggestion.ts`; both are checked against the cases in
-`shared/titleSuggestion.cases.json`.
+Port of `deriveTitle` in `app/utils/titleSuggestion.ts`: the first Markdown
+heading, else the first sentence's (or clause's) first meaningful words; None
+when no usable word is left. Both are checked against
+`shared/titleSuggestion.cases.json`; change the rule, this port and the
+fixture together.
 """
 from __future__ import annotations
 
 import re
 
-FILLERS = frozenset(
-    "äh ähm ääh öhm ehm hm hmm mhm halt eben mal sozusagen quasi okay ok".split()
-)
-STOPWORDS = frozenset(
-    "also ja nein so gut dann und oder aber jetzt nun ich wir du sie es man der die das "
-    "den dem des ein eine einen einem einer eines zu zum zur von vom mit für auf in im an "
-    "am bei beim ist sind war hat habe haben noch schon bitte danke".split()
-)
+TITLE_MAX_CHARS = 60
+TITLE_MAX_WORDS = 6
+# A comma ends the title candidate only once this many words are collected.
+MIN_CLAUSE_WORDS = 3
 
-MAX_TOKENS = 6
-MAX_CHARS = 60
+# Filler sounds and discourse particles that never belong in a title.
+FILLERS = frozenset({
+    "äh", "ähm", "öh", "öhm", "ehm", "hm", "hmm", "mhm", "äääh", "ääh", "ähh", "ähhm",
+    "also", "ja", "so", "okay", "ok", "genau", "gut", "na", "nun", "naja",
+})
 
-_PREFIX = re.compile(r"^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)")
+# Spoken dictation commands (see resona-postprocess `default_replacements.json`).
+COMMANDS = frozenset({
+    "komma", "punkt", "absatz", "doppelpunkt", "fragezeichen", "ausrufezeichen",
+    "semikolon", "strichpunkt", "bindestrich", "kapitel", "klammer", "anführungszeichen",
+})
+
+# Spoken commands that end a sentence.
+SENTENCE_COMMANDS = frozenset({"punkt", "absatz", "fragezeichen", "ausrufezeichen", "doppelpunkt"})
+
+# Function words a title should neither start nor end with.
+STOPWORDS = frozenset({
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "eines",
+    "und", "oder", "aber", "mit", "über", "von", "vom", "zu", "zum", "zur", "für", "auf", "an",
+    "am", "im", "in", "bei", "beim", "nach", "aus", "um", "wie", "dass", "ist", "sind", "war",
+    "hat", "haben", "wird", "werden", "es", "ich", "wir", "sie", "er", "heute", "jetzt", "dann",
+    "seit", "wegen", "bis", "ohne", "gegen", "unter", "vor", "durch", "sehr", "noch", "auch",
+})
+
+_TRAILING_PUNCT = re.compile(r"[\s.,;:!?…\-–—\"'„“”»«()\[\]]+\Z")
+_EDGE_NON_WORD = re.compile(r"^[\W_]+|[\W_]+\Z")
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$", re.MULTILINE)
+_LINE_PREFIX = re.compile(r"^\s*(?:[-*+]|[0-9]+[.)])\s+")
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-_EMPHASIS = re.compile(r"[*_`]")
-_SEGMENT_SPLIT = re.compile(r"[.!?;:\n]+")
-_TOKEN = re.compile(r"[^\W_]+(?:[-'’][^\W_]+)*")
+_MARKUP = re.compile(r"[#*_`>]+")
+_ENDS_SENTENCE = re.compile(r"[.!?][\"'”»)]*\Z")
+_LIST_NUMBER = re.compile(r"[0-9]+[.)]")
+_TRAILING_CLAUSE = re.compile(r"[,;:]+\Z")
 
 
-def _strip_stopwords(tokens: list[str]) -> list[str]:
-    start, end = 0, len(tokens)
-    while start < end and tokens[start].lower() in STOPWORDS:
-        start += 1
-    while end > start and tokens[end - 1].lower() in STOPWORDS:
-        end -= 1
-    return tokens[start:end]
+def _strip_trailing_punctuation(s: str) -> str:
+    return _TRAILING_PUNCT.sub("", s)
 
 
-def _clean(text: str) -> str:
-    lines = []
+def _cap_length(s: str) -> str:
+    if len(s) <= TITLE_MAX_CHARS:
+        return s
+    cut = s[: TITLE_MAX_CHARS + 1]
+    space = cut.rfind(" ")
+    return _strip_trailing_punctuation(cut[:space] if space > 0 else s[:TITLE_MAX_CHARS])
+
+
+def _finish(s: str) -> str:
+    cleaned = _strip_trailing_punctuation(" ".join(s.split()))
+    if not cleaned:
+        return ""
+    capped = _cap_length(cleaned)
+    return capped[0].upper() + capped[1:]
+
+
+def _bare(word: str) -> str:
+    return _EDGE_NON_WORD.sub("", word.lower())
+
+
+def _first_heading(text: str) -> str:
+    m = _HEADING.search(text)
+    return _finish(m.group(1)) if m else ""
+
+
+def _first_sentence_words(text: str) -> list[str]:
+    """Words of the first sentence (or clause, once three words are in) without fillers
+    and dictation commands. A line break ends a sentence; list markers and Markdown
+    links (text kept) are dropped per line."""
+    words: list[str] = []
     for line in text.split("\n"):
-        line = _PREFIX.sub("", line)
-        line = _LINK.sub(r"\1", line)
-        lines.append(_EMPHASIS.sub("", line))
-    return "\n".join(lines)
+        line = _MARKUP.sub(" ", _LINK.sub(r"\1", _LINE_PREFIX.sub("", line, count=1)))
+        for token in line.split():
+            key = _bare(token)
+            ends_sentence = bool(_ENDS_SENTENCE.search(token)) and not _LIST_NUMBER.fullmatch(token)
+            if key and key in SENTENCE_COMMANDS:
+                if words:
+                    return words
+                continue
+            if key == "komma" and len(words) >= MIN_CLAUSE_WORDS:
+                return words
+            if key and key not in FILLERS and key not in COMMANDS:
+                words.append(_TRAILING_CLAUSE.sub("", token))
+            if ends_sentence and words:
+                return words
+            if token.endswith((",", ";", ":")) and len(words) >= MIN_CLAUSE_WORDS:
+                return words
+        if words:
+            return words
+    return words
 
 
-def suggest_title(text: str) -> str | None:
-    for segment in _SEGMENT_SPLIT.split(_clean(text)):
-        tokens = [t for t in _TOKEN.findall(segment) if t.lower() not in FILLERS]
-        tokens = _strip_stopwords(tokens)
-        if not any(len(t) >= 3 for t in tokens):
-            continue
-        tokens = _strip_stopwords(tokens[:MAX_TOKENS])
-        title = " ".join(tokens)
-        while len(title) > MAX_CHARS and len(tokens) > 1:
-            tokens = _strip_stopwords(tokens[:-1])
-            title = " ".join(tokens)
-        title = title[:MAX_CHARS]
-        if not title:
-            continue
-        return title[0].upper() + title[1:]
-    return None
+def derive_title(text: str) -> str | None:
+    heading = _first_heading(text)
+    if heading:
+        return heading
+    words = _first_sentence_words(text)
+    while words and _bare(words[0]) in STOPWORDS:
+        words = words[1:]
+    words = words[:TITLE_MAX_WORDS]
+    while words and _bare(words[-1]) in STOPWORDS:
+        words = words[:-1]
+    return _finish(" ".join(words)) or None

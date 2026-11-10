@@ -82,6 +82,7 @@ nav:
     - Linux Worker (NVIDIA, Docker): server/linux-worker.md
     - Coolify Deployment (public hub): server/coolify.md
     - Releases & Worker Updates: server/releases.md
+    - PWA Backups & Encryption at Rest: server/pwa-backups.md
   - Configuration:
     - Environment Variables: configuration/environment.md
     - Config Files: configuration/config-files.md
