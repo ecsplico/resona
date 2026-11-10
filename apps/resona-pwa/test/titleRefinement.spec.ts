@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { acceptRefinedTitle, refineTitle, titleModelAvailability } from "~/utils/titleRefinement";
+import { acceptRefinedTitle, installTitleModel, refineTitle, titleModelAvailability } from "~/utils/titleRefinement";
 
 const TEXT = "Kontrolle nach Knie-TEP rechts, Wunde reizlos, Beweglichkeit 0-0-90 Grad, Patient mobil an Unterarmgehstützen.";
 
@@ -107,5 +107,46 @@ describe("refineTitle", () => {
 		run.abort();
 		answer.resolve("Knie-TEP Kontrolle rechts");
 		expect(await pending).toBeNull();
+	});
+});
+
+describe("installTitleModel", () => {
+	it("starts the download synchronously (inside the click), reports progress and frees the session", async () => {
+		const { model, session } = stubModel("downloadable");
+		model.create.mockImplementation(async (opts: { monitor?: (m: EventTarget) => void }) => {
+			const monitor = new EventTarget();
+			opts.monitor?.(monitor);
+			monitor.dispatchEvent(Object.assign(new Event("downloadprogress"), { loaded: 0.5 }));
+			monitor.dispatchEvent(Object.assign(new Event("downloadprogress"), { loaded: 1 }));
+			return session;
+		});
+		const progress: number[] = [];
+		const done = installTitleModel("de", l => progress.push(l));
+		expect(model.create).toHaveBeenCalledTimes(1);
+		await done;
+		expect(progress).toEqual([0.5, 1]);
+		expect(model.availability).not.toHaveBeenCalled();
+		expect(session.destroy).toHaveBeenCalled();
+	});
+
+	it("rejects when the download fails", async () => {
+		const { model } = stubModel("downloadable");
+		model.create.mockRejectedValue(new DOMException("no activation", "NotAllowedError"));
+		await expect(installTitleModel("de", () => {})).rejects.toThrow("no activation");
+	});
+
+	it("rejects without the Prompt API", async () => {
+		await expect(installTitleModel("de", () => {})).rejects.toThrow();
+	});
+
+	it("a finished download applies to the next refinement without a reload", async () => {
+		let state = "downloadable";
+		const { model } = stubModel("downloadable");
+		model.availability.mockImplementation(async () => state);
+		const signal = new AbortController().signal;
+		expect(await refineTitle(TEXT, { language: "de", signal })).toBeNull();
+		await installTitleModel("de", () => {});
+		state = "available";
+		expect(await refineTitle(TEXT, { language: "de", signal })).toBe("Knie-TEP Kontrolle rechts");
 	});
 });

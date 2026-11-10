@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useEventListener } from "@vueuse/core";
+import { useEventListener, useIntervalFn } from "@vueuse/core";
 import type { CalendarOption } from "#shared/calendar";
 import { isCalendarEnabled } from "#shared/calendarEnabled";
 import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHub";
 import { CHUNK_SECONDS_MAX, CHUNK_SECONDS_MIN, clampChunkSeconds } from "~/composables/useLiveSettings";
 import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
+import type { TitleModelAvailability } from "~/utils/titleRefinement";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -128,6 +129,42 @@ async function installDevice(): Promise<void> {
 	await checkDevice();
 }
 
+// ── Live: on-device title suggestions (browser language model) ─────────────
+// Never downloads on its own: only the button below calls install().
+const titleModel = useTitleModel();
+const TITLE_MODEL_LABELS: Record<TitleModelAvailability, string> = {
+	available: "Aktiv – neue Live-Diktate bekommen einen formulierten Titel, direkt auf diesem Gerät.",
+	downloadable: "Aktivierbar",
+	downloading: "Modell wird geladen…",
+	unavailable: "Auf diesem Gerät nicht möglich: Das Sprachmodell des Browsers braucht einen Desktop-Rechner mit genügend Arbeitsspeicher und freiem Speicherplatz.",
+	unsupported: "Auf diesem Gerät nicht möglich: Nur Chrome am Desktop bringt ein eingebautes Sprachmodell mit (nicht Mobilgeräte, Safari oder Firefox), und nur für Deutsch.",
+};
+const titleModelLabel = computed(() => {
+	const state = titleModel.state.value;
+	if (!state) {
+		return "Wird geprüft…";
+	}
+	const percent = titleModel.progress.value;
+	return state === "downloading" && percent !== null
+		? `Modell wird geladen… ${Math.round(percent * 100)} %`
+		: TITLE_MODEL_LABELS[state];
+});
+// A download this app didn't start here (other tab, reload mid-download) has
+// no progress events: re-check until it ends.
+const titleModelPoll = useIntervalFn(() => void titleModel.check(), 5000, { immediate: false });
+watch(
+	() => titleModel.state.value === "downloading" && !titleModel.installing.value,
+	(waiting) => {
+		if (waiting) {
+			titleModelPoll.resume();
+		}
+		else {
+			titleModelPoll.pause();
+		}
+	},
+	{ immediate: true },
+);
+
 // ── Live correction: better hub model re-transcribes chunks ────────────────
 const correctionEngines = ref<HubEngine[]>([]);
 
@@ -225,6 +262,7 @@ watch(tab, (value) => {
 		liveRequested = true;
 		void loadListenEngines();
 		void checkDevice();
+		void titleModel.check();
 		void loadCorrectionEngines();
 	}
 });
@@ -602,6 +640,53 @@ watch(tab, (value) => {
 					Die Tastatur-Diktierfunktion des Telefons funktioniert unabhängig davon im Texteditor.
 				</p>
 
+				<div
+					class="drawer__field"
+					data-testid="settings-title-model"
+				>
+					<span class="drawer__label">Titelvorschläge (Browser-KI)</span>
+					<p
+						class="drawer__hint"
+						data-testid="settings-title-model-state"
+					>
+						{{ titleModelLabel }}
+					</p>
+					<progress
+						v-if="titleModel.installing.value"
+						class="drawer__progress"
+						max="1"
+						:value="titleModel.progress.value ?? 0"
+						aria-label="Download des Sprachmodells"
+						data-testid="settings-title-model-progress"
+					/>
+					<p
+						v-if="titleModel.failed.value"
+						class="drawer__notice"
+						role="alert"
+						data-testid="settings-title-model-failed"
+					>
+						Der Download ist fehlgeschlagen oder wurde abgebrochen. Aufnehmen und Speichern funktionieren unverändert{{ titleModel.state.value === "downloadable" ? " – du kannst es erneut versuchen." : "." }}
+					</p>
+					<template v-if="titleModel.state.value === 'downloadable'">
+						<p class="drawer__sub">
+							Lädt einmalig ein Sprachmodell des Browsers herunter, das mehrere GB Speicherplatz auf diesem Gerät belegt. Danach formuliert es Titel für Live-Diktate direkt auf dem Gerät. Aufnehmen funktioniert auch ohne diesen Schritt unverändert.
+						</p>
+						<HButton
+							variant="secondary"
+							data-testid="settings-title-model-install"
+							@click="titleModel.install()"
+						>
+							{{ titleModel.failed.value ? "Erneut versuchen" : "Titelvorschläge aktivieren" }}
+						</HButton>
+					</template>
+					<p
+						v-else-if="titleModel.installing.value"
+						class="drawer__sub"
+					>
+						Du kannst die App währenddessen normal weiterbenutzen, auch mit geschlossenen Einstellungen.
+					</p>
+				</div>
+
 				<div class="drawer__field drawer__field--row">
 					<span class="drawer__label">Mit besserem Modell korrigieren</span>
 					<HToggle
@@ -703,6 +788,7 @@ watch(tab, (value) => {
 .drawer__input:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--focus-ring); }
 .drawer__sub { margin:0; font-size:var(--fs-xs); line-height:1.5; color:var(--fg3); }
 .drawer__readonly { font-size:var(--fs-sm); color:var(--fg2); word-break:break-all; }
+.drawer__progress { width:100%; height:8px; accent-color:var(--accent); }
 .drawer__link { color:var(--accent-ink); font-weight:600; font-size:var(--fs-sm); text-decoration:none; border-radius:var(--r-xs); }
 .drawer__link:hover { text-decoration:underline; text-underline-offset:3px; }
 .drawer__radio { display:flex; align-items:center; gap:10px; min-height:32px; font-size:var(--fs-md); color:var(--fg1); cursor:pointer; }
