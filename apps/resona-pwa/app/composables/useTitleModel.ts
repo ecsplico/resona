@@ -32,7 +32,16 @@ export function useTitleModel(): {
 		if (installing.value) {
 			return;
 		}
-		state.value = await titleModelAvailability(language);
+		const next = await titleModelAvailability(language);
+		// A click during the await started a download: this answer is stale.
+		if (installing.value) {
+			return;
+		}
+		state.value = next;
+		// Ready or loading after all (another tab, a download the browser kept going).
+		if (next === "available" || next === "downloading") {
+			failed.value = false;
+		}
 	}
 
 	// Called directly from the click: installTitleModel starts the download

@@ -278,6 +278,38 @@ describe("SettingsDrawer – on-device title suggestions", () => {
 		expect(model.create).toHaveBeenCalledTimes(1);
 	});
 
+	it("an availability check still running when the download starts does not reset the state", async () => {
+		const created = Promise.withResolvers<{ destroy: () => void }>();
+		const model = stubModel(async () => created.promise);
+		const wrapper = await openLive();
+		const slow = Promise.withResolvers<string>();
+		model.availability.mockImplementationOnce(() => slow.promise);
+		const pendingCheck = useTitleModel().check();
+
+		await installButton(wrapper).trigger("click");
+		slow.resolve("downloadable");
+		await pendingCheck;
+		await flushPromises();
+		expect(state(wrapper)).toBe("Modell wird geladen… 0 %");
+		expect(installButton(wrapper).exists()).toBe(false);
+	});
+
+	it("drops the failure hint once the model turns out ready after all", async () => {
+		stubModel(async () => {
+			throw new DOMException("aborted", "AbortError");
+		});
+		const wrapper = await openLive();
+		await installButton(wrapper).trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid=settings-title-model-failed]").exists()).toBe(true);
+
+		modelState = "available";
+		await useTitleModel().check();
+		await flushPromises();
+		expect(state(wrapper)).toMatch(/^Aktiv/);
+		expect(wrapper.find("[data-testid=settings-title-model-failed]").exists()).toBe(false);
+	});
+
 	it("a failed download leaves a hint and can be started again", async () => {
 		const model = stubModel(async () => {
 			throw new DOMException("aborted", "AbortError");
