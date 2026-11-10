@@ -2,7 +2,8 @@
 
 Runs ``DocumentConverter`` directly; there is no CLI subprocess and no docling-serve
 endpoint. Options are typed (:class:`DocumentOptions`) and translated here into the
-exact Docling 2.129 option classes; nothing is forwarded verbatim.
+exact Docling 2.129 option classes; nothing is forwarded verbatim. With OCR on, pages
+are turned upright first (:mod:`.orientation`, Tesseract OSD).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import logging
 import shutil
 import subprocess
 import sys
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -42,6 +44,7 @@ from resona_job_core import (
 )
 
 from .options import DocumentOptions
+from .orientation import upright
 
 # Docling records per-stage timings only when this flag is set; they feed provenance.seconds.
 settings.debug.profile_pipeline_timings = True
@@ -108,6 +111,7 @@ def _host_platform() -> str:
 
 
 def _validate_options(options: DocumentOptions, accelerator: str) -> None:
+    """Raise for accelerator/option/engine combinations this host cannot run (tesseract: :func:`_tesseract`)."""
     if accelerator not in ("cpu", "cuda", "metal"):
         raise UnsupportedDocumentOptions(f"unknown accelerator {accelerator!r}")
     if accelerator == "metal" and _host_platform() != "darwin":
@@ -121,11 +125,27 @@ def _validate_options(options: DocumentOptions, accelerator: str) -> None:
         raise ConflictingDocumentOptions(conflict)
     if options.ocr_engine == "ocrmac" and _host_platform() != "darwin":
         raise UnsupportedDocumentOptions("ocr_engine 'ocrmac' requires macOS (Apple Vision)")
+
+
+def _tesseract(options: DocumentOptions) -> str:
+    """The tesseract binary for an OCR conversion, after checking its packs.
+
+    Every OCR engine needs it: its orientation detection turns pages upright first. The
+    ``tesseract`` engine also needs the pack of every requested language.
+    """
+    binary = shutil.which("tesseract")
+    if binary is None:
+        raise UnsupportedDocumentOptions(
+            "OCR requires the tesseract binary on PATH (page orientation detection"
+            f"{', ocr_engine tesseract' if options.ocr_engine == 'tesseract' else ''})"
+        )
+    installed = _installed_tesseract_languages(binary)
+    if "osd" not in installed:
+        raise UnsupportedDocumentOptions(
+            "OCR requires tesseract's 'osd' traineddata (page orientation detection); "
+            f"installed packs: {', '.join(sorted(installed)) or 'none'}"
+        )
     if options.ocr_engine == "tesseract":
-        binary = shutil.which("tesseract")
-        if binary is None:
-            raise UnsupportedDocumentOptions("ocr_engine 'tesseract' requires the tesseract binary on PATH")
-        installed = _installed_tesseract_languages(binary)
         for lang in options.languages:
             pack = _TESSERACT_LANG[lang]
             if pack not in installed:
@@ -133,6 +153,7 @@ def _validate_options(options: DocumentOptions, accelerator: str) -> None:
                     f"tesseract language pack {pack!r} (for language {lang!r}) is not installed; "
                     f"installed packs: {', '.join(sorted(installed)) or 'none'}"
                 )
+    return binary
 
 
 def _ocr_options(options: DocumentOptions):  # type: ignore[no-untyped-def]
@@ -315,7 +336,9 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
 
     ``options.page_start``/``page_end`` restrict Docling's own page range, so only those
     pages are processed. ``accelerator`` is the device requested for layout/table models;
-    OCR engines report their own accelerator in provenance.
+    OCR engines report their own accelerator in provenance. With OCR on, every page in the
+    range is turned upright first; each turned page adds the warning
+    ``page_rotated:<page>:<clockwise degrees>``, and its blocks' bboxes refer to the upright page.
 
     Raises:
         UnsupportedMediaType: input is not PDF/PNG/JPEG/TIFF.
@@ -325,19 +348,26 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
     path = Path(path)
     _check_media(path)
     _validate_options(options, accelerator)
+    tesseract = _tesseract(options) if options.ocr != "off" else None
 
     converter = _converter(options, accelerator)
     page_range = (options.page_start or 1, options.page_end or sys.maxsize)
 
     collector = _WarningCollector()
     loggers = [logging.getLogger(name) for name in _DOCLING_LOGGERS]
-    for logger in loggers:
-        logger.addHandler(collector)
-    try:
-        result = converter.convert(path, page_range=page_range, raises_on_error=False)
-    finally:
+    with tempfile.TemporaryDirectory(prefix="resona-docling-") as workdir:
+        source, rotations = path, []
+        if tesseract is not None:
+            source, rotations = upright(
+                path, first_page=page_range[0], last_page=page_range[1], tesseract=tesseract, workdir=Path(workdir)
+            )
         for logger in loggers:
-            logger.removeHandler(collector)
+            logger.addHandler(collector)
+        try:
+            result = converter.convert(source, page_range=page_range, raises_on_error=False)
+        finally:
+            for logger in loggers:
+                logger.removeHandler(collector)
 
     if result.status == ConversionStatus.FAILURE:
         raise DocumentConversionFailed("docling could not convert the document")
@@ -345,7 +375,8 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
     document = result.document
     if options.ocr != "off" and options.ocr_engine == "rapidocr":
         _normalize_rapidocr_glyphs(document)
-    warnings: list[str] = list(collector.messages)
+    warnings: list[str] = [f"page_rotated:{r.page}:{r.degrees}" for r in rotations]
+    warnings.extend(collector.messages)
     warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
 
     markdown = document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)

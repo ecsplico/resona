@@ -29,6 +29,9 @@ dependencies = [
     "docling[ocrmac,rapidocr]==2.129.0",
     # docling 2.129 resolves PP-OCR recognizers via PP_OCRV6_LANGS, which rapidocr 3.10 no longer exposes.
     "rapidocr==3.9.2",
+    # orientation.py renders pages and turns rasters itself (both already Docling dependencies).
+    "pypdfium2>=5",
+    "pillow>=11",
 ]
 
 [project.urls]

@@ -16,8 +16,11 @@ The worker is outbound-only. It long-polls the hub over HTTPS and opens no liste
 From a checkout of the repository:
 
 ```bash
+brew install tesseract        # page orientation detection for document OCR (ships the osd traineddata)
 uv sync --all-packages --extra apple --extra documents
 ```
+
+Document OCR needs `tesseract` with its `osd` traineddata for every OCR engine, Apple Vision included: each page is turned upright before conversion (see [CLI: page orientation](../guide/cli.md#page-orientation)). Without it, document jobs with OCR fail on this worker with `unsupported_capability` and `prepare` fails its document check. `resona-worker install` puts the directory of `tesseract` (like that of `ffmpeg`) on the service `PATH`.
 
 The worker uses the workspace `.venv` (`.venv/bin/resona-worker`). It does not download weights while it serves jobs. Put the weights into the HuggingFace cache once, while you are online:
 

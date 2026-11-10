@@ -155,6 +155,10 @@ options, and `422` follows only when none can. For example, `ocr_min_confidence`
 `rapidocr` candidate, and `ko` only its `ocrmac` candidate. A tesseract language whose pack is not installed on a
 worker is `unsupported_capability`: that worker stops offering the candidate and the job is requeued.
 
+With OCR on, the worker turns every page upright first (Tesseract orientation detection, `osd` traineddata, required
+for every OCR engine; a worker without it answers `unsupported_capability`). Each turned page adds the result warning
+`page_rotated:<page>:<clockwise degrees>`; see [CLI: page orientation](../guide/cli.md#page-orientation).
+
 #### List, get, cancel, delete
 
 ```

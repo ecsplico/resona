@@ -176,6 +176,21 @@ resona doc ./faxes/ --ocr force --ocr-engine tesseract
 resona doc small-print-scan.pdf --ocr force --ocr-engine rapidocr
 ```
 
+### Page orientation
+
+With OCR on (`--ocr auto` or `force`), every page in the range is turned upright before conversion,
+for every OCR engine. Tesseract's orientation detection (`osd` traineddata) reads each page at
+200 dpi (about 0.3 s per page) and names the clockwise quarter turn that makes it upright; a turn
+below orientation confidence 2.0, or a page with too little text, leaves the page as it is. PDF
+pages are turned through their `/Rotate` entry (text layer untouched), images are rewritten turned.
+Each turned page adds the result warning `page_rotated:<page>:<degrees>` (clockwise), and the
+bounding boxes of its blocks refer to the upright page. `--ocr off` turns nothing.
+
+Why: Docling runs layout, OCR and reading order on the page as scanned. An upside-down scan read
+by `rapidocr` came out with its lines in reverse order and a garbled last line; Apple Vision read the
+same simple page correctly. Detection read every page of the evaluation corpus and the engine test
+fixtures correctly in all four orientations (Mac, tesseract 5, 2026-11-10).
+
 ---
 
 ## postprocess

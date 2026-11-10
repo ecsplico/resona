@@ -5796,6 +5796,8 @@ version = "0.2.0"
 source = { editable = "packages/engine-docling" }
 dependencies = [
     { name = "docling", extra = ["ocrmac", "rapidocr"] },
+    { name = "pillow" },
+    { name = "pypdfium2" },
     { name = "rapidocr" },
     { name = "resona-job-core" },
 ]
@@ -5803,6 +5805,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "docling", extras = ["ocrmac", "rapidocr"], specifier = "==2.129.0" },
+    { name = "pillow", specifier = ">=11" },
+    { name = "pypdfium2", specifier = ">=5" },
     { name = "rapidocr", specifier = "==3.9.2" },
     { name = "resona-job-core", editable = "packages/job-core" },
 ]

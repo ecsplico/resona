@@ -11,6 +11,8 @@ Outputs (next to this script):
   table.pdf    page 1: 3x4 grid with 12 distinct cell values;
                page 2: two text columns (left column must be read first).
   scan_en.pdf  1 page, English text rasterized to an image-only PDF (small, for English OCR tests).
+  scan_rotated.pdf  the scan.pdf pages turned: page 1 by 180°, page 2 a quarter turn (landscape page).
+  scan_upside_down.png  scan.pdf page 1 as an upside-down PNG.
 
 The text is invented for testing. Raster pages use macOS Arial (rendered with PIL);
 vector PDFs use Helvetica (standard base font, WinAnsi, umlauts supported).
@@ -118,6 +120,26 @@ def make_scan(path: Path, pages: list[list[str]] = PAGE_TEXT) -> None:
     pdf.save()
 
 
+def make_rotated_scan(path: Path) -> None:
+    """The two scan pages turned on the scanner: page 1 upside down, page 2 a quarter turn counterclockwise."""
+    pdf = canvas.Canvas(str(path), pagesize=A4)
+    for lines, degrees in zip(PAGE_TEXT, (180, 90)):
+        image = _raster_page(lines).rotate(degrees, expand=True)
+        size = A4 if degrees == 180 else (A4[1], A4[0])
+        pdf.setPageSize(size)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=70)
+        buffer.seek(0)
+        pdf.drawImage(ImageReader(buffer), 0, 0, width=size[0], height=size[1])
+        pdf.showPage()
+    pdf.save()
+
+
+def make_upside_down_image(path: Path) -> None:
+    """Scan page 1 as an upside-down PNG photo of the page (raster input, no PDF)."""
+    _raster_page(PAGE_TEXT[0]).rotate(180).save(path, format="PNG", dpi=(150, 150), optimize=True)
+
+
 def make_table(path: Path) -> None:
     styles = getSampleStyleSheet()
     body = styles["BodyText"]
@@ -161,7 +183,9 @@ def main() -> None:
     make_scan(HERE / "scan.pdf")
     make_table(HERE / "table.pdf")
     make_scan(HERE / "scan_en.pdf", ENGLISH_PAGE_TEXT)
-    for name in ("digital.pdf", "scan.pdf", "table.pdf", "scan_en.pdf"):
+    make_rotated_scan(HERE / "scan_rotated.pdf")
+    make_upside_down_image(HERE / "scan_upside_down.png")
+    for name in ("digital.pdf", "scan.pdf", "table.pdf", "scan_en.pdf", "scan_rotated.pdf", "scan_upside_down.png"):
         print(name, (HERE / name).stat().st_size, "bytes")
 
 

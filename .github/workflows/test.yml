@@ -26,7 +26,7 @@ jobs:
       - name: Install system dependencies
         # libportaudio2  → required by `sounddevice` (imported by test_micrec)
         # ffmpeg         → required by `resona_asr_core.audio.load_audio()`
-        # tesseract-ocr  → tesseract OCR tests; English pack only (tests expect `deu` missing)
+        # tesseract-ocr  → tesseract OCR tests and page orientation detection (pulls the eng + osd packs; tests expect `deu` missing)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg tesseract-ocr
 
       # setup-uv dropped moving major tags in v8 — pin a specific version.

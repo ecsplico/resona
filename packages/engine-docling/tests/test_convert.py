@@ -97,6 +97,60 @@ def test_scanned_pdf_recovers_german_words_with_rapidocr_on_cpu() -> None:
     ocr_stage = next(stage for stage in result.provenance.stages if stage.stage == "ocr")
     assert (ocr_stage.engine, ocr_stage.accelerator) == ("rapidocr", "cpu")
     assert ocr_stage.model_revision is not None
+    assert not [w for w in result.warnings if w.startswith("page_rotated:")]
+
+
+def test_turned_scan_pages_are_read_upright_and_reported() -> None:
+    # Page 1 is upside down, page 2 a quarter turn counterclockwise (landscape).
+    result = convert_document(
+        FIXTURES / "scan_rotated.pdf",
+        options=DocumentOptions(ocr="auto", ocr_engine="rapidocr", languages=["de"]),
+    )
+
+    assert "page_rotated:1:180" in result.warnings
+    assert "page_rotated:2:90" in result.warnings
+    assert [page.number for page in result.pages] == [1, 2]
+    first = result.pages[0].text
+    assert first.index("Dieses Dokument") < first.index("Schwellenwert") < first.index("Brücke")
+    for word in ("Übergewicht", "Müdigkeit", "Vorgaben"):
+        assert word in result.pages[1].text, word
+
+
+def test_only_pages_in_the_requested_range_are_turned() -> None:
+    result = convert_document(
+        FIXTURES / "scan_rotated.pdf",
+        options=DocumentOptions(ocr="auto", ocr_engine="rapidocr", languages=["de"], page_start=2, page_end=2),
+    )
+
+    assert [w for w in result.warnings if w.startswith("page_rotated:")] == ["page_rotated:2:90"]
+    assert "Müdigkeit" in result.markdown
+
+
+def test_upside_down_image_is_read_upright() -> None:
+    result = convert_document(
+        FIXTURES / "scan_upside_down.png",
+        options=DocumentOptions(ocr="auto", ocr_engine="rapidocr", languages=["de"]),
+    )
+
+    assert "page_rotated:1:180" in result.warnings
+    assert result.markdown.index("Dieses Dokument") < result.markdown.index("Brücke")
+    # Provenance hashes the original upload, not the turned copy.
+    assert result.provenance.input_sha256 == convert_module._sha256(FIXTURES / "scan_upside_down.png")
+
+
+def test_ocr_without_tesseract_orientation_data_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(convert_module, "_installed_tesseract_languages", lambda _binary: frozenset({"eng"}))
+
+    with pytest.raises(UnsupportedDocumentOptions, match="osd"):
+        convert_document(FIXTURES / "scan.pdf", options=DocumentOptions(ocr="auto", ocr_engine="rapidocr"))
+
+
+def test_ocr_off_needs_no_tesseract(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(convert_module.shutil, "which", lambda _name: None)
+
+    result = convert_document(FIXTURES / "digital.pdf", options=DocumentOptions(ocr="off"))
+
+    assert "Dieses Dokument ist ein synthetisches Testdokument." in result.markdown
 
 
 def test_table_pdf_keeps_all_cells_and_two_column_reading_order() -> None:

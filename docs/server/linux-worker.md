@@ -16,6 +16,7 @@ The host is allowed to be offline. Jobs that the `private-auto` profile can also
 - NVIDIA driver and the NVIDIA Container Toolkit (`docker info` lists the `nvidia` runtime).
 - The image ships PyTorch built for CUDA 13.0 (`torch 2.12.0+cu130`, arch list up to `sm_120`). Blackwell GPUs (RTX 50xx, compute capability 12.0) are supported. The driver must support CUDA 13.0.
 - About 16 GB of disk for the image and 5 GB for the model cache. Whisper `large-v3` uses about 9 GB of VRAM.
+- The image installs `tesseract-ocr` (with the `osd` traineddata): document OCR turns every page upright before conversion (see [CLI: page orientation](../guide/cli.md#page-orientation)).
 
 Check the GPU from inside the image before you prepare:
 
