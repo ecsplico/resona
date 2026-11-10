@@ -64,9 +64,10 @@ ENV HF_HOME=/models
 ENV HF_HUB_DISABLE_TELEMETRY=1
 ENV DO_NOT_TRACK=1
 
-# ffmpeg decodes audio; libgl1/libglib2.0-0 back OpenCV in Docling/RapidOCR.
+# ffmpeg decodes audio; libgl1/libglib2.0-0 back OpenCV in Docling/RapidOCR; tesseract-ocr (pulls
+# tesseract-ocr-eng and tesseract-ocr-osd) turns scanned pages upright before document OCR.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg libgl1 libglib2.0-0 ca-certificates \
+        ffmpeg libgl1 libglib2.0-0 tesseract-ocr ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && (getent passwd 1000 >/dev/null && userdel --remove "$(getent passwd 1000 | cut -d: -f1)" || true) \
     && useradd --uid 1000 --create-home --shell /usr/sbin/nologin resona \

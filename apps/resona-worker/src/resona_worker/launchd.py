@@ -77,9 +77,11 @@ def _check_label(label: str) -> str:
 
 def _service_path(environ: Mapping[str, str]) -> str:
     dirs: list[str] = []
-    ffmpeg = shutil.which("ffmpeg", path=environ.get("PATH"))
-    if ffmpeg:  # audio decoding shells out to ffmpeg
-        dirs.append(str(Path(ffmpeg).parent))
+    # Audio decoding shells out to ffmpeg; document OCR to tesseract (page orientation detection).
+    for tool in ("ffmpeg", "tesseract"):
+        found = shutil.which(tool, path=environ.get("PATH"))
+        if found and str(Path(found).parent) not in dirs:
+            dirs.append(str(Path(found).parent))
     dirs.extend(d for d in _SYSTEM_PATH if d not in dirs)
     return ":".join(dirs)
 
