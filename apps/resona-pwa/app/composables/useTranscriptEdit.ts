@@ -1,5 +1,5 @@
-import { ref } from "vue";
-import type { Ref } from "vue";
+import { computed, ref } from "vue";
+import type { ComputedRef, Ref } from "vue";
 import type { Transcript } from "~/types/directus";
 import type { TranscriptPatch } from "~/data/types";
 import { humanizeError } from "#shared/errors";
@@ -12,12 +12,32 @@ export interface CorrectionContext {
 	language?: string | null;
 }
 
+// After the next paint (or a plain task where frames do not run, e.g. a hidden tab),
+// so CPU work queued behind a write never delays showing its result.
+// (Executor form instead of Promise.withResolvers: iOS Safari < 17.4.)
+function afterPaint(): Promise<void> {
+	return new Promise((resolve) => {
+		const hidden = typeof document !== "undefined" && document.hidden;
+		if (typeof requestAnimationFrame === "function" && !hidden) {
+			requestAnimationFrame(() => setTimeout(resolve, 0));
+		}
+		else {
+			setTimeout(resolve, 0);
+		}
+	});
+}
+
 export function useTranscriptEdit(initialText = "") {
+	// The editor content. Writes never change it: it is the user's, and may already
+	// hold more (typing, a dictated part) than the text being written.
 	const text: Ref<string> = ref(initialText);
-	// The last value known to be persisted; `text !== committed` means unsaved changes.
+	// The last value known to be persisted.
 	const committed: Ref<string> = ref(initialText);
-	const saving: Ref<boolean> = ref(false);
 	const error: Ref<string | null> = ref(null);
+	// Writes queued or running; `saving` turns true the moment one is asked for.
+	const pending = ref(0);
+	const saving: ComputedRef<boolean> = computed(() => pending.value > 0);
+	let tail: Promise<unknown> = Promise.resolve();
 
 	// Load a persisted text (e.g. the transcript fetched from the store) as both
 	// the editor content and the committed baseline.
@@ -27,14 +47,26 @@ export function useTranscriptEdit(initialText = "") {
 		error.value = null;
 	}
 
-	// Shared write wrapper: apply `newText`, run the request, commit on success.
-	// A failure keeps the text as it is (it may hold edits that exist nowhere
-	// else) and only reports the error, so the user can save again. Returns the
-	// request result (or null on failure) so callers can pick up e.g. a created row.
+	/**
+	 * Runs `task` once every write queued before it has settled, so writes reach
+	 * the store one at a time and each can build on the committed text of the one
+	 * before. `saving` is true from this call until the task settles.
+	 */
+	function enqueue<T>(task: () => Promise<T>): Promise<T> {
+		pending.value += 1;
+		const run = tail.then(task).finally(() => {
+			pending.value -= 1;
+		});
+		tail = run.catch(() => undefined);
+		return run;
+	}
+
+	// Shared write wrapper: run the request, commit `newText` on success. A failure
+	// only reports the error (the editor keeps everything), so the user can save
+	// again. Returns the request result, or null on failure.
 	async function persist<T>(newText: string, run: () => Promise<T>): Promise<T | null> {
-		saving.value = true;
+		pending.value += 1;
 		error.value = null;
-		text.value = newText;
 		try {
 			const result = await run();
 			committed.value = newText;
@@ -45,33 +77,26 @@ export function useTranscriptEdit(initialText = "") {
 			return null;
 		}
 		finally {
-			saving.value = false;
+			pending.value -= 1;
 		}
 	}
 
-	// With `correction`, the saved change is also stored as a correction of the
-	// engine's text (training data). That is best effort: a failure there never
-	// fails the save. `extra` fields are written in the same update as the text.
-	async function saveEdit(
-		transcriptId: string,
-		newText: string,
-		correction?: CorrectionContext,
-		extra: TranscriptPatch = {},
-	): Promise<void> {
-		const before = committed.value;
-		const saved = await persist(newText, () => useDataStore().updateTranscript(transcriptId, { ...extra, text: newText }));
-		if (saved === null && error.value) return;
-		const edits = correction ? diffEdits(before, newText) : [];
-		if (!correction || edits.length === 0) return;
+	// Best effort, after the save has shown: the word diff is quadratic in the
+	// changed span and a failure here never fails the save.
+	async function recordCorrection(transcriptId: string, before: string, after: string, context: CorrectionContext): Promise<void> {
+		const store = useDataStore();
+		await afterPaint();
+		const edits = diffEdits(before, after);
+		if (edits.length === 0) return;
 		try {
-			await useDataStore().recordCorrection({
+			await store.recordCorrection({
 				transcript: transcriptId,
-				recording: correction.recording,
+				recording: context.recording,
 				before,
-				after: newText,
+				after,
 				edits,
-				engine: correction.engine ?? null,
-				language: correction.language ?? null,
+				engine: context.engine ?? null,
+				language: context.language ?? null,
 			});
 		}
 		catch (err) {
@@ -79,11 +104,33 @@ export function useTranscriptEdit(initialText = "") {
 		}
 	}
 
+	/**
+	 * Writes `newText` (plus `extra` fields in the same update); true on success.
+	 * With `correction`, the change against the committed text is also stored as a
+	 * correction of the engine's text (training data), in the background.
+	 */
+	async function saveEdit(
+		transcriptId: string,
+		newText: string,
+		options: { correction?: CorrectionContext; extra?: TranscriptPatch } = {},
+	): Promise<boolean> {
+		const before = committed.value;
+		const store = useDataStore();
+		const saved = await persist(newText, async () => {
+			await store.updateTranscript(transcriptId, { ...options.extra, text: newText });
+			return true;
+		});
+		if (saved === null) return false;
+		if (options.correction) void recordCorrection(transcriptId, before, newText, options.correction);
+		return true;
+	}
+
 	// Create the transcript row for a recording that has none yet — a manual note
 	// or dictation into an untranscribed recording. Returns the new row on
 	// success, null on failure.
 	async function createTranscript(recordingId: string, newText: string): Promise<Transcript | null> {
-		return persist(newText, () => useDataStore().createTranscript(recordingId, { text: newText }));
+		const store = useDataStore();
+		return persist(newText, () => store.createTranscript(recordingId, { text: newText }));
 	}
 
 	return {
@@ -92,6 +139,7 @@ export function useTranscriptEdit(initialText = "") {
 		saving,
 		error,
 		seed,
+		enqueue,
 		saveEdit,
 		createTranscript,
 	};

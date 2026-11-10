@@ -24,6 +24,16 @@ routes execute server-side, production **must** be deployed via the Nitro Node/s
 server (`nuxt build` → `node .output/server`), **not** `nuxt generate` static output (which
 strips the server). Keep secrets in `runtimeConfig` (the private, non-`public` block).
 
+**Temporary exception (diagnostics):** `server/api/debug-report.post.ts` accepts the
+redacted mobile diagnostics report from `/debug` → "Mobil-Diagnose" → "An Server senden"
+(≤ 32 KB JSON object, else 413/400). It re-redacts it (`shared/debugReport.ts`: no tokens,
+no transcript text), writes one stdout line `[resona-debug] {"id","receivedAt","report"}`
+(Coolify logs) and returns `{id}`. It stores nothing. Remove it once mobile live dictation
+and on-device title suggestion are diagnosed. The checks live in `app/utils/debugProbe.ts`
+(`runDiagnose` must be called synchronously from the click so its comparison AudioContext
+is created inside the user gesture; it streams ~2 s of mic PCM to the hub `/v1/listen`). The
+client posts with plain `fetch`, not `$fetch`, to stay out of the typed route union.
+
 ## How to start
 
 Two stacks are involved. See **README.md → Quick start** for the canonical steps. In
@@ -177,8 +187,16 @@ it via `docker compose` (the `project-worker` service).
   (`audioMerged:false`, `mergeError`). Works in both data modes, needs the page open
   (`beforeunload` guard while recording/transcribing/merging; the detail page adds a
   route-leave/update `confirm` while a part is in flight or kept for retry). The page
-  appends via `TranscriptEditor.appendParagraph` (caret and undo stay) and saves; a
-  failed save keeps the text in the editor (`useTranscriptEdit` never rolls back).
+  appends via `TranscriptEditor.appendParagraph` (caret and undo stay) and saves the part on
+  its own (`autosavePart`: the part placed into the last *saved* text, so unsaved typing is
+  never written along); push-to-talk results are autosaved the same way
+  (`utils/correction.ts` `textSplice` + `rebaseInsertion`; a dictation inside unsaved typing
+  stays unsaved). `dirty` counts only typed edits (the editor's `typed` event) and parts
+  whose own save failed, so pure dictation never triggers the leave dialog; a dictation
+  still recording/transcribing gets a leave `confirm`. `useTranscriptEdit` serializes all
+  writes (`enqueue`; `saving` is true from the click, a second click joins the running
+  save), never writes into the editor text and never rolls back; the correction diff runs
+  after the next paint, not awaited.
 
 ### Live WebSocket contract (hub `/v1/listen`)
 
@@ -249,25 +267,36 @@ app/
 │   └── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
 ├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
-│   ├── hearth/                      # HButton, HCard, HChip, HField, ... (design system)
+│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden), ... (design system)
 │   ├── AppHeader                    # wordmark, ServerStatus, section tabs, settings cog
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
-│   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip
+│   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Löschen)
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
 ├── utils/hubTokenSync.ts            # pure per-user hub token sync (pull/push over a remote interface)
+├── utils/debugProbe.ts             # temporary mobile diagnostics (live + Prompt API) for /debug
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css
 
 shared/calendar.ts                   # calendar wire types + helpers (app + server)
+shared/debugReport.ts                # debug report size limit + redaction (app + server)
 server/                              # the sanctioned Nitro OAuth layer (server only)
 ├── api/calendar/index.{get,delete}.ts  # single provider-agnostic endpoint
+├── api/debug-report.post.ts         # temporary: logs the redacted /debug report as [resona-debug]
 └── utils/calendar/                  # provider interface + registry + Google + session
 ```
 
 Component auto-import is `pathPrefix: false` — components resolve by filename
 (`<HButton>`, `<QueuedListItem>`), regardless of subdirectory.
+
+Row overflow menu: `hearth/HMenu.vue` (menu button, `aria-haspopup="menu"`, arrow/Home/End,
+Escape and outside tap close and return focus; the menu is `position: fixed` because `.h-list`
+clips with `overflow: hidden`; clicks are stopped so the row never opens). `RecordingsPane`
+handles the row actions: Teilen = `navigator.share({title, text})`, without it (or on refusal)
+the text is copied with a status note; Löschen asks in a confirm dialog and then calls
+`useRecordings().remove(id)` (`DataStore.deleteRecording` + drop the row, invalidating a list
+request still in flight); deleting the recording open in the right pane navigates to `/`.
 
 ### Calendar integration (Google + pluggable)
 

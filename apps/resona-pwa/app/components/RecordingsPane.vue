@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
+import { humanizeError } from "#shared/errors";
 
-const { items, pending, error, list, refresh } = useRecordings();
+const { items, pending, error, list, refresh, remove } = useRecordings();
 const recorder = useRecorder();
 const { saveRecording } = useUpload();
-const { copy, toText } = useExport();
+const { copy, toText, downloadMarkdown } = useExport();
 const store = useDataStore();
 const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
@@ -76,20 +77,114 @@ function openRecording(recording: Recording): void {
 	void openRoute(`/recording/${recording.id}`);
 }
 
+// The list doesn't carry transcripts, so the row actions fetch this recording's
+// transcript on demand. Untranscribed rows have nothing to fetch.
+async function transcriptOf(recording: Recording): Promise<Transcript | null> {
+	if (recording.status !== "done") return null;
+	try {
+		return await store.getTranscript(recording.id);
+	}
+	catch {
+		return null;
+	}
+}
+
+/** Title + text (same shape as the detail page), or only the title without a transcript. */
+async function shareTextOf(recording: Recording): Promise<string> {
+	const transcript = await transcriptOf(recording);
+	return transcript ? toText(recording, transcript) : recording.title;
+}
+
+// Short confirmation for row actions that have no visible result of their own.
+const actionNotice = ref<string | null>(null);
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function notify(message: string): void {
+	actionNotice.value = message;
+	if (noticeTimer) clearTimeout(noticeTimer);
+	noticeTimer = setTimeout(() => {
+		actionNotice.value = null;
+		noticeTimer = null;
+	}, 4000);
+}
+
 async function copyRecording(recording: Recording): Promise<void> {
-	// The list doesn't carry transcripts, so fetch this recording's transcript on
-	// demand and copy title + text (same shape as the detail page). Untranscribed
-	// rows have nothing to fetch — fall back to the title.
-	let transcript: Transcript | null = null;
-	if (recording.status === "done") {
-		try {
-			transcript = await store.getTranscript(recording.id);
-		}
-		catch {
-			// fall through: copy title-only below
+	void copy(await shareTextOf(recording));
+}
+
+async function copyForShare(text: string, message: string): Promise<void> {
+	try {
+		await copy(text);
+		notify(message);
+	}
+	catch {
+		notify("Teilen ist hier nicht möglich.");
+	}
+}
+
+async function shareRecording(recording: Recording): Promise<void> {
+	const text = await shareTextOf(recording);
+	if (typeof navigator === "undefined" || typeof navigator.share !== "function") {
+		await copyForShare(text, "Teilen wird nicht unterstützt – Text kopiert.");
+		return;
+	}
+	try {
+		await navigator.share({ title: recording.title || "Aufnahme", text });
+	}
+	catch (err) {
+		if (err instanceof Error && err.name === "AbortError") return;
+		// e.g. NotAllowedError when the browser no longer counts the tap as user activation
+		await copyForShare(text, "Teilen nicht möglich – Text kopiert.");
+	}
+}
+
+async function exportRecording(recording: Recording): Promise<void> {
+	downloadMarkdown(recording, await transcriptOf(recording));
+}
+
+// Delete: the menu asks, this dialog confirms, then the row goes through the data store.
+const deleteTarget = ref<Recording | null>(null);
+const deleting = ref(false);
+const deleteError = ref<string | null>(null);
+const deleteDialog = ref<HTMLElement | null>(null);
+let focusBeforeDelete: HTMLElement | null = null;
+
+async function askDelete(recording: Recording): Promise<void> {
+	focusBeforeDelete = typeof document !== "undefined" ? document.activeElement as HTMLElement | null : null;
+	deleteError.value = null;
+	deleteTarget.value = recording;
+	await nextTick();
+	deleteDialog.value?.querySelector<HTMLElement>("[data-testid=\"cancel-delete\"]")?.focus();
+}
+
+function cancelDelete(): void {
+	if (deleting.value) return;
+	deleteTarget.value = null;
+	deleteError.value = null;
+	focusBeforeDelete?.focus();
+	focusBeforeDelete = null;
+}
+
+async function confirmDelete(): Promise<void> {
+	const recording = deleteTarget.value;
+	if (!recording || deleting.value) return;
+	deleting.value = true;
+	deleteError.value = null;
+	try {
+		await remove(recording.id);
+		deleteTarget.value = null;
+		focusBeforeDelete = null;
+		// Desktop: the deleted recording may be the one open in the right pane.
+		if (selectedId.value === recording.id) {
+			await navigateTo("/", { replace: true });
 		}
 	}
-	void copy(transcript ? toText(recording, transcript) : recording.title);
+	catch (err) {
+		deleteError.value = humanizeError(err, "Aufnahme konnte nicht gelöscht werden.");
+	}
+	finally {
+		deleting.value = false;
+	}
 }
 
 async function startRecording(): Promise<void> {
@@ -181,6 +276,10 @@ watch(useRecordingsRefresh().signal, () => {
 });
 
 onBeforeUnmount(() => {
+	if (noticeTimer) {
+		clearTimeout(noticeTimer);
+		noticeTimer = null;
+	}
 	if (pollTimer) {
 		clearInterval(pollTimer);
 		pollTimer = null;
@@ -304,6 +403,16 @@ onMounted(() => {
 				{{ error }}
 			</p>
 
+			<p
+				class="pane__status"
+				:class="{ 'pane__status--idle': !actionNotice }"
+				role="status"
+				aria-live="polite"
+				data-testid="action-notice"
+			>
+				{{ actionNotice }}
+			</p>
+
 			<div
 				v-if="queued.length > 0"
 				class="h-list"
@@ -354,6 +463,9 @@ onMounted(() => {
 					:selected="recording.id === selectedId"
 					@open="openRecording(recording)"
 					@copy="void copyRecording(recording)"
+					@share="void shareRecording(recording)"
+					@export="void exportRecording(recording)"
+					@delete="void askDelete(recording)"
 				/>
 			</div>
 		</div>
@@ -480,6 +592,63 @@ onMounted(() => {
 			@save="onSave"
 			@discard="onDiscard"
 		/>
+
+		<div
+			v-if="deleteTarget"
+			ref="deleteDialog"
+			class="confirm"
+			role="alertdialog"
+			aria-modal="true"
+			aria-labelledby="delete-dialog-title"
+			aria-describedby="delete-dialog-text"
+			data-testid="delete-dialog"
+			@keydown.esc="cancelDelete"
+		>
+			<div
+				class="confirm__scrim"
+				@click="cancelDelete"
+			/>
+			<div class="confirm__box">
+				<p
+					id="delete-dialog-title"
+					class="confirm__title"
+				>
+					Aufnahme löschen?
+				</p>
+				<p
+					id="delete-dialog-text"
+					class="confirm__text"
+				>
+					„{{ deleteTarget.title || "Aufnahme" }}“ wird mit dem Transkript gelöscht. Das lässt sich nicht rückgängig machen.
+				</p>
+				<p
+					v-if="deleteError"
+					class="pane__error"
+					data-testid="delete-error"
+				>
+					{{ deleteError }}
+				</p>
+				<div class="confirm__actions">
+					<HButton
+						variant="secondary"
+						:disabled="deleting"
+						data-testid="cancel-delete"
+						@click="cancelDelete"
+					>
+						Abbrechen
+					</HButton>
+					<HButton
+						class="confirm__delete"
+						variant="primary"
+						:disabled="deleting"
+						data-testid="confirm-delete"
+						@click="confirmDelete"
+					>
+						{{ deleting ? "Wird gelöscht…" : "Löschen" }}
+					</HButton>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>
 
@@ -539,4 +708,16 @@ onMounted(() => {
 .dock__action--record:active .dock__record { transform:scale(0.96); }
 
 .pane__upload-input { display:none; }
+.pane__status { margin:0; padding:10px 14px; border-radius:var(--r-md); background:var(--bg-sunken); color:var(--fg1); font-size:var(--fs-sm); }
+/* Stays in the DOM (live region) but takes no room while there is nothing to say. */
+.pane__status--idle { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0, 0, 0, 0); }
+
+/* Delete confirmation: centred card over a scrim, above the dock. */
+.confirm { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; }
+.confirm__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); }
+.confirm__box { position:relative; width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px; padding:24px; border-radius:var(--r-lg); background:var(--white); box-shadow:var(--shadow-deep); }
+.confirm__title { margin:0; font-family:var(--font-display); font-size:var(--fs-lg); font-weight:600; color:var(--fg1); }
+.confirm__text { margin:0; font-size:var(--fs-md); line-height:1.5; color:var(--fg2); overflow-wrap:anywhere; }
+.confirm__actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+.confirm__actions .confirm__delete { background:var(--danger); }
 </style>

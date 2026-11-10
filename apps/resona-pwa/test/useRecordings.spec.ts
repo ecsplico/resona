@@ -5,9 +5,10 @@ import type { Recording } from "~/types/directus";
 
 const state = vi.hoisted(() => ({
 	listRecordings: vi.fn(),
+	deleteRecording: vi.fn(),
 }));
 
-mockNuxtImport("useDataStore", () => () => ({ listRecordings: state.listRecordings }));
+mockNuxtImport("useDataStore", () => () => ({ listRecordings: state.listRecordings, deleteRecording: state.deleteRecording }));
 
 function row(id: string): Recording {
 	return {
@@ -148,5 +149,44 @@ describe("useRecordings", () => {
 		await outB;
 		expect(r.pending.value).toBe(false);
 		expect(r.items.value).toEqual([row("b")]);
+	});
+
+	it("remove() deletes through the store and drops only that row", async () => {
+		state.listRecordings.mockResolvedValue([row("1"), row("2")]);
+		state.deleteRecording.mockResolvedValue(undefined);
+		const r = useRecordings();
+		await r.list();
+
+		await r.remove("1");
+
+		expect(state.deleteRecording).toHaveBeenCalledWith("1");
+		expect(r.items.value).toEqual([row("2")]);
+	});
+
+	it("remove() keeps the row and rethrows when the store refuses", async () => {
+		state.listRecordings.mockResolvedValue([row("1")]);
+		state.deleteRecording.mockRejectedValue(new Error("forbidden"));
+		const r = useRecordings();
+		await r.list();
+
+		await expect(r.remove("1")).rejects.toThrow("forbidden");
+		expect(r.items.value).toEqual([row("1")]);
+	});
+
+	it("a list() sent before remove() does not bring the deleted row back", async () => {
+		state.listRecordings.mockResolvedValueOnce([row("1"), row("2")]);
+		state.deleteRecording.mockResolvedValue(undefined);
+		const r = useRecordings();
+		await r.list();
+		const stale = deferred<Recording[]>();
+		state.listRecordings.mockImplementationOnce(() => stale.promise);
+		const poll = r.list();
+
+		await r.remove("1");
+		stale.resolve([row("1"), row("2")]);
+		await poll;
+
+		expect(r.items.value).toEqual([row("2")]);
+		expect(r.pending.value).toBe(false);
 	});
 });

@@ -36,19 +36,29 @@ const pending = vi.hoisted(() => ({ value: false }));
 const error = vi.hoisted(() => ({ value: null as string | null }));
 const list = vi.hoisted(() => vi.fn(async () => []));
 const refresh = vi.hoisted(() => vi.fn(async () => []));
+const remove = vi.hoisted(() => vi.fn());
 
-mockNuxtImport("useRecordings", () => () => ({
-	items: ref(items.value),
-	pending: ref(pending.value),
-	error: ref(error.value),
-	list,
-	refresh,
-}));
+// `remove` follows the composable's contract: delete through the store, then drop the row.
+mockNuxtImport("useRecordings", () => () => {
+	const rows = ref(items.value);
+	return {
+		items: rows,
+		pending: ref(pending.value),
+		error: ref(error.value),
+		list,
+		refresh,
+		remove: async (id: string) => {
+			await remove(id);
+			await store.deleteRecording(id);
+			rows.value = rows.value.filter(r => r.id !== id);
+		},
+	};
+});
 
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
 
-const store = vi.hoisted(() => ({ getTranscript: vi.fn() }));
+const store = vi.hoisted(() => ({ getTranscript: vi.fn(), deleteRecording: vi.fn() }));
 mockNuxtImport("useDataStore", () => () => store);
 
 // The page reads the offline queue on mount; the test env has no IndexedDB, so
@@ -265,6 +275,117 @@ describe("index (recordings list) page", () => {
 
 		expect(store.getTranscript).not.toHaveBeenCalled();
 		expect(writeText).toHaveBeenCalledWith("Telefonat Reha");
+	});
+
+	it("opens the row menu without opening the recording", async () => {
+		const w = await mountSuspended(IndexPage, { attachTo: document.body });
+		const row = w.findAllComponents({ name: "RecordingListItem" })[0]!;
+		expect(row.find("[data-testid=\"copy-action\"]").exists()).toBe(true);
+		await row.find("[aria-haspopup=\"menu\"]").trigger("click");
+		await flushPromises();
+		expect(row.find("[role=\"menu\"]").exists()).toBe(true);
+		await row.find("[data-testid=\"menu-delete\"]").trigger("click");
+		await flushPromises();
+		expect(navigateTo).not.toHaveBeenCalled();
+		w.unmount();
+	});
+
+	it("deletes a recording only after confirming, through the store, and drops its row", async () => {
+		store.deleteRecording.mockResolvedValue(undefined);
+		const w = await mountSuspended(IndexPage, { attachTo: document.body });
+		const row = w.findAllComponents({ name: "RecordingListItem" })[0]!;
+		await row.find("[aria-haspopup=\"menu\"]").trigger("click");
+		await flushPromises();
+		await row.find("[data-testid=\"menu-delete\"]").trigger("click");
+		await flushPromises();
+
+		const dialog = w.find("[data-testid=\"delete-dialog\"]");
+		expect(dialog.attributes("role")).toBe("alertdialog");
+		expect(dialog.text()).toContain("Aufnahme löschen?");
+		expect(dialog.text()).toContain("„Visite Station 3“");
+		expect(store.deleteRecording).not.toHaveBeenCalled();
+
+		await dialog.find("[data-testid=\"confirm-delete\"]").trigger("click");
+		await flushPromises();
+
+		expect(remove).toHaveBeenCalledWith("rec-a");
+		expect(store.deleteRecording).toHaveBeenCalledWith("rec-a");
+		expect(w.find("[data-testid=\"delete-dialog\"]").exists()).toBe(false);
+		expect(w.text()).not.toContain("Visite Station 3");
+		expect(w.findAllComponents({ name: "RecordingListItem" }).length).toBe(1);
+		expect(navigateTo).not.toHaveBeenCalled();
+		w.unmount();
+	});
+
+	it("keeps the recording when the delete is cancelled", async () => {
+		const w = await mountSuspended(IndexPage, { attachTo: document.body });
+		const row = w.findAllComponents({ name: "RecordingListItem" })[0]!;
+		await row.find("[aria-haspopup=\"menu\"]").trigger("click");
+		await flushPromises();
+		await row.find("[data-testid=\"menu-delete\"]").trigger("click");
+		await flushPromises();
+		await w.find("[data-testid=\"cancel-delete\"]").trigger("click");
+
+		expect(w.find("[data-testid=\"delete-dialog\"]").exists()).toBe(false);
+		expect(remove).not.toHaveBeenCalled();
+		expect(w.findAllComponents({ name: "RecordingListItem" }).length).toBe(2);
+		w.unmount();
+	});
+
+	it("shows why a delete failed and keeps the row", async () => {
+		remove.mockRejectedValueOnce(new Error("Keine Berechtigung."));
+		const w = await mountSuspended(IndexPage);
+		w.findAllComponents({ name: "RecordingListItem" })[0]!.vm.$emit("delete");
+		await flushPromises();
+		await w.find("[data-testid=\"confirm-delete\"]").trigger("click");
+		await flushPromises();
+
+		expect(w.find("[data-testid=\"delete-error\"]").exists()).toBe(true);
+		expect(store.deleteRecording).not.toHaveBeenCalled();
+		expect(w.findAllComponents({ name: "RecordingListItem" }).length).toBe(2);
+	});
+
+	it("leaves the right pane when the recording open there is deleted", async () => {
+		route.path = "/recording/rec-a";
+		store.deleteRecording.mockResolvedValue(undefined);
+		const w = await mountSuspended(inShell(RecordingsPane, true));
+		w.findAllComponents({ name: "RecordingListItem" })[0]!.vm.$emit("delete");
+		await flushPromises();
+		await w.find("[data-testid=\"confirm-delete\"]").trigger("click");
+		await flushPromises();
+		expect(navigateTo).toHaveBeenCalledWith("/", { replace: true });
+	});
+
+	it("shares title and transcript through the Web Share API", async () => {
+		const share = vi.fn(async () => {});
+		Object.defineProperty(globalThis.navigator, "share", { value: share, configurable: true });
+		store.getTranscript.mockResolvedValueOnce({ id: "t-a", recording: "rec-a", text: "Der Befund ist unauffällig." });
+		try {
+			const w = await mountSuspended(IndexPage);
+			w.findAllComponents({ name: "RecordingListItem" })[0]!.vm.$emit("share");
+			await flushPromises();
+			expect(share).toHaveBeenCalledWith({ title: "Visite Station 3", text: "Visite Station 3\n\nDer Befund ist unauffällig." });
+		}
+		finally {
+			Reflect.deleteProperty(globalThis.navigator, "share");
+		}
+	});
+
+	it("copies the text instead when the browser cannot share", async () => {
+		const writeText = vi.fn(async () => {});
+		Object.defineProperty(globalThis.navigator, "clipboard", { value: { writeText }, configurable: true });
+		const original = Object.getOwnPropertyDescriptor(globalThis.navigator, "share");
+		Reflect.deleteProperty(globalThis.navigator, "share");
+		try {
+			const w = await mountSuspended(IndexPage);
+			w.findAllComponents({ name: "RecordingListItem" })[1]!.vm.$emit("share");
+			await flushPromises();
+			expect(writeText).toHaveBeenCalledWith("Telefonat Reha");
+			expect(w.find("[data-testid=\"action-notice\"]").text()).toBe("Teilen wird nicht unterstützt – Text kopiert.");
+		}
+		finally {
+			if (original) Object.defineProperty(globalThis.navigator, "share", original);
+		}
 	});
 
 	it("auto-refreshes the list while a recording is still transcribing", async () => {

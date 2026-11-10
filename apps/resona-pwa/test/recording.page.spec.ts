@@ -385,6 +385,121 @@ describe("recording detail page", () => {
 		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
 	});
 
+	it("Speichern shows Speichert… at once and a double click saves once", async () => {
+		let finishWrite!: () => void;
+		store.updateTranscript.mockImplementationOnce(() => new Promise<void>((resolve) => {
+			finishWrite = resolve;
+		}));
+		const w = await mountSuspended(RecordingPage);
+		const long = `Hallo Welt ${"und noch ein Satz ".repeat(3000)}`;
+		await w.find("[data-testid=\"transcript-edit\"]").setValue(long);
+		const save = w.find("[data-testid=\"save-transcript\"]");
+		// Both clicks land before the page re-renders the button as disabled.
+		(save.element as HTMLButtonElement).click();
+		(save.element as HTMLButtonElement).click();
+		await nextTick();
+		expect(save.text()).toBe("Speichert…");
+		expect(save.attributes("disabled")).toBeDefined();
+		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Speichert…");
+
+		finishWrite();
+		await flushPromises();
+		expect(store.updateTranscript).toHaveBeenCalledTimes(1);
+		expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: long });
+		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+		// The correction is stored once, after the save showed.
+		await vi.waitFor(() => expect(store.recordCorrection).toHaveBeenCalledTimes(1));
+	});
+
+	describe("dictation is saved on its own", () => {
+		const area = (w: VueWrapper) => w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
+		const here = { params: { id: "rec-1" } };
+		const elsewhere = { params: { id: "rec-2" } };
+
+		beforeEach(() => {
+			useHubSettings().token = "tok";
+			globalThis.fetch = vi.fn(async () => new Response(
+				JSON.stringify({ text: "diktiert" }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			)) as unknown as typeof fetch;
+		});
+
+		async function dictate(w: VueWrapper): Promise<void> {
+			const ptt = w.find("[data-testid=\"push-to-talk\"]");
+			await ptt.trigger("pointerdown", { pointerId: 1 });
+			await flushPromises();
+			heldFor(500);
+			await ptt.trigger("pointerup", { pointerId: 1 });
+			await vi.waitFor(() => expect(area(w).value).toContain("diktiert"));
+			await flushPromises();
+		}
+
+		it("saves a dictation into an unedited transcript and leaving asks nothing", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await dictate(w);
+			expect(area(w).value).toBe("Hallo Weltdiktiert ");
+			expect(store.updateTranscript).toHaveBeenCalledTimes(1);
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Weltdiktiert " });
+			// New content, not a correction of the engine's text.
+			expect(store.recordCorrection).not.toHaveBeenCalled();
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeDefined();
+			expect(guards.leave!(elsewhere, here)).toBe(true);
+		});
+
+		it("saves only the dictated part next to unsaved typing, and leaving still asks", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+			await dictate(w);
+			expect(area(w).value).toBe("Hallo Welt, geändertdiktiert ");
+			// The typing is not written along.
+			expect(store.updateTranscript).toHaveBeenCalledTimes(1);
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Weltdiktiert " });
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
+
+			const result = guards.leave!(elsewhere, here);
+			await flushPromises();
+			expect(w.find("[data-testid=\"leave-dialog\"]").exists()).toBe(true);
+			await w.find("[data-testid=\"leave-save\"]").trigger("click");
+			expect(await result).toBe(true);
+			expect(store.updateTranscript).toHaveBeenLastCalledWith("t-1", { text: "Hallo Welt, geändertdiktiert " });
+		});
+
+		it("a dictation whose save failed stays unsaved, shows the error and leaving asks", async () => {
+			store.updateTranscript.mockRejectedValueOnce(new Error("offline"));
+			const w = await mountSuspended(RecordingPage);
+			await dictate(w);
+			expect(area(w).value).toBe("Hallo Weltdiktiert ");
+			expect(w.find("[data-testid=\"save-error\"]").exists()).toBe(true);
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
+			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeUndefined();
+
+			const result = guards.leave!(elsewhere, here);
+			await flushPromises();
+			expect(w.find("[data-testid=\"leave-dialog\"]").exists()).toBe(true);
+			await w.find("[data-testid=\"leave-save\"]").trigger("click");
+			expect(await result).toBe(true);
+			expect(store.updateTranscript).toHaveBeenLastCalledWith("t-1", { text: "Hallo Weltdiktiert " });
+		});
+
+		it("asks before leaving while a dictation is still transcribing", async () => {
+			const confirm = vi.fn(() => false);
+			vi.stubGlobal("confirm", confirm);
+			globalThis.fetch = vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+			const w = await mountSuspended(RecordingPage);
+			const ptt = w.find("[data-testid=\"push-to-talk\"]");
+			await ptt.trigger("pointerdown", { pointerId: 1 });
+			await flushPromises();
+			heldFor(500);
+			await ptt.trigger("pointerup", { pointerId: 1 });
+			await flushPromises();
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+			expect(guards.leave!(elsewhere, here)).toBe(false);
+			expect(confirm).toHaveBeenCalledWith("Das laufende Diktat geht verloren. Trotzdem verlassen?");
+			vi.unstubAllGlobals();
+		});
+	});
+
 	it("shows the back button and no state chip for a transcribed recording on phones", async () => {
 		const w = await mountSuspended(RecordingPage);
 		expect(w.find("[data-testid=\"back\"]").exists()).toBe(true);
@@ -576,7 +691,7 @@ describe("recording detail page", () => {
 			expect(w.find("[data-testid=\"postprocess-raw\"] pre").text()).toBe("Hallo Welt\nNeuer Teil");
 		});
 
-		it("dictation into the rendered view opens the editor and keeps the part for the raw transcript", async () => {
+		it("dictation into the rendered view opens the editor and saves the part with the raw transcript", async () => {
 			globalThis.fetch = vi.fn(async () => new Response(
 				JSON.stringify({ text: "diktiert" }),
 				{ status: 200, headers: { "Content-Type": "application/json" } },
@@ -590,13 +705,14 @@ describe("recording detail page", () => {
 			heldFor(500);
 			await ptt.trigger("pointerup", { pointerId: 1 });
 			await vi.waitFor(() => expect(area(w).value).toBe(`${PROCESSED}diktiert `));
-			await w.find("[data-testid=\"save-transcript\"]").trigger("click");
-			await flushPromises();
-			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
+			// Saved on its own, no "Speichern" needed.
+			await vi.waitFor(() => expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
 				text: `${PROCESSED}diktiert `,
 				raw_text: "Hallo Welt\ndiktiert",
 				processed_text: `${PROCESSED}diktiert `,
-			});
+			}));
+			await flushPromises();
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
 		});
 
 		describe("asks before a re-run or restore drops saved edits", () => {
@@ -658,17 +774,25 @@ describe("recording detail page", () => {
 				});
 			});
 
-			it("asks when a continued part was added on top of typed edits", async () => {
+			it("saves a continued part on its own and still asks after the typed edits are saved", async () => {
 				transcript.value = processedTranscript();
 				const w = await mountSuspended(RecordingPage);
 				await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
 				await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
 				await recordPart(w);
 				await flushPromises();
+				// The part goes onto the saved profile output, the typing stays unsaved.
 				expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
-					text: "## Befund gekürzt\nNeuer Teil",
+					text: `${PROCESSED}\nNeuer Teil`,
 					raw_text: "Hallo Welt\nNeuer Teil",
+					processed_text: `${PROCESSED}\nNeuer Teil`,
 				});
+				expect(area(w).value).toBe("## Befund gekürzt\nNeuer Teil");
+				expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
+
+				await w.find("[data-testid=\"save-transcript\"]").trigger("click");
+				await flushPromises();
+				expect(store.updateTranscript).toHaveBeenLastCalledWith("t-1", { text: "## Befund gekürzt\nNeuer Teil" });
 				store.updateTranscript.mockClear();
 				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 				await flushPromises();
@@ -686,7 +810,7 @@ describe("recording detail page", () => {
 			});
 		});
 
-		it("appends the new part as a paragraph after unsaved edits and saves once", async () => {
+		it("saves the new part on its own and keeps unsaved typing unsaved", async () => {
 			const w = await mountSuspended(RecordingPage);
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
 			await recordPart(w);
@@ -694,11 +818,28 @@ describe("recording detail page", () => {
 			await flushPromises();
 			expect(store.updateTranscript).toHaveBeenCalledTimes(1);
 			expect(cont.finish).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1" }));
-			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt, geändert\nNeuer Teil" });
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt\nNeuer Teil" });
 			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
 			expect(area.value).toBe("Hallo Welt, geändert\nNeuer Teil");
-			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
 			expect(w.find("[data-testid=\"continue-notice\"]").exists()).toBe(false);
+
+			// The typing still needs "Speichern": leaving asks.
+			const result = guards.leave!({ params: { id: "rec-2" } }, { params: { id: "rec-1" } });
+			await flushPromises();
+			expect(w.find("[data-testid=\"leave-dialog\"]").exists()).toBe(true);
+			await w.find("[data-testid=\"leave-save\"]").trigger("click");
+			expect(await result).toBe(true);
+			expect(store.updateTranscript).toHaveBeenLastCalledWith("t-1", { text: "Hallo Welt, geändert\nNeuer Teil" });
+		});
+
+		it("a continued part on an unedited transcript leaves nothing to save", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await recordPart(w);
+			await flushPromises();
+			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt\nNeuer Teil" });
+			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
+			expect(guards.leave!({ params: { id: "rec-2" } }, { params: { id: "rec-1" } })).toBe(true);
 		});
 
 		it("a failed save after appending keeps old text, edits and new part and asks to save", async () => {
@@ -725,7 +866,7 @@ describe("recording detail page", () => {
 			await recordPart(w);
 			await flushPromises();
 
-			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Notiz\nNeuer Teil" });
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Neuer Teil" });
 			const area = w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
 			expect(area.value).toBe("Notiz\nNeuer Teil");
 			expect(w.find("[data-testid=\"continue-notice\"]").text())

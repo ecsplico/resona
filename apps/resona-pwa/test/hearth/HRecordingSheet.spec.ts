@@ -12,7 +12,7 @@ describe("HRecordingSheet", () => {
 		viewport.wide = false;
 	});
 
-	it("is a modal dialog that puts keyboard focus on stop on wide screens", async () => {
+	it("is a modal dialog that puts keyboard focus on the central pause button on wide screens", async () => {
 		viewport.wide = true;
 		const w = await mountSuspended(HRecordingSheet, {
 			props: { elapsed: 0, levels: [] },
@@ -21,7 +21,7 @@ describe("HRecordingSheet", () => {
 		const dialog = w.find("[role=\"dialog\"]");
 		expect(dialog.attributes("aria-modal")).toBe("true");
 		expect(dialog.attributes("aria-labelledby")).toBeTruthy();
-		expect(document.activeElement).toBe(w.find("[data-testid=\"stop\"]").element);
+		expect(document.activeElement).toBe(w.find("[data-testid=\"pause\"]").element);
 		w.unmount();
 	});
 
@@ -30,7 +30,7 @@ describe("HRecordingSheet", () => {
 			props: { elapsed: 0, levels: [] },
 			attachTo: document.body,
 		});
-		expect(document.activeElement).not.toBe(w.find("[data-testid=\"stop\"]").element);
+		expect(document.activeElement).not.toBe(w.find("[data-testid=\"pause\"]").element);
 		w.unmount();
 	});
 
@@ -107,5 +107,29 @@ describe("HRecordingSheet", () => {
 		await w.find("[data-testid=\"pause\"]").trigger("click");
 		expect(w.emitted("resume")).toBeTruthy();
 		expect(w.emitted("pause")).toBeFalsy();
+	});
+
+	it("lays out cancel left, the big pause/resume center and stop right", async () => {
+		const w = await mountSuspended(HRecordingSheet, {
+			props: { elapsed: 0, levels: [], paused: false },
+		});
+		const buttons = w.findAll(".h-rec__controls button");
+		expect(buttons.map(b => b.attributes("data-testid"))).toEqual(["cancel", "pause", "stop"]);
+		expect(buttons.map(b => b.attributes("aria-label"))).toEqual(["Verwerfen", "Pausieren", "Aufnahme beenden"]);
+
+		await buttons[0]!.trigger("click");
+		await buttons[1]!.trigger("click");
+		await buttons[2]!.trigger("click");
+		expect(w.emitted("cancel")).toHaveLength(1);
+		expect(w.emitted("pause")).toHaveLength(1);
+		expect(w.emitted("stop")).toHaveLength(1);
+		expect(w.emitted("resume")).toBeFalsy();
+
+		await w.setProps({ paused: true });
+		expect(buttons[1]!.attributes("aria-label")).toBe("Fortsetzen");
+		await buttons[1]!.trigger("click");
+		expect(w.emitted("resume")).toHaveLength(1);
+		expect(w.emitted("pause")).toHaveLength(1);
+		expect(w.emitted("stop")).toHaveLength(1);
 	});
 });

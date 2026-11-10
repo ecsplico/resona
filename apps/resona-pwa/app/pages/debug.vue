@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { buildDebugPayload, runDiagnose } from "~/utils/debugProbe";
+import type { DebugReport, ProbeCheck, ProbeState } from "~/utils/debugProbe";
 
-// Diagnostics screen for push-to-talk dictation. Every check here exercises
-// the *exact* same config/endpoint/fields the real PTT flow in
-// recording/[id].vue uses, but — unlike PTT — never swallows the real error.
-// Use this to find why PTT isn't transcribing without guessing.
+// Diagnostics screen. "Mobil-Diagnose" checks everything live dictation and
+// the on-device title suggestion need and can send a redacted report to the
+// server log (TEMPORARY, see server/api/debug-report.post.ts). The PTT
+// sections exercise the *exact* same config/endpoint/fields the real PTT flow
+// in recording/[id].vue uses, but — unlike PTT — never swallow the real error.
 
 const cfg = useRuntimeConfig().public;
 const hub = useHub();
 const pttDiag = usePttDiagnostics();
+const liveSettings = useLiveSettings();
 
 function describeError(err: unknown): string {
 	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -210,6 +214,85 @@ function formatTime(ts: number): string {
 	return new Date(ts).toLocaleTimeString();
 }
 
+// ── Mobil-Diagnose (live dictation + on-device title) ───────────────────────
+const diagRunning = ref(false);
+const diagChecks = ref<ProbeCheck[]>([]);
+const diagReport = ref<DebugReport | null>(null);
+const diagError = ref<string | null>(null);
+const sendState = ref<{ state: "idle" | "sending" | "ok" | "fail"; detail: string }>({ state: "idle", detail: "" });
+
+const STATE_TONE: Record<ProbeState, "success" | "danger" | "warning" | "neutral"> = {
+	ok: "success",
+	fail: "danger",
+	warn: "warning",
+	info: "neutral",
+};
+const STATE_LABEL: Record<ProbeState, string> = { ok: "ok", fail: "Fehler", warn: "Warnung", info: "Info" };
+
+// Not async on purpose: runDiagnose creates its comparison AudioContext
+// synchronously inside this click (user gesture).
+function startDiagnose(): void {
+	if (diagRunning.value) return;
+	diagRunning.value = true;
+	diagChecks.value = [];
+	diagReport.value = null;
+	diagError.value = null;
+	sendState.value = { state: "idle", detail: "" };
+	runDiagnose({
+		hubUrl: trimUrl(cfg.resonaApiUrl),
+		language: cfg.defaultLanguage,
+		token: hub.token(),
+		hubFetch: hub.probe,
+		liveSettings: {
+			source: liveSettings.source,
+			hubEngine: liveSettings.hubEngine,
+			correction: liveSettings.correction,
+			chunkSeconds: liveSettings.chunkSeconds,
+		},
+		context: {
+			origin: window.location.origin,
+			dataMode: cfg.dataMode,
+			hasToken: hub.hasToken(),
+		},
+		pttLog: pttDiag.entries.value.map(e => ({ ...e })),
+		onCheck: (check) => {
+			diagChecks.value = [...diagChecks.value, check];
+		},
+	})
+		.then((report) => {
+			diagReport.value = report;
+		})
+		.catch((err: unknown) => {
+			diagError.value = describeError(err);
+		})
+		.finally(() => {
+			diagRunning.value = false;
+		});
+}
+
+async function sendReport(): Promise<void> {
+	if (!diagReport.value || sendState.value.state === "sending") return;
+	sendState.value = { state: "sending", detail: "" };
+	try {
+		// Plain fetch, not $fetch: keeps this temporary route out of the typed
+		// Nitro route union (see the calendar note in CLAUDE.md).
+		const resp = await fetch("/api/debug-report", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: buildDebugPayload(diagReport.value, [hub.token()]),
+		});
+		if (!resp.ok) {
+			sendState.value = { state: "fail", detail: `HTTP ${resp.status} ${resp.statusText}` };
+			return;
+		}
+		const { id } = await resp.json() as { id?: string };
+		sendState.value = { state: "ok", detail: `Gesendet. Bericht-ID ${id ?? "?"} (Server-Log: [resona-debug])` };
+	}
+	catch (err) {
+		sendState.value = { state: "fail", detail: describeError(err) };
+	}
+}
+
 onMounted(() => {
 	void checkMicPermission();
 	void checkDeviceSpeech();
@@ -229,7 +312,7 @@ onUnmounted(() => {
 	<div class="debug">
 		<HAppBar
 			tone="light"
-			title="PTT-Diagnose"
+			title="Diagnose"
 		>
 			<template #leading>
 				<HIconButton
@@ -256,6 +339,77 @@ onUnmounted(() => {
 		</HAppBar>
 
 		<div class="debug__body">
+			<!-- Mobil-Diagnose -->
+			<HCard>
+				<div class="debug__head-row">
+					<h2 class="debug__title">
+						Mobil-Diagnose: Live-Diktat &amp; Titelvorschlag
+					</h2>
+				</div>
+				<p class="debug__hint">
+					Prüft Mikrofon, Audioverarbeitung, Live-Verbindung zum Hub, lokale Spracherkennung und das
+					Sprachmodell des Browsers. Dauert etwa 15 Sekunden; bitte währenddessen kurz sprechen.
+					„An Server senden“ schickt das Ergebnis ohne Token und ohne Transkripttext ins Server-Log.
+				</p>
+				<div class="debug__actions">
+					<HButton
+						variant="primary"
+						:disabled="diagRunning"
+						data-testid="debug-diagnose-run"
+						@click="startDiagnose"
+					>
+						{{ diagRunning ? "Prüft…" : "Diagnose starten" }}
+					</HButton>
+					<HButton
+						variant="secondary"
+						:disabled="!diagReport || sendState.state === 'sending'"
+						data-testid="debug-diagnose-send"
+						@click="sendReport"
+					>
+						{{ sendState.state === "sending" ? "Sendet…" : "An Server senden" }}
+					</HButton>
+				</div>
+				<p
+					v-if="sendState.state === 'ok' || sendState.state === 'fail'"
+					class="debug__result"
+					data-testid="debug-diagnose-send-result"
+				>
+					<HChip :tone="sendState.state === 'ok' ? 'success' : 'danger'">
+						{{ sendState.state === "ok" ? "Gesendet" : "Fehler" }}
+					</HChip>
+					{{ sendState.detail }}
+				</p>
+				<p
+					v-if="diagError"
+					class="debug__result"
+				>
+					<HChip tone="danger">
+						Abbruch
+					</HChip>
+					{{ diagError }}
+				</p>
+				<ul
+					v-if="diagChecks.length"
+					class="debug__diag"
+					data-testid="debug-diagnose-checks"
+				>
+					<li
+						v-for="check in diagChecks"
+						:key="check.id"
+						class="debug__diag-row"
+						:data-check="check.id"
+					>
+						<HChip :tone="STATE_TONE[check.state]">
+							{{ STATE_LABEL[check.state] }}
+						</HChip>
+						<div class="debug__diag-text">
+							<span class="debug__diag-label">{{ check.group }} · {{ check.label }}</span>
+							<span class="debug__diag-detail">{{ check.detail }}</span>
+						</div>
+					</li>
+				</ul>
+			</HCard>
+
 			<!-- Konfiguration -->
 			<HCard>
 				<h2 class="debug__title">
@@ -473,4 +627,10 @@ onUnmounted(() => {
 .debug__log-row { display:flex; align-items:flex-start; gap:10px; font-size:13px; }
 .debug__log-time { color:var(--fg3); flex-shrink:0; }
 .debug__log-detail { color:var(--fg1); word-break:break-word; }
+.debug__actions { display:flex; flex-wrap:wrap; gap:10px; }
+.debug__diag { list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.debug__diag-row { display:flex; align-items:flex-start; gap:10px; font-size:13px; }
+.debug__diag-text { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.debug__diag-label { color:var(--fg3); }
+.debug__diag-detail { color:var(--fg1); word-break:break-word; }
 </style>

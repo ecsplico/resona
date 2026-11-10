@@ -5,6 +5,7 @@ import { HubError } from "~/composables/useHub";
 import type { ContinueResult } from "~/composables/useContinueRecording";
 import type { Recording, Transcript } from "~/types/directus";
 import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
+import { rebaseInsertion, textSplice } from "~/utils/correction";
 
 const route = useRoute();
 const id = String(route.params.id);
@@ -93,6 +94,26 @@ const canEdit = computed(() =>
 	recording.value?.status === "done" || recording.value?.status === "error",
 );
 
+// Typed edits (the editor's `typed` event: keyboard, paste, cut, undo) are
+// counted; `savedTypedEdits` is the count the saved text covers. Dictation and
+// continued parts never count: they are saved on their own as soon as they land
+// (`autosavePart`), so they need no "Speichern".
+const typedEdits = ref(0);
+const savedTypedEdits = ref(0);
+// A dictated or continued part whose own save did not go through (write failed,
+// or it landed inside unsaved typing): it waits for "Speichern" like typed edits.
+const unsavedPart = ref(false);
+// New raw content (dictation, a continued part) added after a profile ran and not
+// written yet: it goes into `text` and, on the next save, onto the end of
+// `raw_text`, so a re-run or a restore keeps it.
+let rawParts: string[] = [];
+
+function forgetUnsaved(): void {
+	savedTypedEdits.value = typedEdits.value;
+	unsavedPart.value = false;
+	rawParts = [];
+}
+
 // Seed the editable text once the transcript first appears, or — for a terminal
 // recording that has no transcript — start from empty so the user can type or
 // dictate. Polling stops once terminal, so a single seed is enough; guard
@@ -104,71 +125,111 @@ watch([recording, transcript], ([, t]) => {
 	if (t) {
 		edit.seed(t.text ?? "");
 		seeded.value = true;
+		forgetUnsaved();
 	}
 	else if (canEdit.value) {
 		edit.seed("");
 		seeded.value = true;
+		forgetUnsaved();
 	}
 }, { immediate: true });
 
-const dirty = computed(() => seeded.value && edit.text.value !== edit.committed.value);
-
-// New raw content (dictation, a continued part) added after a profile ran: it goes
-// into `text` and, on the next save, onto the end of `raw_text`, so a re-run or a
-// restore keeps it.
-let rawParts: string[] = [];
-// The user changed the text in the editor since the last save/seed (as opposed to
-// dictation or a continued part, which only add raw content).
-const typed = ref(false);
+// Unsaved: the editor differs from the saved text because of typing or a part
+// whose own save failed. A dictation marker in place or a part being saved right
+// now is not.
+const dirty = computed(() =>
+	seeded.value && edit.text.value !== edit.committed.value
+	&& (typedEdits.value !== savedTypedEdits.value || unsavedPart.value));
 
 function noteRawPart(text: string): void {
 	if (transcript.value?.applied_profile && text.trim()) rawParts.push(text);
 }
 
-/** Persists the editor text; false when the save failed (the text stays in the editor). */
-async function saveTranscript(options: { correction?: boolean } = {}): Promise<boolean> {
-	const target = edit.text.value;
-	if (transcript.value) {
-		const t = transcript.value;
-		// The user's edits become correction data for the engine; text appended by
-		// "Weiter aufnehmen" is new content, not a correction, and neither is an edit
-		// of a profile's output (the engine did not write that text).
-		const correction = options.correction === false || t.applied_profile
-			? undefined
-			: { recording: id, engine: t.engine, language: recording.value?.language };
-		const raw = rawParts.length > 0 ? appendToRaw(t, rawParts) : null;
-		// Only raw content was added to an unedited profile output: the new text is
-		// still "the output plus raw parts", which a re-run or restore reproduces, so
-		// it becomes the baseline and those do not ask.
-		const keepsOutput = t.applied_profile != null && !typed.value
-			&& edit.committed.value === (t.processed_text ?? null);
-		await edit.saveEdit(t.id, target, correction, {
-			...(raw === null ? {} : { raw_text: raw }),
-			...(keepsOutput ? { processed_text: target } : {}),
-		});
-		if (edit.error.value) return false;
-		t.text = target;
-		if (raw !== null) t.raw_text = raw;
-		if (keepsOutput) t.processed_text = target;
-		rawParts = [];
-		typed.value = false;
-		return true;
+// Writes `next` as the transcript text, or creates the row with it when there is
+// none. `parts`: raw content in `next` that `raw_text` lacks so far; `rawOnly`:
+// nothing but such parts was added since the last save; `correction`: store the
+// change as engine correction data.
+async function writeText(next: string, parts: string[], rawOnly: boolean, correction: boolean): Promise<boolean> {
+	const t = transcript.value;
+	if (!t) {
+		const created = await edit.createTranscript(id, next);
+		if (created) transcript.value = created;
+		return created !== null;
 	}
-	// No transcript row yet -> create one for this recording.
-	const created = await edit.createTranscript(id, target);
-	if (!created) return false;
-	transcript.value = created;
-	seeded.value = true;
-	typed.value = false;
+	const raw = parts.length > 0 ? appendToRaw(t, parts) : null;
+	// Only raw content was added to an unedited profile output: the new text is
+	// still "the output plus raw parts", which a re-run or restore reproduces, so
+	// it becomes the baseline and those do not ask.
+	const keepsOutput = rawOnly && t.applied_profile != null && edit.committed.value === (t.processed_text ?? null);
+	const ok = await edit.saveEdit(t.id, next, {
+		// An edit of a profile's output is no correction: the engine did not write that text.
+		correction: correction && !t.applied_profile
+			? { recording: id, engine: t.engine, language: recording.value?.language }
+			: undefined,
+		extra: {
+			...(raw === null ? {} : { raw_text: raw }),
+			...(keepsOutput ? { processed_text: next } : {}),
+		},
+	});
+	if (!ok) return false;
+	t.text = next;
+	if (raw !== null) t.raw_text = raw;
+	if (keepsOutput) t.processed_text = next;
 	return true;
+}
+
+// One manual save at a time: clicks while it is queued or running join it.
+let manualSave: Promise<boolean> | null = null;
+
+/** Persists the editor text; false when the save failed (the text stays in the editor). */
+function saveTranscript(): Promise<boolean> {
+	if (manualSave) return manualSave;
+	// Taken at the click: the text the user asked to save. `enqueue` turns `saving`
+	// on right away; the write waits for parts saving before it.
+	const target = edit.text.value;
+	const typedUpTo = typedEdits.value;
+	manualSave = edit.enqueue(async () => {
+		if (target !== edit.committed.value) {
+			// Typed edits become correction data for the engine; a part whose own save
+			// failed is new content, not a correction. Writes run one at a time, so no
+			// part's save adds to `rawParts` meanwhile.
+			const rawOnly = typedUpTo === savedTypedEdits.value;
+			if (!await writeText(target, rawParts, rawOnly, !rawOnly)) return false;
+			rawParts = [];
+		}
+		savedTypedEdits.value = typedUpTo;
+		unsavedPart.value = false;
+		return true;
+	}).finally(() => {
+		manualSave = null;
+	});
+	return manualSave;
+}
+
+/**
+ * Saves a dictated or continued part on its own as soon as it lands: `place`
+ * puts it into the saved text as it is when the write runs (null: no place is
+ * right). The user's unsaved typing is never written along and stays unsaved. A
+ * part that cannot be saved this way waits for "Speichern" like typed edits.
+ */
+function autosavePart(part: string, place: (saved: string) => string | null): Promise<boolean> {
+	return edit.enqueue(async () => {
+		const next = place(edit.committed.value);
+		// New content, not a correction of the engine's text.
+		const saved = next !== null && await writeText(next, [part], true, false);
+		if (!saved) {
+			unsavedPart.value = true;
+			noteRawPart(part);
+		}
+		return saved;
+	});
 }
 
 /** Throws the unsaved edits away and shows the last saved text again. */
 function discardEdits(): void {
 	edit.text.value = edit.committed.value;
 	edit.error.value = null;
-	rawParts = [];
-	typed.value = false;
+	forgetUnsaved();
 }
 
 // ── Nachbearbeiten (postprocess profile on the raw transcript) ────────────
@@ -183,8 +244,7 @@ const showRendered = computed(() => Boolean(transcript.value?.applied_profile) &
 
 function reseed(): void {
 	edit.seed(transcript.value?.text ?? "");
-	rawParts = [];
-	typed.value = false;
+	forgetUnsaved();
 	editingProcessed.value = false;
 }
 
@@ -352,11 +412,17 @@ async function stopDictation(): Promise<void> {
 		}
 		pttDiag.record("upload", true, `${blob.size}B Audio → ${rawText.length} Zeichen`);
 		const text = rawText.trim();
-		if (pttRange) noteRawPart(text);
 		if (pttRange) {
+			const before = edit.text.value;
 			// Trailing space so the next dictation/typing doesn't butt against it.
 			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text ? `${text} ` : "");
 			pttRange = null;
+			// What the result did to the editor text: the marker out, the text in.
+			const { at, removed, inserted } = textSplice(before, edit.text.value);
+			if (text && inserted) {
+				const base = before.slice(0, at) + before.slice(at + removed.length);
+				void autosavePart(text, saved => rebaseInsertion(saved, base, at, inserted));
+			}
 		}
 	}
 	catch (err) {
@@ -439,9 +505,10 @@ const contStartError = computed(() =>
 );
 const contNotice = ref<string | null>(null);
 // Why "Nachbearbeiten" cannot start now: it runs on the stored text, so unsaved
-// edits and dictation/continue in progress must settle first.
+// edits, writes still running and dictation/continue in progress must settle first.
 const postprocessBlocked = computed(() => {
 	if (dirty.value) return "Erst speichern oder verwerfen, dann nachbearbeiten.";
+	if (edit.saving.value) return "Der Text wird noch gespeichert.";
 	if (pttState.value !== "idle" || contActive.value || contRetained.value) return "Erst die laufende Aufnahme abschließen.";
 	return null;
 });
@@ -451,17 +518,21 @@ async function startContinue(): Promise<void> {
 	await cont.start();
 }
 
+// One `\n` is one paragraph, so a single newline starts a new one (none when the
+// text is empty or already ends in one).
+function joinParagraph(current: string, text: string): string {
+	const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+	return current + separator + text;
+}
+
 // Through the editor so the caret, selection and undo history stay where they
-// are. Without a mounted editor: one `\n` is one paragraph, so a single
-// newline starts a new one (none when the text is empty or already ends in one).
+// are; without a mounted editor, on the text directly.
 function appendParagraph(text: string): void {
 	if (editorRef.value) {
 		editorRef.value.appendParagraph(text);
 		return;
 	}
-	const current = edit.text.value;
-	const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
-	edit.text.value = current + separator + text;
+	edit.text.value = joinParagraph(edit.text.value, text);
 }
 
 async function applyContinueResult(result: ContinueResult | null): Promise<void> {
@@ -471,12 +542,13 @@ async function applyContinueResult(result: ContinueResult | null): Promise<void>
 		recording.value.audio_file = result.audio_file;
 		recording.value.duration_seconds = result.duration_seconds;
 	}
-	// Saves the user's unsaved edits together with the new part.
+	// The new part is saved on its own at the end of the saved text; unsaved typing
+	// stays unsaved.
 	let saved = true;
 	if (result.text) {
-		appendParagraph(result.text);
-		noteRawPart(result.text);
-		saved = await saveTranscript({ correction: false });
+		const part = result.text;
+		appendParagraph(part);
+		saved = await autosavePart(part, current => joinParagraph(current, part));
 	}
 	if (result.text || result.audioMerged) recordingsList.request();
 	const textNotice = !result.text
@@ -500,12 +572,16 @@ async function retryContinue(): Promise<void> {
 
 // The new part lives only in this page (mic, hub job or a part kept for retry):
 // leaving drops it, so ask first. Nuxt keys the page by id, so switching to
-// another recording (desktop list) is a route update on this same record.
+// another recording (desktop list) is a route update on this same record. The
+// same for a dictation still recording or transcribing (its marker no longer
+// counts as an unsaved edit, so the save dialog would not ask).
 const CONTINUE_LEAVE = "Der neue Teil geht verloren. Trotzdem verlassen?";
+const DICTATION_LEAVE = "Das laufende Diktat geht verloren. Trotzdem verlassen?";
 
 function confirmLeave(): boolean {
-	if (!contActive.value && !contRetained.value) return true;
-	return window.confirm(CONTINUE_LEAVE);
+	if (contActive.value || contRetained.value) return window.confirm(CONTINUE_LEAVE);
+	if (pttState.value !== "idle") return window.confirm(DICTATION_LEAVE);
+	return true;
 }
 
 // Unsaved text edits: ask whether to save or discard them before leaving.
@@ -544,6 +620,10 @@ function leaveDiscard(): void {
 
 function guardLeave(): boolean | Promise<boolean> {
 	if (!confirmLeave()) return false;
+	// A part still being saved may fail and become unsaved: decide once the writes settled.
+	if (edit.saving.value) {
+		return edit.enqueue(async () => dirty.value).then(unsaved => (unsaved ? askUnsaved() : true));
+	}
 	if (!dirty.value) return true;
 	return askUnsaved();
 }
@@ -552,9 +632,10 @@ onBeforeRouteLeave(() => guardLeave());
 onBeforeRouteUpdate((to, from) =>
 	(to.params as { id?: string }).id === (from.params as { id?: string }).id || guardLeave());
 
-// Closing the tab or reloading with unsaved edits.
+// Closing the tab or reloading with unsaved edits, a write still running or a
+// dictation in flight.
 function onBeforeUnload(e: BeforeUnloadEvent): void {
-	if (dirty.value) {
+	if (dirty.value || edit.saving.value || pttState.value !== "idle") {
 		e.preventDefault();
 	}
 }
@@ -1011,7 +1092,7 @@ onUnmounted(() => {
 							:class="{ 'detail__save-state--dirty': dirty }"
 							aria-live="polite"
 							data-testid="save-state"
-						>{{ dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
+						>{{ edit.saving.value ? "Speichert…" : dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
 						<span
 							v-if="contStartError"
 							class="detail__tool-error"
@@ -1133,7 +1214,7 @@ onUnmounted(() => {
 							:editable="!postprocessing"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
-							@typed="typed = true"
+							@typed="typedEdits += 1"
 						/>
 					</div>
 				</template>
@@ -1158,6 +1239,7 @@ onUnmounted(() => {
 				</HButton>
 				<HButton
 					variant="secondary"
+					:disabled="edit.saving.value"
 					data-testid="leave-discard"
 					@click="leaveDiscard"
 				>
@@ -1165,10 +1247,11 @@ onUnmounted(() => {
 				</HButton>
 				<HButton
 					variant="primary"
+					:disabled="edit.saving.value"
 					data-testid="leave-save"
 					@click="leaveSave"
 				>
-					Speichern
+					{{ edit.saving.value ? "Speichert…" : "Speichern" }}
 				</HButton>
 			</div>
 		</div>

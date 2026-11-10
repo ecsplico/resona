@@ -15,12 +15,13 @@ const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: [] }>();
 
 // Wide screens: a centered dialog instead of a bottom sheet.
 const { wide } = useShell();
-const stopButton = ref<HTMLButtonElement | null>(null);
+const pauseButton = ref<HTMLButtonElement | null>(null);
 
 onMounted(() => {
-	// Keyboard users land on the primary control; phones keep their focus as is.
+	// Keyboard users land on the primary control (pause): a stray Enter/Space only pauses,
+	// which is undone with the same key, while stop would end the recording. Phones keep their focus as is.
 	if (wide.value) {
-		stopButton.value?.focus();
+		pauseButton.value?.focus();
 	}
 });
 
@@ -106,27 +107,18 @@ function togglePause(): void {
 				</button>
 
 				<button
-					ref="stopButton"
-					type="button"
-					class="h-rec__btn h-rec__btn--stop"
-					data-testid="stop"
-					aria-label="Aufnahme beenden"
-					@click="emit('stop')"
-				>
-					<span class="h-rec__square" />
-				</button>
-
-				<button
+					ref="pauseButton"
 					type="button"
 					class="h-rec__btn h-rec__btn--pause"
+					:class="{ 'is-paused': paused }"
 					data-testid="pause"
 					:aria-label="paused ? 'Fortsetzen' : 'Pausieren'"
 					@click="togglePause"
 				>
 					<svg
 						v-if="paused"
-						width="20"
-						height="20"
+						width="32"
+						height="32"
 						viewBox="0 0 24 24"
 						fill="currentColor"
 						aria-hidden="true"
@@ -135,8 +127,8 @@ function togglePause(): void {
 					</svg>
 					<svg
 						v-else
-						width="20"
-						height="20"
+						width="32"
+						height="32"
 						viewBox="0 0 24 24"
 						fill="currentColor"
 						aria-hidden="true"
@@ -156,6 +148,16 @@ function togglePause(): void {
 							rx="1"
 						/>
 					</svg>
+				</button>
+
+				<button
+					type="button"
+					class="h-rec__btn h-rec__btn--stop"
+					data-testid="stop"
+					aria-label="Aufnahme beenden"
+					@click="emit('stop')"
+				>
+					<span class="h-rec__square" />
 				</button>
 			</div>
 		</div>
@@ -181,8 +183,11 @@ function togglePause(): void {
 .h-rec__controls { display:flex; align-items:center; justify-content:center; gap:28px; }
 .h-rec__btn { border:none; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--white); }
 .h-rec__btn--cancel { width:54px; height:54px; background:rgba(255,255,255,0.12); }
-.h-rec__btn--pause { width:54px; height:54px; background:rgba(255,255,255,0.12); }
-.h-rec__btn--stop { width:78px; height:78px; background:#B85032; box-shadow:var(--shadow-deep); }
-.h-rec__square { width:26px; height:26px; border-radius:6px; background:var(--white); }
+/* Primary: the big center button pauses/resumes; it turns accent while paused, showing play. */
+.h-rec__btn--pause { width:78px; height:78px; background:#B85032; box-shadow:var(--shadow-deep); }
+.h-rec__btn--pause.is-paused { background:var(--accent); }
+.h-rec__btn--stop { width:54px; height:54px; background:rgba(255,255,255,0.12); }
+.h-rec__square { width:18px; height:18px; border-radius:4px; background:var(--white); }
+.h-rec__btn:focus-visible { outline:2px solid var(--accent-soft); outline-offset:3px; }
 @keyframes h-rec-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
 </style>
