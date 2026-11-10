@@ -110,8 +110,8 @@ def _host_platform() -> str:
     return sys.platform
 
 
-def _validate_options(options: DocumentOptions, accelerator: str) -> str | None:
-    """Raise for combinations this host cannot run; return the tesseract binary when OCR is on."""
+def _validate_options(options: DocumentOptions, accelerator: str) -> None:
+    """Raise for accelerator/option/engine combinations this host cannot run (tesseract: :func:`_tesseract`)."""
     if accelerator not in ("cpu", "cuda", "metal"):
         raise UnsupportedDocumentOptions(f"unknown accelerator {accelerator!r}")
     if accelerator == "metal" and _host_platform() != "darwin":
@@ -119,13 +119,20 @@ def _validate_options(options: DocumentOptions, accelerator: str) -> str | None:
     if accelerator == "cuda" and _host_platform() == "darwin":
         raise UnsupportedDocumentOptions("accelerator 'cuda' is not available on macOS")
     if options.ocr == "off":
-        return None
+        return
     conflict = document_options_conflict(options, options.ocr_engine)
     if conflict is not None:
         raise ConflictingDocumentOptions(conflict)
     if options.ocr_engine == "ocrmac" and _host_platform() != "darwin":
         raise UnsupportedDocumentOptions("ocr_engine 'ocrmac' requires macOS (Apple Vision)")
-    # Every OCR engine needs tesseract: its orientation detection turns pages upright first.
+
+
+def _tesseract(options: DocumentOptions) -> str:
+    """The tesseract binary for an OCR conversion, after checking its packs.
+
+    Every OCR engine needs it: its orientation detection turns pages upright first. The
+    ``tesseract`` engine also needs the pack of every requested language.
+    """
     binary = shutil.which("tesseract")
     if binary is None:
         raise UnsupportedDocumentOptions(
@@ -340,7 +347,8 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
     """
     path = Path(path)
     _check_media(path)
-    tesseract = _validate_options(options, accelerator)
+    _validate_options(options, accelerator)
+    tesseract = _tesseract(options) if options.ocr != "off" else None
 
     converter = _converter(options, accelerator)
     page_range = (options.page_start or 1, options.page_end or sys.maxsize)
