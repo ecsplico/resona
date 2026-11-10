@@ -36,6 +36,8 @@ docker build -f apps/resona-worker/Dockerfile \
 docker image inspect --format '{{.Id}}' resona-worker:<release>-cuda    # sha256:… digest
 ```
 
+Without `--extra cuda` (the default `WORKER_EXTRAS="--extra audio-cpu --extra documents"`) the same Dockerfile builds the CPU image: it installs the torch/torchvision versions from `uv.lock` as CPU wheels from `https://download.pytorch.org/whl/cpu` (`TORCH_CPU_INDEX` build arg) and no `nvidia-*`, `cuda-*` or `triton` packages. `uv.lock` itself pins the cu130 wheels on Linux; `apps/resona-worker/docker/sync.sh` swaps them only in the CPU image.
+
 Use the image by digest only (`resona-worker@sha256:…` locally, or the released `ghcr.io/…@sha256:…`). Never use `:latest` or `:cuda`.
 
 ## 2. Enroll on the hub

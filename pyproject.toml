@@ -24,6 +24,8 @@ explicit = true
 [tool.uv.sources]
 # CUDA wheels only exist for Linux. On macOS/Windows, fall back to the default
 # PyPI index (CPU/MPS wheels) so `uv sync --all-packages` resolves there too.
+# The CPU worker image installs the same versions from the PyTorch CPU index
+# instead (apps/resona-worker/docker/sync.sh); the lock stays cu130-only on Linux.
 torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
 
 # openai-whisper's setup.py imports `pkg_resources`, which setuptools 81 (Feb 2026)

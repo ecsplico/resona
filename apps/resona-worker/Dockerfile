@@ -6,6 +6,10 @@
 #                      --build-arg BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04 \
 #                      --build-arg WORKER_EXTRAS="--extra cuda --extra documents" .
 #
+# Torch: uv.lock pins the cu130 wheels on Linux. Builds with `--extra cuda` install
+# them; every other build installs the same torch/torchvision versions from the PyTorch
+# CPU index and no nvidia-*/cuda-*/triton packages (apps/resona-worker/docker/sync.sh).
+#
 # The worker is outbound-only: no port, no Docker socket. Mount the 0600 token file
 # read-only, a model cache (HF_HOME) and a disposable work directory; run
 # `resona-worker prepare` once against the cache, then `resona-worker run`.
@@ -16,6 +20,7 @@ ARG BASE_IMAGE=python:3.12-slim
 FROM python:3.12-slim AS builder
 
 ARG WORKER_EXTRAS="--extra audio-cpu --extra documents"
+ARG TORCH_CPU_INDEX=https://download.pytorch.org/whl/cpu
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
 
@@ -35,14 +40,13 @@ COPY packages/engine-docling/ ./packages/engine-docling/
 
 # A uv-managed CPython (not the base image's) so the same /opt/python + venv copy
 # runs on the CUDA runtime base, which ships no Python 3.12 of its own. The uv cache
-# mount keeps the multi-GB Torch/CUDA wheels across rebuilds; it is not in the image.
+# mount keeps the multi-GB Torch wheels across rebuilds; it is not in the image.
 ENV UV_LINK_MODE=copy
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv python install 3.12 \
     && uv venv --python 3.12 --relocatable /app/.venv \
     && uv pip install --python /app/.venv/bin/python "setuptools<81" wheel \
-    && uv sync --package resona-worker ${WORKER_EXTRAS} --python /app/.venv/bin/python \
-         --frozen --no-dev --no-editable --no-build-isolation-package openai-whisper --compile-bytecode
+    && sh apps/resona-worker/docker/sync.sh /app/.venv/bin/python ${WORKER_EXTRAS}
 
 # ---- runtime ----
 FROM ${BASE_IMAGE}
