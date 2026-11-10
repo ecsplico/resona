@@ -18,10 +18,10 @@ from resona_worker.execute import ExitCode, main
 DOCUMENT_CANDIDATE = {"engine": "docling", "model": "docling-project/docling", "accelerator": "cpu"}
 
 
-def _run(tmp_path: Path, snapshot: dict) -> int:
+def _run(tmp_path: Path, snapshot: dict, *, input_name: str = "input.bin", candidate: dict = DOCUMENT_CANDIDATE) -> int:
     snap = tmp_path / "snapshot.json"
-    snap.write_text(json.dumps({"kind": "document", "candidate": DOCUMENT_CANDIDATE, **snapshot}), encoding="utf-8")
-    pdf = tmp_path / "input.bin"
+    snap.write_text(json.dumps({"kind": "document", "candidate": candidate, **snapshot}), encoding="utf-8")
+    pdf = tmp_path / input_name
     pdf.write_bytes(b"%PDF-1.4 not really")
     return main(["--snapshot", str(snap), "--input", str(pdf), "--out", str(tmp_path / "out.json")])
 
@@ -58,6 +58,18 @@ def test_unsupported_snapshot_language_fails_without_converting(tmp_path: Path, 
     assert code == ExitCode.UNSUPPORTED_INPUT
     assert captured_options == []
     assert not (tmp_path / "out.json").exists()
+
+
+def test_docx_input_does_not_inherit_the_candidates_ocr_engine(tmp_path: Path, captured_options: list) -> None:
+    # The engine refuses explicitly set OCR options for DOCX; the candidate's OCR engine must not count as one.
+    candidate = {**DOCUMENT_CANDIDATE, "ocr_engine": "rapidocr"}
+
+    _run(tmp_path, {"language": "de", "options": {}}, input_name="input.docx", candidate=candidate)
+    _run(tmp_path, {"language": "de", "options": {}}, input_name="input.pdf", candidate=candidate)
+
+    docx, pdf = captured_options
+    assert "ocr_engine" not in docx.model_fields_set
+    assert pdf.ocr_engine == "rapidocr"
 
 
 @pytest.mark.parametrize(

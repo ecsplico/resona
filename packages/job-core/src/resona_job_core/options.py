@@ -30,6 +30,15 @@ _RAPIDOCR_LANGUAGES = frozenset({"de", "en", "fr", "it", "es"})
 MAX_INSTRUCTIONS_CHARS = 8000
 """Upper bound (characters) for a job's user ``instructions`` to its postprocess profile's LLM steps."""
 
+# Word documents (Office Open XML). Docling reads their XML directly: no pages are rendered and
+# nothing is OCRed, so the options below have nothing to act on.
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_PAGE_AND_OCR_OPTIONS = (
+    "ocr", "ocr_engine", "page_start", "page_end", "image_scale", "ocr_min_confidence", "remove_repeated_headers",
+)
+# Values of those options that request nothing a DOCX would need: they stay allowed.
+_DOCX_NO_OP = {"ocr": "off", "remove_repeated_headers": False}
+
 
 class AudioOptions(BaseModel):
     """Typed audio job options; the hub forwards nothing else to the engine."""
@@ -93,13 +102,31 @@ class DocumentOptions(BaseModel):
         return self
 
 
-def document_options_conflict(options: DocumentOptions, ocr_engine: str) -> str | None:
+def document_options_conflict(
+    options: DocumentOptions, ocr_engine: str, *, media_type: str | None = None,
+) -> str | None:
     """Why ``options`` cannot run with ``ocr_engine`` on any host, or ``None`` if they can.
 
     Pure and dependency-free, so the hub filters candidates at admission with the same rule
     the Docling adapter enforces. Host-specific limits (platform, installed tesseract packs)
     are not covered: another worker may still serve those.
+
+    With ``media_type`` :data:`DOCX_MEDIA_TYPE` the OCR engine plays no part: every explicitly
+    set page or OCR option is a conflict (``ocr="off"`` and ``remove_repeated_headers=False``
+    excepted, they describe what happens), so DOCX jobs fail at admission instead of silently
+    ignoring them. Only fields in ``model_fields_set`` count, so the engine's resolved defaults
+    are not mistaken for requests.
     """
+    if media_type == DOCX_MEDIA_TYPE:
+        refused = [
+            name for name in _PAGE_AND_OCR_OPTIONS
+            if name in options.model_fields_set
+            and getattr(options, name) is not None
+            and getattr(options, name) != _DOCX_NO_OP.get(name)
+        ]
+        if refused:
+            return f"{', '.join(refused)} not supported for DOCX input (no pages, no OCR)"
+        return None
     if options.ocr == "off":
         return None
     if options.ocr_min_confidence is not None and ocr_engine not in _CONFIDENCE_OCR_ENGINES:
@@ -116,6 +143,7 @@ def document_options_conflict(options: DocumentOptions, ocr_engine: str) -> str 
 
 __all__ = [
     "DEFAULT_OCR_ENGINE",
+    "DOCX_MEDIA_TYPE",
     "AudioOptions",
     "DocumentOptions",
     "DocumentPipeline",

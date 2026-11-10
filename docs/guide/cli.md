@@ -115,7 +115,9 @@ resona transcribe dictation.mp3 --local --profile '{"name":"x","steps":[{"type":
 
 ## doc
 
-Convert PDFs and images (`pdf`, `png`, `jpg`, `tif`) to Markdown as hub document jobs.
+Convert PDFs, images and Word documents (`pdf`, `png`, `jpg`, `tif`, `docx`) to Markdown as hub document jobs.
+A DOCX takes no OCR or page flags: `--ocr` other than `off`, `--ocr-engine`, `--pages`, `--image-scale` and
+`--ocr-min-confidence` are rejected (hub: `422 invalid_options`); see [Document options](../reference/api.md#document-options).
 Inputs, outputs, exit codes and the shared flags (`--recursive`, `--output-dir`, `--force`,
 `--json`, `--no-wait`, `--timeout`, `--private`, `--allow-cloud`, `--execution-profile`,
 `--engine`, `--model`, `--profile`, `--local`) work as for [`transcribe`](#transcribe).

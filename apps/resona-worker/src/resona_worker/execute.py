@@ -328,6 +328,7 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
 def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
     try:
         from resona_engine_docling import (
+            DOCX_SUFFIXES,
             ConflictingDocumentOptions,
             DocumentOptions,
             UnsupportedDocumentOptions,
@@ -344,7 +345,8 @@ def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Pa
         if language not in get_args(Language):
             raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "document language unsupported")
         options["languages"] = [language]
-    if candidate.ocr_engine is not None:
+    # A DOCX runs no OCR, so the candidate's OCR engine is not injected (any docling worker serves it).
+    if candidate.ocr_engine is not None and input_path.suffix.lower() not in DOCX_SUFFIXES:
         requested = options.get("ocr_engine")
         if requested not in (None, candidate.ocr_engine):
             raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "ocr engine not approved for this worker")

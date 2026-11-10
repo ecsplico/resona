@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
 from resona_job_core import Candidate, JobResult
 
 CAND = Candidate(engine="faster-whisper", model="tiny", model_revision="rev1", accelerator="cpu")
@@ -312,20 +313,26 @@ def test_text_job_input_that_is_not_utf8_fails_terminally(build_supervisor, fake
     assert hub.paths("/result") == []
 
 
-def test_document_input_is_named_by_its_magic_bytes_for_the_converter(build_supervisor, fakes) -> None:
+@pytest.mark.parametrize(
+    "job_input, suffix",
+    [(b"%PDF-1.7\nsynthetic", ".pdf"), (b"PK\x03\x04\x14\x00synthetic word package", ".docx")],
+)
+def test_document_input_is_named_by_its_magic_bytes_for_the_converter(
+    build_supervisor, fakes, job_input: bytes, suffix: str
+) -> None:
     doc = Candidate(engine="docling", model="docling-standard", accelerator="metal", ocr_engine="ocrmac")
-    hub = fakes.FakeHub(doc, kind="document", job_input=b"%PDF-1.7\nsynthetic")
+    hub = fakes.FakeHub(doc, kind="document", job_input=job_input)
     supervisor = build_supervisor(hub, capabilities=(doc,))
 
     supervisor.run(once=True)
 
     ((_, _, _, body),) = hub.paths("/result")
-    assert JobResult.model_validate_json(body).raw_text == "suffix=.pdf"
+    assert JobResult.model_validate_json(body).raw_text == f"suffix={suffix}"
 
 
 def test_document_input_of_unknown_type_fails_terminally(build_supervisor, fakes) -> None:
     doc = Candidate(engine="docling", model="docling-standard", accelerator="metal", ocr_engine="ocrmac")
-    hub = fakes.FakeHub(doc, kind="document", job_input=b"PK\x03\x04 not a pdf")
+    hub = fakes.FakeHub(doc, kind="document", job_input=b"GIF89a not a pdf")
     supervisor = build_supervisor(hub, capabilities=(doc,))
 
     supervisor.run(once=True)

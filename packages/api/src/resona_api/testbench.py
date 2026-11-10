@@ -144,6 +144,7 @@ def queue_run(session: Session, item: TestbenchItem, candidate: Candidate, role:
         candidate=candidate,
         source=storage.testbench_item_path(storage_id, item.id),
         sha256=item.sha256,
+        media_type=item.content_type,
     )
     run = TestbenchRun(
         item_id=item.id,

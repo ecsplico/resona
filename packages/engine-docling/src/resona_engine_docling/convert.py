@@ -1,4 +1,4 @@
-"""In-process Docling document conversion (PDF/image -> Markdown + page structure).
+"""In-process Docling document conversion (PDF/image/DOCX -> Markdown + page structure).
 
 Runs ``DocumentConverter`` directly; there is no CLI subprocess and no docling-serve
 endpoint. Options are typed (:class:`DocumentOptions`) and translated here into the
@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -31,10 +32,11 @@ from docling.datamodel.pipeline_options import (
     RapidOcrOptions,
     TesseractCliOcrOptions,
 )
-from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
+from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption, WordFormatOption
 from docling_core.types.doc import FormulaItem, PictureItem, TableItem, TextItem
 from docling_core.types.doc.document import ContentLayer, DoclingDocument
 from resona_job_core import (
+    DOCX_MEDIA_TYPE,
     BBox,
     JobResult,
     Page,
@@ -54,6 +56,8 @@ Accelerator = Literal["cpu", "cuda", "metal"]
 
 PDF_SUFFIXES = frozenset({".pdf"})
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".tif", ".tiff"})
+# Word documents: Docling's MsWord backend reads the XML (no layout model, no OCR, no pages).
+DOCX_SUFFIXES = frozenset({".docx"})
 FORMULA_PLACEHOLDER = "<!-- formula-not-decoded -->"
 IMAGE_PLACEHOLDER = "<!-- image -->"
 
@@ -73,7 +77,7 @@ _DOCLING_LOGGERS = ("docling", "docling_core", "docling_ibm_models", "docling_pa
 
 
 class UnsupportedMediaType(ValueError):
-    """Input is not a PDF or a supported raster image."""
+    """Input is not a PDF, a supported raster image or a DOCX."""
 
 
 class UnsupportedDocumentOptions(ValueError):
@@ -111,14 +115,18 @@ def _host_platform() -> str:
     return sys.platform
 
 
-def _validate_options(options: DocumentOptions, accelerator: str) -> None:
-    """Raise for accelerator/option/engine combinations this host cannot run (tesseract: :func:`_tesseract`)."""
+def _validate_accelerator(accelerator: str) -> None:
     if accelerator not in ("cpu", "cuda", "metal"):
         raise UnsupportedDocumentOptions(f"unknown accelerator {accelerator!r}")
     if accelerator == "metal" and _host_platform() != "darwin":
         raise UnsupportedDocumentOptions("accelerator 'metal' requires macOS")
     if accelerator == "cuda" and _host_platform() == "darwin":
         raise UnsupportedDocumentOptions("accelerator 'cuda' is not available on macOS")
+
+
+def _validate_options(options: DocumentOptions, accelerator: str) -> None:
+    """Raise for accelerator/option/engine combinations this host cannot run (tesseract: :func:`_tesseract`)."""
+    _validate_accelerator(accelerator)
     if options.ocr == "off":
         return
     conflict = document_options_conflict(options, options.ocr_engine)
@@ -208,9 +216,18 @@ def _cached_converter(pipeline_options_json: str, accelerator: str) -> DocumentC
     )
 
 
+@lru_cache(maxsize=1)
+def _docx_converter() -> DocumentConverter:
+    # The MsWord backend has no pipeline options to vary: one converter serves every DOCX job.
+    return DocumentConverter(
+        allowed_formats=[InputFormat.DOCX],
+        format_options={InputFormat.DOCX: WordFormatOption()},
+    )
+
+
 def _check_media(path: Path) -> None:
     suffix = path.suffix.lower()
-    if suffix not in PDF_SUFFIXES | IMAGE_SUFFIXES:
+    if suffix not in PDF_SUFFIXES | IMAGE_SUFFIXES | DOCX_SUFFIXES:
         raise UnsupportedMediaType(f"unsupported document type {suffix or '(none)'}")
 
 
@@ -380,22 +397,81 @@ def stage_weights() -> list[tuple[str, str | None]]:
     return [(spec.repo_id, spec.revision), (_TABLEFORMER_REPO, _TABLEFORMER_REVISION)]
 
 
+def _convert_docx(path: Path, options: DocumentOptions, accelerator: Accelerator) -> JobResult:
+    """Convert a Word document through Docling's MsWord backend.
+
+    Page and OCR options explicitly set on ``options`` are refused (the shared DOCX rule of
+    ``document_options_conflict``); the resolved OCR defaults are never used, so no OCR engine,
+    tesseract binary or model weights are needed. The result has no pages (a DOCX has none)
+    and one ``layout`` stage on the CPU: the backend parses XML, the accelerator is unused.
+    """
+    _validate_accelerator(accelerator)
+    conflict = document_options_conflict(options, options.ocr_engine, media_type=DOCX_MEDIA_TYPE)
+    if conflict is not None:
+        raise ConflictingDocumentOptions(conflict)
+
+    collector = _WarningCollector()
+    loggers = [logging.getLogger(name) for name in _DOCLING_LOGGERS]
+    for logger in loggers:
+        logger.addHandler(collector)
+    started = time.monotonic()
+    try:
+        result = _docx_converter().convert(path, raises_on_error=False)
+    finally:
+        for logger in loggers:
+            logger.removeHandler(collector)
+    seconds = round(time.monotonic() - started, 3)
+    if result.status == ConversionStatus.FAILURE:
+        raise DocumentConversionFailed("docling could not convert the document")
+
+    document = result.document
+    warnings: list[str] = list(collector.messages)
+    warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
+    markdown = document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
+    formula_count = markdown.count(FORMULA_PLACEHOLDER)
+    if formula_count:
+        warnings.append(f"{formula_count} formula(s) not decoded; placeholders kept")
+    return JobResult(
+        kind="document",
+        raw_text=document.export_to_text(),
+        markdown=markdown,
+        language=None,
+        pages=_pages(document),
+        warnings=warnings,
+        provenance=Provenance(
+            stages=[
+                StageProvenance(
+                    stage="layout", engine="docling-msword", model="docling-msword-backend",
+                    accelerator="cpu", seconds=seconds,
+                )
+            ],
+            worker_id=None,
+            runtime_version=f"docling=={importlib.metadata.version('docling')}",
+            settings_revision=None,
+            input_sha256=_sha256(path),
+        ),
+    )
+
+
 def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accelerator = "cpu") -> JobResult:
-    """Convert one PDF or raster image to a :class:`JobResult`.
+    """Convert one PDF, raster image or DOCX to a :class:`JobResult`.
 
     ``options.page_start``/``page_end`` restrict Docling's own page range, so only those
     pages are processed. ``accelerator`` is the device requested for layout/table models;
     OCR engines report their own accelerator in provenance. With OCR on, every page in the
     range is turned upright first; each turned page adds the warning
     ``page_rotated:<page>:<clockwise degrees>``, and its blocks' bboxes refer to the upright page.
+    A DOCX takes the MsWord path (:func:`_convert_docx`): no OCR, no page options.
 
     Raises:
-        UnsupportedMediaType: input is not PDF/PNG/JPEG/TIFF.
+        UnsupportedMediaType: input is not PDF/PNG/JPEG/TIFF/DOCX.
         UnsupportedDocumentOptions: option/engine/host combination cannot run.
         DocumentConversionFailed: Docling rejected or failed the input.
     """
     path = Path(path)
     _check_media(path)
+    if path.suffix.lower() in DOCX_SUFFIXES:
+        return _convert_docx(path, options, accelerator)
     _validate_options(options, accelerator)
     tesseract = _tesseract(options) if options.ocr != "off" else None
 
@@ -491,6 +567,7 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
 
 
 __all__ = [
+    "DOCX_SUFFIXES",
     "ConflictingDocumentOptions",
     "DocumentConversionFailed",
     "UnsupportedDocumentOptions",

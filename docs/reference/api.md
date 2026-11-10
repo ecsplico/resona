@@ -62,7 +62,7 @@ Content-Type: multipart/form-data   (field: file)
 
 Returns `201 {"upload_id", "sha256", "size"}`. Empty file → `422 empty_upload`, unsupported media → `415 unsupported_media`, over 200 MiB → `413 too_large`. Both limits are enforced while streaming: the upload stops at the limit and nothing is kept. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.
 
-Audio and document media are recognized by their magic bytes. A file that is neither, but is valid UTF-8 without NUL bytes (`.md`, `.txt`), is stored as a `text` upload for a [text job](#text-jobs); a text upload over `RESONA_MAX_TEXT_UPLOAD_BYTES` (default 2 MiB) → `413 too_large` as soon as the stream passes that size (the same applies to upload links). `POST /v1/audio/transcriptions` accepts media only.
+Audio and document media are recognized by their magic bytes. Documents are PDF, PNG, JPEG, TIFF and Word DOCX (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`). ZIP magic alone is not enough for a DOCX: the package must contain `word/document.xml` and a `[Content_Types].xml` that declares the Word main part. Other ZIP-based Office formats (`.docm`, `.dotx`, `.xlsx`, `.pptx`, `.odt`) and legacy `.doc` → `415 unsupported_media`. A file that is neither, but is valid UTF-8 without NUL bytes (`.md`, `.txt`), is stored as a `text` upload for a [text job](#text-jobs); a text upload over `RESONA_MAX_TEXT_UPLOAD_BYTES` (default 2 MiB) → `413 too_large` as soon as the stream passes that size (the same applies to upload links). `POST /v1/audio/transcriptions` accepts media only.
 
 #### Upload through a single-use link
 
@@ -159,6 +159,18 @@ worker is `unsupported_capability`: that worker stops offering the candidate and
 With OCR on, the worker turns every page upright first (Tesseract orientation detection, `osd` traineddata, required
 for every OCR engine; a worker without it answers `unsupported_capability`). Each turned page adds the result warning
 `page_rotated:<page>:<clockwise degrees>`; see [CLI: page orientation](../guide/cli.md#page-orientation).
+
+**DOCX.** A Word document goes through Docling's Word backend, which reads the document XML: no layout
+model, no OCR, no orientation pass, no pages. Headings, lists and tables are kept (Word's Heading 1 becomes
+`##`, because Docling reserves `#` for a document title); embedded pictures become `<!-- image -->`
+placeholders as in PDFs. The result has `pages: []` and `language: null`. Options that act on pages or OCR
+are rejected at submission with `422 invalid_options` rather than ignored: `ocr` (except `off`),
+`ocr_engine`, `page_start`, `page_end`, `image_scale`, `ocr_min_confidence`, `remove_repeated_headers`
+(except `false`). `languages` and `pipeline` are accepted. Because no OCR runs, a DOCX job is not filtered
+by OCR engine: every docling candidate of the execution profile can run it, whatever its `ocr_engine` and
+the job language. There is no DOCX-only worker capability: a worker serves DOCX with its approved docling
+tuples, and `resona-worker prepare` approves a docling tuple only when it converts both the scanned PDF
+fixture (with OCR, so orientation detection is needed) and a Word fixture.
 
 #### List, get, cancel, delete
 

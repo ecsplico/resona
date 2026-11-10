@@ -219,11 +219,78 @@ def test_apple_vision_ocr_is_recorded_as_os_selected_device() -> None:
 
 
 def test_unsupported_media_type_is_rejected_before_conversion(tmp_path: Path) -> None:
-    source = tmp_path / "notes.docx"
-    source.write_bytes(b"not really a docx")
+    source = tmp_path / "notes.odt"
+    source.write_bytes(b"not really an odt")
 
     with pytest.raises(UnsupportedMediaType):
         convert_document(source, options=DocumentOptions(ocr="off"))
+
+
+@pytest.fixture(scope="module")
+def word_document(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A Word file with headings, both list kinds, a table and an embedded picture."""
+    import docx
+    from PIL import Image
+
+    folder = tmp_path_factory.mktemp("docx")
+    picture = folder / "pixel.png"
+    Image.new("RGB", (40, 40), "red").save(picture)  # docling drops blank (all-white) pictures
+    document = docx.Document()
+    document.add_heading("Gutachten", level=1)
+    document.add_paragraph("Die Straße führt nördlich über die Brücke.")
+    document.add_heading("Befund", level=2)
+    document.add_paragraph("Übergewicht", style="List Bullet")
+    document.add_paragraph("Müdigkeit", style="List Bullet")
+    document.add_paragraph("Erster Schritt", style="List Number")
+    table = document.add_table(rows=2, cols=2)
+    for row, cells in zip(table.rows, (("Äpfel", "Größe 12"), ("Löwe 7", "Brücke B"))):
+        for cell, text in zip(row.cells, cells):
+            cell.text = text
+    document.add_picture(str(picture))
+    path = folder / "input.docx"
+    document.save(path)
+    return path
+
+
+def test_docx_keeps_headings_lists_and_tables_without_any_ocr_engine(
+    word_document: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No tesseract binary and no Apple Vision: a DOCX must not need any OCR engine.
+    monkeypatch.setattr(convert_module.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(convert_module, "_host_platform", lambda: "linux")
+
+    result = convert_document(word_document, options=DocumentOptions.model_validate({"languages": ["de"]}))
+
+    lines = result.markdown.splitlines()
+    # Docling keeps "#" for a document title: Word's Heading 1/2 become "##"/"###".
+    assert "## Gutachten" in lines
+    assert "### Befund" in lines
+    assert "- Übergewicht" in lines and "- Müdigkeit" in lines
+    assert "1. Erster Schritt" in lines
+    assert {"Äpfel", "Größe 12", "Löwe 7", "Brücke B"} <= _table_cells(result.markdown)
+    assert convert_module.IMAGE_PLACEHOLDER in result.markdown
+    assert "Die Straße führt nördlich über die Brücke." in result.raw_text
+    assert result.pages == []
+    assert [(s.stage, s.engine, s.accelerator) for s in result.provenance.stages] == [
+        ("layout", "docling-msword", "cpu")
+    ]
+    assert result.provenance.input_sha256 == convert_module._sha256(word_document)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"ocr": "force"}, {"ocr_engine": "rapidocr"}, {"page_start": 2}, {"image_scale": 2.0},
+     {"ocr_min_confidence": 0.5}],
+)
+def test_docx_refuses_explicit_page_and_ocr_options(word_document: Path, fields: dict[str, object]) -> None:
+    with pytest.raises(ConflictingDocumentOptions, match="DOCX"):
+        convert_document(word_document, options=DocumentOptions(**fields))
+
+
+def test_docx_accepts_ocr_off(word_document: Path) -> None:
+    result = convert_document(word_document, options=DocumentOptions(ocr="off"))
+
+    assert "### Befund" in result.markdown.splitlines()
 
 
 def test_ocrmac_is_rejected_off_macos(monkeypatch: pytest.MonkeyPatch) -> None:

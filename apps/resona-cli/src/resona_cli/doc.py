@@ -1,4 +1,4 @@
-"""``resona doc``: PDFs/images -> hub document jobs (or ``--local``) -> ``<stem>.md``."""
+"""``resona doc``: PDFs/images/DOCX -> hub document jobs (or ``--local``) -> ``<stem>.md``."""
 from pathlib import Path
 from typing import Optional
 
@@ -10,7 +10,7 @@ from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, check_privacy_flags,
 from .media import MediaRequest, run_media
 from .transcribe import expand_inputs
 
-EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tif", "tiff"}
+EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tif", "tiff", "docx"}
 
 
 def _page_range(pages: Optional[str]) -> tuple[Optional[int], Optional[int]]:
@@ -50,7 +50,7 @@ def document_options(ocr: Optional[str], ocr_engine: Optional[str], languages: O
 
 def doc_files(
     inputs: list[str] = typer.Argument(
-        ..., help="PDF/image files, glob patterns, or directories.", metavar="INPUTS..."),
+        ..., help="PDF/image/DOCX files, glob patterns, or directories.", metavar="INPUTS..."),
     recursive: bool = typer.Option(False, "--recursive", "-r",
         help="Recurse into directories / use `**` in glob patterns."),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir",
@@ -91,7 +91,7 @@ def doc_files(
     local: bool = typer.Option(False, "--local",
         help="Process on this machine with cached hub settings instead of the hub."),
 ):
-    """Convert PDFs and images to Markdown through the hub (or explicitly with --local).
+    """Convert PDFs, images and Word DOCX to Markdown through the hub (or explicitly with --local).
 
     Writes <stem>.md and <stem>.result.json (raw text, pages, provenance). Nothing
     falls back automatically.
