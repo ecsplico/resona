@@ -233,11 +233,9 @@ def test_instructions_go_in_the_user_message_and_an_echoed_text_tag_is_dropped(m
 
 
 @pytest.mark.parametrize("data", [
-    {"name": "x", "instructions": "keep names",
-     "steps": [{"type": "replacements", "rules": [{"pattern": "a", "replacement": "b"}]}]},
     {"name": "x", "instructions": "   ", "steps": [_step()]},
     {"name": "x", "instructions": "x" * 8001, "steps": [_step()]},
 ])
-def test_invalid_or_unused_instructions_are_rejected(data: dict) -> None:
+def test_invalid_instructions_are_rejected(data: dict) -> None:
     with pytest.raises(ProfileError):
         Profile.from_dict(data)

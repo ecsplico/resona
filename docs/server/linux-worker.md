@@ -191,7 +191,7 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`):
     resona postprocess --job 42 --profile transcript-polish-de --instructions-file instructions.txt
     ```
 
-    Instructions don't relax the guards: a reply that changes a chunk's length beyond `max_length_deviation` or its markup is still rejected.
+    Instructions don't relax the guards: a reply that changes a chunk's length beyond `max_length_deviation` or its markup is still rejected. Only steps that set these guards are checked (the bundled polish profiles do). The worker must run a release with instruction support; an older worker runs the profile without the instructions.
 
 Measured on 2026-11-02 (evaluation corpus, gpu-box, `linux-cuda`, `qwen3.6-27b` via llama-swap; CER = character error rate):
 

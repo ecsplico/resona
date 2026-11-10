@@ -11,7 +11,7 @@ from pathlib import Path
 from resona_job_core.options import MAX_INSTRUCTIONS_CHARS
 
 VALID_STEP_TYPES = {"replacements", "llm", "extract"}
-_LLM_TYPES = ("llm", "extract")
+LLM_STEP_TYPES = ("llm", "extract")
 
 
 class ProfileError(ValueError):
@@ -55,7 +55,7 @@ def _validate_step(step: dict, idx: int, extract_names: set[str]) -> None:
     elif stype == "extract":
         if not step.get("prompt"):
             raise ProfileError(f"Step {idx}: extract step needs a 'prompt'")
-    if stype in ("llm", "extract") and "timeout" in step and not _positive_number(step["timeout"]):
+    if stype in LLM_STEP_TYPES and "timeout" in step and not _positive_number(step["timeout"]):
         raise ProfileError(f"Step {idx}: 'timeout' must be a positive number of seconds")
     if stype == "extract":
         name = step.get("name", "extract")
@@ -137,16 +137,16 @@ class Profile:
         ip = data.get("initial_prompt", [])
         if not isinstance(ip, list):
             raise ProfileError("Profile 'initial_prompt' must be a list of strings")
-        profile = cls(
+        # Validated only: the worker rebuilds one single-step profile per step from the
+        # pinned document, so a rules step must keep the job's instructions too.
+        return cls(
             name=name,
             description=data.get("description", ""),
             initial_prompt=[str(p) for p in ip],
             steps=steps,
             base_dir=base_dir,
+            instructions=_validate_instructions(data.get("instructions")),
         )
-        if data.get("instructions") is not None:
-            profile = profile.with_instructions(data["instructions"])
-        return profile
 
     @classmethod
     def from_file(cls, path: Path | str) -> "Profile":
@@ -169,7 +169,7 @@ class Profile:
         return data
 
     def has_llm_step(self) -> bool:
-        return any(step.get("type") in _LLM_TYPES for step in self.steps)
+        return any(step.get("type") in LLM_STEP_TYPES for step in self.steps)
 
     def with_instructions(self, instructions: str) -> "Profile":
         """A copy whose llm/extract steps get ``instructions``; needs at least one such step."""

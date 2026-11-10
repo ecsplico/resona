@@ -21,7 +21,7 @@ from .llm import (
     llm_transform,
     llm_transform_chunked,
 )
-from .profile import Profile
+from .profile import LLM_STEP_TYPES, Profile
 from .replacements import apply_replacements
 
 log = logging.getLogger(__name__)
@@ -37,8 +37,6 @@ class StepOutput:
 
 TextStep = Callable[[str], "str | StepOutput"]
 ExtractStep = Callable[[str], dict]
-
-_LLM_STEP_TYPES = ("llm", "extract")
 
 
 @dataclass
@@ -138,7 +136,7 @@ def step_endpoint_id(step: dict) -> str:
 
 def endpoint_ids(profile: Profile) -> list[str]:
     """IDs of the endpoints this profile's llm/extract steps call, in step order, without duplicates."""
-    ids = (step_endpoint_id(step) for step in profile.steps if step.get("type") in _LLM_STEP_TYPES)
+    ids = (step_endpoint_id(step) for step in profile.steps if step.get("type") in LLM_STEP_TYPES)
     return list(dict.fromkeys(ids))
 
 
@@ -151,7 +149,7 @@ def local_policy(profile: Profile, *, base: ExecutionPolicy) -> ExecutionPolicy:
     """
     endpoints: dict[str, Endpoint] = {ep.id: ep for ep in base.endpoints}
     for step in profile.steps:
-        if step.get("type") in _LLM_STEP_TYPES and "endpoint" not in step:
+        if step.get("type") in LLM_STEP_TYPES and "endpoint" not in step:
             ep = legacy_step_endpoint(step)
             endpoints.setdefault(ep.id, ep)
     return ExecutionPolicy(
@@ -169,7 +167,7 @@ def build_pipeline(profile: Profile, *, policy: ExecutionPolicy) -> PostprocessP
     """
     endpoints: dict[int, Endpoint] = {}
     for idx, step in enumerate(profile.steps):
-        if step.get("type") in _LLM_STEP_TYPES:
+        if step.get("type") in LLM_STEP_TYPES:
             endpoints[idx] = _resolve_endpoint(step, policy)
     for idx, endpoint in endpoints.items():
         step = profile.steps[idx]

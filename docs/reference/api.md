@@ -125,7 +125,11 @@ Keep the name "Erika Mustermann". Write doses as "5 mg".
 </text>
 ```
 
-If the model wraps its whole reply in `<text>…</text>`, the tags are removed. A job's `instructions` replace the profile's. Steps without instructions send only the text, as before. The instructions are written into the job's postprocess artifact (the profile document the worker downloads under its lease; its SHA-256 is in the snapshot). They never go into the content-free `execution_snapshot` and are deleted with the job's other files. Length and markup guards of chunked steps still compare each reply with its chunk.
+If the model wraps its whole reply in `<text>…</text>`, the tags are removed. A job's `instructions` replace the profile's. Steps without instructions send only the text, as before. The instructions are written into the job's postprocess artifact (the profile document the worker downloads under its lease; its SHA-256 is in the snapshot). They never go into the content-free `execution_snapshot` and are deleted with the job's other files.
+
+Guards: only chunked `llm` steps with `max_length_deviation` / `preserve_markup` compare each reply with its chunk. A step without those guards, and every `extract` step, follows the instructions unchecked; give steps that must not rewrite content these guards.
+
+Workers must run a release with instruction support. A worker of an older release ignores the unknown `instructions` key and runs the profile without them, without an error; deploy the release to every worker before sending instructions.
 
 ##### Document options
 

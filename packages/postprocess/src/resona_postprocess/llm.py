@@ -179,7 +179,7 @@ def _messages(prompt: str, text: str, instructions: str | None = None) -> list[d
     """System = the step's prompt; user = the text, preceded by the user's instructions if any.
 
     With instructions the user message tags both parts (``<instructions>``/``<text>``) so the
-    model can tell them apart; :func:`_clean_reply` drops a ``<text>`` wrapper it echoes back.
+    model can tell them apart; :func:`_unwrap_text` drops a ``<text>`` wrapper it echoes back.
     """
     user = text if instructions is None else (
         f"<instructions>\n{instructions}\n</instructions>\n\n<text>\n{text}\n</text>"
@@ -202,15 +202,24 @@ def llm_transform(
     fixes the model and base URL; no environment fallback applies here.
     """
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
-    return _completion(endpoint=endpoint, messages=_messages(prompt, text, instructions), settings=settings)
+    reply = _completion(endpoint=endpoint, messages=_messages(prompt, text, instructions), settings=settings)
+    return _unwrap_text(reply) if instructions is not None and reply else reply
+
+
+def _unwrap_text(reply: str) -> str:
+    """Drop a ``<text>`` tag pair the model echoed around its whole reply (instruction calls only)."""
+    stripped = reply.strip()
+    if stripped.startswith("<text>") and stripped.endswith("</text>"):
+        return stripped[len("<text>"):-len("</text>")].strip()
+    return reply
 
 
 _THINK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
 _FENCES = ("```", "~~~")
 
 
-def _clean_reply(reply: str | None, source: str) -> str:
-    """Strip a leading reasoning block and a code fence or ``<text>`` tag wrapped around the whole reply."""
+def _clean_reply(reply: str | None, source: str, *, wrapped: bool = False) -> str:
+    """Strip a leading reasoning block and a code fence (or, for ``wrapped`` instruction calls, a ``<text>`` tag) around the whole reply."""
     text = reply or ""
     if not source.startswith("<think>"):
         text = _THINK.sub("", text, count=1)
@@ -219,8 +228,8 @@ def _clean_reply(reply: str | None, source: str) -> str:
         lines = text.splitlines()
         if len(lines) >= 2 and lines[-1].strip() in _FENCES:
             text = "\n".join(lines[1:-1]).strip()
-    if text.startswith("<text>") and text.endswith("</text>") and not source.startswith("<text>"):
-        text = text[len("<text>"):-len("</text>")].strip()
+    if wrapped:
+        text = _unwrap_text(text)
     return text
 
 
@@ -272,7 +281,7 @@ def llm_transform_chunked(
         else:
             raise PostprocessStepFailed(step_name, f"chunk {number} failed after {settings.attempts} attempts")
 
-        polished = _clean_reply(reply, core)
+        polished = _clean_reply(reply, core, wrapped=instructions is not None)
         reason = None
         if max_length_deviation is not None and length_deviation(core, polished) > max_length_deviation:
             reason = "length"
