@@ -178,6 +178,16 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
   start or leaving the page abort both and a late answer is dropped. A title field cleared
   before saving saves under `suggestTitle` again.
+  **Opt-in download** of that browser model (Einstellungen → Live → "Titelvorschläge
+  (Browser-KI)", `useTitleModel()`, module-level state so a download survives closing the
+  drawer): the section names the real state (`Aktiv`, `Aktivierbar` with the storage cost and
+  a button, `Modell wird geladen… n %` with a `<progress>`, or "Auf diesem Gerät nicht möglich"
+  with the reason and no button). Only the button calls `installTitleModel()`, which calls
+  `LanguageModel.create({monitor})` before any await (the browser needs the click's user
+  activation); success re-checks to `available`, failure/abort shows a hint and "Erneut
+  versuchen" while still `downloadable`. A `downloading` state the app did not start is
+  re-checked every 5 s while the drawer is open. Nothing else downloads; the next recording
+  uses the model without a reload because `refineTitle` checks availability each time.
 - **Automatic titles**: one rule, `deriveTitle(text)` (`app/utils/titleSuggestion.ts`, no
   network): first Markdown heading, else the first sentence/clause (a line break ends it;
   list markers, link targets, filler and dictation-command words dropped, no leading/trailing
@@ -328,6 +338,7 @@ app/
 │   │                                # useHubSettings: per-device hub token (localStorage)
 │   │                                # useDataStore: picks directusStore | localStore by data mode
 │   │                                # useLiveSettings: live source/engine/correction settings
+│   │                                # useTitleModel: browser title model state + opt-in download (module-level)
 │   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
 │   │                                # useDeviceSpeech: on-device Web Speech live source
 │   │                                # useLiveCorrection: re-transcribes live blocks via the hub

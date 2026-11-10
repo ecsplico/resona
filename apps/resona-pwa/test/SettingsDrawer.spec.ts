@@ -7,6 +7,7 @@ import SettingsDrawer from "~/components/SettingsDrawer.vue";
 import { useLiveSettings } from "~/composables/useLiveSettings";
 import { useHubSettings } from "~/composables/useHubSettings";
 import { DEVICE_SPEECH_HINTS } from "~/composables/useDeviceSpeech";
+import { useTitleModel } from "~/composables/useTitleModel";
 
 const listListenEngines = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => vi.fn());
@@ -175,6 +176,138 @@ describe("SettingsDrawer – Live tab", () => {
 		await flushPromises();
 		expect(useLiveSettings().chunkSeconds).toBe(expected);
 		expect((chunk.element as HTMLInputElement).value).toBe(String(expected));
+	});
+});
+
+describe("SettingsDrawer – on-device title suggestions", () => {
+	type Monitor = (m: EventTarget) => void;
+	let modelState: string;
+
+	function stubModel(create: (opts: { monitor?: Monitor }) => Promise<{ destroy: () => void }>) {
+		const model = {
+			availability: vi.fn(async () => modelState),
+			create: vi.fn(create),
+		};
+		vi.stubGlobal("LanguageModel", model);
+		return model;
+	}
+
+	const state = (w: VueWrapper) => w.find("[data-testid=settings-title-model-state]").text();
+	const installButton = (w: VueWrapper) => w.find("[data-testid=settings-title-model-install]");
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listListenEngines.mockResolvedValue({ engines: [], default: null });
+		availability.mockResolvedValue("available");
+		listEngines.mockResolvedValue({ engines: [], default: null });
+		const tm = useTitleModel();
+		tm.state.value = null;
+		tm.installing.value = false;
+		tm.progress.value = null;
+		tm.failed.value = false;
+		modelState = "downloadable";
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.useRealTimers();
+		useLiveSettings().correction = false;
+	});
+
+	it("explains that it is not possible here when the browser has no model (the test environment)", async () => {
+		const wrapper = await openLive();
+		expect(state(wrapper)).toContain("Auf diesem Gerät nicht möglich");
+		expect(state(wrapper)).toContain("Chrome am Desktop");
+		expect(installButton(wrapper).exists()).toBe(false);
+		expect(wrapper.find("[data-testid=settings-title-model-progress]").exists()).toBe(false);
+	});
+
+	it("explains hardware limits when the model is unavailable, without a button", async () => {
+		modelState = "unavailable";
+		const model = stubModel(async () => ({ destroy: vi.fn() }));
+		const wrapper = await openLive();
+		expect(state(wrapper)).toContain("Auf diesem Gerät nicht möglich");
+		expect(state(wrapper)).toContain("Speicherplatz");
+		expect(installButton(wrapper).exists()).toBe(false);
+		expect(model.create).not.toHaveBeenCalled();
+	});
+
+	it("reports an active model without a button", async () => {
+		modelState = "available";
+		const model = stubModel(async () => ({ destroy: vi.fn() }));
+		const wrapper = await openLive();
+		expect(state(wrapper)).toMatch(/^Aktiv/);
+		expect(installButton(wrapper).exists()).toBe(false);
+		expect(model.create).not.toHaveBeenCalled();
+	});
+
+	it("downloads only on the click, shows progress while the app stays usable, then reports it active", async () => {
+		const created = Promise.withResolvers<{ destroy: () => void }>();
+		let monitor: EventTarget | null = null;
+		const model = stubModel(async (opts) => {
+			monitor = new EventTarget();
+			opts.monitor?.(monitor);
+			return created.promise;
+		});
+		const wrapper = await openLive();
+		expect(state(wrapper)).toBe("Aktivierbar");
+		expect(wrapper.text()).toContain("mehrere GB Speicherplatz");
+		expect(wrapper.text()).toContain("Aufnehmen funktioniert auch ohne diesen Schritt unverändert");
+		expect(model.create).not.toHaveBeenCalled();
+
+		await installButton(wrapper).trigger("click");
+		expect(model.create).toHaveBeenCalledTimes(1);
+		monitor!.dispatchEvent(Object.assign(new Event("downloadprogress"), { loaded: 0.42 }));
+		await flushPromises();
+		expect(state(wrapper)).toBe("Modell wird geladen… 42 %");
+		expect((wrapper.find("[data-testid=settings-title-model-progress]").element as HTMLProgressElement).value).toBe(0.42);
+		expect(installButton(wrapper).exists()).toBe(false);
+
+		// Still usable meanwhile: another setting works, and a reopened drawer shows the download.
+		await wrapper.find("[data-testid=settings-live-correction]").trigger("click");
+		expect(useLiveSettings().correction).toBe(true);
+		wrapper.unmount();
+		const reopened = await openLive();
+		expect(state(reopened)).toBe("Modell wird geladen… 42 %");
+
+		modelState = "available";
+		created.resolve({ destroy: vi.fn() });
+		await flushPromises();
+		expect(state(reopened)).toMatch(/^Aktiv/);
+		expect(reopened.find("[data-testid=settings-title-model-progress]").exists()).toBe(false);
+		expect(model.create).toHaveBeenCalledTimes(1);
+	});
+
+	it("a failed download leaves a hint and can be started again", async () => {
+		const model = stubModel(async () => {
+			throw new DOMException("aborted", "AbortError");
+		});
+		const wrapper = await openLive();
+		await installButton(wrapper).trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid=settings-title-model-failed]").text()).toContain("fehlgeschlagen oder wurde abgebrochen");
+		expect(wrapper.find("[data-testid=settings-title-model-failed]").text()).toContain("Aufnehmen und Speichern funktionieren unverändert");
+		expect(state(wrapper)).toBe("Aktivierbar");
+		expect(installButton(wrapper).text()).toBe("Erneut versuchen");
+
+		await installButton(wrapper).trigger("click");
+		await flushPromises();
+		expect(model.create).toHaveBeenCalledTimes(2);
+	});
+
+	it("follows a download it did not start until it ends", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		modelState = "downloading";
+		const model = stubModel(async () => ({ destroy: vi.fn() }));
+		const wrapper = await openLive();
+		expect(state(wrapper)).toBe("Modell wird geladen…");
+		expect(installButton(wrapper).exists()).toBe(false);
+
+		modelState = "available";
+		await vi.advanceTimersByTimeAsync(5000);
+		await flushPromises();
+		expect(state(wrapper)).toMatch(/^Aktiv/);
+		expect(model.create).not.toHaveBeenCalled();
 	});
 });
 

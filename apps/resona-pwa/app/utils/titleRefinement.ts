@@ -1,10 +1,11 @@
 /**
  * On-device refinement of a live title suggestion with the browser's built-in
  * language model (Prompt API, `LanguageModel`; desktop Chrome). Only a model
- * that is ready right now is used: `create()` is never called in any other
- * state, so this never starts a model download. No network, no model shipped
- * by the app. Any failure, abort or unusable answer returns `null`, and the
- * caller keeps the deterministic `suggestTitle()` result.
+ * that is ready right now is used: `refineTitle` never calls `create()` in any
+ * other state, so it never starts a model download. The one download path is
+ * `installTitleModel`, run only from the settings button. No network, no model
+ * shipped by the app. Any failure, abort or unusable answer returns `null`, and
+ * the caller keeps the deterministic `suggestTitle()` result.
  *
  * The model runs outside the page's main thread; callers only await promises.
  * The API is not exposed in Web Workers, so this runs on the page.
@@ -22,6 +23,7 @@ interface LanguageModelOptions {
 	expectedOutputs: { type: "text"; languages: string[] }[];
 	initialPrompts?: { role: "system"; content: string }[];
 	signal?: AbortSignal;
+	monitor?: (monitor: EventTarget) => void;
 }
 
 interface LanguageModelApi {
@@ -147,4 +149,29 @@ export async function refineTitle(text: string, opts: { language: string; signal
 	finally {
 		session?.destroy();
 	}
+}
+
+/**
+ * Downloads the built-in model for `language` and resolves once it is ready;
+ * rejects when the browser refuses, the download fails or is aborted.
+ * `onProgress` gets the downloaded fraction (0–1). MUST be called
+ * synchronously from a click: the browser allows the download only with user
+ * activation, so `create()` runs before anything is awaited.
+ */
+export async function installTitleModel(language: string, onProgress: (loaded: number) => void): Promise<void> {
+	const lm = languageModel();
+	if (!lm || !refinementLanguageSupported(language)) {
+		throw new Error("Prompt API für diese Sprache nicht verfügbar");
+	}
+	const session = await lm.create({
+		...modelOptions(language),
+		monitor(monitor) {
+			monitor.addEventListener("downloadprogress", (event) => {
+				if ("loaded" in event && typeof event.loaded === "number") {
+					onProgress(event.loaded);
+				}
+			});
+		},
+	});
+	session.destroy();
 }
