@@ -76,11 +76,12 @@ async function deleteFile(fileId: string | undefined): Promise<void> {
 // Read-modify-write inside one readwrite transaction, so a processor patch and
 // a UI patch of the same row cannot overwrite each other. A missing row is not
 // written: it throws `notFound`, or resolves silently when `notFound` is null.
+// A function patch sees the stored row; returning null writes nothing.
 // (Executor form instead of Promise.withResolvers: iOS Safari < 17.4.)
 async function patchRow<T extends { id: string; date_updated?: string }>(
 	store: UseStore,
 	id: string,
-	patch: Partial<T>,
+	patch: Partial<T> | ((row: T) => Partial<T> | null),
 	notFound: string | null,
 ): Promise<void> {
 	const found = await store<boolean>("readwrite", os => new Promise<boolean>((resolve, reject) => {
@@ -92,7 +93,12 @@ async function patchRow<T extends { id: string; date_updated?: string }>(
 				resolve(false);
 				return;
 			}
-			os.put({ ...row, ...patch, id: row.id, date_updated: now() }, id);
+			const changes = typeof patch === "function" ? patch(row) : patch;
+			if (changes === null) {
+				resolve(true);
+				return;
+			}
+			os.put({ ...row, ...changes, id: row.id, date_updated: now() }, id);
 			resolve(promisifyRequest(os.transaction).then(() => true));
 		};
 	}));
@@ -120,9 +126,12 @@ export async function readFile(fileId: string): Promise<Blob | null> {
 	return new File([file.bytes], file.name, { type: file.type });
 }
 
-/** The stored recording as the processor sees it now, or null when it was deleted. */
-export async function readRecordingInternal(id: string): Promise<Recording | null> {
-	return (await get<LocalRecording>(id, db().recordings)) ?? null;
+/**
+ * Replace an automatic title, only while the stored row still has `title_auto`
+ * (checked in the same transaction, so a concurrent rename always wins).
+ */
+export async function setAutoTitleInternal(id: string, title: string): Promise<void> {
+	await patchRow<LocalRecording>(db().recordings, id, row => (row.title_auto ? { title, title_auto: false } : null), null);
 }
 
 /** Processor-side patch of any recording field; a no-op when the recording was deleted meanwhile. */

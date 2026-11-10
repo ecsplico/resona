@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import type { Ref } from "vue";
+import type { SavePayload } from "~/data/types";
 import { placeholderTitle } from "~/utils/titleSuggestion";
 
 const props = withDefaults(
@@ -9,7 +10,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-	save: [{ title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }];
+	save: [SavePayload];
 	discard: [];
 }>();
 

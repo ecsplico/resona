@@ -61,13 +61,22 @@ const rollingText = computed(() => {
 });
 
 // Title suggestion from the FINAL recognized text only (partials still change);
-// with correction active the corrected stream is the final source. A calendar
-// title always wins, so then nothing competes with it.
+// with correction active the corrected stream is the final source. It appears
+// once enough final text exists (about 10-15 s of dictation), so it doesn't flip
+// with every early word. A calendar title always wins, so then nothing competes.
+const SUGGESTION_MIN_WORDS = 20;
 const finalText = computed(() => (correctionActive.value ? correction.text.value : source.value.final.value));
-const suggestedTitle = computed(() => (presetTitle ? null : suggestTitle(finalText.value)));
+const suggestedTitle = computed(() => {
+	if (presetTitle || finalText.value.split(/\s+/).filter(Boolean).length < SUGGESTION_MIN_WORDS) {
+		return null;
+	}
+	return suggestTitle(finalText.value);
+});
 // Set once the user types in the title field; later suggestions never replace it.
 const titleTouched = ref(false);
 
+// The save prompt gets exactly the suggestion shown during recording; none
+// shown (silence, aborted recording) -> the date/time placeholder.
 function prefillTitle(suggestion: string | null): string {
 	if (presetTitle) {
 		return presetTitle;
@@ -75,7 +84,7 @@ function prefillTitle(suggestion: string | null): string {
 	if (titleTouched.value) {
 		return title.value;
 	}
-	return suggestion ?? suggestTitle(capturedText.value) ?? placeholderTitle(new Date());
+	return suggestion ?? placeholderTitle(new Date());
 }
 
 function copyTranscript(): void {
@@ -218,12 +227,6 @@ async function stopLive(): Promise<void> {
 			capturedText.value = correction.text.value;
 			if (correction.blocks.value.some(b => b.state === "corrected")) {
 				capturedEngine.value = engineLabel;
-			}
-			// Corrected text may yield a better title; only while the user has not
-			// typed and no calendar title is set.
-			const corrected = suggestTitle(capturedText.value);
-			if (corrected && !presetTitle && !titleTouched.value) {
-				title.value = corrected;
 			}
 		});
 	}

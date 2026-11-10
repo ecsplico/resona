@@ -21,9 +21,10 @@ vi.mock("~/data/localStore", () => ({
 			.sort((a, b) => String(a.date_created).localeCompare(String(b.date_created)))
 			.map(r => ({ ...r }))),
 	readFile: vi.fn(async (id: string) => db.files.get(id) ?? null),
-	readRecordingInternal: vi.fn(async (id: string) => {
+	// Mirrors the store's conditional write: only while the stored row is still flagged.
+	setAutoTitleInternal: vi.fn(async (id: string, title: string) => {
 		const row = db.recordings.get(id);
-		return row ? { ...row } : null;
+		if (row?.title_auto) db.recordings.set(id, { ...row, title, title_auto: false });
 	}),
 	patchRecordingInternal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
 		db.recordings.set(id, { ...db.recordings.get(id), ...patch });

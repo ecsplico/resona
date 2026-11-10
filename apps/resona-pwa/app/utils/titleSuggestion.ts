@@ -16,7 +16,7 @@ const STOPWORDS = new Set(
 );
 
 const MAX_TOKENS = 6;
-const MAX_LENGTH = 60;
+const MAX_CHARS = 60;
 const MD_PREFIX = /^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/;
 const MD_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 const SEGMENT_SPLIT = /[.!?;:\n]+/;
@@ -50,11 +50,11 @@ export function suggestTitle(text: string): string | null {
 
 		let picked = stripStopwords(tokens.slice(0, MAX_TOKENS));
 		let title = picked.join(" ");
-		while (title.length > MAX_LENGTH && picked.length > 1) {
+		while (title.length > MAX_CHARS && picked.length > 1) {
 			picked = stripStopwords(picked.slice(0, -1));
 			title = picked.join(" ");
 		}
-		title = title.slice(0, MAX_LENGTH);
+		title = title.slice(0, MAX_CHARS);
 		if (!title) {
 			continue;
 		}

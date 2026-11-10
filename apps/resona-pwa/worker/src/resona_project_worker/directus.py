@@ -59,7 +59,9 @@ class DirectusClient:
 
         A filtered batch update applies only while the stored row still has
         `title_auto` true, so a rename between the caller's read and this write
-        is never overwritten. Returns whether a row was updated.
+        wins. Directus resolves the filter and then updates, so only a rename
+        landing inside that one request can still be overwritten. Returns
+        whether a row was updated.
         """
         resp = await self._client.patch(
             f"{self.base_url}/items/{collection}",

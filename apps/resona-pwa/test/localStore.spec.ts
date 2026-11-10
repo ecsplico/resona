@@ -8,6 +8,7 @@ import {
 	patchDocumentInternal,
 	patchRecordingInternal,
 	readFile,
+	setAutoTitleInternal,
 	upsertTranscript,
 } from "~/data/localStore";
 import type { NewRecording } from "~/data/types";
@@ -278,6 +279,20 @@ describe("createLocalStore", () => {
 			await patchRecordingInternal(rec.id, { id: "hijack", status: "transcribing", hub_job_id: 42, error_message: null });
 			const row = await store.getRecording(rec.id);
 			expect(row).toMatchObject({ id: rec.id, status: "transcribing", hub_job_id: 42, title: "Job" });
+		});
+
+		it("setAutoTitleInternal replaces a flagged title and clears the flag", async () => {
+			const rec = await store.createRecording(input("Aufnahme 10.11.2026 09:05", { title_auto: true }), null, "a.webm");
+			await setAutoTitleInternal(rec.id, "Wundkontrolle");
+			expect(await store.getRecording(rec.id)).toMatchObject({ title: "Wundkontrolle", title_auto: false });
+		});
+
+		it("setAutoTitleInternal never overwrites a renamed recording", async () => {
+			const rec = await store.createRecording(input("Aufnahme 10.11.2026 09:05", { title_auto: true }), null, "a.webm");
+			await store.updateRecording(rec.id, { title: "Visite Herr M.", title_auto: false });
+			await setAutoTitleInternal(rec.id, "Wundkontrolle");
+			expect(await store.getRecording(rec.id)).toMatchObject({ title: "Visite Herr M.", title_auto: false });
+			await expect(setAutoTitleInternal("gone", "x")).resolves.toBeUndefined();
 		});
 
 		it("internal patches of a deleted row are no-ops", async () => {
