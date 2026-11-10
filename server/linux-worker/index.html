@@ -2870,6 +2870,14 @@
 </code></pre></div>
 <p>Leave the organization settings <code>polish: false</code>: with <code>polish: true</code> and <code>postprocess_profile: "document-polish-de"</code> every job, audio included, would get the document prompt. A job that names the profile is claimed only by the worker that the endpoint is assigned to.</p>
 </li>
+<li>
+<p>Optionally add instructions for a single job. The profile's <code>prompt</code> stays the system message, and the instructions go in the user message ahead of each chunk (<a href="../../reference/api/#user-instructions">User instructions</a>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>resona<span class="w"> </span>doc<span class="w"> </span>scan.pdf<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span>--instructions<span class="w"> </span><span class="s1">&#39;Eigennamen wie &quot;Dr. Hämmerle&quot; nicht ändern. Abkürzungen nicht ausschreiben.&#39;</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>--job<span class="w"> </span><span class="m">42</span><span class="w"> </span>--profile<span class="w"> </span>transcript-polish-de<span class="w"> </span>--instructions-file<span class="w"> </span>instructions.txt
+</code></pre></div>
+<p>Instructions don't relax the guards: a reply that changes a chunk's length beyond <code>max_length_deviation</code> or its markup is still rejected. Only steps that set these guards are checked (the bundled polish profiles do). The worker must run a release with instruction support; an older worker runs the profile without the instructions.</p>
+</li>
 </ol>
 <p>Measured on 2026-11-02 (evaluation corpus, gpu-box, <code>linux-cuda</code>, <code>qwen3.6-27b</code> via llama-swap; CER = character error rate):</p>
 <table>
@@ -2924,10 +2932,10 @@
 <p>At start, the worker asks the execution environment whether each accelerator of its manifest works (<code>python -m resona_worker.execute --probe-accelerator cuda</code>). If CUDA does not work (no GPU reservation, driver failure, <code>CUDA_VISIBLE_DEVICES=""</code>), the worker logs <code>cuda is not available on this host; not offering 2 tuple(s)</code> and heartbeats with no CUDA tuples. It never claims a CUDA job that it cannot run. The hub reports such jobs as <code>queue_reason: no_capable_worker</code> (approved tuples that the worker does not offer do not count). <code>private-auto</code> jobs stay eligible for the Mac worker, which claims them when it is online. A <code>prepare</code> without a GPU fails with <code>unsupported_capability</code> and leaves the previous manifest unchanged.</p>
 <h2 id="result-provenance">Result provenance<a class="headerlink" href="#result-provenance" title="Permanent link">&para;</a></h2>
 <p>Every stage records its real device and, on CUDA/Metal stages, the peak device memory of the job's process (<code>peak_accelerator_bytes</code>). The Docling layout and table-structure stages run in one engine call and share the value:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>asr     whisper              large-v3@e5b1a55b…                              cuda  8962 MiB
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  cuda   575 MiB
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cuda   575 MiB
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>ocr     rapidocr             rapidocr-ppocr@3.9.2                            cpu
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>asr     whisper              large-v3@e5b1a55b…                              cuda  8962 MiB
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  cuda   575 MiB
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cuda   575 MiB
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>ocr     rapidocr             rapidocr-ppocr@3.9.2                            cpu
 </code></pre></div>
 <h2 id="silence">Silence<a class="headerlink" href="#silence" title="Permanent link">&para;</a></h2>
 <p>openai-whisper has no voice-activity filter of its own and turns noise into text such as "Vielen Dank.". The engine applies faster-whisper's bundled Silero VAD when the job's <code>vad_filter</code> option is set (the default): only detected speech is decoded, and audio without speech gives an empty transcript.</p>

@@ -3002,6 +3002,11 @@ time.</p>
 <td>Stored hub postprocess profile name; a JSON file or inline JSON only with <code>--local</code></td>
 </tr>
 <tr>
+<td><code>--instructions TEXT</code> / <code>--instructions-file PATH</code></td>
+<td>(none)</td>
+<td>User instructions for the profile's LLM steps (user message; the profile's prompt stays the system message). Needs a <code>--profile</code> with an <code>llm</code>/<code>extract</code> step. Also on <code>resona doc</code> and <code>resona postprocess</code></td>
+</tr>
+<tr>
 <td><code>--translate</code></td>
 <td>off</td>
 <td>Translate to English</td>
@@ -3255,6 +3260,11 @@ codes and the shared flags (<code>--recursive</code>, <code>--output-dir</code>,
 <td><code>--profile NAME</code></td>
 <td>(required)</td>
 <td>Stored postprocess profile name; a file or inline JSON only with <code>--local</code></td>
+</tr>
+<tr>
+<td><code>--instructions TEXT</code> / <code>--instructions-file PATH</code></td>
+<td>(none)</td>
+<td>User instructions for the profile's LLM steps, see <a href="#transcribe"><code>transcribe</code></a></td>
 </tr>
 </tbody>
 </table>
