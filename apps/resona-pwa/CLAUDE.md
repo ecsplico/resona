@@ -166,12 +166,13 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   (Prompt API `LanguageModel`, desktop Chrome) reports `available` for `de`, `refineTitle()`
   turns the text into a short formulated title (`acceptRefinedTitle`: one line, ≤ 60 chars /
   8 words, not cut off, Latin script, no English or Romance function words; else `null`).
-  Once per recording: when the final text reaches `DEVICE_REFINE_MIN_WORDS` (40), else after
-  stop. `create()` is only called in state `available`, so nothing is ever downloaded here;
+  Once per recording, never with a calendar preset: when the final text reaches
+  `DEVICE_REFINE_MIN_WORDS` (40), else after stop from `TITLE_REFINE_MIN_WORDS` (6) meaningful
+  words. `create()` is only called in state `available`, so nothing is ever downloaded here;
   any other state, error or unusable answer silently keeps the rule title. No network: the
   model runs in the browser outside the page thread (not exposed in Web Workers), the page only
-  awaits it, so capture and live transcript keep running. Only when it gives no title, from
-  `TITLE_REFINE_MIN_WORDS` (6) words, `useTitleJob().suggestTitleRemote` (hub `kind:"text"`
+  awaits it, so capture and live transcript keep running. Only when it gives no title,
+  `useTitleJob().suggestTitleRemote` (hub `kind:"text"`
   job, profile `title-de`, first 4000 chars, reads `structured.title.title`, always deletes the
   job, null on any failure) may replace it ("Titel wird verfeinert…"). Either result replaces
   the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
