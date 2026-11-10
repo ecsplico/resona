@@ -120,6 +120,11 @@ export async function readFile(fileId: string): Promise<Blob | null> {
 	return new File([file.bytes], file.name, { type: file.type });
 }
 
+/** The stored recording as the processor sees it now, or null when it was deleted. */
+export async function readRecordingInternal(id: string): Promise<Recording | null> {
+	return (await get<LocalRecording>(id, db().recordings)) ?? null;
+}
+
 /** Processor-side patch of any recording field; a no-op when the recording was deleted meanwhile. */
 export async function patchRecordingInternal(id: string, patch: Partial<Recording>): Promise<void> {
 	await patchRow<LocalRecording>(db().recordings, id, patch, null);
@@ -200,6 +205,7 @@ export function createLocalStore(): DataStore {
 			const row: LocalRecording = {
 				id: crypto.randomUUID(),
 				title: input.title,
+				title_auto: input.title_auto ?? false,
 				language: input.language,
 				profile: input.profile,
 				source: input.source,

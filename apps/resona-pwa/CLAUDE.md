@@ -139,6 +139,7 @@ it via `docker compose` (the `project-worker` service).
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
 - **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
+- **Automatic titles**: the title is optional in `SaveSheet` and on the live page. A recording saved without one gets `placeholderTitle()` (`Aufnahme DD.MM.YYYY HH:MM`); when it will be transcribed it also gets `recordings.title_auto = true`, and once the job completes the project-worker (`worker/.../title.py`, guarded update `set_auto_title`: filter `title_auto = true`) or `localProcessor` (re-reads the row first) replaces the title with `suggestTitle(markdown)` and clears the flag (no usable text → placeholder stays). A manual rename clears `title_auto`, so it is never overwritten. Live page: while recording it shows `Titelvorschlag: …` from the *final* (or corrected) text; on stop the title field is prefilled with that suggestion, else `placeholderTitle()`; a calendar `?title=` always wins (no suggestion shown) and once the user typed in the field no later suggestion replaces it. The rule lives in `app/utils/titleSuggestion.ts` and is mirrored in Python; both run the cases in `shared/titleSuggestion.cases.json`, so change the rule in both and in the fixture.
 - **Nachbearbeiten** (re-process a transcript with a hub postprocess profile, hub job kind
   `text`): `PostprocessPanel.vue` on the recording page lists `GET /profiles`
   (`useProfiles`, which exposes a load `error` instead of a fake one-entry list) and writes
@@ -342,10 +343,11 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
 
 ## Directus schema (source of truth: `directus/bootstrap.md`)
 
-- **recordings**: `id, user_created, date_created, date_updated, title, audio_file,
+- **recordings**: `id, user_created, date_created, date_updated, title, title_auto, audio_file,
   duration_seconds, language, profile, status (pending|transcribing|done|error),
   error_message, source (batch|live), review_status (editing|ready)` — **NO `engine`
   field**. `review_status` is the user's review workflow, independent of `status`.
+  `title_auto` (boolean, default false) marks a placeholder title the processor replaces.
 - **transcripts**: `id, recording, text, structured, segments, engine, provenance, date_created,
   date_updated` — the `engine` field lives **HERE**, not on recordings. Re-processing
   ("Nachbearbeiten") adds `raw_text` (the raw transcript a profile ran on; null while `text`

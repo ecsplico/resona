@@ -7,8 +7,10 @@ import {
 	patchRecordingInternal,
 	patchTranscriptInternal,
 	readFile,
+	readRecordingInternal,
 	upsertTranscript,
 } from "~/data/localStore";
+import { suggestTitle } from "~/utils/titleSuggestion";
 import {
 	postprocessDone,
 	postprocessErrorMessage,
@@ -159,7 +161,15 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 			engine: job.candidate?.engine,
 			provenance: result.provenance,
 		});
-		await spec.patch(row.id, { status: "done", hub_job_id: null, hub_job_key: null });
+		// Re-read: a rename during the awaits above clears title_auto and must win.
+		const current = await readRecordingInternal(row.id);
+		const title = current?.title_auto ? suggestTitle(result.markdown) : null;
+		await spec.patch(row.id, {
+			status: "done",
+			hub_job_id: null,
+			hub_job_key: null,
+			...(title !== null ? { title, title_auto: false } : {}),
+		});
 		// A text job still running on the previous transcript would write stale output.
 		if (supersededJob !== null) await deleteJobQuietly(hub, supersededJob);
 	}

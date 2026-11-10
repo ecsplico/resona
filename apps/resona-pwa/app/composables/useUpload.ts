@@ -7,6 +7,7 @@ import { normalizeAudio, probeDuration } from "~/utils/audioFile";
 interface SaveArgs {
 	blob: Blob;
 	title: string;
+	titleAuto?: boolean;
 	language: string;
 	profile: string;
 	transcribe: boolean;
@@ -30,6 +31,7 @@ export function useUpload() {
 			const duration = args.duration_seconds > 0 ? args.duration_seconds : await probeDuration(blob);
 			const created = await useDataStore().createRecording({
 				title: args.title,
+				title_auto: args.titleAuto ?? false,
 				language: args.language,
 				profile: args.profile,
 				source: "batch",

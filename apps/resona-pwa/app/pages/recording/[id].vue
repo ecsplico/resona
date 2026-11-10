@@ -288,8 +288,9 @@ async function commitTitle(): Promise<void> {
 		return;
 	}
 	try {
-		await store.updateRecording(id, { title: next });
+		await store.updateRecording(id, { title: next, title_auto: false });
 		recording.value.title = next;
+		recording.value.title_auto = false;
 		recordingsList.request();
 		editingTitle.value = false;
 		titleError.value = null;

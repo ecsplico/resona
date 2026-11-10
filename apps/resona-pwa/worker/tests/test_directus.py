@@ -75,6 +75,23 @@ async def test_set_job(base_url):
 
 @respx.mock
 @pytest.mark.anyio
+@pytest.mark.parametrize("data, expected", [([{"id": "rec-1"}], True), ([], False)])
+async def test_set_auto_title_updates_only_rows_still_flagged(base_url, data, expected):
+    route = respx.patch(f"{base_url}/items/recordings").mock(
+        return_value=httpx.Response(200, json={"data": data})
+    )
+    client = DirectusClient(base_url=base_url, token=TOKEN)
+    ok = await client.set_auto_title("recordings", "rec-1", "Neuer Titel")
+    await client.aclose()
+    assert ok is expected
+    assert json.loads(route.calls.last.request.content) == {
+        "query": {"filter": {"id": {"_eq": "rec-1"}, "title_auto": {"_eq": True}}},
+        "data": {"title": "Neuer Titel", "title_auto": False},
+    }
+
+
+@respx.mock
+@pytest.mark.anyio
 async def test_download_file_writes_temp_file(base_url, tmp_path):
     respx.get(f"{base_url}/assets/file-1").mock(
         return_value=httpx.Response(200, content=b"RIFFfake-wav-bytes")

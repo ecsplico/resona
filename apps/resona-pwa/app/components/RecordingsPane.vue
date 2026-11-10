@@ -323,7 +323,7 @@ async function cancelRecording(): Promise<void> {
 	showRecorder.value = false;
 }
 
-async function onSave(payload: { title: string; language: string; profile: string; transcribe: boolean }): Promise<void> {
+async function onSave(payload: { title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }): Promise<void> {
 	const blob = pendingBlob.value;
 	if (!blob) {
 		return;
@@ -331,6 +331,7 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	const created = await saveRecording({
 		blob,
 		title: payload.title,
+		titleAuto: payload.titleAuto,
 		language: payload.language,
 		profile: payload.profile,
 		transcribe: payload.transcribe,
@@ -378,6 +379,7 @@ onMounted(() => {
 		const created = await saveRecording({
 			blob: item.blob,
 			title: item.title,
+			titleAuto: item.titleAuto ?? false,
 			language: item.language,
 			profile: item.profile,
 			transcribe: item.transcribe ?? true,

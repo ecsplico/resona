@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref, computed, reactive, type Ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import LivePage from "~/pages/live.vue";
+import { suggestTitle } from "~/utils/titleSuggestion";
 
 const live = vi.hoisted(() => ({
 	partial: null as null | { value: string },
@@ -144,8 +145,8 @@ async function flush(): Promise<void> {
 	}
 }
 
-async function mountLive() {
-	const w = await mountSuspended(LivePage);
+async function mountLive(route?: string) {
+	const w = await mountSuspended(LivePage, route ? { route } : {});
 	await flush();
 	await w.vm.$nextTick();
 	return w;
@@ -346,6 +347,147 @@ describe("live transcription page", () => {
 			.toBeLessThan(store.createTranscript.mock.invocationCallOrder[0]!);
 
 		expect(nav.leaveTo).toHaveBeenCalledWith("/");
+	});
+
+	it("saves an untitled recording under a title suggested from the captured text", async () => {
+		final.value = "Der Befund ist unauffällig.";
+		const w = await mountLive();
+		await stopAndSave(w);
+
+		const [input, , filename] = store.createRecording.mock.calls[0]!;
+		expect(input.title).toBe(suggestTitle("Der Befund ist unauffällig."));
+		expect(input.title).toBeTruthy();
+		expect(filename).toBe(`${input.title}.webm`);
+	});
+
+	it("falls back to a dated placeholder title when no text is usable", async () => {
+		final.value = "";
+		const w = await mountLive();
+		await stopAndSave(w);
+
+		const [input, , filename] = store.createRecording.mock.calls[0]!;
+		expect(input.title).toMatch(/^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+		expect(filename).toBe(`${input.title}.webm`);
+	});
+
+	it("keeps a typed title as typed", async () => {
+		final.value = "Der Befund ist unauffällig.";
+		const w = await mountLive();
+		await w.find("[data-testid=\"stop-live\"]").trigger("click");
+		await flush();
+		await w.find("[data-testid=\"title-input\"]").find("input").setValue("Meine Visite");
+		await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+		await flush();
+
+		expect(store.createRecording.mock.calls[0]![0].title).toBe("Meine Visite");
+	});
+
+	describe("title suggestion", () => {
+		const PLACEHOLDER = /^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/;
+
+		function titleInput(w: Awaited<ReturnType<typeof mountLive>>) {
+			return w.find("[data-testid=\"title-input\"]").find("input");
+		}
+
+		it("shows a suggestion from final text during recording and updates it as dictation continues", async () => {
+			const w = await mountLive();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			// Partials alone never produce a suggestion.
+			partial.value = "Kontrolle der Wundheilung";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			partial.value = "";
+			final.value = "Ähm also";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			final.value = "Ähm also Kontrolle";
+			await w.vm.$nextTick();
+			const first = suggestTitle("Ähm also Kontrolle")!;
+			expect(w.find("[data-testid=\"title-suggestion\"]").text()).toBe(`Titelvorschlag: ${first}`);
+
+			final.value = "Ähm also Kontrolle der Wundheilung. Keine Rötung.";
+			await w.vm.$nextTick();
+			const second = suggestTitle("Ähm also Kontrolle der Wundheilung. Keine Rötung.")!;
+			expect(second).not.toBe(first);
+			expect(w.find("[data-testid=\"title-suggestion\"]").text()).toBe(`Titelvorschlag: ${second}`);
+		});
+
+		it("prefills the save prompt with exactly the shown suggestion, still editable", async () => {
+			const w = await mountLive();
+			final.value = "Kontrolle der Wundheilung. Keine Rötung.";
+			await w.vm.$nextTick();
+			const shown = w.find("[data-testid=\"title-suggestion\"]").text().replace("Titelvorschlag: ", "");
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
+
+			await titleInput(w).setValue(`${shown} links`);
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording.mock.calls[0]![0].title).toBe(`${shown} links`);
+		});
+
+		it("a calendar title wins: no suggestion is shown and the field keeps it", async () => {
+			const w = await mountLive("/live?title=Kalender");
+			final.value = "Kontrolle der Wundheilung. Keine Rötung.";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe("Kalender");
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording.mock.calls[0]![0].title).toBe("Kalender");
+		});
+
+		it("never replaces typed input with a later suggestion from the corrected text", async () => {
+			settings.value!.correction = true;
+			const w = await mountLive();
+			corr.blocks!.value = [{ id: 1, liveText: "kontrolle wunde", correctedText: null, state: "queued", samples: null }];
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe(suggestTitle("kontrolle wunde"));
+
+			await titleInput(w).setValue("Meine Visite");
+			corr.blocks!.value = [{ id: 1, liveText: "kontrolle wunde", correctedText: "Kontrolle der Wunde.", state: "corrected", samples: null }];
+			corr.finishResolve!();
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe("Meine Visite");
+
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording.mock.calls[0]![0].title).toBe("Meine Visite");
+		});
+
+		it("updates an untouched prefill from the corrected text", async () => {
+			settings.value!.correction = true;
+			const w = await mountLive();
+			corr.blocks!.value = [{ id: 1, liveText: "kontrolle wunde", correctedText: null, state: "queued", samples: null }];
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+
+			corr.blocks!.value = [{ id: 1, liveText: "kontrolle wunde", correctedText: "Wundkontrolle links.", state: "corrected", samples: null }];
+			corr.finishResolve!();
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe(suggestTitle("Wundkontrolle links."));
+		});
+
+		it("prefills a dated placeholder when there is no usable text", async () => {
+			const w = await mountLive();
+			final.value = "äh ja";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toMatch(PLACEHOLDER);
+		});
 	});
 
 	it("surfaces an error and does not navigate when saving fails", async () => {

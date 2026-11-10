@@ -60,7 +60,7 @@ describe("createDirectusStore", () => {
 		expect(created).toEqual({ id: "rec-1" });
 		const fd = state.uploadFiles.mock.calls[0]![0] as FormData;
 		expect((fd.get("file") as File).name).toBe("Visite.webm");
-		expect(state.createItem).toHaveBeenCalledWith("recordings", { ...input, audio_file: "file-1" });
+		expect(state.createItem).toHaveBeenCalledWith("recordings", { ...input, title_auto: false, audio_file: "file-1" });
 	});
 
 	it("createRecording with a null blob skips the upload", async () => {

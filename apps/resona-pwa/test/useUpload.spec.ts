@@ -37,6 +37,7 @@ describe("useUpload", () => {
 		const [input, audio, filename] = state.createRecording.mock.calls[0]!;
 		expect(input).toEqual({
 			title: "Visite",
+			title_auto: false,
 			language: "en",
 			profile: "medical",
 			source: "batch",

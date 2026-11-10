@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import type { Ref } from "vue";
+import { placeholderTitle } from "~/utils/titleSuggestion";
 
 const props = withDefaults(
 	defineProps<{ initialTitle?: string }>(),
@@ -8,7 +9,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-	save: [{ title: string; language: string; profile: string; transcribe: boolean }];
+	save: [{ title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }];
 	discard: [];
 }>();
 
@@ -47,11 +48,11 @@ onMounted(async () => {
 });
 
 function submit(): void {
-	if (!title.value.trim()) {
-		return;
-	}
+	const typed = title.value.trim();
 	emit("save", {
-		title: title.value.trim(),
+		title: typed || placeholderTitle(new Date()),
+		// Only a transcribed recording gets a title derived from its content.
+		titleAuto: typed ? false : transcribe.value,
 		language: language.value,
 		profile: profile.value,
 		transcribe: transcribe.value,
@@ -81,6 +82,7 @@ function submit(): void {
 
 			<HField
 				v-model="title"
+				:placeholder="transcribe ? 'Automatisch aus dem Inhalt' : 'Datum und Uhrzeit'"
 				class="save-sheet__title"
 				label="Titel"
 				data-testid="title"
@@ -141,7 +143,6 @@ function submit(): void {
 				<HButton
 					variant="primary"
 					data-testid="save"
-					:disabled="!title.trim()"
 					@click="submit"
 				>
 					Speichern
