@@ -824,6 +824,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="doc">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#page-orientation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page orientation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2652,6 +2669,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="doc">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#page-orientation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page orientation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3257,6 +3291,18 @@ grow with the square of the scale.</p>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>resona<span class="w"> </span>doc<span class="w"> </span>./faxes/<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>tesseract
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>resona<span class="w"> </span>doc<span class="w"> </span>small-print-scan.pdf<span class="w"> </span>--ocr<span class="w"> </span>force<span class="w"> </span>--ocr-engine<span class="w"> </span>rapidocr
 </code></pre></div>
+<h3 id="page-orientation">Page orientation<a class="headerlink" href="#page-orientation" title="Permanent link">&para;</a></h3>
+<p>With OCR on (<code>--ocr auto</code> or <code>force</code>), every page in the range is turned upright before conversion,
+for every OCR engine. Tesseract's orientation detection (<code>osd</code> traineddata) reads each page at
+200 dpi (about 0.3 s per page) and names the clockwise quarter turn that makes it upright; a turn
+below orientation confidence 2.0, or a page with too little text, leaves the page as it is. PDF
+pages are turned through their <code>/Rotate</code> entry (text layer untouched), images are rewritten turned.
+Each turned page adds the result warning <code>page_rotated:&lt;page&gt;:&lt;degrees&gt;</code> (clockwise), and the
+bounding boxes of its blocks refer to the upright page. <code>--ocr off</code> turns nothing.</p>
+<p>Why: Docling runs layout, OCR and reading order on the page as scanned. An upside-down scan read
+by <code>rapidocr</code> came out with its lines in reverse order and a garbled last line; Apple Vision read the
+same simple page correctly. Detection read every page of the evaluation corpus and the engine test
+fixtures correctly in all four orientations (Mac, tesseract 5, 2026-11-10).</p>
 <hr />
 <h2 id="postprocess">postprocess<a class="headerlink" href="#postprocess" title="Permanent link">&para;</a></h2>
 <p>Run a postprocess profile on text without transcribing again: each input becomes a hub <code>text</code>

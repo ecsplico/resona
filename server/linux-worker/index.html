@@ -2762,6 +2762,7 @@
 <li>NVIDIA driver and the NVIDIA Container Toolkit (<code>docker info</code> lists the <code>nvidia</code> runtime).</li>
 <li>The image ships PyTorch built for CUDA 13.0 (<code>torch 2.12.0+cu130</code>, arch list up to <code>sm_120</code>). Blackwell GPUs (RTX 50xx, compute capability 12.0) are supported. The driver must support CUDA 13.0.</li>
 <li>About 16 GB of disk for the image and 5 GB for the model cache. Whisper <code>large-v3</code> uses about 9 GB of VRAM.</li>
+<li>The image installs <code>tesseract-ocr</code> (with the <code>osd</code> traineddata): document OCR turns every page upright before conversion (see <a href="../../guide/cli/#page-orientation">CLI: page orientation</a>).</li>
 </ul>
 <p>Check the GPU from inside the image before you prepare:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>--entrypoint<span class="w"> </span>python<span class="w"> </span>&lt;image&gt;<span class="w"> </span>-c<span class="w"> </span><span class="se">\</span>
