@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { useDeviceSpeech, bcp47 } from "~/composables/useDeviceSpeech";
+import { useDeviceSpeech, bcp47, DEVICE_SPEECH_HINTS } from "~/composables/useDeviceSpeech";
 
 type Availability = "unavailable" | "downloadable" | "downloading" | "available";
 
@@ -82,6 +82,27 @@ describe("useDeviceSpeech", () => {
 		FakeRecognition.availableResult = "downloadable";
 		const speech = useDeviceSpeech();
 		await expect(speech.start({ language: "de" })).rejects.toThrow();
+		expect(FakeRecognition.instances).toHaveLength(0);
+		expect(speech.status.value).toBe("CLOSED");
+	});
+
+	it("start rejects an unsupported browser with its hint and constructs no recognizer", async () => {
+		delete g.SpeechRecognition;
+		const constructed = vi.fn();
+		// A recognizer constructor without the static `available()` method.
+		g.webkitSpeechRecognition = function LegacyRecognition() {
+			constructed();
+		};
+		const speech = useDeviceSpeech();
+		await expect(speech.start({ language: "de" })).rejects.toThrow(DEVICE_SPEECH_HINTS.unsupported);
+		expect(constructed).not.toHaveBeenCalled();
+		expect(speech.status.value).toBe("CLOSED");
+	});
+
+	it("start rejects an unavailable language with its hint and starts no recognizer", async () => {
+		FakeRecognition.availableResult = "unavailable";
+		const speech = useDeviceSpeech();
+		await expect(speech.start({ language: "de" })).rejects.toThrow(DEVICE_SPEECH_HINTS.unavailable);
 		expect(FakeRecognition.instances).toHaveLength(0);
 		expect(speech.status.value).toBe("CLOSED");
 	});

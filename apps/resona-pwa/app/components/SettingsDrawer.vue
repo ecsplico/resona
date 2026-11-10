@@ -5,7 +5,7 @@ import type { CalendarOption } from "#shared/calendar";
 import { isCalendarEnabled } from "#shared/calendarEnabled";
 import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHub";
 import { CHUNK_SECONDS_MAX, CHUNK_SECONDS_MIN, clampChunkSeconds } from "~/composables/useLiveSettings";
-import type { DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
+import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -84,8 +84,8 @@ const DEVICE_LABELS: Record<DeviceSpeechAvailability, string> = {
 	available: "Bereit (lokal)",
 	downloadable: "Sprachpaket verfügbar",
 	downloading: "Wird geladen…",
-	unavailable: "Nicht verfügbar in diesem Browser",
-	unsupported: "Nicht verfügbar in diesem Browser",
+	unavailable: DEVICE_SPEECH_HINTS.unavailable,
+	unsupported: DEVICE_SPEECH_HINTS.unsupported,
 };
 const deviceLabel = computed(() => deviceState.value ? DEVICE_LABELS[deviceState.value] : "Wird geprüft…");
 

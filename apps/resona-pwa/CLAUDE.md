@@ -129,6 +129,9 @@ it via `docker compose` (the `project-worker` service).
   `engine` stamp: `web-speech` / selected hub engine / listen default / `hub-live`.
   Settings persist in localStorage `resona.live.settings` (`chunkSeconds` clamped 8–30);
   the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
+  On-device Web Speech exists only in desktop Chrome ≥ 139 (Safari/iOS has no
+  `available()`/`processLocally` → `unsupported`; Chrome on Android hard-codes
+  `unavailable`); non-ready states surface as `DEVICE_SPEECH_HINTS` (drawer label + start error).
   Live correction (`settings.correction`, `useLiveCorrection`): PCM is cut into blocks of
   `chunkSeconds` at final boundaries, each re-transcribed sequentially via hub
   `transcribeSync` (`correctionEngine`, empty → hub default); the page renders blocks

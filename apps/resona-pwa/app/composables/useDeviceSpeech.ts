@@ -42,6 +42,19 @@ const ERROR_MESSAGES: Record<string, string> = {
 	"audio-capture": "Kein Mikrofon",
 };
 
+/**
+ * Why local recognition can't start, per availability state. `unsupported`: the
+ * browser lacks on-device Web Speech (`available()`/`processLocally`), which today
+ * only desktop Chrome ≥ 139 ships; Safari on iOS has no such API and Chrome on
+ * Android exposes it but always answers `unavailable`.
+ */
+export const DEVICE_SPEECH_HINTS: Record<Exclude<DeviceSpeechAvailability, "available">, string> = {
+	unsupported: "Dieser Browser kann nicht lokal erkennen (nur Chrome am Desktop, nicht iPhone/Safari)",
+	unavailable: "Lokale Erkennung hier nicht verfügbar (z. B. Chrome auf Android oder Sprache nicht unterstützt)",
+	downloadable: "Sprachpaket fehlt: Einstellungen → Live → Sprachpaket laden",
+	downloading: "Sprachpaket wird noch geladen",
+};
+
 export function bcp47(language: string): string {
 	if (language === "de") return "de-DE";
 	if (language === "en") return "en-US";
@@ -122,7 +135,7 @@ export function useDeviceSpeech(): {
 	async function start(opts: { language: string }): Promise<void> {
 		const state = await availability(opts.language);
 		if (state !== "available") {
-			throw new Error(`Lokale Spracherkennung nicht bereit (${state})`);
+			throw new Error(DEVICE_SPEECH_HINTS[state]);
 		}
 		stop();
 		const Ctor = recognitionCtor()!;
