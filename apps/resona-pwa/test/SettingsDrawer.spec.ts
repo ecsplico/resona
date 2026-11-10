@@ -6,6 +6,7 @@ import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import SettingsDrawer from "~/components/SettingsDrawer.vue";
 import { useLiveSettings } from "~/composables/useLiveSettings";
 import { useHubSettings } from "~/composables/useHubSettings";
+import { DEVICE_SPEECH_HINTS } from "~/composables/useDeviceSpeech";
 
 const listListenEngines = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => vi.fn());
@@ -88,8 +89,8 @@ describe("SettingsDrawer – Live tab", () => {
 	it.each([
 		["available", "Bereit (lokal)"],
 		["downloading", "Wird geladen…"],
-		["unavailable", "Nicht verfügbar in diesem Browser"],
-		["unsupported", "Nicht verfügbar in diesem Browser"],
+		["unavailable", DEVICE_SPEECH_HINTS.unavailable],
+		["unsupported", DEVICE_SPEECH_HINTS.unsupported],
 	])("maps device availability %s to its status text", async (state, label) => {
 		listListenEngines.mockResolvedValue({ engines: [], default: null });
 		availability.mockResolvedValue(state);

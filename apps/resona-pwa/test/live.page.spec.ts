@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref, computed, reactive, type Ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import LivePage from "~/pages/live.vue";
+import { suggestTitle } from "~/utils/titleSuggestion";
 
 const live = vi.hoisted(() => ({
 	partial: null as null | { value: string },
@@ -144,8 +145,8 @@ async function flush(): Promise<void> {
 	}
 }
 
-async function mountLive() {
-	const w = await mountSuspended(LivePage);
+async function mountLive(route?: string) {
+	const w = await mountSuspended(LivePage, route ? { route } : {});
 	await flush();
 	await w.vm.$nextTick();
 	return w;
@@ -346,6 +347,137 @@ describe("live transcription page", () => {
 			.toBeLessThan(store.createTranscript.mock.invocationCallOrder[0]!);
 
 		expect(nav.leaveTo).toHaveBeenCalledWith("/");
+	});
+
+	it("saves an untitled recording under the title suggested from enough dictated text", async () => {
+		const text = "Kontrolle der Wundheilung am linken Unterschenkel. Die Wunde ist trocken und reizlos, keine Rötung, keine Schwellung, kein Fieber, Verband wird morgen gewechselt.";
+		final.value = text;
+		const w = await mountLive();
+		await stopAndSave(w);
+
+		const [input, , filename] = store.createRecording.mock.calls[0]!;
+		expect(input.title).toBe(suggestTitle(text));
+		expect(input.title).toBeTruthy();
+		expect(filename).toBe(`${input.title}.webm`);
+	});
+
+	it("falls back to a dated placeholder title when no text is usable", async () => {
+		final.value = "";
+		const w = await mountLive();
+		await stopAndSave(w);
+
+		const [input, , filename] = store.createRecording.mock.calls[0]!;
+		expect(input.title).toMatch(/^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+		expect(filename).toBe(`${input.title}.webm`);
+	});
+
+	it("keeps a typed title as typed", async () => {
+		final.value = "Der Befund ist unauffällig.";
+		const w = await mountLive();
+		await w.find("[data-testid=\"stop-live\"]").trigger("click");
+		await flush();
+		await w.find("[data-testid=\"title-input\"]").find("input").setValue("Meine Visite");
+		await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+		await flush();
+
+		expect(store.createRecording.mock.calls[0]![0].title).toBe("Meine Visite");
+	});
+
+	describe("title suggestion", () => {
+		const PLACEHOLDER = /^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/;
+
+		function titleInput(w: Awaited<ReturnType<typeof mountLive>>) {
+			return w.find("[data-testid=\"title-input\"]").find("input");
+		}
+
+		// About 10-15 s of dictation: enough final words for a suggestion to appear.
+		const LONG = "Ähm also Kontrolle der Wundheilung am linken Unterschenkel. Die Wunde ist trocken und reizlos, keine Rötung, keine Schwellung, kein Fieber.";
+		const LONGER = `${LONG.replace("Ähm also Kontrolle der", "Verbandswechsel nach")} Verband morgen.`;
+
+		it("shows a suggestion only after enough final text and updates it as dictation continues", async () => {
+			const w = await mountLive();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			// Partials alone never produce a suggestion.
+			partial.value = LONG;
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			// A few early words are not enough yet.
+			partial.value = "";
+			final.value = "Ähm also Kontrolle der Wundheilung.";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			final.value = LONG;
+			await w.vm.$nextTick();
+			const first = suggestTitle(LONG)!;
+			expect(w.find("[data-testid=\"title-suggestion\"]").text()).toBe(`Titelvorschlag: ${first}`);
+
+			final.value = LONGER;
+			await w.vm.$nextTick();
+			const second = suggestTitle(LONGER)!;
+			expect(second).not.toBe(first);
+			expect(w.find("[data-testid=\"title-suggestion\"]").text()).toBe(`Titelvorschlag: ${second}`);
+		});
+
+		it("prefills the save prompt with exactly the shown suggestion, still editable", async () => {
+			const w = await mountLive();
+			final.value = LONG;
+			await w.vm.$nextTick();
+			const shown = w.find("[data-testid=\"title-suggestion\"]").text().replace("Titelvorschlag: ", "");
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
+
+			await titleInput(w).setValue(`${shown} links`);
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording.mock.calls[0]![0].title).toBe(`${shown} links`);
+		});
+
+		it("a calendar title wins: no suggestion is shown and the field keeps it", async () => {
+			const w = await mountLive("/live?title=Kalender");
+			final.value = LONG;
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe("Kalender");
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording.mock.calls[0]![0].title).toBe("Kalender");
+		});
+
+		it("with correction the prefill is the shown suggestion and finished correction never changes the field", async () => {
+			settings.value!.correction = true;
+			const w = await mountLive();
+			corr.blocks!.value = [{ id: 1, liveText: LONG, correctedText: null, state: "queued", samples: null }];
+			await w.vm.$nextTick();
+			const shown = w.find("[data-testid=\"title-suggestion\"]").text().replace("Titelvorschlag: ", "");
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
+
+			corr.blocks!.value = [{ id: 1, liveText: LONG, correctedText: LONGER, state: "corrected", samples: null }];
+			corr.finishResolve!();
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
+		});
+
+		it("prefills a dated placeholder when too little was dictated for a suggestion", async () => {
+			const w = await mountLive();
+			final.value = "Der Befund ist unauffällig.";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
+
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((titleInput(w).element as HTMLInputElement).value).toMatch(PLACEHOLDER);
+		});
 	});
 
 	it("surfaces an error and does not navigate when saving fails", async () => {

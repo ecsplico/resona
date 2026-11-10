@@ -82,6 +82,8 @@ const COLLECTIONS = {
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 		plain("title", "string"),
+		// true while the title is the date placeholder; the processor replaces it from the transcript, a manual rename clears it
+		{ field: "title_auto", type: "boolean", schema: { default_value: false }, meta: { interface: "boolean", special: ["cast-boolean"] } },
 		// audio_file M2O → directus_files; relation added separately
 		{ field: "audio_file", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
 		plain("duration_seconds", "float"),
@@ -246,11 +248,11 @@ const PERMISSIONS = [
 	{ collection: "recordings", action: "read", permissions: { user_created: OWNER } },
 	{
 		collection: "recordings", action: "create", permissions: {},
-		fields: ["title", "audio_file", "language", "profile", "source", "status", "duration_seconds"],
+		fields: ["title", "title_auto", "audio_file", "language", "profile", "source", "status", "duration_seconds"],
 	},
 	{
 		collection: "recordings", action: "update", permissions: { user_created: OWNER },
-		fields: ["title", "status", "error_message", "review_status", "audio_file", "duration_seconds"],
+		fields: ["title", "title_auto", "status", "error_message", "review_status", "audio_file", "duration_seconds"],
 	},
 	{ collection: "recordings", action: "delete", permissions: { user_created: OWNER } },
 	// transcripts: scoped to the parent recording's owner

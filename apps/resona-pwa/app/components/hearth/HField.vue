@@ -6,6 +6,7 @@ withDefaults(
 		type?: string;
 		focused?: boolean;
 		mono?: boolean;
+		placeholder?: string;
 	}>(),
 	{
 		modelValue: "",
@@ -13,6 +14,7 @@ withDefaults(
 		type: "text",
 		focused: false,
 		mono: false,
+		placeholder: undefined,
 	},
 );
 
@@ -34,6 +36,7 @@ defineEmits<{ "update:modelValue": [value: string] }>();
 				class="h-field__input"
 				:class="{ 'h-field__input--mono': mono }"
 				:type="type"
+				:placeholder="placeholder"
 				:value="modelValue"
 				@input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
 			>

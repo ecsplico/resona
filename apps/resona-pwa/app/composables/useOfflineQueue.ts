@@ -6,6 +6,7 @@ import type { Ref } from "vue";
 export interface QueueInput {
 	blob: Blob;
 	title: string;
+	titleAuto?: boolean;
 	language: string;
 	profile: string;
 	transcribe?: boolean;

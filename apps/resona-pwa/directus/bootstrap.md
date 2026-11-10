@@ -52,6 +52,7 @@ snapshot (§4).
 | date_created | timestamp | "Date Created" special field |
 | date_updated | timestamp | "Date Updated" special field — Directus bumps it on every update (e.g. the worker's `claim` PATCH); the worker's stale-claim recovery filters on it, so it MUST be present |
 | title | string | |
+| title_auto | boolean | default `false` — `title` is a date placeholder; the project-worker replaces it with a title derived from the finished transcript and clears the flag. User may create/update it (a rename sends `false`) |
 | audio_file | M2O → directus_files | |
 | duration_seconds | float | |
 | language | string | default `de` |

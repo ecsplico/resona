@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { NewRecording } from "~/data/types";
+import { placeholderTitle, suggestTitle } from "~/utils/titleSuggestion";
 import type { ListenEngine } from "~/composables/useHub";
 
 const cfg = useRuntimeConfig().public;
@@ -58,6 +59,33 @@ const rollingText = computed(() => {
 	}
 	return f || p;
 });
+
+// Title suggestion from the FINAL recognized text only (partials still change);
+// with correction active the corrected stream is the final source. It appears
+// once enough final text exists (about 10-15 s of dictation), so it doesn't flip
+// with every early word. A calendar title always wins, so then nothing competes.
+const SUGGESTION_MIN_WORDS = 20;
+const finalText = computed(() => (correctionActive.value ? correction.text.value : source.value.final.value));
+const suggestedTitle = computed(() => {
+	if (presetTitle || finalText.value.split(/\s+/).filter(Boolean).length < SUGGESTION_MIN_WORDS) {
+		return null;
+	}
+	return suggestTitle(finalText.value);
+});
+// Set once the user types in the title field; later suggestions never replace it.
+const titleTouched = ref(false);
+
+// The save prompt gets exactly the suggestion shown during recording; none
+// shown (silence, aborted recording) -> the date/time placeholder.
+function prefillTitle(suggestion: string | null): string {
+	if (presetTitle) {
+		return presetTitle;
+	}
+	if (titleTouched.value) {
+		return title.value;
+	}
+	return suggestion ?? placeholderTitle(new Date());
+}
 
 function copyTranscript(): void {
 	if (!rollingText.value) {
@@ -136,6 +164,7 @@ async function startLive(): Promise<void> {
 		return;
 	}
 	sessionActive.value = true;
+	titleTouched.value = false;
 
 	const language = cfg.defaultLanguage;
 
@@ -179,6 +208,8 @@ async function stopLive(): Promise<void> {
 	// the last partial that arrived just before the user pressed stop).
 	// Snapshot BEFORE source.stop(), which removes the data watcher immediately.
 	capturedText.value = source.value.fullText.value.trim();
+	// Same suggestion the user saw during recording; read before source.stop().
+	const liveSuggestion = suggestedTitle.value;
 	const liveLabel = settings.source === "device"
 		? "web-speech"
 		: settings.hubEngine || listenDefault.value || "hub-live";
@@ -203,7 +234,7 @@ async function stopLive(): Promise<void> {
 	unsubscribeFinal?.();
 	unsubscribeFinal = null;
 	capture.stop();
-	title.value = presetTitle;
+	title.value = prefillTitle(liveSuggestion);
 	showTitlePrompt.value = true;
 }
 
@@ -218,15 +249,18 @@ async function confirmSave(): Promise<void> {
 			await correctionDone;
 		}
 		const blob = capturedBlob.value && capturedBlob.value.size > 0 ? capturedBlob.value : null;
+		const recordingTitle = title.value.trim()
+			|| suggestTitle(capturedText.value)
+			|| placeholderTitle(new Date());
 		const input: NewRecording = {
-			title: title.value,
+			title: recordingTitle,
 			language: cfg.defaultLanguage,
 			profile: cfg.defaultProfile,
 			source: "live",
 			status: "done",
 			duration_seconds: capturedDuration.value,
 		};
-		const recording = await store.createRecording(input, blob, `${title.value}.webm`);
+		const recording = await store.createRecording(input, blob, `${recordingTitle}.webm`);
 
 		await store.createTranscript(recording.id, { text: capturedText.value, engine: capturedEngine.value });
 
@@ -304,6 +338,13 @@ onMounted(async () => {
 
 		<div class="live__body">
 			<div class="live__column">
+				<p
+					v-if="sessionActive && suggestedTitle"
+					class="live__suggestion"
+					data-testid="title-suggestion"
+				>
+					Titelvorschlag: {{ suggestedTitle }}
+				</p>
 				<div
 					v-if="rollingText"
 					class="live__toolbar"
@@ -444,6 +485,7 @@ onMounted(async () => {
 				class="live__title"
 				label="Titel"
 				data-testid="title-input"
+				@update:model-value="titleTouched = true"
 			/>
 			<p
 				v-if="correctionPending > 0"
@@ -501,6 +543,7 @@ onMounted(async () => {
 .live__final, .live__block--corrected { color:var(--on-night); }
 .live__partial, .live__block--pending, .live__hint { color:var(--on-night-mute); }
 .live__hint { font-style:italic; }
+.live__suggestion { margin:0 0 12px; color:var(--on-night-mute); font-size:var(--fs-sm); line-height:1.4; }
 
 .live__notice { width:calc(100% - 40px); max-width:72ch; margin:0 auto 12px; padding:12px 14px; border:1px solid color-mix(in srgb, var(--warning) 45%, transparent); border-radius:var(--r-md); background:var(--night-raised); color:var(--on-night); font-size:var(--fs-sm); line-height:1.5; }
 

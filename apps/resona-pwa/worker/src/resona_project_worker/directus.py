@@ -54,6 +54,25 @@ class DirectusClient:
         resp.raise_for_status()
         return resp.json()["data"]
 
+    async def set_auto_title(self, collection: str, item_id: str, title: str) -> bool:
+        """Replace an auto-generated title, unless the user renamed the row meanwhile.
+
+        A filtered batch update applies only while the stored row still has
+        `title_auto` true, so a rename between the caller's read and this write
+        wins. Directus resolves the filter and then updates, so only a rename
+        landing inside that one request can still be overwritten. Returns
+        whether a row was updated.
+        """
+        resp = await self._client.patch(
+            f"{self.base_url}/items/{collection}",
+            json={
+                "query": {"filter": {"id": {"_eq": item_id}, "title_auto": {"_eq": True}}},
+                "data": {"title": title, "title_auto": False},
+            },
+        )
+        resp.raise_for_status()
+        return bool(resp.json()["data"])
+
     async def list_by_status(
         self, collection: str, status: str, *, limit: int, with_job: bool | None = None,
         fields: JobFields = ROW_JOB,

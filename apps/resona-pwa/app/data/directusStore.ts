@@ -55,6 +55,7 @@ export function createDirectusStore(): DataStore {
 			const { client } = useDirectus();
 			return await client.request(createItem("recordings", {
 				title: input.title,
+				title_auto: input.title_auto ?? false,
 				audio_file: fileId ?? undefined,
 				language: input.language,
 				profile: input.profile,

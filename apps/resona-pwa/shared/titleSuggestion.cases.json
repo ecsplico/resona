@@ -1,0 +1,85 @@
+{
+	"_doc": "Shared cases for the title rule: app/utils/titleSuggestion.ts (suggestTitle) and worker/src/resona_project_worker/title.py (suggest_title) must both return `title` for `text` (null = no usable title).",
+	"cases": [
+		{
+			"name": "typischer Diktatanfang",
+			"text": "Ähm, also der Patient Herr Müller kommt heute zur Kontrolle. Er klagt über Kopfschmerzen.",
+			"title": "Patient Herr Müller kommt heute"
+		},
+		{
+			"name": "Überschrift zuerst",
+			"text": "## Verlauf\n\nStabiler Zustand, keine Beschwerden.",
+			"title": "Verlauf"
+		},
+		{
+			"name": "sehr kurzer Text",
+			"text": "Ja.",
+			"title": null
+		},
+		{
+			"name": "nur Füllwörter",
+			"text": "ähm äh hm, okay.",
+			"title": null
+		},
+		{
+			"name": "leer",
+			"text": "",
+			"title": null
+		},
+		{
+			"name": "nur Leerzeichen",
+			"text": "  \n  ",
+			"title": null
+		},
+		{
+			"name": "ohne Satzzeichen auf sechs Wörter gekürzt",
+			"text": "Termin am Montag mit Frau Schmidt wegen der Laborwerte und des Befunds",
+			"title": "Termin am Montag mit Frau Schmidt"
+		},
+		{
+			"name": "Markdown-Hervorhebung",
+			"text": "**Befund:** unauffällig",
+			"title": "Befund"
+		},
+		{
+			"name": "Kleinschreibung am Anfang",
+			"text": "kurzer test",
+			"title": "Kurzer test"
+		},
+		{
+			"name": "Listenpunkt",
+			"text": "1. Blutdruck messen\n2. Labor",
+			"title": "Blutdruck messen"
+		},
+		{
+			"name": "überlanges Wort",
+			"text": "Donaudampfschifffahrtsgesellschaftskapitänswitwenrentenversicherungsanstaltsbeschlussvorlage",
+			"title": "Donaudampfschifffahrtsgesellschaftskapitänswitwenrentenversi"
+		},
+		{
+			"name": "überlange Wortfolge",
+			"text": "Hausarztzentrierte Versorgungsvereinbarung Kassenärztliche Bundesvereinigung Qualitätssicherungsmaßnahmen Fortbildungsverpflichtung",
+			"title": "Hausarztzentrierte Versorgungsvereinbarung Kassenärztliche"
+		},
+		{
+			"name": "erster Satz ohne Inhalt",
+			"text": "Also gut. Rezept für Ibuprofen 400 ausstellen.",
+			"title": "Rezept für Ibuprofen 400 ausstellen"
+		},
+		{
+			"name": "Link",
+			"text": "Siehe [Laborbericht](https://example.org/x) vom Montag",
+			"title": "Siehe Laborbericht vom Montag"
+		},
+		{
+			"name": "Bindestrich und Zahlen",
+			"text": "COVID-19 Impfung, zweite Dosis",
+			"title": "COVID-19 Impfung zweite Dosis"
+		},
+		{
+			"name": "Stoppwörter am Ende nach Kürzung",
+			"text": "Der Patient wird morgen um acht in die Ambulanz verlegt",
+			"title": "Patient wird morgen um acht"
+		}
+	]
+}

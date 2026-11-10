@@ -16,6 +16,9 @@ export interface Recording {
 	user_created?: string;
 	date_created?: string;
 	title: string;
+	// true while `title` is the date placeholder: the processor replaces it with a
+	// title derived from the finished transcript; a manual rename clears it.
+	title_auto?: boolean | null;
 	audio_file?: string;
 	duration_seconds?: number;
 	language: string;

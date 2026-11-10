@@ -5,6 +5,7 @@ import type { Recording, Transcript } from "~/types/directus";
 import type { QueuedItem } from "~/composables/useOfflineQueue";
 import type { RowAction } from "~/components/RecordingListItem.vue";
 import { humanizeError } from "#shared/errors";
+import type { SavePayload } from "~/data/types";
 
 const { items, pending, error, list, refresh, remove } = useRecordings();
 const recorder = useRecorder();
@@ -323,7 +324,7 @@ async function cancelRecording(): Promise<void> {
 	showRecorder.value = false;
 }
 
-async function onSave(payload: { title: string; language: string; profile: string; transcribe: boolean }): Promise<void> {
+async function onSave(payload: SavePayload): Promise<void> {
 	const blob = pendingBlob.value;
 	if (!blob) {
 		return;
@@ -331,6 +332,7 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	const created = await saveRecording({
 		blob,
 		title: payload.title,
+		titleAuto: payload.titleAuto,
 		language: payload.language,
 		profile: payload.profile,
 		transcribe: payload.transcribe,
@@ -378,6 +380,7 @@ onMounted(() => {
 		const created = await saveRecording({
 			blob: item.blob,
 			title: item.title,
+			titleAuto: item.titleAuto ?? false,
 			language: item.language,
 			profile: item.profile,
 			transcribe: item.transcribe ?? true,

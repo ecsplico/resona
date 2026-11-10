@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .directus import POSTPROCESS_JOB, ROW_JOB, DirectusClient, JobFields
 from .hub import HubClient, HubError
+from .title import suggest_title
 
 log = logging.getLogger(__name__)
 
@@ -155,6 +156,10 @@ async def _poll(
         # A text job still running on the previous transcript would write stale output.
         if superseded is not None:
             await _delete_job(hub, int(superseded))
+        if row.get("title_auto"):
+            title = suggest_title(result.get("markdown") or "")
+            if title:
+                await directus.set_auto_title(src.collection, row_id, title)
     else:
         await directus.write_document(
             row_id, markdown=result.get("markdown") or "", pages=result.get("pages"),

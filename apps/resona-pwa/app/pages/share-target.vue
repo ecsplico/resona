@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
+import type { SavePayload } from "~/data/types";
 import { resolveAudioMime } from "~/utils/audioFile";
 
 // Landing page for the Web Share Target. The service worker
@@ -50,9 +51,8 @@ async function loadStash(): Promise<void> {
 			pendingBlob.value = type === raw.type ? raw : new Blob([raw], { type });
 		}
 		pendingName.value = filename;
-		// Never empty: Speichern is disabled without a title.
-		pendingTitle.value = (sharedTitle || filename.replace(/\.[^.]+$/, "")).trim()
-			|| `Geteilte Aufnahme ${new Date().toLocaleString("de-DE")}`;
+		// May be empty: SaveSheet then saves a placeholder title that gets replaced after transcription.
+		pendingTitle.value = (sharedTitle || filename.replace(/\.[^.]+$/, "")).trim();
 		status.value = "ready";
 	}
 	catch {
@@ -86,7 +86,7 @@ watch(() => hubSettings.token, () => {
 	}
 });
 
-async function onSave(payload: { title: string; language: string; profile: string; transcribe: boolean }): Promise<void> {
+async function onSave(payload: SavePayload): Promise<void> {
 	const blob = pendingBlob.value;
 	if (!blob) {
 		return;
@@ -94,6 +94,7 @@ async function onSave(payload: { title: string; language: string; profile: strin
 	const created = await saveRecording({
 		blob,
 		title: payload.title,
+		titleAuto: payload.titleAuto,
 		language: payload.language,
 		profile: payload.profile,
 		transcribe: payload.transcribe,

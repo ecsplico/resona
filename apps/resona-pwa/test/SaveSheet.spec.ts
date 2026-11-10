@@ -47,12 +47,23 @@ describe("SaveSheet", () => {
 		expect(w.find("[data-testid=\"transcribe-toggle\"]").exists()).toBe(true);
 	});
 
-	it("disables Save until the title is non-empty", async () => {
+	it("saves without a title: placeholder title, auto when transcribing", async () => {
 		const w = await mountSuspended(SaveSheet);
 		const save = w.find("[data-testid=\"save\"]");
-		expect((save.element as HTMLButtonElement).disabled).toBe(true);
-		await w.find("[data-testid=\"title\"] input").setValue("Meine Aufnahme");
 		expect((save.element as HTMLButtonElement).disabled).toBe(false);
+		await save.trigger("click");
+		const payload = w.emitted("save")![0]![0] as { title: string; titleAuto: boolean };
+		expect(payload.title).toMatch(/^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+		expect(payload.titleAuto).toBe(true);
+	});
+
+	it("keeps the placeholder title non-auto when not transcribing", async () => {
+		const w = await mountSuspended(SaveSheet);
+		await w.find("[data-testid=\"transcribe-toggle\"]").trigger("click");
+		await w.find("[data-testid=\"save\"]").trigger("click");
+		const payload = w.emitted("save")![0]![0] as { title: string; titleAuto: boolean };
+		expect(payload.title).toMatch(/^Aufnahme /);
+		expect(payload.titleAuto).toBe(false);
 	});
 
 	it("emits save with the picked profile/language (not hardcoded)", async () => {
@@ -66,6 +77,7 @@ describe("SaveSheet", () => {
 		expect(ev).toBeTruthy();
 		expect(ev![0]![0]).toEqual({
 			title: "Visite",
+			titleAuto: false,
 			language: "en",
 			profile: "medical",
 			transcribe: true,
