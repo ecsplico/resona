@@ -184,7 +184,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg
+        # tesseract-ocr (pulls the eng + osd packs): every OCR candidate needs page orientation detection
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 ffmpeg tesseract-ocr
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
