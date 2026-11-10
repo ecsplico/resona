@@ -102,8 +102,9 @@ snapshot (§4).
 Create a role **"user"** (non-admin). Add a policy with:
 - `recordings`, `documents`: read/create/update/delete where `user_created = $CURRENT_USER`
 - `transcripts`: read/update/delete where `recording.user_created = $CURRENT_USER`;
-  **create** validated against the same relational filter (parent recording
-  owned by the current user)
+  create without an item rule (see below)
+- `transcript_corrections`: read own (`user_created`), create (see below); never
+  updated or deleted by users
 - create/update carry **explicit field lists**: the job bookkeeping (`hub_job_*`,
   `postprocess_job_*`, `postprocess_error`, `postprocess_queue_reason`) is the
   project-worker's, so a user can never point a row at another hub job of the
@@ -114,6 +115,21 @@ Create a role **"user"** (non-admin). Add a policy with:
 - `directus_users`: read (`id`, `hub_token`) and update (`hub_token`) where
   `id = $CURRENT_USER` — the user's own hub token, nothing else. Needs the custom
   field `hub_token` (string) on `directus_users`.
+
+**Create ownership guards (Flows).** Directus 11 ignores item rules (`permissions`)
+on create and checks `validation` against the request payload, where an M2O is a
+bare id: a relational validation such as `recording.user_created = $CURRENT_USER`
+therefore rejected every create ("Value is required"), and an item rule would let a
+user attach rows to someone else's recording. The bootstrap instead provisions one
+blocking filter flow per collection (`resona-owner-guard-transcripts`,
+`resona-owner-guard-transcript_corrections`, trigger `items.create`): a condition
+requires the parent ids (`recording`; for corrections also `transcript`), then a
+*Read Data* operation per parent reads it with the caller's permissions
+(`$trigger`). A parent the user cannot read (someone else's, missing) rejects the
+flow and Directus aborts the create with 403 (no parent id: 400); a batch is rolled
+back as a whole. Admin tokens (the project-worker) read every parent. The bootstrap
+recreates a flow whose definition differs (`~ flow …`); do not edit or disable
+these flows in the Data Studio.
 
 The project-worker authenticates with a **static service token** (admin role),
 which bypasses the user policy.

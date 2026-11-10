@@ -255,12 +255,13 @@ const PERMISSIONS = [
 		fields: ["title", "title_auto", "status", "error_message", "review_status", "audio_file", "duration_seconds"],
 	},
 	{ collection: "recordings", action: "delete", permissions: { user_created: OWNER } },
-	// transcripts: scoped to the parent recording's owner
+	// transcripts: scoped to the parent recording's owner. Create has no item rule:
+	// Directus 11 ignores `permissions` on create and checks `validation` against the
+	// request payload, where `recording` is a bare id, so the former relational
+	// validation rejected every create ("Value is required"). OWNERSHIP_GUARDS below
+	// checks the parent instead.
 	{ collection: "transcripts", action: "read", permissions: { recording: { user_created: OWNER } } },
-	{
-		collection: "transcripts", action: "create", validation: { recording: { user_created: OWNER } },
-		fields: ["recording", "text", "engine"],
-	},
+	{ collection: "transcripts", action: "create", fields: ["recording", "text", "engine"] },
 	{
 		collection: "transcripts", action: "update", permissions: { recording: { user_created: OWNER } },
 		// the text plus the "Nachbearbeiten" request (status `pending`) and undo (null);
@@ -269,9 +270,10 @@ const PERMISSIONS = [
 		fields: ["text", "raw_text", "applied_profile", "processed_text", "postprocess_status", "postprocess_profile"],
 	},
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
-	// corrections: write + read own; never updated or deleted by users
+	// corrections: write + read own; never updated or deleted by users. Create: see
+	// transcripts and OWNERSHIP_GUARDS.
 	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
-	{ collection: "transcript_corrections", action: "create", validation: { recording: { user_created: OWNER } } },
+	{ collection: "transcript_corrections", action: "create" },
 	// documents: full CRUD scoped to owner
 	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "documents", action: "create", permissions: {}, fields: ["title", "file", "status"] },
@@ -358,6 +360,84 @@ function stableJson(value) {
 			: v);
 }
 
+// ── ownership guards on create ─────────────────────────────────────────────
+// A blocking `items.create` filter flow per collection: every parent id in the
+// payload must be set and readable *with the caller's permissions* (`$trigger`),
+// else the flow rejects and Directus aborts the create. The read rules above make
+// "readable" mean "the user's own"; admins (the project-worker) read everything.
+// collection → parent fields (M2O, see RELATIONS)
+const OWNERSHIP_GUARDS = {
+	transcripts: ["recording"],
+	transcript_corrections: ["recording", "transcript"],
+};
+
+function guardSpec(collection, parents) {
+	const related = field => RELATIONS.find(([c, f]) => c === collection && f === field)[2];
+	const operations = [
+		{
+			key: "parents_set",
+			name: "Parents set",
+			type: "condition",
+			options: { filter: { _and: parents.map(f => ({ $trigger: { payload: { [f]: { _nnull: true } } } })) } },
+		},
+		...parents.map(f => ({
+			key: `own_${f}`,
+			name: `Own ${f}`,
+			type: "item-read",
+			// a single key reads one item, which throws when the caller cannot read it
+			options: { collection: related(f), key: `{{$trigger.payload.${f}}}`, permissions: "$trigger", emitEvents: false },
+		})),
+	];
+	return {
+		flow: {
+			name: `resona-owner-guard-${collection}`,
+			icon: "shield",
+			status: "active",
+			trigger: "event",
+			accountability: null,
+			description: `Bootstrap: ${parents.join(", ")} of a new ${collection} row must be the creator's own`,
+			options: { type: "filter", scope: ["items.create"], collections: [collection] },
+		},
+		operations,
+	};
+}
+
+/** The flow as Directus stores it, reduced to what guardSpec sets (op chain in order). */
+function describeFlow(flow, ops) {
+	const byId = new Map(ops.map(o => [o.id, o]));
+	const chain = [];
+	for (let op = byId.get(flow.operation); op; op = byId.get(op.resolve)) {
+		chain.push({ key: op.key, name: op.name, type: op.type, options: op.options, reject: op.reject });
+	}
+	const { name, icon, status, trigger, accountability, description, options } = flow;
+	return { flow: { name, icon, status, trigger, accountability, description, options }, chain };
+}
+
+async function ensureOwnershipGuards() {
+	for (const [collection, parents] of Object.entries(OWNERSHIP_GUARDS)) {
+		const spec = guardSpec(collection, parents);
+		const wanted = { flow: spec.flow, chain: spec.operations.map(o => ({ ...o, reject: null })) };
+		const existing = (await api("GET", `/flows?filter[name][_eq]=${spec.flow.name}&limit=1`))[0];
+		if (existing) {
+			const ops = await api("GET", `/operations?filter[flow][_eq]=${existing.id}&limit=-1`);
+			if (stableJson(describeFlow(existing, ops)) === stableJson(wanted)) {
+				console.log(`= flow ${spec.flow.name} exists`);
+				continue;
+			}
+			await api("DELETE", `/flows/${existing.id}`); // operations cascade
+		}
+		const flow = await api("POST", "/flows", spec.flow);
+		// created last-to-first so each operation can point at its successor
+		let next = null;
+		for (const [i, op] of [...spec.operations.entries()].reverse()) {
+			const row = await api("POST", "/operations", { ...op, flow: flow.id, resolve: next, position_x: 19 + 18 * i, position_y: 1 });
+			next = row.id;
+		}
+		await api("PATCH", `/flows/${flow.id}`, { operation: next });
+		console.log(`${existing ? "~" : "+"} flow ${spec.flow.name}`);
+	}
+}
+
 // ── worker user + pinned static token ──────────────────────────────────────
 async function ensureWorker() {
 	const adminRole = (await api("GET", "/roles?filter[name][_eq]=Administrator&limit=1"))[0];
@@ -389,6 +469,7 @@ async function main() {
 	await ensureFields();
 	await ensureRelations();
 	await ensureUserRole();
+	await ensureOwnershipGuards();
 	await ensureWorker();
 	console.log("✓ bootstrap complete");
 }
