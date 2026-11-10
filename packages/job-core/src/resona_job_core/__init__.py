@@ -11,6 +11,7 @@ from .policy import (
 from .settings import TEXT_EXECUTION_PROFILE, Candidate, ExecutionProfile, OrganizationSettings, default_settings
 from .options import (
     DEFAULT_OCR_ENGINE,
+    MAX_INSTRUCTIONS_CHARS,
     AudioOptions,
     DocumentOptions,
     DocumentPipeline,
@@ -44,6 +45,7 @@ __all__ = [
     "OcrMode",
     "TextOptions",
     "DEFAULT_OCR_ENGINE",
+    "MAX_INSTRUCTIONS_CHARS",
     "document_options_conflict",
     "BBox",
     "JobResult",

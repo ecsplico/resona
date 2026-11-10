@@ -6,7 +6,7 @@ import typer
 from pydantic import ValidationError
 from resona_client.client import DocumentOptions
 
-from .hub import check_privacy_flags, fail
+from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, check_privacy_flags, fail, instructions_arg
 from .media import MediaRequest, run_media
 from .transcribe import expand_inputs
 
@@ -71,6 +71,8 @@ def doc_files(
         help="Model override; must be an approved candidate of the execution profile."),
     profile: Optional[str] = typer.Option(None, "--profile",
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
+    instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
+    instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
     ocr: Optional[str] = typer.Option(None, "--ocr",
         help="auto (OCR bitmap regions only), force (full-page OCR) or off."),
     ocr_engine: Optional[str] = typer.Option(None, "--ocr-engine",
@@ -92,6 +94,7 @@ def doc_files(
     falls back automatically.
     """
     want_private = check_privacy_flags(private, allow_cloud)
+    user_instructions = instructions_arg(instructions, instructions_file)
     options = document_options(ocr, ocr_engine, languages, pages, image_scale, ocr_min_confidence)
     files = expand_inputs(inputs, recursive, EXTENSIONS)
     if not files:
@@ -113,4 +116,5 @@ def doc_files(
         profile=profile,
         options=options,
         local=local,
+        instructions=user_instructions,
     ))

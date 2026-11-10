@@ -19,7 +19,7 @@ from typing import Optional
 import typer
 from resona_client.client import TextOptions
 
-from .hub import check_privacy_flags, connect_hub, fail
+from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, check_privacy_flags, connect_hub, fail, instructions_arg
 from .jobs_cli import _call
 from .media import MediaRequest, run_media
 from .transcribe import expand_inputs
@@ -58,6 +58,8 @@ def postprocess_files(
         help="Re-run the profile on this earlier job's result instead of files."),
     profile: str = typer.Option(..., "--profile",
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
+    instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
+    instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
     recursive: bool = typer.Option(False, "--recursive", "-r",
         help="Recurse into directories / use `**` in glob patterns."),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir",
@@ -83,6 +85,7 @@ def postprocess_files(
     automatically: an unreachable hub, a timeout or a policy denial is reported as an error.
     """
     want_private = check_privacy_flags(private, allow_cloud)
+    user_instructions = instructions_arg(instructions, instructions_file)
     if (job is None) == (not inputs):
         fail("give either text files or --job <id>, not both")
     input_label = None
@@ -116,6 +119,7 @@ def postprocess_files(
             profile=profile,
             options=TextOptions(),
             local=local,
+            instructions=user_instructions,
             output_suffix=profile_label(profile),
             input_label=input_label,
         ))

@@ -188,6 +188,7 @@ def build_pipeline(profile: Profile, *, policy: ExecutionPolicy) -> PostprocessP
             "endpoint": endpoints[idx],
             "policy": policy,
             "settings": LlmCallSettings.from_step(step),
+            "instructions": profile.instructions,
         }
         if stype == "extract":
             pipe.add_extract(name, partial(llm_extract, **call))

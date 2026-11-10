@@ -98,6 +98,7 @@ Content-Type: application/json
 | `language` | string | no | Language code; defaults to the organization setting |
 | `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
 | `profile` | string | no (yes for `text`) | Name of a postprocess profile stored on the hub |
+| `instructions` | string | no | 1–8000 characters of user instructions for the profile's `llm`/`extract` steps (see [User instructions](#user-instructions)). Without a profile that has such a step → `422 invalid_instructions` |
 | `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`. Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
@@ -109,6 +110,22 @@ Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header 
 A `text` job runs only a postprocess profile on an uploaded text, without an engine: use it to re-run a profile on an existing transcript (for example a new profile, or the local LLM only its assigned worker reaches). `profile` is required (`422 profile_required`); `execution_profile`, `engine` and `model` are rejected (`422 invalid_request`), and so is `purpose: evaluation`. `options` must be empty. Admission checks the profile's stages against the organization policy as for every job (`403 policy_denied`), and the snapshot records the profile revision and policy. The job's `execution_profile` is reported as `-`, a name settings reject for real execution profiles, and `candidate` stays `null`.
 
 Any approved worker of the job's privacy class that reports text support claims it, as long as every worker-assigned endpoint of the profile is assigned to that worker and its release is one the hub knows (staged, or the hub's bundled release). Text jobs need no promoted evaluation: approval measures engine output on the evaluation corpus, and a text job runs no engine (postprocess output is never gated); the code they run is the postprocess path every audio and document job already runs on that release. A worker on a release the hub never saw (a dev build, an unfinished update) gets no text jobs.
+
+##### User instructions
+
+Each `llm`/`extract` step sends its `prompt` as the **system** message. `instructions` (on the job, or as a default in the stored profile) are sent in the **user** message, ahead of the text:
+
+```text
+<instructions>
+Keep the name "Erika Mustermann". Write doses as "5 mg".
+</instructions>
+
+<text>
+…chunk…
+</text>
+```
+
+If the model wraps its whole reply in `<text>…</text>`, the tags are removed. A job's `instructions` replace the profile's. Steps without instructions send only the text, as before. The instructions are written into the job's postprocess artifact (the profile document the worker downloads under its lease; its SHA-256 is in the snapshot). They never go into the content-free `execution_snapshot` and are deleted with the job's other files. Length and markup guards of chunked steps still compare each reply with its chunk.
 
 ##### Document options
 

@@ -7,6 +7,7 @@ ends the command; nothing falls back to local or cloud processing.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import NoReturn, Optional
 
 import typer
@@ -69,6 +70,27 @@ def check_privacy_flags(private: bool, allow_cloud: bool) -> bool:
     if private and allow_cloud:
         fail("--private and --allow-cloud are mutually exclusive")
     return not allow_cloud
+
+
+INSTRUCTIONS_HELP = ("User instructions for the postprocess profile's LLM steps (sent as the user "
+                     "message; the profile prompt stays the system message). Needs --profile.")
+INSTRUCTIONS_FILE_HELP = "Read --instructions from this UTF-8 file."
+
+
+def instructions_arg(text: Optional[str], file: Optional[Path]) -> Optional[str]:
+    """``--instructions`` or ``--instructions-file`` (mutually exclusive), stripped; ``None`` if neither."""
+    if text is not None and file is not None:
+        fail("--instructions and --instructions-file are mutually exclusive")
+    if file is not None:
+        try:
+            text = file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            fail(f"cannot read {file}: {e}")
+    if text is None:
+        return None
+    if not text.strip():
+        fail("instructions are empty")
+    return text.strip()
 
 
 def candidate_label(candidate: Optional[dict]) -> str:

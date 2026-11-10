@@ -209,3 +209,35 @@ def test_local_endpoint_never_receives_an_ambient_cloud_key(monkeypatch) -> None
 
     assert fake.api_keys and "sk-cloud-secret" not in fake.api_keys
     assert all(key for key in fake.api_keys)
+
+
+def test_instructions_go_in_the_user_message_and_an_echoed_text_tag_is_dropped(monkeypatch) -> None:
+    systems: list[str] = []
+
+    def reply(user: str) -> str:
+        assert user.startswith("<instructions>\nSchreibe fiir als für.\n</instructions>\n\n<text>\n")
+        chunk = user.split("<text>\n", 1)[1].removesuffix("\n</text>")
+        return f"<text>\n{chunk.replace('fiir', 'für')}\n</text>"
+
+    fake = _install(monkeypatch, reply)
+    original = fake.completion
+    monkeypatch.setattr(fake, "completion", lambda **kw: systems.append(kw["messages"][0]["content"]) or original(**kw))
+    profile = _profile(_step(preserve_markup=True, max_length_deviation=0.1)).with_instructions(
+        "  Schreibe fiir als für.\n")
+
+    result = build_pipeline(profile, policy=_policy(LOCAL_LLM)).run(DOC)
+
+    assert result.text == DOC.replace("fiir", "für")
+    assert not result.warnings
+    assert set(systems) == {"Korrigiere OCR-Fehler."}
+
+
+@pytest.mark.parametrize("data", [
+    {"name": "x", "instructions": "keep names",
+     "steps": [{"type": "replacements", "rules": [{"pattern": "a", "replacement": "b"}]}]},
+    {"name": "x", "instructions": "   ", "steps": [_step()]},
+    {"name": "x", "instructions": "x" * 8001, "steps": [_step()]},
+])
+def test_invalid_or_unused_instructions_are_rejected(data: dict) -> None:
+    with pytest.raises(ProfileError):
+        Profile.from_dict(data)

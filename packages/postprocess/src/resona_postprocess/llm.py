@@ -175,8 +175,16 @@ def _completion(*, endpoint: Endpoint, messages: list[dict], settings: LlmCallSe
     raise last_exc
 
 
-def _messages(prompt: str, text: str) -> list[dict]:
-    return [{"role": "system", "content": prompt}, {"role": "user", "content": text}]
+def _messages(prompt: str, text: str, instructions: str | None = None) -> list[dict]:
+    """System = the step's prompt; user = the text, preceded by the user's instructions if any.
+
+    With instructions the user message tags both parts (``<instructions>``/``<text>``) so the
+    model can tell them apart; :func:`_clean_reply` drops a ``<text>`` wrapper it echoes back.
+    """
+    user = text if instructions is None else (
+        f"<instructions>\n{instructions}\n</instructions>\n\n<text>\n{text}\n</text>"
+    )
+    return [{"role": "system", "content": prompt}, {"role": "user", "content": user}]
 
 
 def llm_transform(
@@ -186,6 +194,7 @@ def llm_transform(
     endpoint: Endpoint,
     policy: ExecutionPolicy,
     settings: LlmCallSettings = LlmCallSettings(),
+    instructions: str | None = None,
 ) -> str:
     """Send transcript text to an approved LLM endpoint and return the result.
 
@@ -193,7 +202,7 @@ def llm_transform(
     fixes the model and base URL; no environment fallback applies here.
     """
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
-    return _completion(endpoint=endpoint, messages=_messages(prompt, text), settings=settings)
+    return _completion(endpoint=endpoint, messages=_messages(prompt, text, instructions), settings=settings)
 
 
 _THINK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
@@ -201,7 +210,7 @@ _FENCES = ("```", "~~~")
 
 
 def _clean_reply(reply: str | None, source: str) -> str:
-    """Strip a leading reasoning block and a code fence wrapped around the whole reply."""
+    """Strip a leading reasoning block and a code fence or ``<text>`` tag wrapped around the whole reply."""
     text = reply or ""
     if not source.startswith("<think>"):
         text = _THINK.sub("", text, count=1)
@@ -210,6 +219,8 @@ def _clean_reply(reply: str | None, source: str) -> str:
         lines = text.splitlines()
         if len(lines) >= 2 and lines[-1].strip() in _FENCES:
             text = "\n".join(lines[1:-1]).strip()
+    if text.startswith("<text>") and text.endswith("</text>") and not source.startswith("<text>"):
+        text = text[len("<text>"):-len("</text>")].strip()
     return text
 
 
@@ -224,6 +235,7 @@ def llm_transform_chunked(
     max_length_deviation: float | None = None,
     preserve_markup: bool = False,
     settings: LlmCallSettings = LlmCallSettings(attempts=_DEFAULT_CHUNK_ATTEMPTS),
+    instructions: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """Transform long Markdown chunk by chunk (see :func:`split_markdown`).
 
@@ -247,7 +259,8 @@ def llm_transform_chunked(
         reply = None
         for attempt in range(1, settings.attempts + 1):
             try:
-                reply = llm_transform(core, prompt=prompt, endpoint=endpoint, policy=policy, settings=single_call)
+                reply = llm_transform(core, prompt=prompt, endpoint=endpoint, policy=policy,
+                                      settings=single_call, instructions=instructions)
                 break
             except PolicyDenied:
                 raise
@@ -283,6 +296,7 @@ def llm_extract(
     endpoint: Endpoint,
     policy: ExecutionPolicy,
     settings: LlmCallSettings = LlmCallSettings(),
+    instructions: str | None = None,
 ) -> dict:
     """Extract structured data from text. Returns a parsed JSON object.
 
@@ -292,7 +306,7 @@ def llm_extract(
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
     raw = _completion(
         endpoint=endpoint,
-        messages=_messages(prompt, text),
+        messages=_messages(prompt, text, instructions),
         settings=settings,
         response_format={"type": "json_object"},
     )
