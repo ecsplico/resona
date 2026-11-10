@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://ecsplico.github.io/resona/configuration/environment/">
       
       
-        <link rel="prev" href="../../server/releases/">
+        <link rel="prev" href="../../server/pwa-backups/">
       
       
         <link rel="next" href="../config-files/">
@@ -1017,6 +1017,8 @@
       
         
       
+        
+      
     
     
     
@@ -1273,6 +1275,34 @@
     
   
     Releases & Worker Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/pwa-backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PWA Backups & Encryption at Rest
   
 
     
@@ -2567,7 +2597,7 @@
 <tr>
 <td><code>RESONA_ENGINE_KEY</code></td>
 <td><em>(unset)</em></td>
-<td>API key sent to engine-server in the <code>X-API-Key</code> header</td>
+<td>Not used by resona-api: the hub sends no key to engine-servers (the bridged <code>/ws/live</code> takes none). Keep engine-servers on a private network instead</td>
 </tr>
 <tr>
 <td><code>RESONA_BOOTSTRAP_ORGANIZATION_ID</code></td>
@@ -2767,7 +2797,7 @@ The loopback endpoint keeps the step private. Any model supported by <a href="ht
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../server/releases/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Releases &amp; Worker Updates">
+          <a href="../../server/pwa-backups/" class="md-footer__link md-footer__link--prev" aria-label="Previous: PWA Backups &amp; Encryption at Rest">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2777,7 +2807,7 @@ The loopback endpoint keeps the step private. Any model supported by <a href="ht
                 Previous
               </span>
               <div class="md-ellipsis">
-                Releases & Worker Updates
+                PWA Backups & Encryption at Rest
               </div>
             </div>
           </a>

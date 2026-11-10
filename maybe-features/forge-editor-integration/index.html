@@ -1015,6 +1015,8 @@
       
         
       
+        
+      
     
     
     
@@ -1271,6 +1273,34 @@
     
   
     Releases & Worker Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/pwa-backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PWA Backups & Encryption at Rest
   
 
     
@@ -2772,9 +2802,8 @@
 <hr />
 <h2 id="2-was-die-resona-pwa-heute-hat">2. Was die Resona PWA heute hat<a class="headerlink" href="#2-was-die-resona-pwa-heute-hat" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>apps/resona-pwa/app/components/TranscriptEditor.vue</code>: TipTap 3 (<code>@tiptap/vue-3 ^3.27.1</code>, StarterKit, Placeholder); Text ist <strong>einfacher Text</strong> (Directus-Feld <code>text</code>, ein <code>\n</code> = ein Absatz). Methoden: <code>insertText</code>, <code>insertPlaceholder</code>, <code>replaceBetween</code>, <code>appendParagraph</code>, <code>focus</code>.</li>
-<li>Push-to-Talk in <code>app/pages/recording/[id].vue</code> (Abschnitt „Push-to-talk dictation"): Taste links-Strg gehalten oder Knopf; beim Start wird <code>insertPlaceholder()</code> aufgerufen, das <strong>die Zeichen „[…]" in den Text schreibt</strong> und die Rohpositionen <code>{from, to}</code> zurückgibt; nach dem Hub-Aufruf ersetzt <code>replaceBetween(from, to, text)</code> diese Rohpositionen. Es ist immer nur ein Diktat gleichzeitig möglich (<code>pttState</code> muss <code>idle</code> sein).</li>
-<li><strong>Schwäche (aus dem Code gelesen, nicht ausgeführt) [INFERENCE]:</strong> Die gespeicherten Positionen werden bei Änderungen des Textes zwischen Start und Antwort nicht mitgeführt. Schreibt der Nutzer davor etwas, trifft <code>replaceBetween</code> die falsche Stelle; der Platzhalter „[…]" ist echter Text und könnte (bei Auto-Speichern während des Wartens) im gespeicherten Transkript landen.</li>
+<li><code>apps/resona-pwa/app/components/TranscriptEditor.vue</code>: TipTap 3 (<code>@tiptap/vue-3 ^3.27.1</code>, StarterKit, Placeholder); Text ist <strong>einfacher Text</strong> (Directus-Feld <code>text</code>, ein <code>\n</code> = ein Absatz). Methoden u. a. <code>insertText</code>, <code>insertDictationPart</code>, <code>resolveDictationPart</code>, <code>appendParagraph</code>, <code>focus</code>.</li>
+<li><strong>Erledigt (2026-11):</strong> Push-to-Talk und Nachdiktat nutzen den Inline-Knoten <code>dictationPart</code> (<code>app/utils/dictationPart.ts</code>): ein Chip an der Cursorposition (oder am Ende), dessen Position mit jeder Änderung mitwandert und der nie im gespeicherten Text landet (<code>renderText: ""</code>). Mehrere Nachdiktat-Teile laufen parallel als Hub-Jobs (<code>useRedictation</code>). Die frühere Schwäche (<code>insertPlaceholder</code>/<code>replaceBetween</code> mit festen Positionen und echtem „[…]"-Text) ist damit behoben; Blöcke verschieben (Desktop) bleibt offen.</li>
 <li>Das Konzept existiert bereits im CLI: <code>apps/resona-cli/src/resona_cli/dictate_anchors.py</code> (<code>AnchorTracker</code>, <code>adjust_location</code>: Anfang rechts-haftend, Ende links-haftend) und <code>dictate.py</code> (<code>DictationTextArea</code> meldet jede Änderung, unterscheidet Nutzeraktion von eigener Buchführung über <code>internal_edit()</code>; <code>Segment</code> mit Status <code>recording|queued|transcribing|inserted|error</code>, <code>disturbed</code>-Flag; <code>TranscriptionWorker</code> serialisiert Modellzugriffe). Die PWA hat nichts davon.</li>
 <li>Mobil: <code>useRecorder</code> (MediaRecorder), Hub-Sync-Aufruf über <code>useHub()</code>; Live-Pfad über <code>/v1/listen</code> und Gerätesprache (<code>useDeviceSpeech</code>). Auf dem Telefon gibt es keine Tastatur-Taste „Strg", der Knopf ist das einzige Bedienelement.</li>
 </ul>
