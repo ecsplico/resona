@@ -196,13 +196,13 @@
     "mac-private/mac-metal": {
       "execution_profile": "mac-private",
       "platform": "mac-metal",
-      "revision": 3,
-      "evaluation_id": 11,
-      "promoted_at": "2026-11-04T01:27:02+00:00",
+      "revision": 4,
+      "evaluation_id": 16,
+      "promoted_at": "2026-11-10T23:01:30+00:00",
       "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
-      "release_id": "0.1.0",
+      "release_id": "0.2.0",
       "runtime_versions": [
-        "0.1.0"
+        "0.2.0"
       ],
       "normalization": {
         "audio": "text-v1",
@@ -388,13 +388,13 @@
     "private-auto/mac-metal": {
       "execution_profile": "private-auto",
       "platform": "mac-metal",
-      "revision": 3,
-      "evaluation_id": 12,
-      "promoted_at": "2026-11-04T01:28:38+00:00",
+      "revision": 4,
+      "evaluation_id": 17,
+      "promoted_at": "2026-11-10T23:01:31+00:00",
       "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
-      "release_id": "0.1.0",
+      "release_id": "0.2.0",
       "runtime_versions": [
-        "0.1.0"
+        "0.2.0"
       ],
       "normalization": {
         "audio": "text-v1",
