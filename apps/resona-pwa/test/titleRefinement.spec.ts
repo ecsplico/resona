@@ -33,9 +33,11 @@ describe("acceptRefinedTitle", () => {
 		["too long", "Kontrolle der Wundheilung nach Implantation einer Knietotalendoprothese rechts bei Arthrose"],
 		["too many words", "Kontrolle der Wunde am Knie nach der OP vor zwei Wochen"],
 		["cut off with ellipsis", "Kontrolle Knie-TEP rechts …"],
+		["cut off with three dots", "Kontrolle nach Knie..."],
 		["cut off with comma", "Kontrolle Knie-TEP rechts,"],
 		["unclosed bracket", "Kontrolle Knie-TEP (rechts"],
 		["English", "Follow-up of the right knee"],
+		["French", "Contrôle du genou et de la cicatrice"],
 		["other script", "Контроль колена"],
 	])("rejects %s", (_name, raw) => {
 		expect(acceptRefinedTitle(raw)).toBeNull();

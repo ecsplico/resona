@@ -29,9 +29,10 @@ interface LanguageModelApi {
 	create(options: LanguageModelOptions): Promise<LanguageModelSession>;
 }
 
-/** Longest accepted title, in characters and words (the heuristic allows 60/6). */
-export const REFINED_MAX_CHARS = 60;
-export const REFINED_MAX_WORDS = 8;
+// Longest accepted title. The prompt asks for at most six words (like the
+// heuristic); two words of slack keep a good but slightly wordy answer.
+const REFINED_MAX_CHARS = 60;
+const REFINED_MAX_WORDS = 8;
 /** Transcript characters handed to the model; the start of a dictation names its subject. */
 const PROMPT_MAX_CHARS = 2000;
 
@@ -39,8 +40,12 @@ const SYSTEM_PROMPT = "Du formulierst Titel für ärztliche Diktate. Antworte au
 	+ "aus zwei bis sechs Wörtern, höchstens 60 Zeichen, ohne Anführungszeichen, ohne Satzzeichen am Ende, ohne Erklärung. "
 	+ "Beispiel: Knie-TEP Kontrolle rechts";
 
-// English function words that never belong in a German title.
-const ENGLISH_WORDS = new Set("the of and with for from after before about this that is are was your".split(" "));
+// Function words of English and the Romance languages that never occur in a
+// German title (words shared with German, e.g. "des", "du", "per", are left out).
+const FOREIGN_WORDS = new Set(
+	("the of and with for from after before about this that is are was your "
+		+ "le la les et pour avec el los las del con por il di della").split(" "),
+);
 
 function languageModel(): LanguageModelApi | null {
 	const lm: unknown = Reflect.get(globalThis, "LanguageModel");
@@ -60,7 +65,7 @@ function modelOptions(language: string): LanguageModelOptions {
 }
 
 /** Refinement is German-only: the prompt and the language check are German. */
-export function refinementLanguageSupported(language: string): boolean {
+function refinementLanguageSupported(language: string): boolean {
 	return language === "de";
 }
 
@@ -88,24 +93,23 @@ export function acceptRefinedTitle(raw: string): string | null {
 	if (lines.length !== 1) {
 		return null;
 	}
-	const title = lines[0]!
-		.trim()
+	const line = lines[0]!.trim().replace(/^["'„“”‚‘’«»*]+|["'„“”‚‘’«»*]+$/g, "");
+	// Cut off: trailing ellipsis/comma/dash/colon, or an unclosed bracket.
+	if (/(\.\.\.|…|[,;:(\-–])$/.test(line) || (line.match(/\(/g)?.length ?? 0) !== (line.match(/\)/g)?.length ?? 0)) {
+		return null;
+	}
+	const title = line
 		.replace(/^(\*\*)?titel(\*\*)?\s*:\s*/i, "")
-		.replace(/^["'„“”‚‘’«»*]+|["'„“”‚‘’«»*]+$/g, "")
 		.replace(/[.!]+$/, "")
 		.trim();
 	const words = title.split(/\s+/).filter(Boolean);
 	if (!title || title.length > REFINED_MAX_CHARS || words.length > REFINED_MAX_WORDS) {
 		return null;
 	}
-	// Cut off: trailing ellipsis/comma/dash/colon, or an unclosed bracket.
-	if (/(\.\.\.|…|[,;:(\-–])$/.test(title) || (title.match(/\(/g)?.length ?? 0) !== (title.match(/\)/g)?.length ?? 0)) {
-		return null;
-	}
 	if (!/\p{L}/u.test(title) || /[^\p{Script=Latin}\p{N}\p{P}\p{Zs}\p{M}+&/°%]/u.test(title)) {
 		return null;
 	}
-	if (words.some(w => ENGLISH_WORDS.has(w.toLowerCase().replace(/[^\p{L}]/gu, "")))) {
+	if (words.some(w => FOREIGN_WORDS.has(w.toLowerCase().replace(/[^\p{L}]/gu, "")))) {
 		return null;
 	}
 	return title.charAt(0).toUpperCase() + title.slice(1);
