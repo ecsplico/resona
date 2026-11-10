@@ -35,20 +35,22 @@ class Rotation:
     degrees: int
 
 
-def detect_rotation(image: Image.Image, *, tesseract: str, workdir: Path) -> int:
+def detect_rotation(image: Image.Image, *, tesseract: str, workdir: Path, dpi: int | None) -> int:
     """Clockwise degrees (0, 90, 180, 270) that make ``image`` upright; 0 when unsure.
 
-    Tesseract refuses pages with too little text ("Too few characters"): those stay as they are.
+    ``dpi`` is the resolution ``image`` was scanned or rendered at (``None`` lets tesseract guess).
+    Tesseract refuses pages with too little text ("Too few characters"): those stay as they are,
+    and so does a page tesseract fails or times out on: detection never fails a conversion.
     """
     png = workdir / "osd.png"
     image.save(png, format="PNG")
-    completed = subprocess.run(
-        [tesseract, str(png), "-", "--psm", "0", "--dpi", str(OSD_DPI)],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
+    command = [tesseract, str(png), "-", "--psm", "0"]
+    if dpi is not None:
+        command += ["--dpi", str(dpi)]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
     if completed.returncode != 0:
         return 0
     fields = dict(line.split(":", 1) for line in completed.stdout.splitlines() if ":" in line)
@@ -86,7 +88,7 @@ def _upright_pdf(
             page = pdf[index]
             # Rendering applies the page's current /Rotate, so the detected turn adds to it.
             image = page.render(scale=OSD_DPI / 72, grayscale=True).to_pil()
-            degrees = detect_rotation(image, tesseract=tesseract, workdir=workdir)
+            degrees = detect_rotation(image, tesseract=tesseract, workdir=workdir, dpi=OSD_DPI)
             if degrees:
                 page.set_rotation((page.get_rotation() + degrees) % 360)
                 rotations.append(Rotation(page=index + 1, degrees=degrees))
@@ -104,21 +106,21 @@ def _upright_image(
 ) -> tuple[Path, list[Rotation]]:
     with Image.open(path) as source:
         dpi = source.info.get("dpi")
+        scan_dpi = round(dpi[0]) if dpi and dpi[0] else None
         # Docling applies the EXIF orientation itself; detection must see the same upright pixels.
         frames = [ImageOps.exif_transpose(frame.copy()) for frame in ImageSequence.Iterator(source)]
     rotations: list[Rotation] = []
     for index, frame in enumerate(frames):
         if not first_page <= index + 1 <= last_page:
             continue
-        degrees = detect_rotation(frame.convert("L"), tesseract=tesseract, workdir=workdir)
+        degrees = detect_rotation(frame.convert("L"), tesseract=tesseract, workdir=workdir, dpi=scan_dpi)
         if degrees:
             # PIL turns counterclockwise.
             frames[index] = frame.rotate(-degrees, expand=True)
             rotations.append(Rotation(page=index + 1, degrees=degrees))
     if not rotations:
         return path, []
-    if dpi is not None and rotations[0].page == 1 and rotations[0].degrees != 180:
-        dpi = (dpi[1], dpi[0])
+    # One dpi for every frame, kept as scanned: scanners write square dpi, which a turn leaves unchanged.
     out = workdir / "upright.tiff"
     extra = {"dpi": dpi} if dpi is not None else {}
     frames[0].save(out, format="TIFF", save_all=True, append_images=frames[1:], compression="tiff_lzw", **extra)
