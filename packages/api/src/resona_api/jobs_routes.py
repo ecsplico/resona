@@ -530,7 +530,7 @@ async def receive_upload(
         if field.size == 0:
             raise api_error(422, "empty_upload", "the uploaded file is empty")
         media = sniff_media(field.head)
-        if media is None and field.head.startswith(_ZIP_MAGIC) and sniff_docx(staged):
+        if media is None and field.head.startswith(_ZIP_MAGIC) and await run_in_threadpool(sniff_docx, staged):
             media = ("document", DOCX_MEDIA_TYPE)
         if media is None and field.text is not None and field.text.finish():
             media = _TEXT_TYPE

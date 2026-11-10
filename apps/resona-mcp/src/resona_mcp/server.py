@@ -236,7 +236,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         private: Private = True,
         idempotency_key: IdempotencyKey = None,
     ) -> dict[str, Any]:
-        """Submit a PDF/image → Markdown conversion job; returns {job_id, status, private} immediately."""
+        """Submit a PDF/image/Word DOCX → Markdown conversion job; returns {job_id, status, private} immediately. A DOCX takes no OCR or page options."""
         return await submit(
             ctx, kind="document", upload_id=upload_id, path=path, options=options,
             execution_profile=execution_profile, language=language, profile=profile,

@@ -23,6 +23,7 @@ from typing import Literal
 
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import ConversionStatus, InputFormat
+from docling.datamodel.document import ConversionResult
 from docling.datamodel.settings import settings
 from docling.datamodel.pipeline_options import (
     OcrMacOptions,
@@ -397,6 +398,47 @@ def stage_weights() -> list[tuple[str, str | None]]:
     return [(spec.repo_id, spec.revision), (_TABLEFORMER_REPO, _TABLEFORMER_REVISION)]
 
 
+def _run_converter(converter: DocumentConverter, path: Path, **kwargs: object) -> tuple[ConversionResult, list[str]]:
+    """Run ``converter`` on ``path`` collecting Docling log warnings; raise on conversion failure."""
+    collector = _WarningCollector()
+    loggers = [logging.getLogger(name) for name in _DOCLING_LOGGERS]
+    for logger in loggers:
+        logger.addHandler(collector)
+    try:
+        result = converter.convert(path, raises_on_error=False, **kwargs)
+    finally:
+        for logger in loggers:
+            logger.removeHandler(collector)
+    if result.status == ConversionStatus.FAILURE:
+        raise DocumentConversionFailed("docling could not convert the document")
+    warnings = list(collector.messages)
+    warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
+    return result, warnings
+
+
+def _document_result(path: Path, document: DoclingDocument, *, warnings: list[str],
+                     stages: list[StageProvenance], language: str | None) -> JobResult:
+    markdown = document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
+    formula_count = markdown.count(FORMULA_PLACEHOLDER)
+    if formula_count:
+        warnings = [*warnings, f"{formula_count} formula(s) not decoded; placeholders kept"]
+    return JobResult(
+        kind="document",
+        raw_text=document.export_to_text(),
+        markdown=markdown,
+        language=language,
+        pages=_pages(document),
+        warnings=warnings,
+        provenance=Provenance(
+            stages=stages,
+            worker_id=None,
+            runtime_version=f"docling=={importlib.metadata.version('docling')}",
+            settings_revision=None,
+            input_sha256=_sha256(path),
+        ),
+    )
+
+
 def _convert_docx(path: Path, options: DocumentOptions, accelerator: Accelerator) -> JobResult:
     """Convert a Word document through Docling's MsWord backend.
 
@@ -410,47 +452,13 @@ def _convert_docx(path: Path, options: DocumentOptions, accelerator: Accelerator
     if conflict is not None:
         raise ConflictingDocumentOptions(conflict)
 
-    collector = _WarningCollector()
-    loggers = [logging.getLogger(name) for name in _DOCLING_LOGGERS]
-    for logger in loggers:
-        logger.addHandler(collector)
     started = time.monotonic()
-    try:
-        result = _docx_converter().convert(path, raises_on_error=False)
-    finally:
-        for logger in loggers:
-            logger.removeHandler(collector)
-    seconds = round(time.monotonic() - started, 3)
-    if result.status == ConversionStatus.FAILURE:
-        raise DocumentConversionFailed("docling could not convert the document")
-
-    document = result.document
-    warnings: list[str] = list(collector.messages)
-    warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
-    markdown = document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
-    formula_count = markdown.count(FORMULA_PLACEHOLDER)
-    if formula_count:
-        warnings.append(f"{formula_count} formula(s) not decoded; placeholders kept")
-    return JobResult(
-        kind="document",
-        raw_text=document.export_to_text(),
-        markdown=markdown,
-        language=None,
-        pages=_pages(document),
-        warnings=warnings,
-        provenance=Provenance(
-            stages=[
-                StageProvenance(
-                    stage="layout", engine="docling-msword", model="docling-msword-backend",
-                    accelerator="cpu", seconds=seconds,
-                )
-            ],
-            worker_id=None,
-            runtime_version=f"docling=={importlib.metadata.version('docling')}",
-            settings_revision=None,
-            input_sha256=_sha256(path),
-        ),
+    result, warnings = _run_converter(_docx_converter(), path)
+    stage = StageProvenance(
+        stage="layout", engine="docling-msword", model="docling-msword-backend",
+        accelerator="cpu", seconds=round(time.monotonic() - started, 3),
     )
+    return _document_result(path, result.document, warnings=warnings, stages=[stage], language=None)
 
 
 def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accelerator = "cpu") -> JobResult:
@@ -477,45 +485,24 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
 
     converter = _converter(options, accelerator)
     page_range = (options.page_start or 1, options.page_end or sys.maxsize)
-
-    collector = _WarningCollector()
-    loggers = [logging.getLogger(name) for name in _DOCLING_LOGGERS]
     with tempfile.TemporaryDirectory(prefix="resona-docling-") as workdir:
         source, rotations = path, []
         if tesseract is not None:
             source, rotations = upright(
                 path, first_page=page_range[0], last_page=page_range[1], tesseract=tesseract, workdir=Path(workdir)
             )
-        for logger in loggers:
-            logger.addHandler(collector)
-        try:
-            result = converter.convert(source, page_range=page_range, raises_on_error=False)
-        finally:
-            for logger in loggers:
-                logger.removeHandler(collector)
-
-    if result.status == ConversionStatus.FAILURE:
-        raise DocumentConversionFailed("docling could not convert the document")
+        result, docling_warnings = _run_converter(converter, source, page_range=page_range)
 
     document = result.document
     if options.ocr != "off" and options.ocr_engine == "rapidocr":
         _normalize_rapidocr_glyphs(document)
-    warnings: list[str] = [f"page_rotated:{r.page}:{r.degrees}" for r in rotations]
-    warnings.extend(collector.messages)
-    warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
+    warnings = [f"page_rotated:{r.page}:{r.degrees}" for r in rotations] + docling_warnings
     if options.remove_repeated_headers:
         removed = _mark_repeated_furniture(document)
         if removed:
             warnings.append(f"repeated_header_blocks_removed:{removed}")
-
-    markdown = document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
-    raw_text = document.export_to_text()
     if options.ocr == "off" and path.suffix.lower() in IMAGE_SUFFIXES:
         warnings.append("image input with ocr='off' yields no text")
-
-    formula_count = markdown.count(FORMULA_PLACEHOLDER)
-    if formula_count:
-        warnings.append(f"{formula_count} formula(s) not decoded; placeholders kept")
 
     spec = _layout_spec()
     stages = [
@@ -549,21 +536,8 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
             )
         )
 
-    return JobResult(
-        kind="document",
-        raw_text=raw_text,
-        markdown=markdown,
-        language=options.languages[0] if options.ocr != "off" else None,
-        pages=_pages(document),
-        warnings=warnings,
-        provenance=Provenance(
-            stages=stages,
-            worker_id=None,
-            runtime_version=f"docling=={importlib.metadata.version('docling')}",
-            settings_revision=None,
-            input_sha256=_sha256(path),
-        ),
-    )
+    language = options.languages[0] if options.ocr != "off" else None
+    return _document_result(path, document, warnings=warnings, stages=stages, language=language)
 
 
 __all__ = [
