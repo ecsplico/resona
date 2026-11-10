@@ -183,6 +183,16 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`):
 
     Leave the organization settings `polish: false`: with `polish: true` and `postprocess_profile: "document-polish-de"` every job, audio included, would get the document prompt. A job that names the profile is claimed only by the worker that the endpoint is assigned to.
 
+6. Optionally add instructions for a single job. The profile's `prompt` stays the system message, and the instructions go in the user message ahead of each chunk ([User instructions](../reference/api.md#user-instructions)):
+
+    ```bash
+    resona doc scan.pdf --profile document-polish-de \
+      --instructions 'Eigennamen wie "Dr. Hämmerle" nicht ändern. Abkürzungen nicht ausschreiben.'
+    resona postprocess --job 42 --profile transcript-polish-de --instructions-file instructions.txt
+    ```
+
+    Instructions don't relax the guards: a reply that changes a chunk's length beyond `max_length_deviation` or its markup is still rejected. Only steps that set these guards are checked (the bundled polish profiles do). The worker must run a release with instruction support; an older worker runs the profile without the instructions.
+
 Measured on 2026-11-02 (evaluation corpus, gpu-box, `linux-cuda`, `qwen3.6-27b` via llama-swap; CER = character error rate):
 
 | Fixture | Plain | `document-polish-de` |

@@ -27,6 +27,9 @@ _CONFIDENCE_OCR_ENGINES = frozenset({"rapidocr"})
 # PP-OCRv6 recognizer. Korean needs a PP-OCRv5 recognizer downloaded on first use, which a job never does.
 _RAPIDOCR_LANGUAGES = frozenset({"de", "en", "fr", "it", "es"})
 
+MAX_INSTRUCTIONS_CHARS = 8000
+"""Upper bound (characters) for a job's user ``instructions`` to its postprocess profile's LLM steps."""
+
 
 class AudioOptions(BaseModel):
     """Typed audio job options; the hub forwards nothing else to the engine."""

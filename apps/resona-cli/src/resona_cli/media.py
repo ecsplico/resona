@@ -57,6 +57,8 @@ class MediaRequest:
     profile: Optional[str]
     options: Options
     local: bool
+    # User instructions for the postprocess profile's llm/extract steps (user message).
+    instructions: Optional[str] = None
     # Inserted before ``.md``/``.result.json``: ``<stem>.<output_suffix>.md``.
     output_suffix: Optional[str] = None
     # Reported instead of the input path (``--json`` ``input``, frontmatter ``source``)
@@ -207,6 +209,7 @@ def _run_hub(req: MediaRequest) -> None:
                 engine=req.engine,
                 model=req.model,
                 profile=profile,
+                instructions=req.instructions,
                 options=req.options,
                 private=req.private,
             )
@@ -314,6 +317,7 @@ def _run_local(req: MediaRequest) -> None:
             options=req.options.model_dump(exclude_none=True),
             private=req.private,
             profile=req.profile,
+            instructions=req.instructions,
         )
     except PolicyDenied as e:
         typer.echo(f"policy_denied: {e.stage}: {e.reason}", err=True)

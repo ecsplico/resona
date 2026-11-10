@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib import resources
 from pathlib import Path
 
+from resona_job_core.options import MAX_INSTRUCTIONS_CHARS
+
 VALID_STEP_TYPES = {"replacements", "llm", "extract"}
+LLM_STEP_TYPES = ("llm", "extract")
 
 
 class ProfileError(ValueError):
@@ -52,7 +55,7 @@ def _validate_step(step: dict, idx: int, extract_names: set[str]) -> None:
     elif stype == "extract":
         if not step.get("prompt"):
             raise ProfileError(f"Step {idx}: extract step needs a 'prompt'")
-    if stype in ("llm", "extract") and "timeout" in step and not _positive_number(step["timeout"]):
+    if stype in LLM_STEP_TYPES and "timeout" in step and not _positive_number(step["timeout"]):
         raise ProfileError(f"Step {idx}: 'timeout' must be a positive number of seconds")
     if stype == "extract":
         name = step.get("name", "extract")
@@ -92,15 +95,31 @@ def _validate_chunking(step: dict, idx: int) -> None:
         raise ProfileError(f"Step {idx}: 'preserve_markup' must be true or false")
 
 
+def _validate_instructions(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ProfileError("'instructions' must be a non-empty string")
+    if len(value) > MAX_INSTRUCTIONS_CHARS:
+        raise ProfileError(f"'instructions' must be at most {MAX_INSTRUCTIONS_CHARS} characters")
+    return value.strip()
+
+
 @dataclass
 class Profile:
-    """A named postprocessing configuration: initial prompt + ordered steps."""
+    """A named postprocessing configuration: initial prompt + ordered steps.
+
+    ``instructions`` are user instructions: every llm/extract step sends them in the
+    user message ahead of the text, while the step's ``prompt`` stays the system
+    message. A job's instructions replace the profile's (:meth:`with_instructions`).
+    """
 
     name: str
     description: str = ""
     initial_prompt: list[str] = field(default_factory=list)
     steps: list[dict] = field(default_factory=list)
     base_dir: Path | None = None  # for resolving relative `source` paths
+    instructions: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict, *, base_dir: Path | None = None) -> "Profile":
@@ -118,12 +137,15 @@ class Profile:
         ip = data.get("initial_prompt", [])
         if not isinstance(ip, list):
             raise ProfileError("Profile 'initial_prompt' must be a list of strings")
+        # Validated only: the worker rebuilds one single-step profile per step from the
+        # pinned document, so a rules step must keep the job's instructions too.
         return cls(
             name=name,
             description=data.get("description", ""),
             initial_prompt=[str(p) for p in ip],
             steps=steps,
             base_dir=base_dir,
+            instructions=_validate_instructions(data.get("instructions")),
         )
 
     @classmethod
@@ -136,12 +158,24 @@ class Profile:
         return cls.from_dict(data, base_dir=path.parent)
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "name": self.name,
             "description": self.description,
             "initial_prompt": self.initial_prompt,
             "steps": self.steps,
         }
+        if self.instructions is not None:
+            data["instructions"] = self.instructions
+        return data
+
+    def has_llm_step(self) -> bool:
+        return any(step.get("type") in LLM_STEP_TYPES for step in self.steps)
+
+    def with_instructions(self, instructions: str) -> "Profile":
+        """A copy whose llm/extract steps get ``instructions``; needs at least one such step."""
+        if not self.has_llm_step():
+            raise ProfileError(f"profile {self.name!r} has no llm or extract step to take instructions")
+        return replace(self, instructions=_validate_instructions(instructions))
 
     def initial_prompt_string(self) -> str:
         """Return initial-prompt phrases joined for the engine."""

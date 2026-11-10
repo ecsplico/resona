@@ -369,6 +369,7 @@ class ResonaClient:
         engine: Optional[str] = None,
         model: Optional[str] = None,
         profile: Optional[str] = None,
+        instructions: Optional[str] = None,
         options: Union[AudioOptions, DocumentOptions, Mapping[str, Any], None] = None,
         private: bool = True,
         idempotency_key: Optional[str] = None,
@@ -384,6 +385,7 @@ class ResonaClient:
 
         ``kind='text'`` uploads a UTF-8 text file and runs only the stored postprocess
         ``profile`` (required by the hub) on it; no execution profile, engine or model.
+        ``instructions`` go to the profile's llm/extract steps as the user message.
         """
         _checked_options(kind, options)
         upload = self.upload(filepath)
@@ -395,6 +397,7 @@ class ResonaClient:
             engine=engine,
             model=model,
             profile=profile,
+            instructions=instructions,
             options=options,
             private=private,
             idempotency_key=idempotency_key,
@@ -413,6 +416,7 @@ class ResonaClient:
         engine: Optional[str] = None,
         model: Optional[str] = None,
         profile: Optional[str] = None,
+        instructions: Optional[str] = None,
         options: Union[AudioOptions, DocumentOptions, Mapping[str, Any], None] = None,
         private: bool = True,
         idempotency_key: Optional[str] = None,
@@ -426,6 +430,8 @@ class ResonaClient:
         the POST, so a lost response cannot create a duplicate job.
         ``purpose='evaluation'`` needs an org-admin credential and the ``release_id``
         of a release staged on the hub (``resona-admin release stage``).
+        ``instructions`` (user instructions for the profile's llm/extract steps) need a
+        ``profile`` with such a step, else the hub answers 422 ``invalid_instructions``.
         """
         checked = _checked_options(kind, options)
         key = idempotency_key or str(uuid.uuid4())
@@ -440,6 +446,7 @@ class ResonaClient:
             "engine": engine,
             "model": model,
             "profile": profile,
+            "instructions": instructions,
             "options": checked,
             "provenance": dict(provenance) if provenance is not None else None,
             "purpose": purpose if purpose != "production" else None,

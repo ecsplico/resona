@@ -57,10 +57,13 @@ class Recorder:
         return httpx.MockTransport(handle)
 
 
-def _run(fakes, build_supervisor, monkeypatch, recorder: Recorder, *steps: dict, policy=None):
+def _run(fakes, build_supervisor, monkeypatch, recorder: Recorder, *steps: dict, policy=None, instructions=None):
     monkeypatch.setattr(llm_mod, "litellm", recorder)
     snapshot = fakes.snapshot_for(CAND, policy=policy or _policy())
-    hub = fakes.FakeHub(CAND, snapshot=snapshot, profile={"name": "document-polish-de", "steps": list(steps)})
+    profile = {"name": "document-polish-de", "steps": list(steps)}
+    if instructions is not None:
+        profile["instructions"] = instructions
+    hub = fakes.FakeHub(CAND, snapshot=snapshot, profile=profile)
     supervisor = build_supervisor(hub, capabilities=(CAND,), endpoint_transport=recorder.transport())
     assert supervisor.run(once=True) == 0
     return hub
@@ -83,6 +86,23 @@ def test_polished_result_keeps_the_engine_markdown_separately(fakes, build_super
     ((_, _, _, body),) = hub.paths("/result")
     result = JobResult.model_validate_json(body)
     assert result.markdown == "hallo Welt"
+    assert result.raw_markdown == "hallo welt"
+
+
+def test_job_instructions_reach_the_llm_step_of_a_profile_with_rules(fakes, build_supervisor, monkeypatch) -> None:
+    users: list[str] = []
+
+    def reply(user: str) -> str:
+        users.append(user)
+        return "<text>\nHallo Welt\n</text>"
+
+    rules = {"type": "replacements", "rules": [{"pattern": "hallo", "replacement": "Hallo"}]}
+    hub = _run(fakes, build_supervisor, monkeypatch, Recorder(reply), rules, SECOND, instructions="Namen behalten.")
+
+    ((_, _, _, body),) = hub.paths("/result")
+    result = JobResult.model_validate_json(body)
+    assert users == ["<instructions>\nNamen behalten.\n</instructions>\n\n<text>\nHallo welt\n</text>"]
+    assert result.markdown == "Hallo Welt"
     assert result.raw_markdown == "hallo welt"
 
 

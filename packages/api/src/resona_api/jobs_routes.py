@@ -35,6 +35,7 @@ from starlette.concurrency import run_in_threadpool
 
 from resona_job_core import (
     DEFAULT_OCR_ENGINE,
+    MAX_INSTRUCTIONS_CHARS,
     AudioOptions,
     Candidate,
     DocumentOptions,
@@ -121,6 +122,8 @@ class JobRequest(BaseModel):
     engine: Optional[str] = Field(default=None, max_length=128)
     model: Optional[str] = Field(default=None, max_length=256)
     profile: Optional[str] = Field(default=None, max_length=64)
+    # User instructions for the profile's llm/extract steps (user message; the step prompt stays system).
+    instructions: Optional[str] = Field(default=None, min_length=1, max_length=MAX_INSTRUCTIONS_CHARS)
     options: Optional[dict[str, Any]] = None
     private: bool = True
     provenance: Optional[Provenance] = None
@@ -697,6 +700,8 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     if name is None and settings.polish:
         name = settings.postprocess_profile
     if name is None:
+        if req.instructions is not None:
+            raise api_error(422, "invalid_instructions", "instructions need a postprocess profile")
         return None
     if not is_profile_name(name):
         raise api_error(422, "invalid_profile", "profile must be a stored profile name")
@@ -706,6 +711,11 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
         raise api_error(404, "profile_not_found", "no such profile for this organization") from None
     except ProfileError:
         raise api_error(422, "invalid_profile", "stored profile is invalid") from None
+    if req.instructions is not None:
+        try:
+            profile = profile.with_instructions(req.instructions)
+        except ProfileError as exc:
+            raise api_error(422, "invalid_instructions", str(exc)) from None
     build_pipeline(profile, policy=policy)  # raises PolicyDenied before the job exists
     row = session.exec(
         select(ProfileRevision)

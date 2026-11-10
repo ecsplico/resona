@@ -444,6 +444,39 @@ def test_cancel_removes_postprocess_artifact(http, fresh_org, client_headers, st
     assert not profile_file.exists()
 
 
+def test_job_instructions_live_in_leased_artifact_not_snapshot(http, fresh_org, client_headers,
+                                                              store_settings, store_profile, wav_bytes):
+    store_settings(fresh_org, endpoints=[LOCAL_LLM.model_dump(mode="json")])
+    store_profile(fresh_org, "polish", {"name": "polish", "instructions": "profile default", "steps": [
+        {"type": "llm", "name": "polish", "prompt": SECRET_PROMPT, "endpoint": "local-llm"},
+    ]})
+    secret = "Keep the name Erika Mustermann exactly as written."
+    job_id = new_job(http, client_headers(fresh_org), wav_bytes, profile="polish", instructions=f"  {secret}\n")
+    stored = job_row(job_id).execution_snapshot
+    assert secret not in stored
+
+    document = storage.postprocess_path(storage_id(fresh_org), job_id).read_bytes()
+    assert json.loads(document)["instructions"] == secret  # the job's replace the profile's
+    assert hashlib.sha256(document).hexdigest() == json.loads(stored)["postprocess"]["sha256"]
+
+
+@pytest.mark.parametrize("profile", [None, "rules"])
+def test_instructions_without_an_llm_step_are_422(http, fresh_org, client_headers, store_profile, wav_bytes,
+                                                  profile):
+    store_profile(fresh_org, "rules", {"name": "rules", "steps": [
+        {"type": "replacements", "rules": [{"pattern": "Komma", "replacement": ","}]},
+    ]})
+    headers = client_headers(fresh_org)
+    upload_id = upload(http, headers, wav_bytes).json()["upload_id"]
+    body = {"kind": "audio", "upload_id": upload_id, "instructions": "Keep names."}
+    if profile:
+        body["profile"] = profile
+    resp = submit(http, headers, body)
+    assert resp.status_code == 422
+    assert error_code(resp) == "invalid_instructions"
+    assert http.get("/v1/jobs", headers=headers).json()["items"] == []
+
+
 def test_unknown_profiles_are_404_and_unapproved_override_422(http, fresh_org, client_headers, wav_bytes):
     headers = client_headers(fresh_org)
     upload_id = upload(http, headers, wav_bytes).json()["upload_id"]
