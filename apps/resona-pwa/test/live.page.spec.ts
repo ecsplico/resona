@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ref, computed, reactive, type Ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import LivePage from "~/pages/live.vue";
@@ -706,6 +706,185 @@ describe("live transcription page", () => {
 			await w.find("[data-testid=\"stop-live\"]").trigger("click");
 			await flush();
 			expect(suggestTitleRemote).not.toHaveBeenCalled();
+		});
+
+		describe("on-device refinement (browser language model)", () => {
+			// Over the 40-word on-device threshold.
+			const LONG40 = `${dictation} Die Beweglichkeit des Nackens ist frei, neurologisch zeigen sich keine Auffälligkeiten. Wir empfehlen weiter Ibuprofen bei Bedarf und sehen ihn in einer Woche zur Kontrolle wieder.`;
+			const RULE = "Patient klagt über starke Kopfschmerzen";
+			const REFINED = "Kopfschmerzen seit drei Tagen";
+
+			function stubModel(state: string, answer: () => Promise<string> = async () => REFINED) {
+				const session = { prompt: vi.fn((_input: string, _opts: { signal: AbortSignal }) => answer()), destroy: vi.fn() };
+				const model = { availability: vi.fn(async () => state), create: vi.fn(async () => session) };
+				vi.stubGlobal("LanguageModel", model);
+				return { model, session };
+			}
+
+			function pendingModel() {
+				const answer = Promise.withResolvers<string>();
+				return { answer, ...stubModel("available", () => answer.promise) };
+			}
+
+			function shown(w: Awaited<ReturnType<typeof mountLive>>): string {
+				return w.find("[data-testid=\"live-title-suggestion\"]").text().replace("Titelvorschlag: ", "");
+			}
+
+			afterEach(() => {
+				vi.unstubAllGlobals();
+			});
+
+			it("without the model (the normal test case) the rule suggestion stays and the hub may refine", async () => {
+				const w = await mountLive();
+				final.value = LONG40;
+				await flush();
+				expect(shown(w)).toBe(RULE);
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				expect(titleValue(w)).toBe(RULE);
+				expect(suggestTitleRemote).toHaveBeenCalledTimes(1);
+			});
+
+			it.each(["downloadable", "downloading", "unavailable"])("a %s model is never created or downloaded; behaviour stays as without", async (state) => {
+				const { model } = stubModel(state);
+				const w = await mountLive();
+				final.value = LONG40;
+				await flush();
+				expect(shown(w)).toBe(RULE);
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				expect(titleValue(w)).toBe(RULE);
+				expect(model.availability).toHaveBeenCalledTimes(1);
+				expect(model.create).not.toHaveBeenCalled();
+				expect(suggestTitleRemote).toHaveBeenCalledTimes(1);
+			});
+
+			it("an available model replaces the suggestion during recording, once, and the hub is not asked", async () => {
+				const { model, session } = stubModel("available");
+				const w = await mountLive();
+				final.value = dictation;
+				await flush();
+				// The rule suggestion shows first; the refinement waits for more text.
+				expect(shown(w)).toBe(RULE);
+				expect(model.create).not.toHaveBeenCalled();
+
+				final.value = LONG40;
+				await flush();
+				expect(shown(w)).toBe(REFINED);
+				expect(session.prompt.mock.calls[0]![0]).toContain(LONG40);
+
+				final.value = `${LONG40} Verband morgen.`;
+				await flush();
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				expect(session.prompt).toHaveBeenCalledTimes(1);
+				expect(suggestTitleRemote).not.toHaveBeenCalled();
+				expect(titleValue(w)).toBe(REFINED);
+
+				await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+				await flush();
+				expect(store.createRecording.mock.calls[0]![0].title).toBe(REFINED);
+			});
+
+			it("a shorter recording is refined once after stop and the untouched field takes the result", async () => {
+				const { answer, session } = pendingModel();
+				const w = await mountLive();
+				final.value = dictation;
+				await flush();
+				expect(session.prompt).not.toHaveBeenCalled();
+
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				expect(titleValue(w)).toBe(RULE);
+				expect(session.prompt).toHaveBeenCalledTimes(1);
+
+				answer.resolve(REFINED);
+				await flush();
+				expect(titleValue(w)).toBe(REFINED);
+				expect(suggestTitleRemote).not.toHaveBeenCalled();
+			});
+
+			it("typing in the title aborts the refinement and drops a late answer", async () => {
+				const { answer, session } = pendingModel();
+				const w = await mountLive();
+				final.value = dictation;
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+
+				await w.find("[data-testid=\"title-input\"]").find("input").setValue("Mein Titel");
+				expect(session.prompt.mock.calls[0]![1].signal.aborted).toBe(true);
+				answer.resolve(REFINED);
+				await flush();
+				expect(titleValue(w)).toBe("Mein Titel");
+				expect(suggestTitleRemote).not.toHaveBeenCalled();
+			});
+
+			it("saving aborts the refinement; the shown suggestion is saved", async () => {
+				const { answer, session } = pendingModel();
+				const w = await mountLive();
+				final.value = dictation;
+				await stopAndSave(w);
+				expect(session.prompt.mock.calls[0]![1].signal.aborted).toBe(true);
+				answer.resolve(REFINED);
+				await flush();
+				expect(store.createRecording.mock.calls[0]![0].title).toBe(RULE);
+			});
+
+			it("discarding aborts the refinement", async () => {
+				const { session } = pendingModel();
+				const w = await mountLive();
+				final.value = dictation;
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				await w.find("[data-testid=\"cancel-save\"]").trigger("click");
+				expect(session.prompt.mock.calls[0]![1].signal.aborted).toBe(true);
+			});
+
+			it.each([
+				["empty", ""],
+				["too long", "Kontrolle der Wundheilung nach Implantation einer Knietotalendoprothese rechts bei Arthrose"],
+				["English", "Severe headache for three days"],
+			])("an unusable answer (%s) keeps the rule suggestion; the hub may still refine", async (_name, reply) => {
+				stubModel("available", async () => reply);
+				const w = await mountLive();
+				final.value = LONG40;
+				await flush();
+				expect(shown(w)).toBe(RULE);
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				expect(titleValue(w)).toBe(RULE);
+				expect(suggestTitleRemote).toHaveBeenCalledTimes(1);
+			});
+
+			it("transcript and audio recording keep running while the model works", async () => {
+				const stream = {} as MediaStream;
+				Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn(async () => stream) } });
+				try {
+					const { answer, session } = pendingModel();
+					const w = await mountLive();
+					expect(recorderStart).toHaveBeenCalledWith(stream);
+					final.value = LONG40;
+					await flush();
+					expect(session.prompt).toHaveBeenCalledTimes(1);
+
+					// Model still working: new text renders, nothing was stopped.
+					partial.value = "Weiter im Text";
+					final.value = `${LONG40} Verband morgen.`;
+					await flush();
+					expect(w.find("[data-testid=\"transcript\"]").text()).toContain("Verband morgen. Weiter im Text");
+					expect(recorderStop).not.toHaveBeenCalled();
+					expect(capture.stop).not.toHaveBeenCalled();
+					expect(liveStop).not.toHaveBeenCalled();
+
+					answer.resolve(REFINED);
+					await flush();
+					expect(shown(w)).toBe(REFINED);
+					expect(recorderStop).not.toHaveBeenCalled();
+				}
+				finally {
+					Reflect.deleteProperty(navigator, "mediaDevices");
+				}
+			});
 		});
 	});
 
