@@ -193,4 +193,42 @@ describe("useRecorder", () => {
 		await expect(r.start()).rejects.toThrow("Mikrofonzugriff wurde verweigert.");
 		expect(r.recording.value).toBe(false);
 	});
+
+	it("a start whose microphone opens after stop() releases that stream and does not record", async () => {
+		const late = fakeStream();
+		let open!: (s: MediaStream) => void;
+		getUserMedia.mockImplementationOnce(() => new Promise<MediaStream>((resolve) => {
+			open = resolve;
+		}));
+		const r = useRecorder();
+		const started = r.start();
+		await r.stop();
+		open(late);
+
+		expect(await started).toBe(false);
+		expect(late.getTracks()[0]!.stop).toHaveBeenCalled();
+		expect(r.recording.value).toBe(false);
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
+	});
+
+	it("an older start opening late never replaces a newer recording", async () => {
+		const late = fakeStream();
+		let open!: (s: MediaStream) => void;
+		getUserMedia.mockImplementationOnce(() => new Promise<MediaStream>((resolve) => {
+			open = resolve;
+		}));
+		const r = useRecorder();
+		const first = r.start();
+		await r.stop();
+		expect(await r.start()).toBe(true);
+		const current = FakeMediaRecorder.instances[0]!;
+		open(late);
+
+		expect(await first).toBe(false);
+		expect(late.getTracks()[0]!.stop).toHaveBeenCalled();
+		expect(FakeMediaRecorder.instances).toHaveLength(1);
+		expect(current.state).toBe("recording");
+		expect(current.stream.getTracks()[0]!.stop).not.toHaveBeenCalled();
+		expect(r.recording.value).toBe(true);
+	});
 });

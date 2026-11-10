@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from .directus import POSTPROCESS_JOB, ROW_JOB, DirectusClient, JobFields
 from .hub import HubClient, HubError
-from .title import suggest_title
+from .title import derive_title
 
 log = logging.getLogger(__name__)
 
@@ -157,9 +157,15 @@ async def _poll(
         if superseded is not None:
             await _delete_job(hub, int(superseded))
         if row.get("title_auto"):
-            title = suggest_title(result.get("markdown") or "")
-            if title:
-                await directus.set_auto_title(src.collection, row_id, title)
+            # Best effort: the transcript is written, so a failed title never fails the row.
+            try:
+                await _apply_derived_title(src, row_id, result.get("markdown") or "", directus)
+            except Exception as exc:  # noqa: BLE001
+                # Type only: the error could carry the derived title (transcript text).
+                log.warning(
+                    "could not apply derived title to %s %s: %s",
+                    src.collection, row_id, type(exc).__name__,
+                )
     else:
         await directus.write_document(
             row_id, markdown=result.get("markdown") or "", pages=result.get("pages"),
@@ -169,6 +175,16 @@ async def _poll(
     log.info("completed %s %s (hub job %s)", src.collection, row_id, job_id)
     await _delete_job(hub, job_id)
     return True
+
+
+async def _apply_derived_title(
+    src: Source, row_id: str, markdown: str, directus: DirectusClient,
+) -> None:
+    """Replaces a placeholder title with one derived from the transcript. The update
+    is filtered on `title_auto` (`set_auto_title`), so a rename while the job ran wins."""
+    title = derive_title(markdown)
+    if title:
+        await directus.set_auto_title(src.collection, row_id, title)
 
 
 def _postprocess_input(row: dict) -> str:

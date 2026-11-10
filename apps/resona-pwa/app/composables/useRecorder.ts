@@ -36,6 +36,8 @@ export function useRecorder() {
 	let stream: MediaStream | null = null;
 	let ownsStream = false;
 	let chunks: Blob[] = [];
+	// Bumped by every start() and stop(): a start whose microphone opens late sees it changed.
+	let startGen = 0;
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -134,14 +136,23 @@ export function useRecorder() {
 		recorder = null;
 	}
 
-	async function start(existing?: MediaStream): Promise<void> {
+	/**
+	 * Starts recording; false when it did not start: already recording, or a
+	 * `stop()` or newer `start()` came while the microphone was still opening
+	 * (that late stream's tracks are stopped, nothing else is touched).
+	 */
+	async function start(existing?: MediaStream): Promise<boolean> {
 		if (recording.value) {
-			return;
+			return false;
 		}
+		startGen += 1;
+		const gen = startGen;
 
+		let next: MediaStream;
+		let owned: boolean;
 		if (existing) {
-			stream = existing;
-			ownsStream = false;
+			next = existing;
+			owned = false;
 		}
 		else {
 			// Browsers hide mediaDevices outside a secure context (HTTPS or localhost),
@@ -152,7 +163,7 @@ export function useRecorder() {
 				throw new Error("Mikrofon nicht verfügbar – die App muss über HTTPS oder localhost geöffnet sein.");
 			}
 			try {
-				stream = await media.getUserMedia({ audio: true });
+				next = await media.getUserMedia({ audio: true });
 			}
 			catch (err) {
 				throw new Error(
@@ -162,12 +173,23 @@ export function useRecorder() {
 					{ cause: err },
 				);
 			}
-			ownsStream = true;
+			owned = true;
+			if (gen !== startGen || recording.value) {
+				// Superseded while the microphone opened: release this stream only.
+				for (const track of next.getTracks()) {
+					track.stop();
+				}
+				return false;
+			}
 		}
+		// A previous stream (should not exist here) is released, never leaked.
+		stopTracks();
+		stream = next;
+		ownsStream = owned;
 
 		chunks = [];
 		recordingMime = getSupportedMime();
-		recorder = new MediaRecorder(stream, recordingMime ? { mimeType: recordingMime } : undefined);
+		recorder = new MediaRecorder(next, recordingMime ? { mimeType: recordingMime } : undefined);
 		recorder.ondataavailable = (e: BlobEvent) => {
 			if (e.data && e.data.size > 0) {
 				chunks.push(e.data);
@@ -181,7 +203,8 @@ export function useRecorder() {
 		paused.value = false;
 
 		startTimer();
-		startLevels(stream);
+		startLevels(next);
+		return true;
 	}
 
 	function pause(): void {
@@ -201,6 +224,8 @@ export function useRecorder() {
 	}
 
 	function stop(): Promise<Blob> {
+		// A start still waiting for the microphone is now stale.
+		startGen += 1;
 		return new Promise<Blob>((resolve) => {
 			if (!recorder) {
 				resolve(new Blob([], { type: recordingMime }));
@@ -220,6 +245,7 @@ export function useRecorder() {
 	}
 
 	onScopeDispose(() => {
+		startGen += 1;
 		cleanup();
 	});
 

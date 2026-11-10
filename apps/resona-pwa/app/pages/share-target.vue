@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import type { SavePayload } from "~/data/types";
+import type { SaveRequest } from "~/data/types";
 import { resolveAudioMime } from "~/utils/audioFile";
 
 // Landing page for the Web Share Target. The service worker
@@ -86,7 +86,7 @@ watch(() => hubSettings.token, () => {
 	}
 });
 
-async function onSave(payload: SavePayload): Promise<void> {
+async function onSave(payload: SaveRequest): Promise<void> {
 	const blob = pendingBlob.value;
 	if (!blob) {
 		return;

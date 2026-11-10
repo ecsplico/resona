@@ -1,24 +1,54 @@
 {
-	"_doc": "Shared cases for the title rule: app/utils/titleSuggestion.ts (suggestTitle) and worker/src/resona_project_worker/title.py (suggest_title) must both return `title` for `text` (null = no usable title).",
+	"_doc": "Shared cases for the title rule: app/utils/titleSuggestion.ts (deriveTitle) and worker/src/resona_project_worker/title.py (derive_title) must both return `title` for `text` (null = no usable title). Calendar preset and dated fallbacks are TS-only wrappers, tested in test/titleSuggestion.spec.ts.",
 	"cases": [
 		{
 			"name": "typischer Diktatanfang",
-			"text": "Ähm, also der Patient Herr Müller kommt heute zur Kontrolle. Er klagt über Kopfschmerzen.",
-			"title": "Patient Herr Müller kommt heute"
+			"text": "Also äh der Patient klagt über starke Kopfschmerzen seit drei Tagen Punkt Er nimmt Ibuprofen",
+			"title": "Patient klagt über starke Kopfschmerzen"
 		},
 		{
-			"name": "Überschrift zuerst",
-			"text": "## Verlauf\n\nStabiler Zustand, keine Beschwerden.",
-			"title": "Verlauf"
+			"name": "Füllwort mit Komma am Anfang, endet nicht vor drei Wörtern",
+			"text": "Ähm, also der Patient Herr Müller kommt heute zur Kontrolle. Er klagt über Kopfschmerzen.",
+			"title": "Patient Herr Müller kommt"
+		},
+		{
+			"name": "Komma-Befehl beendet den Teilsatz",
+			"text": "Ähm, Visite Station drei Komma Herr Müller. Weiter geht es.",
+			"title": "Visite Station drei"
+		},
+		{
+			"name": "erster Satz",
+			"text": "Befund unauffällig. Keine Auffälligkeiten.",
+			"title": "Befund unauffällig"
+		},
+		{
+			"name": "Satzbefehle vor und nach dem Inhalt",
+			"text": "äh Absatz kurze Notiz zum Termin Fragezeichen",
+			"title": "Kurze Notiz zum Termin"
 		},
 		{
 			"name": "sehr kurzer Text",
+			"text": "hallo!",
+			"title": "Hallo"
+		},
+		{
+			"name": "Kleinschreibung am Anfang",
+			"text": "kurzer test",
+			"title": "Kurzer test"
+		},
+		{
+			"name": "nur ein Füllwort",
 			"text": "Ja.",
 			"title": null
 		},
 		{
 			"name": "nur Füllwörter",
 			"text": "ähm äh hm, okay.",
+			"title": null
+		},
+		{
+			"name": "nur Füllwörter und Diktatbefehle",
+			"text": "  äh ähm hm Komma Punkt Absatz ",
 			"title": null
 		},
 		{
@@ -32,34 +62,54 @@
 			"title": null
 		},
 		{
+			"name": "Überschrift zuerst",
+			"text": "## Verlauf\n\nStabiler Zustand, keine Beschwerden.",
+			"title": "Verlauf"
+		},
+		{
+			"name": "Überschrift schlägt den ersten Satz",
+			"text": "Einleitung ohne Punkt\n\n## Psychopathologischer Befund\n\nWach und orientiert.",
+			"title": "Psychopathologischer Befund"
+		},
+		{
 			"name": "ohne Satzzeichen auf sechs Wörter gekürzt",
 			"text": "Termin am Montag mit Frau Schmidt wegen der Laborwerte und des Befunds",
 			"title": "Termin am Montag mit Frau Schmidt"
 		},
 		{
-			"name": "Markdown-Hervorhebung",
-			"text": "**Befund:** unauffällig",
-			"title": "Befund"
+			"name": "sechs Wörter, Funktionswort am Ende entfernt",
+			"text": "Aufnahme Gespräch Patientin Station Nord mit Angehörigen über Entlassung",
+			"title": "Aufnahme Gespräch Patientin Station Nord"
 		},
 		{
-			"name": "Kleinschreibung am Anfang",
-			"text": "kurzer test",
-			"title": "Kurzer test"
+			"name": "Stoppwörter am Ende nach Kürzung",
+			"text": "Der Patient wird morgen um acht in die Ambulanz verlegt",
+			"title": "Patient wird morgen um acht"
 		},
 		{
-			"name": "Listenpunkt",
-			"text": "1. Blutdruck messen\n2. Labor",
-			"title": "Blutdruck messen"
+			"name": "überlange Wortfolge an Wortgrenze gekürzt",
+			"text": "Die außerordentlich umfangreiche Untersuchungsdokumentation hinsichtlich verschiedenster Laborparameter",
+			"title": "Außerordentlich umfangreiche Untersuchungsdokumentation"
 		},
 		{
-			"name": "überlanges Wort",
+			"name": "überlange Wortfolge ohne Funktionswörter",
+			"text": "Hausarztzentrierte Versorgungsvereinbarung Kassenärztliche Bundesvereinigung Qualitätssicherungsmaßnahmen Fortbildungsverpflichtung",
+			"title": "Hausarztzentrierte Versorgungsvereinbarung Kassenärztliche"
+		},
+		{
+			"name": "überlanges Wort hart gekürzt",
 			"text": "Donaudampfschifffahrtsgesellschaftskapitänswitwenrentenversicherungsanstaltsbeschlussvorlage",
 			"title": "Donaudampfschifffahrtsgesellschaftskapitänswitwenrentenversi"
 		},
 		{
-			"name": "überlange Wortfolge",
-			"text": "Hausarztzentrierte Versorgungsvereinbarung Kassenärztliche Bundesvereinigung Qualitätssicherungsmaßnahmen Fortbildungsverpflichtung",
-			"title": "Hausarztzentrierte Versorgungsvereinbarung Kassenärztliche"
+			"name": "Markdown-Hervorhebung",
+			"text": "**Befund:** unauffällig",
+			"title": "Befund unauffällig"
+		},
+		{
+			"name": "Listenpunkt, Zeilenumbruch beendet den Satz",
+			"text": "1. Blutdruck messen\n2. Labor",
+			"title": "Blutdruck messen"
 		},
 		{
 			"name": "erster Satz ohne Inhalt",
@@ -75,11 +125,6 @@
 			"name": "Bindestrich und Zahlen",
 			"text": "COVID-19 Impfung, zweite Dosis",
 			"title": "COVID-19 Impfung zweite Dosis"
-		},
-		{
-			"name": "Stoppwörter am Ende nach Kürzung",
-			"text": "Der Patient wird morgen um acht in die Ambulanz verlegt",
-			"title": "Patient wird morgen um acht"
 		}
 	]
 }

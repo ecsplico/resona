@@ -2,8 +2,8 @@ import type { CorrectionEdit, Recording, ResonaDocument, Transcript } from "~/ty
 
 /** `title_auto`: the title is a date placeholder the processor replaces with one derived from the transcript. */
 export interface NewRecording { title: string; title_auto?: boolean; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
-/** What `SaveSheet` emits on save; `titleAuto` marks a date placeholder title. */
-export interface SavePayload { title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }
+/** What the save sheet hands over for a new recording; `titleAuto` becomes `title_auto`. */
+export interface SaveRequest { title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }
 /**
  * Transcript fields the user writes: the text, plus the "Nachbearbeiten" request and
  * undo (see `~/utils/postprocess`). The hub job fields (`postprocess_job_*`,

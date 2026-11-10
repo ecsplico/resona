@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref, nextTick } from "vue";
 import type { Ref } from "vue";
-import { useLive } from "~/composables/useLive";
+import { describeClose, useLive } from "~/composables/useLive";
 import { useHubSettings } from "~/composables/useHubSettings";
 
 // Controllable useWebSocket spy. The mutable refs are populated by the mock
@@ -74,7 +74,7 @@ describe("useLive", () => {
 	it("reconnects up to 3 times with a 2 s delay", () => {
 		const live = useLive();
 		void live.start();
-		expect(ws.lastOpts).toEqual({ autoReconnect: { retries: 3, delay: 2000 } });
+		expect(ws.lastOpts).toMatchObject({ autoReconnect: { retries: 3, delay: 2000 } });
 	});
 
 	it("omits engine when empty and private unless explicitly false", () => {
@@ -226,5 +226,43 @@ describe("useLive", () => {
 		void live.start();
 		ws.status!.value = "OPEN";
 		expect(live.status.value).toBe("OPEN");
+	});
+
+	type SockOpts = {
+		autoReconnect: { onFailed: () => void };
+		onConnected: () => void;
+		onDisconnected: (ws: unknown, event: { code: number; reason: string }) => void;
+	};
+
+	it("records the close code/reason and reports it once reconnects are exhausted", () => {
+		const live = useLive();
+		void live.start();
+		const opts = ws.lastOpts as SockOpts;
+
+		opts.onDisconnected({}, { code: 1011, reason: "engine down" });
+		expect(live.closeInfo.value).toEqual({ code: 1011, reason: "engine down" });
+		expect(live.error.value).toBeNull();
+
+		opts.autoReconnect.onFailed();
+		expect(live.error.value).toBe("Verbindung zum Hub verloren – Fehler im Hub (Code 1011: engine down)");
+	});
+
+	it("a successful reconnect clears the close info; an earlier Error frame message is kept", async () => {
+		const live = useLive();
+		void live.start();
+		const opts = ws.lastOpts as SockOpts;
+		opts.onDisconnected({}, { code: 1006, reason: "" });
+		opts.onConnected();
+		expect(live.closeInfo.value).toBeNull();
+
+		ws.data!.value = JSON.stringify({ type: "Error", description: "policy_denied: asr: cloud" });
+		await nextTick();
+		opts.autoReconnect.onFailed();
+		expect(live.error.value).toBe("policy_denied: asr: cloud");
+	});
+
+	it("describeClose names known codes and falls back for others", () => {
+		expect(describeClose({ code: 1008, reason: "" })).toBe("Hub hat die Verbindung abgelehnt (Token oder Richtlinie) (Code 1008)");
+		expect(describeClose({ code: 4000, reason: "bye" })).toBe("Verbindung geschlossen (Code 4000: bye)");
 	});
 });

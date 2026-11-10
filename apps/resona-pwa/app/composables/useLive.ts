@@ -19,6 +19,25 @@ interface DeepgramResults {
 	is_final?: boolean;
 }
 
+/** Code and reason of the last WebSocket close the hub (or the network) caused. */
+export interface LiveCloseInfo {
+	code: number;
+	reason: string;
+}
+
+const CLOSE_LABELS: Record<number, string> = {
+	1003: "Audioformat vom Hub nicht unterstützt",
+	1006: "Verbindung abgebrochen",
+	1008: "Hub hat die Verbindung abgelehnt (Token oder Richtlinie)",
+	1011: "Fehler im Hub",
+};
+
+/** German one-liner for a close, e.g. "Fehler im Hub (Code 1011: engine down)". */
+export function describeClose(info: LiveCloseInfo): string {
+	const label = CLOSE_LABELS[info.code] ?? "Verbindung geschlossen";
+	return `${label} (Code ${info.code}${info.reason ? `: ${info.reason}` : ""})`;
+}
+
 function toWsUrl(httpUrl: string): string {
 	if (httpUrl.startsWith("https:")) {
 		return `wss:${httpUrl.slice("https:".length)}`;
@@ -34,6 +53,7 @@ export function useLive() {
 	const final: Ref<string> = ref("");
 	const status: Ref<string> = ref("CLOSED");
 	const error: Ref<string | null> = ref(null);
+	const closeInfo: Ref<LiveCloseInfo | null> = ref(null);
 	const fullText: ComputedRef<string> = computed(() =>
 		partial.value ? `${final.value} ${partial.value}`.trim() : final.value,
 	);
@@ -108,10 +128,29 @@ export function useLive() {
 		url.searchParams.set("token", useHub().token());
 
 		error.value = null;
+		closeInfo.value = null;
 		final.value = "";
 		partial.value = "";
 
-		const sock = useWebSocket(url.toString(), { autoReconnect: { retries: 3, delay: 2000 } });
+		const sock = useWebSocket(url.toString(), {
+			autoReconnect: {
+				retries: 3,
+				delay: 2000,
+				// Reconnects exhausted: say why instead of reconnecting forever in the banner.
+				onFailed() {
+					if (error.value) return;
+					error.value = closeInfo.value
+						? `Verbindung zum Hub verloren – ${describeClose(closeInfo.value)}`
+						: "Verbindung zum Hub verloren";
+				},
+			},
+			onConnected() {
+				closeInfo.value = null;
+			},
+			onDisconnected(_ws, event) {
+				closeInfo.value = { code: event.code, reason: event.reason };
+			},
+		});
 		send = sock.send as (data: string | ArrayBufferLike) => void;
 		close = sock.close;
 
@@ -156,6 +195,7 @@ export function useLive() {
 		fullText,
 		status,
 		error,
+		closeInfo,
 		start,
 		stop,
 		onFinal,

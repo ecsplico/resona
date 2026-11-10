@@ -19,7 +19,7 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 |----------|---------|-------------|
 | `RESONA_ENGINE_URLS` | `http://localhost:7001` | Comma-separated list of engine-server URLs; the API probes all and load-balances across reachable ones |
 | `RESONA_DEFAULT_ENGINE` | _(first available)_ | Engine name to use for requests that do not specify one |
-| `RESONA_ENGINE_KEY` | _(unset)_ | API key sent to engine-server in the `X-API-Key` header |
+| `RESONA_ENGINE_KEY` | _(unset)_ | Not used by resona-api: the hub sends no key to engine-servers (the bridged `/ws/live` takes none). Keep engine-servers on a private network instead |
 | `RESONA_BOOTSTRAP_ORGANIZATION_ID` | _(unset)_ | Organization that owns jobs already in an upgraded database. Required only when a pre-identity database with job rows is first migrated; startup refuses without it. Hub access uses org-scoped credentials issued by `resona-admin`, not a shared key |
 | `DATA_PATH` | `./data` | Root directory for all persistent data (SQLite DB and expiring per-organization job files) |
 | `RESONA_MAX_UPLOAD_BYTES` | `209715200` (200 MiB) | Maximum size of one upload or worker result; enforced while streaming, larger requests get `413` |

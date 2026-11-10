@@ -21,13 +21,13 @@ vi.mock("~/data/localStore", () => ({
 			.sort((a, b) => String(a.date_created).localeCompare(String(b.date_created)))
 			.map(r => ({ ...r }))),
 	readFile: vi.fn(async (id: string) => db.files.get(id) ?? null),
-	// Mirrors the store's conditional write: only while the stored row is still flagged.
-	setAutoTitleInternal: vi.fn(async (id: string, title: string) => {
-		const row = db.recordings.get(id);
-		if (row?.title_auto) db.recordings.set(id, { ...row, title, title_auto: false });
-	}),
 	patchRecordingInternal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
 		db.recordings.set(id, { ...db.recordings.get(id), ...patch });
+	}),
+	// Same guard as the real one: only while the row still has `title_auto`.
+	replaceAutoTitle: vi.fn(async (id: string, title: string) => {
+		const row = db.recordings.get(id);
+		if (row?.title_auto === true) db.recordings.set(id, { ...row, title, title_auto: false });
 	}),
 	patchDocumentInternal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
 		db.documents.set(id, { ...db.documents.get(id), ...patch });
@@ -233,9 +233,26 @@ describe("runLocalCycle", () => {
 		hub.getJob.mockResolvedValue(job("completed"));
 		hub.getResult.mockResolvedValue({ ...RESULT, markdown: "Patient wach und orientiert. Weitere Details folgen." });
 		await runLocalCycle();
-		const row = db.recordings.get("1")!;
-		expect(row.title_auto).toBe(false);
-		expect(row.title).toMatch(/^Patient wach/);
+		expect(db.recordings.get("1")).toMatchObject({ status: "done", title: "Patient wach und orientiert", title_auto: false });
+	});
+
+	it("keeps a rename made while the job completes", async () => {
+		recording("1", { status: "transcribing", hub_job_id: 7, title: "Aufnahme 10.11.2026 09:05", title_auto: true });
+		hub.getJob.mockResolvedValue(job("completed"));
+		hub.getResult.mockImplementationOnce(async () => {
+			db.recordings.set("1", { ...db.recordings.get("1"), title: "Umbenannt", title_auto: false });
+			return { ...RESULT, markdown: "Patient wach und orientiert." };
+		});
+		await runLocalCycle();
+		expect(db.recordings.get("1")).toMatchObject({ status: "done", title: "Umbenannt", title_auto: false });
+	});
+
+	it("keeps the placeholder when the transcript has no usable words", async () => {
+		recording("1", { status: "transcribing", hub_job_id: 7, title: "Aufnahme 10.11.2026 09:05", title_auto: true });
+		hub.getJob.mockResolvedValue(job("completed"));
+		hub.getResult.mockResolvedValue({ ...RESULT, markdown: "äh ähm ja." });
+		await runLocalCycle();
+		expect(db.recordings.get("1")).toMatchObject({ status: "done", title: "Aufnahme 10.11.2026 09:05", title_auto: true });
 	});
 
 	it("leaves the title of an unflagged recording untouched", async () => {
@@ -244,18 +261,6 @@ describe("runLocalCycle", () => {
 		hub.getResult.mockResolvedValue({ ...RESULT, markdown: "Patient wach und orientiert." });
 		await runLocalCycle();
 		expect(db.recordings.get("1")).toMatchObject({ status: "done", title: "Mein Titel", title_auto: false });
-	});
-
-	it("keeps a title the user typed while the job was completing", async () => {
-		recording("1", { status: "transcribing", hub_job_id: 7, title: "Aufnahme 10.11.2026 09:05", title_auto: true });
-		hub.getJob.mockResolvedValue(job("completed"));
-		// The rename lands after the cycle read the row, while the result is fetched.
-		hub.getResult.mockImplementation(async () => {
-			db.recordings.set("1", { ...db.recordings.get("1"), title: "Visite Herr M.", title_auto: false });
-			return { ...RESULT, markdown: "Patient wach und orientiert." };
-		});
-		await runLocalCycle();
-		expect(db.recordings.get("1")).toMatchObject({ status: "done", title: "Visite Herr M.", title_auto: false });
 	});
 
 	it("stores markdown and pages on a completed document", async () => {

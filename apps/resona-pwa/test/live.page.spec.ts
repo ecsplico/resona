@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref, computed, reactive, type Ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import LivePage from "~/pages/live.vue";
-import { suggestTitle } from "~/utils/titleSuggestion";
+import { HubError } from "~/composables/useHub";
+import { DEVICE_SPEECH_HINTS } from "~/composables/useDeviceSpeech";
 
 const live = vi.hoisted(() => ({
 	partial: null as null | { value: string },
 	final: null as null | { value: string },
 	status: null as null | { value: string },
 	error: null as null | { value: string | null },
+	closeInfo: null as null | { value: { code: number; reason: string } | null },
 }));
 const liveStart = vi.hoisted(() => vi.fn(async () => {}));
 const liveStop = vi.hoisted(() => vi.fn());
@@ -25,6 +27,7 @@ mockNuxtImport("useLive", () => () => {
 	live.final ??= ref("");
 	live.status ??= ref("CLOSED");
 	live.error ??= ref<string | null>(null);
+	live.closeInfo ??= ref<{ code: number; reason: string } | null>(null);
 	const fullText = computed(() => {
 		const f = live.final!.value;
 		const p = live.partial!.value;
@@ -36,6 +39,7 @@ mockNuxtImport("useLive", () => () => {
 		fullText,
 		status: live.status,
 		error: live.error,
+		closeInfo: live.closeInfo,
 		start: liveStart,
 		stop: liveStop,
 		onFinal: liveOnFinal,
@@ -49,6 +53,7 @@ const device = vi.hoisted(() => ({
 	error: null as null | { value: string | null },
 	start: vi.fn(async () => {}),
 	stop: vi.fn(),
+	availability: vi.fn(async (): Promise<string> => "available"),
 }));
 mockNuxtImport("useDeviceSpeech", () => () => {
 	device.partial ??= ref("");
@@ -64,7 +69,7 @@ mockNuxtImport("useDeviceSpeech", () => () => {
 		start: device.start,
 		stop: device.stop,
 		onFinal: vi.fn(() => () => {}),
-		availability: vi.fn(async () => "available"),
+		availability: device.availability,
 		install: vi.fn(async () => true),
 	};
 });
@@ -95,12 +100,27 @@ const listen = vi.hoisted(() => ({
 		engines: [] as { name: string; kind: string; private: boolean; models: string[] }[],
 		default: null as string | null,
 	},
+	error: null as unknown,
+	hasToken: true,
+}));
+const listListenEngines = vi.hoisted(() => vi.fn(async () => {
+	if (listen.error) {
+		throw listen.error;
+	}
+	return listen.result;
 }));
 mockNuxtImport("useHub", () => () => ({
 	token: () => "tok",
-	listListenEngines: vi.fn(async () => listen.result),
+	hasToken: () => listen.hasToken,
+	listListenEngines,
 	listEngines: hubListEngines,
 }));
+
+const route = vi.hoisted(() => ({ query: {} as Record<string, string> }));
+mockNuxtImport("useRoute", () => () => route);
+
+const suggestTitleRemote = vi.hoisted(() => vi.fn(async (_text: string, _opts?: { language?: string; signal?: AbortSignal }): Promise<string | null> => null));
+mockNuxtImport("useTitleJob", () => () => ({ suggestTitleRemote }));
 
 type TestBlock = {
 	id: number;
@@ -145,8 +165,8 @@ async function flush(): Promise<void> {
 	}
 }
 
-async function mountLive(route?: string) {
-	const w = await mountSuspended(LivePage, route ? { route } : {});
+async function mountLive() {
+	const w = await mountSuspended(LivePage);
 	await flush();
 	await w.vm.$nextTick();
 	return w;
@@ -214,6 +234,8 @@ describe("live transcription page", () => {
 		status.value = "OPEN";
 		live.error ??= ref<string | null>(null);
 		live.error.value = null;
+		live.closeInfo ??= ref<{ code: number; reason: string } | null>(null);
+		live.closeInfo.value = null;
 		device.partial ??= ref("");
 		device.final ??= ref("");
 		device.status ??= ref("OPEN");
@@ -221,6 +243,7 @@ describe("live transcription page", () => {
 		device.final.value = "";
 		device.partial.value = "";
 		device.error.value = null;
+		device.availability.mockResolvedValue("available");
 		settings.value ??= reactive({
 			source: "hub" as "hub" | "device",
 			hubEngine: "",
@@ -245,6 +268,10 @@ describe("live transcription page", () => {
 			engines: [{ name: "whisper-live", kind: "local", private: true, models: [] }],
 			default: "whisper-live",
 		};
+		listen.error = null;
+		listen.hasToken = true;
+		route.query = {};
+		suggestTitleRemote.mockResolvedValue(null);
 		store.createRecording.mockReset();
 		store.createTranscript.mockReset();
 		store.createRecording.mockResolvedValue({ id: "rec-1" });
@@ -349,137 +376,6 @@ describe("live transcription page", () => {
 		expect(nav.leaveTo).toHaveBeenCalledWith("/");
 	});
 
-	it("saves an untitled recording under the title suggested from enough dictated text", async () => {
-		const text = "Kontrolle der Wundheilung am linken Unterschenkel. Die Wunde ist trocken und reizlos, keine Rötung, keine Schwellung, kein Fieber, Verband wird morgen gewechselt.";
-		final.value = text;
-		const w = await mountLive();
-		await stopAndSave(w);
-
-		const [input, , filename] = store.createRecording.mock.calls[0]!;
-		expect(input.title).toBe(suggestTitle(text));
-		expect(input.title).toBeTruthy();
-		expect(filename).toBe(`${input.title}.webm`);
-	});
-
-	it("falls back to a dated placeholder title when no text is usable", async () => {
-		final.value = "";
-		const w = await mountLive();
-		await stopAndSave(w);
-
-		const [input, , filename] = store.createRecording.mock.calls[0]!;
-		expect(input.title).toMatch(/^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
-		expect(filename).toBe(`${input.title}.webm`);
-	});
-
-	it("keeps a typed title as typed", async () => {
-		final.value = "Der Befund ist unauffällig.";
-		const w = await mountLive();
-		await w.find("[data-testid=\"stop-live\"]").trigger("click");
-		await flush();
-		await w.find("[data-testid=\"title-input\"]").find("input").setValue("Meine Visite");
-		await w.find("[data-testid=\"confirm-save\"]").trigger("click");
-		await flush();
-
-		expect(store.createRecording.mock.calls[0]![0].title).toBe("Meine Visite");
-	});
-
-	describe("title suggestion", () => {
-		const PLACEHOLDER = /^Aufnahme \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/;
-
-		function titleInput(w: Awaited<ReturnType<typeof mountLive>>) {
-			return w.find("[data-testid=\"title-input\"]").find("input");
-		}
-
-		// About 10-15 s of dictation: enough final words for a suggestion to appear.
-		const LONG = "Ähm also Kontrolle der Wundheilung am linken Unterschenkel. Die Wunde ist trocken und reizlos, keine Rötung, keine Schwellung, kein Fieber.";
-		const LONGER = `${LONG.replace("Ähm also Kontrolle der", "Verbandswechsel nach")} Verband morgen.`;
-
-		it("shows a suggestion only after enough final text and updates it as dictation continues", async () => {
-			const w = await mountLive();
-			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
-
-			// Partials alone never produce a suggestion.
-			partial.value = LONG;
-			await w.vm.$nextTick();
-			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
-
-			// A few early words are not enough yet.
-			partial.value = "";
-			final.value = "Ähm also Kontrolle der Wundheilung.";
-			await w.vm.$nextTick();
-			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
-
-			final.value = LONG;
-			await w.vm.$nextTick();
-			const first = suggestTitle(LONG)!;
-			expect(w.find("[data-testid=\"title-suggestion\"]").text()).toBe(`Titelvorschlag: ${first}`);
-
-			final.value = LONGER;
-			await w.vm.$nextTick();
-			const second = suggestTitle(LONGER)!;
-			expect(second).not.toBe(first);
-			expect(w.find("[data-testid=\"title-suggestion\"]").text()).toBe(`Titelvorschlag: ${second}`);
-		});
-
-		it("prefills the save prompt with exactly the shown suggestion, still editable", async () => {
-			const w = await mountLive();
-			final.value = LONG;
-			await w.vm.$nextTick();
-			const shown = w.find("[data-testid=\"title-suggestion\"]").text().replace("Titelvorschlag: ", "");
-
-			await w.find("[data-testid=\"stop-live\"]").trigger("click");
-			await flush();
-			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
-			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
-
-			await titleInput(w).setValue(`${shown} links`);
-			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
-			await flush();
-			expect(store.createRecording.mock.calls[0]![0].title).toBe(`${shown} links`);
-		});
-
-		it("a calendar title wins: no suggestion is shown and the field keeps it", async () => {
-			const w = await mountLive("/live?title=Kalender");
-			final.value = LONG;
-			await w.vm.$nextTick();
-			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
-
-			await w.find("[data-testid=\"stop-live\"]").trigger("click");
-			await flush();
-			expect((titleInput(w).element as HTMLInputElement).value).toBe("Kalender");
-			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
-			await flush();
-			expect(store.createRecording.mock.calls[0]![0].title).toBe("Kalender");
-		});
-
-		it("with correction the prefill is the shown suggestion and finished correction never changes the field", async () => {
-			settings.value!.correction = true;
-			const w = await mountLive();
-			corr.blocks!.value = [{ id: 1, liveText: LONG, correctedText: null, state: "queued", samples: null }];
-			await w.vm.$nextTick();
-			const shown = w.find("[data-testid=\"title-suggestion\"]").text().replace("Titelvorschlag: ", "");
-			await w.find("[data-testid=\"stop-live\"]").trigger("click");
-			await flush();
-			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
-
-			corr.blocks!.value = [{ id: 1, liveText: LONG, correctedText: LONGER, state: "corrected", samples: null }];
-			corr.finishResolve!();
-			await flush();
-			expect((titleInput(w).element as HTMLInputElement).value).toBe(shown);
-		});
-
-		it("prefills a dated placeholder when too little was dictated for a suggestion", async () => {
-			const w = await mountLive();
-			final.value = "Der Befund ist unauffällig.";
-			await w.vm.$nextTick();
-			expect(w.find("[data-testid=\"title-suggestion\"]").exists()).toBe(false);
-
-			await w.find("[data-testid=\"stop-live\"]").trigger("click");
-			await flush();
-			expect((titleInput(w).element as HTMLInputElement).value).toMatch(PLACEHOLDER);
-		});
-	});
-
 	it("surfaces an error and does not navigate when saving fails", async () => {
 		store.createRecording.mockReset();
 		store.createRecording.mockRejectedValueOnce(new Error("network down"));
@@ -545,20 +441,272 @@ describe("live transcription page", () => {
 		settings.value!.source = "device";
 		listen.result = { engines: [], default: null };
 		const w = await mountLive();
-		expect(w.find("[data-testid=\"live-no-hub-stream\"]").exists()).toBe(false);
+		expect(w.find("[data-testid=\"live-notice\"]").exists()).toBe(false);
 		expect(device.start).toHaveBeenCalled();
 	});
 
-	it("hub source with no listen engines shows the notice and does not start", async () => {
+	function notice(w: Awaited<ReturnType<typeof mountLive>>) {
+		return w.find("[data-testid=\"live-notice\"]");
+	}
+	function startButton(w: Awaited<ReturnType<typeof mountLive>>) {
+		return w.find("[data-testid=\"start-live\"]");
+	}
+
+	it("hub reachable but without live engine: says so and does not start", async () => {
 		listen.result = { engines: [], default: null };
 		const w = await mountLive();
 		expect(liveStart).not.toHaveBeenCalled();
-		const notice = w.find("[data-testid=\"live-no-hub-stream\"]");
-		expect(notice.exists()).toBe(true);
-		expect(notice.text()).toContain("Dieser Hub bietet kein Live-Streaming an");
-		const startBtn = w.find("[data-testid=\"start-live\"]");
-		expect(startBtn.exists()).toBe(true);
-		expect(startBtn.attributes("disabled")).toBeDefined();
+		expect(notice(w).attributes("data-kind")).toBe("no-engine");
+		expect(notice(w).text()).toContain("Der Hub hat keinen Live-Erkenner");
+		expect(startButton(w).attributes("disabled")).toBeDefined();
+	});
+
+	it("no hub token on the device: points to Einstellungen → Verbindung without calling the hub", async () => {
+		listen.hasToken = false;
+		const w = await mountLive();
+		expect(listListenEngines).not.toHaveBeenCalled();
+		expect(liveStart).not.toHaveBeenCalled();
+		expect(notice(w).attributes("data-kind")).toBe("no-token");
+		expect(notice(w).text()).toContain("kein Hub-Token");
+		expect(notice(w).text()).toContain("Einstellungen → Verbindung");
+		expect(startButton(w).attributes("disabled")).toBeDefined();
+	});
+
+	it.each([401, 403])("token rejected by the hub (%i): says the token is invalid or revoked", async (code) => {
+		listen.error = new HubError(code, "unauthorized", "invalid credential");
+		const w = await mountLive();
+		expect(liveStart).not.toHaveBeenCalled();
+		expect(notice(w).attributes("data-kind")).toBe("unauthorized");
+		expect(notice(w).text()).toContain("ungültig oder widerrufen");
+		expect(notice(w).text()).not.toContain("Live-Erkenner");
+		expect(startButton(w).attributes("disabled")).toBeDefined();
+	});
+
+	it("unreachable hub: reports the network, and start re-checks before streaming", async () => {
+		listen.error = new HubError(0, "network", "Failed to fetch");
+		const w = await mountLive();
+		expect(liveStart).not.toHaveBeenCalled();
+		expect(notice(w).attributes("data-kind")).toBe("unreachable");
+		expect(notice(w).text()).toContain("nicht erreichbar");
+		expect(startButton(w).attributes("disabled")).toBeUndefined();
+
+		// still down: nothing starts
+		await startButton(w).trigger("click");
+		await flush();
+		expect(liveStart).not.toHaveBeenCalled();
+
+		listen.error = null;
+		await startButton(w).trigger("click");
+		await flush();
+		expect(liveStart).toHaveBeenCalled();
+		expect(notice(w).exists()).toBe(false);
+	});
+
+	it("other hub errors show the status instead of an empty engine list", async () => {
+		listen.error = new HubError(500, "http_500", "Internal Server Error");
+		const w = await mountLive();
+		expect(notice(w).attributes("data-kind")).toBe("error");
+		expect(notice(w).text()).toContain("HTTP 500");
+	});
+
+	it.each(["unsupported", "unavailable"] as const)("device source %s: shows the unsupported hint and disables start", async (state) => {
+		settings.value!.source = "device";
+		device.availability.mockResolvedValue(state);
+		const w = await mountLive();
+		expect(device.start).not.toHaveBeenCalled();
+		expect(notice(w).attributes("data-kind")).toBe("device-unsupported");
+		expect(notice(w).text()).toContain(DEVICE_SPEECH_HINTS[state]);
+		expect(startButton(w).attributes("disabled")).toBeDefined();
+		await startButton(w).trigger("click");
+		expect(device.start).not.toHaveBeenCalled();
+	});
+
+	it("device source with a downloadable pack: hints at the install, waits for the user", async () => {
+		settings.value!.source = "device";
+		device.availability.mockResolvedValue("downloadable");
+		const w = await mountLive();
+		expect(device.start).not.toHaveBeenCalled();
+		expect(notice(w).attributes("data-kind")).toBe("device-downloadable");
+		expect(notice(w).text()).toContain(DEVICE_SPEECH_HINTS.downloadable);
+		expect(startButton(w).attributes("disabled")).toBeUndefined();
+	});
+
+	it("names the WebSocket close code and reason while reconnecting", async () => {
+		const w = await mountLive();
+		live.closeInfo!.value = { code: 1011, reason: "engine down" };
+		status.value = "CLOSED";
+		await w.vm.$nextTick();
+		const banner = w.find("[data-testid=\"reconnect-banner\"]");
+		expect(banner.text()).toContain("Code 1011: engine down");
+	});
+
+	describe("title suggestion", () => {
+		// Enough final words (LIVE_SUGGESTION_MIN_WORDS) for the suggestion to show.
+		const dictation = "Also äh der Patient klagt über starke Kopfschmerzen seit drei Tagen Punkt Er nimmt seit gestern zweimal täglich Ibuprofen und trinkt viel Wasser, Fieber hat er keines Punkt";
+
+		it("shows a suggestion during recording once enough final text is there", async () => {
+			const w = await mountLive();
+			final.value = "Der Patient";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"live-title-suggestion\"]").exists()).toBe(false);
+
+			final.value = dictation;
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"live-title-suggestion\"]").text()).toContain("Patient klagt über starke Kopfschmerzen");
+		});
+
+		it("shows no suggestion for a short dictation yet pre-fills its rule title on stop", async () => {
+			const w = await mountLive();
+			final.value = "Der Patient klagt über starke Kopfschmerzen seit drei Tagen.";
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"live-title-suggestion\"]").exists()).toBe(false);
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((w.find("[data-testid=\"title-input\"]").find("input").element as HTMLInputElement).value)
+				.toBe("Patient klagt über starke Kopfschmerzen");
+		});
+
+		it("pre-fills the save dialog with exactly that suggestion and saves an edit", async () => {
+			const w = await mountLive();
+			final.value = dictation;
+			partial.value = "und Übelkeit";
+			await w.vm.$nextTick();
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			const input = w.find("[data-testid=\"title-input\"]").find("input");
+			expect((input.element as HTMLInputElement).value).toBe("Patient klagt über starke Kopfschmerzen");
+
+			await input.setValue("Kopfschmerz-Anamnese");
+			await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+			await flush();
+			expect(store.createRecording).toHaveBeenCalledWith(
+				expect.objectContaining({ title: "Kopfschmerz-Anamnese" }),
+				expect.any(Blob),
+				"Kopfschmerz-Anamnese.webm",
+			);
+		});
+
+		it("falls back to date and time when nothing usable was recognised", async () => {
+			const w = await mountLive();
+			final.value = "äh ähm";
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			const value = (w.find("[data-testid=\"title-input\"]").find("input").element as HTMLInputElement).value;
+			expect(value).toMatch(/^Diktat \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+		});
+
+		it("saves a cleared title under the suggestion, or date and time without usable text", async () => {
+			for (const [text, expected] of [
+				[dictation, /^Patient klagt über starke Kopfschmerzen$/],
+				["äh ähm", /^Diktat \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/],
+			] as const) {
+				store.createRecording.mockClear();
+				const w = await mountLive();
+				final.value = text;
+				await w.find("[data-testid=\"stop-live\"]").trigger("click");
+				await flush();
+				await w.find("[data-testid=\"title-input\"]").find("input").setValue("  ");
+				await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+				await flush();
+				const [input, , filename] = store.createRecording.mock.calls[0]!;
+				expect(input.title).toMatch(expected);
+				expect(filename).toBe(`${input.title}.webm`);
+				w.unmount();
+			}
+		});
+
+		it("keeps a calendar title and shows no competing suggestion", async () => {
+			route.query = { title: "Visite Station 3 – 10.11.2026" };
+			const w = await mountLive();
+			final.value = dictation;
+			await w.vm.$nextTick();
+			expect(w.find("[data-testid=\"live-title-suggestion\"]").exists()).toBe(false);
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect((w.find("[data-testid=\"title-input\"]").find("input").element as HTMLInputElement).value)
+				.toBe("Visite Station 3 – 10.11.2026");
+			expect(suggestTitleRemote).not.toHaveBeenCalled();
+		});
+
+		function titleValue(w: Awaited<ReturnType<typeof mountLive>>): string {
+			return (w.find("[data-testid=\"title-input\"]").find("input").element as HTMLInputElement).value;
+		}
+
+		function deferredRemote(): { resolve: (v: string | null) => void; signal: () => AbortSignal } {
+			const { promise, resolve } = Promise.withResolvers<string | null>();
+			suggestTitleRemote.mockImplementation(() => promise);
+			return {
+				resolve,
+				signal: () => suggestTitleRemote.mock.calls[0]![1]!.signal!,
+			};
+		}
+
+		it("a remote title replaces the rule suggestion after stop", async () => {
+			const remote = deferredRemote();
+			const w = await mountLive();
+			final.value = dictation;
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(suggestTitleRemote).toHaveBeenCalledWith(dictation, expect.objectContaining({ language: "de" }));
+			expect(titleValue(w)).toBe("Patient klagt über starke Kopfschmerzen");
+			expect(w.find("[data-testid=\"live-title-refining\"]").exists()).toBe(true);
+
+			remote.resolve("Kopfschmerzen seit drei Tagen");
+			await flush();
+			expect(titleValue(w)).toBe("Kopfschmerzen seit drei Tagen");
+			expect(w.find("[data-testid=\"live-title-suggestion\"]").text()).toContain("Kopfschmerzen seit drei Tagen");
+			expect(w.find("[data-testid=\"live-title-refining\"]").exists()).toBe(false);
+		});
+
+		it("a typed title aborts the refinement and is not replaced", async () => {
+			const remote = deferredRemote();
+			const w = await mountLive();
+			final.value = dictation;
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			await w.find("[data-testid=\"title-input\"]").find("input").setValue("Mein Titel");
+			expect(remote.signal().aborted).toBe(true);
+
+			remote.resolve("Kopfschmerzen seit drei Tagen");
+			await flush();
+			expect(titleValue(w)).toBe("Mein Titel");
+		});
+
+		it("null from the hub keeps the rule title silently", async () => {
+			const w = await mountLive();
+			final.value = dictation;
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(suggestTitleRemote).toHaveBeenCalled();
+			expect(titleValue(w)).toBe("Patient klagt über starke Kopfschmerzen");
+			expect(w.find("[data-testid=\"live-title-refining\"]").exists()).toBe(false);
+		});
+
+		it("is aborted on unmount and not started for short text or without token", async () => {
+			const remote = deferredRemote();
+			let w = await mountLive();
+			final.value = dictation;
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			w.unmount();
+			expect(remote.signal().aborted).toBe(true);
+
+			suggestTitleRemote.mockClear();
+			w = await mountLive();
+			final.value = "Kurze Notiz";
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(suggestTitleRemote).not.toHaveBeenCalled();
+			w.unmount();
+
+			listen.hasToken = false;
+			settings.value!.source = "device";
+			w = await mountLive();
+			device.final!.value = dictation;
+			await w.find("[data-testid=\"stop-live\"]").trigger("click");
+			await flush();
+			expect(suggestTitleRemote).not.toHaveBeenCalled();
+		});
 	});
 
 	it("stamps the selected hub engine, else the listen default, else hub-live", async () => {
@@ -585,6 +733,43 @@ describe("live transcription page", () => {
 		expect(banner.exists()).toBe(true);
 		expect(banner.text()).toContain("engine down");
 		expect(w.find("[data-testid=\"reconnect-banner\"]").exists()).toBe(false);
+	});
+
+	it("a typed title is not overwritten when the correction finishes with other text", async () => {
+		settings.value!.correction = true;
+		const w = await mountLive();
+		corr.blocks!.value = [{ id: 1, liveText: "Der Patient klagt über starke Kopfschmerzen seit Tagen. Er nimmt seit gestern zweimal täglich Ibuprofen und trinkt viel Wasser, Fieber hat er keines.", correctedText: null, state: "queued", samples: null }];
+		await w.find("[data-testid=\"stop-live\"]").trigger("click");
+		await flush();
+		const input = w.find("[data-testid=\"title-input\"]").find("input");
+		expect((input.element as HTMLInputElement).value).toBe("Patient klagt über starke Kopfschmerzen");
+		await input.setValue("Mein Titel");
+
+		corr.blocks!.value = [{ id: 1, liveText: "x", correctedText: "Die Patientin berichtet über anhaltenden Schwindel heute früh.", state: "corrected", samples: null }];
+		corr.finishResolve!();
+		await flush();
+		expect((input.element as HTMLInputElement).value).toBe("Mein Titel");
+
+		await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+		await flush();
+		expect(store.createRecording).toHaveBeenCalledWith(expect.objectContaining({ title: "Mein Titel" }), expect.any(Blob), "Mein Titel.webm");
+	});
+
+	it("a finishing correction never changes the suggestion shown at stop", async () => {
+		settings.value!.correction = true;
+		const w = await mountLive();
+		corr.blocks!.value = [{ id: 1, liveText: "Der Patient klagt über starke Kopfschmerzen seit Tagen. Er nimmt seit gestern zweimal täglich Ibuprofen und trinkt viel Wasser, Fieber hat er keines.", correctedText: null, state: "queued", samples: null }];
+		await w.vm.$nextTick();
+		expect(w.find("[data-testid=\"live-title-suggestion\"]").text()).toBe("Titelvorschlag: Patient klagt über starke Kopfschmerzen");
+		await w.find("[data-testid=\"stop-live\"]").trigger("click");
+		await flush();
+		const input = w.find("[data-testid=\"title-input\"]").find("input");
+		expect((input.element as HTMLInputElement).value).toBe("Patient klagt über starke Kopfschmerzen");
+
+		corr.blocks!.value = [{ id: 1, liveText: "x", correctedText: "Die Patientin berichtet über anhaltenden Schwindel heute früh. Sie hat seit dem Morgen Übelkeit, kein Erbrechen, keine Kopfschmerzen und keine Sehstörungen, Blutdruck stabil.", state: "corrected", samples: null }];
+		corr.finishResolve!();
+		await flush();
+		expect((input.element as HTMLInputElement).value).toBe("Patient klagt über starke Kopfschmerzen");
 	});
 
 	describe("with live correction", () => {

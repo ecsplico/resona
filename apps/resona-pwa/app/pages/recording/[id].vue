@@ -2,10 +2,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
-import type { ContinueResult } from "~/composables/useContinueRecording";
+import type { RedictationAudio } from "~/composables/useRedictation";
 import type { Recording, Transcript } from "~/types/directus";
 import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
-import { rebaseInsertion, textSplice } from "~/utils/correction";
+import { rebaseInsertion } from "~/utils/correction";
 
 const route = useRoute();
 const id = String(route.params.id);
@@ -135,8 +135,8 @@ watch([recording, transcript], ([, t]) => {
 }, { immediate: true });
 
 // Unsaved: the editor differs from the saved text because of typing or a part
-// whose own save failed. A dictation marker in place or a part being saved right
-// now is not.
+// whose own save failed. A dictation chip adds nothing to the text, and a part
+// being saved right now is not unsaved either.
 const dirty = computed(() =>
 	seeded.value && edit.text.value !== edit.committed.value
 	&& (typedEdits.value !== savedTypedEdits.value || unsavedPart.value));
@@ -283,7 +283,9 @@ function cancelTitleEdit(): void {
 async function commitTitle(): Promise<void> {
 	if (!editingTitle.value || !recording.value) return;
 	const next = titleDraft.value.trim();
-	if (next === (recording.value.title ?? "")) {
+	// Unchanged and already the user's own: nothing to write. Confirming an
+	// unchanged automatic (placeholder) title still makes it the user's choice.
+	if (next === (recording.value.title ?? "") && recording.value.title_auto !== true) {
 		editingTitle.value = false;
 		return;
 	}
@@ -318,13 +320,15 @@ async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
 	}
 }
 
-// ── Push-to-talk dictation (batch REST, insert-at-marker) ──────────────────
+// ── Push-to-talk dictation (batch REST, a chip marks the insertion point) ──
 type PttEditorRef = {
-	insertText: (text: string) => void;
-	insertPlaceholder: () => { from: number; to: number } | null;
-	replaceBetween: (from: number, to: number, text: string) => void;
 	appendParagraph: (text: string) => void;
 	focus: () => void;
+	hasFocus: () => boolean;
+	insertDictationPart: (partId: string, at: "caret" | "end") => void;
+	setDictationPartStatus: (partId: string, status: "recording" | "transcribing" | "error") => void;
+	resolveDictationPart: (partId: string, text: string, options?: { paragraph?: boolean }) => { base: string; at: number; inserted: string } | null;
+	removeDictationPart: (partId: string) => void;
 } | null;
 
 const editorRef = ref<PttEditorRef>(null);
@@ -332,7 +336,34 @@ const pttState = ref<"idle" | "recording" | "transcribing">("idle");
 const pttError = ref<string | null>(null);
 const pttRecorder = useRecorder();
 const pttDiag = usePttDiagnostics();
-let pttRange: { from: number; to: number } | null = null;
+// The chip of the dictation in flight (null: none).
+let pttPart: string | null = null;
+let pttSeq = 0;
+
+function dropPttPart(): void {
+	if (pttPart) editorRef.value?.removeDictationPart(pttPart);
+	pttPart = null;
+}
+
+/**
+ * Puts the dictated text where its chip stands and saves only that text: the
+ * chip's place in the plain text, carried over onto the saved text, so unsaved
+ * typing around it stays unsaved. Without the chip (the editor was closed
+ * meanwhile) the text goes to the end as a new paragraph.
+ */
+function landPttText(text: string): void {
+	const partId = pttPart;
+	pttPart = null;
+	const placed = partId ? editorRef.value?.resolveDictationPart(partId, text) ?? null : null;
+	if (!text) return;
+	if (placed) {
+		const { base, at, inserted } = placed;
+		void autosavePart(text, saved => rebaseInsertion(saved, base, at, inserted));
+		return;
+	}
+	appendParagraph(text);
+	void autosavePart(text, current => joinParagraph(current, text));
+}
 
 function describeError(err: unknown): string {
 	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -346,24 +377,24 @@ const pttKeyCode = "ControlLeft";
 const pttKeyLabel = isMac ? "ctrl" : "Strg";
 
 async function startDictation(): Promise<void> {
-	if (pttState.value !== "idle" || contActive.value) return;
+	if (pttState.value !== "idle" || redict.recording.value) return;
 	pttError.value = null;
 	// Dictation inserts at the caret, so the rendered view gives way to the editor.
 	if (showRendered.value) {
 		editingProcessed.value = true;
 		await nextTick();
 	}
-	pttRange = editorRef.value?.insertPlaceholder() ?? null;
+	pttPart = `ptt-${++pttSeq}`;
+	// At the caret when the user is in the text, else at its end.
+	const ed = editorRef.value;
+	ed?.insertDictationPart(pttPart, ed.hasFocus() ? "caret" : "end");
 	try {
 		await pttRecorder.start();
 		pttState.value = "recording";
 		pttDiag.record("mic", true, "Mikrofonzugriff erteilt.");
 	}
 	catch (err) {
-		if (pttRange) {
-			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
-			pttRange = null;
-		}
+		dropPttPart();
 		pttDiag.record("mic", false, describeError(err));
 		pttError.value = "Mikrofon nicht verfügbar.";
 	}
@@ -373,12 +404,10 @@ async function stopDictation(): Promise<void> {
 	pttLatched.value = false;
 	if (pttState.value !== "recording") return;
 	pttState.value = "transcribing";
+	if (pttPart) editorRef.value?.setDictationPartStatus(pttPart, "transcribing");
 	const blob = await pttRecorder.stop();
 	if (!blob || blob.size === 0) {
-		if (pttRange) {
-			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
-			pttRange = null;
-		}
+		dropPttPart();
 		pttDiag.record("record", false, "Leere Aufnahme (0 Bytes) — MediaRecorder hat keine Daten geliefert.");
 		pttState.value = "idle";
 		return;
@@ -387,10 +416,7 @@ async function stopDictation(): Promise<void> {
 	if (!hub.hasToken()) {
 		pttDiag.record("upload", false, "Kein Hub-Token – in Einstellungen → Verbindung eintragen");
 		pttError.value = "Transkription fehlgeschlagen.";
-		if (pttRange) {
-			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
-			pttRange = null;
-		}
+		dropPttPart();
 		pttState.value = "idle";
 		return;
 	}
@@ -413,28 +439,14 @@ async function stopDictation(): Promise<void> {
 		}
 		pttDiag.record("upload", true, `${blob.size}B Audio → ${rawText.length} Zeichen`);
 		const text = rawText.trim();
-		if (pttRange) {
-			const before = edit.text.value;
-			// Trailing space so the next dictation/typing doesn't butt against it.
-			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, text ? `${text} ` : "");
-			pttRange = null;
-			// What the result did to the editor text: the marker out, the text in.
-			const { at, removed, inserted } = textSplice(before, edit.text.value);
-			if (text && inserted) {
-				const base = before.slice(0, at) + before.slice(at + removed.length);
-				void autosavePart(text, saved => rebaseInsertion(saved, base, at, inserted));
-			}
-		}
+		landPttText(text);
 	}
 	catch (err) {
 		if (!recordedFailure) {
 			pttDiag.record("upload", false, describeError(err));
 		}
 		pttError.value = "Transkription fehlgeschlagen.";
-		if (pttRange) {
-			editorRef.value?.replaceBetween(pttRange.from, pttRange.to, "");
-			pttRange = null;
-		}
+		dropPttPart();
 	}
 	finally {
 		pttState.value = "idle";
@@ -480,7 +492,7 @@ function onPttUp(e: PointerEvent): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !contActive.value && !postprocessing.value) {
+	if (e.code === pttKeyCode && !e.repeat && pttState.value === "idle" && !redict.recording.value && !postprocessing.value) {
 		e.preventDefault();
 		void startDictation();
 	}
@@ -493,30 +505,91 @@ function onKeyUp(e: KeyboardEvent): void {
 	}
 }
 
-// ── Continue recording (record more, append the new part's text) ──────────
-const cont = useContinueRecording();
-// Mic open or the new part's job/merge running: dictation and saving wait.
-const contActive = computed(() => ["recording", "transcribing", "merging"].includes(cont.phase.value));
-const contWorking = computed(() => cont.phase.value === "transcribing" || cont.phase.value === "merging");
-// A recorded part whose transcription failed: banner with retry/discard.
-const contRetained = computed(() => cont.phase.value === "error" && cont.hasRetainedPart.value);
-// Failure before a part exists (mic refused, empty recording): shown in the toolbar.
-const contStartError = computed(() =>
-	cont.phase.value === "error" && !cont.hasRetainedPart.value ? cont.error.value : null,
-);
-const contNotice = ref<string | null>(null);
+// ── Re-dictation (record more parts; each lands where its chip stands) ─────
+// The bar records one part at a time; a stopped part's audio is appended to the
+// recording and its hub job runs in the background, so the next part, typing and
+// saving never wait. Each part is a chip in the editor until its text arrives.
+const redict = useRedictation({
+	recording: () => recording.value,
+	onText: landRedictation,
+	onError: partId => editorRef.value?.setDictationPartStatus(partId, "error"),
+	onAudio: applyRedictationAudio,
+});
+// Parts whose transcription failed: one banner each, with retry/discard.
+const redictFailed = computed(() => redict.parts.value.filter(p => p.status === "error"));
+// Parts whose audio could not be appended (blob only in memory): one banner each, with retry/discard.
+const redictAudioFailed = computed(() => redict.parts.value.filter(p => p.audio === "failed"));
+const redictNotice = ref<string | null>(null);
+const redictProgress = computed(() => {
+	const n = redict.transcribing.value;
+	if (n > 0) return `${n === 1 ? "1 Teil wird" : `${n} Teile werden`} transkribiert – Seite bitte geöffnet lassen.`;
+	return redict.merging.value ? "Audio wird angehängt…" : null;
+});
 // Why "Nachbearbeiten" cannot start now: it runs on the stored text, so unsaved
-// edits, writes still running and dictation/continue in progress must settle first.
+// edits, writes still running and dictation/re-dictation in progress must settle first.
 const postprocessBlocked = computed(() => {
 	if (dirty.value) return "Erst speichern oder verwerfen, dann nachbearbeiten.";
 	if (edit.saving.value) return "Der Text wird noch gespeichert.";
-	if (pttState.value !== "idle" || contActive.value || contRetained.value) return "Erst die laufende Aufnahme abschließen.";
+	if (pttState.value !== "idle" || redict.busy.value || redict.failed.value > 0) return "Erst die laufende Aufnahme abschließen.";
 	return null;
 });
 
-async function startContinue(): Promise<void> {
-	contNotice.value = null;
-	await cont.start();
+let redictSeq = 0;
+// The part the record bar is recording (null: bar closed).
+let redictMicPart: string | null = null;
+// Pressing the button moves the focus out of the text, so whether the user was
+// editing is noted on pointerdown, before that happens.
+let editingAtPress = false;
+
+function noteRedictPress(): void {
+	editingAtPress = editorRef.value?.hasFocus() ?? false;
+}
+
+async function startRedictation(): Promise<void> {
+	if (redict.recording.value || pttState.value !== "idle") return;
+	redictNotice.value = null;
+	const partId = `part-${++redictSeq}`;
+	// Editing (caret in the text): the part splits the paragraph at the caret;
+	// otherwise it is appended at the end. The rendered profile output has no
+	// editor: the text is appended when it arrives.
+	const ed = showRendered.value ? null : editorRef.value;
+	ed?.insertDictationPart(partId, editingAtPress || ed.hasFocus() ? "caret" : "end");
+	editingAtPress = false;
+	redictMicPart = partId;
+	if (!await redict.start(partId)) {
+		editorRef.value?.removeDictationPart(partId);
+		if (redictMicPart === partId) redictMicPart = null;
+	}
+}
+
+async function finishRedictation(): Promise<void> {
+	const partId = redictMicPart;
+	redictMicPart = null;
+	if (!partId) return;
+	editorRef.value?.setDictationPartStatus(partId, "transcribing");
+	if (!await redict.finish()) editorRef.value?.removeDictationPart(partId);
+}
+
+async function cancelRedictation(): Promise<void> {
+	const partId = redictMicPart;
+	redictMicPart = null;
+	if (partId) editorRef.value?.removeDictationPart(partId);
+	await redict.cancel();
+}
+
+function retryRedictation(partId: string): void {
+	editorRef.value?.setDictationPartStatus(partId, "transcribing");
+	redict.retry(partId);
+}
+
+function retryRedictationAudio(partId: string): void {
+	redictNotice.value = null;
+	redict.retryAudio(partId);
+}
+
+function discardRedictation(partId: string): void {
+	redict.discard(partId);
+	editorRef.value?.removeDictationPart(partId);
 }
 
 // One `\n` is one paragraph, so a single newline starts a new one (none when the
@@ -536,51 +609,56 @@ function appendParagraph(text: string): void {
 	edit.text.value = joinParagraph(edit.text.value, text);
 }
 
-async function applyContinueResult(result: ContinueResult | null): Promise<void> {
-	if (!result) return;
-	if (result.audioMerged && result.audio_file && recording.value) {
+/**
+ * A part's text replaces its chip as a paragraph of its own and is saved on its
+ * own: placed into the saved text at the chip's place, so unsaved typing is never
+ * written along (a part inside unsaved typing stays unsaved). Without the chip
+ * (no editor meanwhile) it is appended at the end.
+ */
+async function landRedictation(partId: string, text: string): Promise<void> {
+	const placed = editorRef.value?.resolveDictationPart(partId, text, { paragraph: true }) ?? null;
+	if (!text) {
+		redictNotice.value = "Im neuen Teil wurde kein Text erkannt.";
+		return;
+	}
+	let saved: boolean;
+	if (placed) {
+		const { base, at, inserted } = placed;
+		saved = await autosavePart(text, current => rebaseInsertion(current, base, at, inserted));
+	}
+	else {
+		appendParagraph(text);
+		saved = await autosavePart(text, current => joinParagraph(current, text));
+	}
+	if (saved) recordingsList.request();
+	else redictNotice.value = "Text eingefügt, aber nicht gespeichert – bitte Speichern.";
+}
+
+function applyRedictationAudio(result: RedictationAudio): void {
+	if (!result.ok) {
+		redictNotice.value = `Audio konnte nicht angehängt werden: ${result.error}`;
+		return;
+	}
+	if (recording.value) {
 		// The audio watcher re-resolves the player source from the new file id.
 		recording.value.audio_file = result.audio_file;
 		recording.value.duration_seconds = result.duration_seconds;
 	}
-	// The new part is saved on its own at the end of the saved text; unsaved typing
-	// stays unsaved.
-	let saved = true;
-	if (result.text) {
-		const part = result.text;
-		appendParagraph(part);
-		saved = await autosavePart(part, current => joinParagraph(current, part));
-	}
-	if (result.text || result.audioMerged) recordingsList.request();
-	const textNotice = !result.text
-		? "Im neuen Teil wurde kein Text erkannt."
-		: saved ? null : "Text angehängt, aber nicht gespeichert – bitte Speichern.";
-	const merge = result.mergeError
-		? `${result.text && saved ? "Text angehängt, " : ""}Audio konnte nicht zusammengeführt werden: ${result.mergeError}`
-		: null;
-	contNotice.value = [textNotice, merge].filter(Boolean).join(" ") || null;
+	recordingsList.request();
 }
 
-async function finishContinue(): Promise<void> {
-	if (!recording.value) return;
-	await applyContinueResult(await cont.finish(recording.value));
-}
-
-async function retryContinue(): Promise<void> {
-	if (!recording.value) return;
-	await applyContinueResult(await cont.retry(recording.value));
-}
-
-// The new part lives only in this page (mic, hub job or a part kept for retry):
-// leaving drops it, so ask first. Nuxt keys the page by id, so switching to
+// A part still recording, transcribing or being appended, or one that failed (its
+// audio blob lives only in memory), lives only in this page: leaving drops it, so ask first. Nuxt keys the page by id, so switching to
 // another recording (desktop list) is a route update on this same record. The
-// same for a dictation still recording or transcribing (its marker no longer
-// counts as an unsaved edit, so the save dialog would not ask).
-const CONTINUE_LEAVE = "Der neue Teil geht verloren. Trotzdem verlassen?";
+// same for a dictation still recording or transcribing (chips add nothing to the
+// text, so the save dialog would not ask).
+const REDICTATION_LEAVE = "Das laufende Nachdiktat geht verloren. Trotzdem verlassen?";
 const DICTATION_LEAVE = "Das laufende Diktat geht verloren. Trotzdem verlassen?";
+const FAILED_LEAVE = "Ein Nachdiktat ist fehlgeschlagen und geht beim Verlassen verloren. Trotzdem verlassen?";
 
 function confirmLeave(): boolean {
-	if (contActive.value || contRetained.value) return window.confirm(CONTINUE_LEAVE);
+	if (redict.busy.value) return window.confirm(REDICTATION_LEAVE);
+	if (redict.failed.value > 0) return window.confirm(FAILED_LEAVE);
 	if (pttState.value !== "idle") return window.confirm(DICTATION_LEAVE);
 	return true;
 }
@@ -634,7 +712,7 @@ onBeforeRouteUpdate((to, from) =>
 	(to.params as { id?: string }).id === (from.params as { id?: string }).id || guardLeave());
 
 // Closing the tab or reloading with unsaved edits, a write still running or a
-// dictation in flight.
+// dictation in flight (useRedictation guards its own parts, failed ones included).
 function onBeforeUnload(e: BeforeUnloadEvent): void {
 	if (dirty.value || edit.saving.value || pttState.value !== "idle") {
 		e.preventDefault();
@@ -814,7 +892,7 @@ onUnmounted(() => {
 				<HButton
 					v-if="canEdit"
 					variant="primary"
-					:disabled="edit.saving.value || pttState !== 'idle' || contWorking || postprocessing || !dirty"
+					:disabled="edit.saving.value || pttState !== 'idle' || postprocessing || !dirty"
 					data-testid="save-transcript"
 					@click="saveTranscript()"
 				>
@@ -1071,7 +1149,7 @@ onUnmounted(() => {
 					</div>
 					<HButton
 						variant="secondary"
-						:disabled="restarting || contActive || contRetained"
+						:disabled="restarting || redict.busy.value || redict.failed.value > 0"
 						data-testid="restart-transcription"
 						@click="restartTranscription"
 					>
@@ -1095,11 +1173,11 @@ onUnmounted(() => {
 							data-testid="save-state"
 						>{{ edit.saving.value ? "Speichert…" : dirty ? "Ungespeicherte Änderungen" : "Gespeichert" }}</span>
 						<span
-							v-if="contStartError"
+							v-if="redict.startError.value"
 							class="detail__tool-error"
 							role="alert"
 							data-testid="continue-error"
-						>{{ contStartError }}</span>
+						>{{ redict.startError.value }}</span>
 					</div>
 					<p
 						v-if="pttError"
@@ -1117,14 +1195,14 @@ onUnmounted(() => {
 					</p>
 
 					<!-- One live region, always in the DOM, so screen readers announce the
-						progress text and the notice when they appear; Abbrechen stays outside. -->
+						progress text and the notice when they appear. -->
 					<div
-						:class="contWorking
+						:class="redictProgress
 							? 'detail__banner detail__banner--progress'
-							: contNotice ? 'detail__banner detail__banner--notice' : 'sr-only'"
+							: redictNotice ? 'detail__banner detail__banner--notice' : 'sr-only'"
 					>
 						<span
-							v-if="contWorking"
+							v-if="redictProgress"
 							class="detail__spinner"
 							aria-hidden="true"
 						/>
@@ -1135,51 +1213,67 @@ onUnmounted(() => {
 							data-testid="continue-live"
 						>
 							<span
-								v-if="contWorking"
+								v-if="redictProgress"
 								data-testid="continue-banner"
-							>{{
-								cont.phase.value === "transcribing"
-									? "Neuer Teil wird transkribiert – Seite bitte geöffnet lassen."
-									: "Audio wird zusammengeführt…"
-							}}</span>
+							>{{ redictProgress }}</span>
 							<span
-								v-else-if="contNotice"
+								v-else-if="redictNotice"
 								data-testid="continue-notice"
-							>{{ contNotice }}</span>
+							>{{ redictNotice }}</span>
 						</div>
-						<HButton
-							v-if="cont.phase.value === 'transcribing'"
-							variant="secondary"
-							data-testid="continue-cancel"
-							@click="cont.cancel()"
-						>
-							Abbrechen
-						</HButton>
 					</div>
 
 					<div
-						v-if="contRetained"
+						v-for="part in redictFailed"
+						:key="part.id"
 						class="detail__banner"
 						role="alert"
-						data-testid="continue-banner"
+						data-testid="continue-failed"
 					>
 						<div class="detail__banner-text">
-							{{ cont.error.value }}
-							<span class="detail__banner-hint">Der neue Teil ist noch da – erneut versuchen oder verwerfen.</span>
+							{{ part.error }}
+							<span class="detail__banner-hint">Text erneut anfordern oder verwerfen.</span>
 						</div>
 						<HButton
 							variant="secondary"
 							data-testid="continue-discard"
-							@click="cont.discard()"
+							@click="discardRedictation(part.id)"
 						>
 							Verwerfen
 						</HButton>
 						<HButton
 							variant="primary"
 							data-testid="continue-retry"
-							@click="retryContinue"
+							@click="retryRedictation(part.id)"
 						>
 							Erneut versuchen
+						</HButton>
+					</div>
+
+					<div
+						v-for="part in redictAudioFailed"
+						:key="`audio-${part.id}`"
+						class="detail__banner"
+						role="alert"
+						data-testid="continue-audio-failed"
+					>
+						<div class="detail__banner-text">
+							Audio nicht gespeichert – Erneut anhängen
+							<span class="detail__banner-hint">{{ part.audioError }} Das Audio dieses Nachdiktats ist nur auf dieser Seite und geht beim Verlassen verloren.</span>
+						</div>
+						<HButton
+							variant="secondary"
+							data-testid="continue-audio-discard"
+							@click="discardRedictation(part.id)"
+						>
+							Verwerfen
+						</HButton>
+						<HButton
+							variant="primary"
+							data-testid="continue-audio-retry"
+							@click="retryRedictationAudio(part.id)"
+						>
+							Erneut anhängen
 						</HButton>
 					</div>
 
@@ -1274,7 +1368,7 @@ onUnmounted(() => {
 						'detail__ptt--active': pttState === 'recording',
 						'detail__ptt--busy': pttState === 'transcribing',
 					}"
-					:disabled="pttState === 'transcribing' || contActive"
+					:disabled="pttState === 'transcribing' || redict.recording.value"
 					data-testid="push-to-talk"
 					:aria-pressed="pttState === 'recording'"
 					:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
@@ -1317,9 +1411,10 @@ onUnmounted(() => {
 				<button
 					type="button"
 					class="detail__ptt"
-					:disabled="pttState !== 'idle' || contActive || contRetained"
+					:disabled="pttState !== 'idle' || redict.recording.value"
 					data-testid="continue-recording"
-					@click="startContinue"
+					@pointerdown="noteRedictPress"
+					@click="startRedictation"
 				>
 					<svg
 						width="18"
@@ -1347,24 +1442,24 @@ onUnmounted(() => {
 					<span>Weiter aufnehmen</span>
 				</button>
 			</div>
+			<HRecordBar
+				v-if="redict.recording.value"
+				label="Nachdiktat"
+				:elapsed="redict.recorder.elapsed.value"
+				:levels="redict.recorder.levels.value"
+				:paused="redict.recorder.paused.value"
+				:pending="redict.transcribing.value"
+				@pause="redict.recorder.pause()"
+				@resume="redict.recorder.resume()"
+				@stop="finishRedictation"
+				@cancel="cancelRedictation"
+			/>
 			<HPlayerDock
-				v-if="recording?.audio_file && audioSrc"
+				v-else-if="recording?.audio_file && audioSrc"
 				:src="audioSrc"
 				:fallback-duration="recording.duration_seconds ?? undefined"
 			/>
 		</div>
-
-		<HRecordingSheet
-			v-if="cont.phase.value === 'recording' && cont.recorder.recording.value"
-			label="Weiter aufnehmen"
-			:elapsed="cont.recorder.elapsed.value"
-			:levels="cont.recorder.levels.value"
-			:paused="cont.recorder.paused.value"
-			@pause="cont.recorder.pause()"
-			@resume="cont.recorder.resume()"
-			@stop="finishContinue"
-			@cancel="cont.cancel()"
-		/>
 	</div>
 </template>
 
