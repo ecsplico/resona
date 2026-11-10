@@ -5,6 +5,7 @@ import { HubError, type ListenEngine } from "~/composables/useHub";
 import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 import { describeClose } from "~/composables/useLive";
 import { LIVE_SUGGESTION_MIN_WORDS, meaningfulWordCount, suggestTitle, TITLE_REFINE_MIN_WORDS } from "~/utils/titleSuggestion";
+import { refineTitle as refineTitleOnDevice } from "~/utils/titleRefinement";
 
 const cfg = useRuntimeConfig().public;
 const nav = useBackNav();
@@ -115,17 +116,52 @@ const ruleTitleSuggestion = computed(() => {
 // model title below may still replace it.
 const stoppedTitleSuggestion = ref("");
 const liveTitleSuggestion = computed(() => (sessionActive.value ? ruleTitleSuggestion.value : stoppedTitleSuggestion.value));
-// After stop a small hub model may refine the rule suggestion (title-de text job).
+// The browser's own language model (Prompt API) refines first: on the device, no
+// network, and only when it is ready right now (nothing is downloaded). Once per
+// recording: when the final text reaches DEVICE_REFINE_MIN_WORDS, or after stop if
+// it never did. Only awaits a promise, so capture and the live transcript keep running.
+const DEVICE_REFINE_MIN_WORDS = 40;
+const deviceTitle = ref<string | null>(null);
+let deviceRun: Promise<string | null> | null = null;
+let deviceAbort: AbortController | null = null;
+// After stop a small hub model may refine the rule suggestion (title-de text job),
+// only when the on-device model gave no title.
 const titleJob = useTitleJob();
 const remoteTitle = ref<string | null>(null);
 const titleRefining = ref(false);
 let titleAbort: AbortController | null = null;
-const shownSuggestion = computed(() => remoteTitle.value || liveTitleSuggestion.value);
+const shownSuggestion = computed(() => remoteTitle.value || deviceTitle.value || liveTitleSuggestion.value);
 watch(shownSuggestion, (suggestion) => {
 	if (suggestion && !titleEdited.value) {
 		title.value = suggestion;
 	}
 });
+
+// Null without a usable title (no ready model, abort, unusable answer).
+function startDeviceTitle(text: string): Promise<string | null> {
+	if (!deviceRun) {
+		const ctrl = new AbortController();
+		deviceAbort = ctrl;
+		deviceRun = refineTitleOnDevice(text, { language: cfg.defaultLanguage, signal: ctrl.signal }).then((refined) => {
+			if (!refined || ctrl.signal.aborted || titleEdited.value) {
+				return null;
+			}
+			deviceTitle.value = refined;
+			return refined;
+		});
+	}
+	return deviceRun;
+}
+
+const finalTextForTitle = (): string => (correctionActive.value ? correction.text.value : source.value.final.value);
+watch(
+	() => sessionActive.value && !presetTitle.trim() && meaningfulWordCount(finalTextForTitle()) >= DEVICE_REFINE_MIN_WORDS,
+	(ready) => {
+		if (ready) {
+			void startDeviceTitle(finalTextForTitle());
+		}
+	},
+);
 
 // The save dialog gets exactly the suggestion shown during recording; without one
 // (too little text) the rule title of the captured text, else the preset or
@@ -137,6 +173,8 @@ function applySuggestedTitle(): void {
 }
 
 function cancelTitleRefinement(): void {
+	deviceAbort?.abort();
+	deviceAbort = null;
 	titleAbort?.abort();
 	titleAbort = null;
 	titleRefining.value = false;
@@ -144,19 +182,24 @@ function cancelTitleRefinement(): void {
 
 // Best effort: null, an abort or a failed correction keep the rule suggestion silently.
 async function refineTitle(): Promise<void> {
-	cancelTitleRefinement();
-	if (presetTitle.trim() || titleEdited.value || !useHub().hasToken()) {
+	titleAbort?.abort();
+	titleRefining.value = false;
+	if (presetTitle.trim() || titleEdited.value) {
 		return;
 	}
 	const ctrl = new AbortController();
 	titleAbort = ctrl;
-	titleRefining.value = true;
+	const hubAllowed = useHub().hasToken();
+	titleRefining.value = hubAllowed;
 	try {
 		if (correctionDone) {
 			await correctionDone;
 		}
 		const text = capturedText.value;
 		if (ctrl.signal.aborted || meaningfulWordCount(text) < TITLE_REFINE_MIN_WORDS) {
+			return;
+		}
+		if (await startDeviceTitle(text) || ctrl.signal.aborted || !hubAllowed) {
 			return;
 		}
 		const remote = await titleJob.suggestTitleRemote(text, { language: cfg.defaultLanguage, signal: ctrl.signal });
@@ -298,6 +341,8 @@ async function startLive(): Promise<void> {
 	}
 	sessionActive.value = true;
 	cancelTitleRefinement();
+	deviceRun = null;
+	deviceTitle.value = null;
 	remoteTitle.value = null;
 
 	const language = cfg.defaultLanguage;
@@ -412,6 +457,7 @@ async function confirmSave(): Promise<void> {
 }
 
 function cancelSave(): void {
+	cancelTitleRefinement();
 	showTitlePrompt.value = false;
 	void nav.leaveTo("/");
 }

@@ -161,12 +161,22 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   corrected) text once `LIVE_SUGGESTION_MIN_WORDS` (20, about 10–15 s) meaningful words are in,
   so it does not flip with every early word; a calendar preset shows none. On stop the save
   field gets exactly the shown suggestion (frozen: a correction finishing later never changes
-  it), without one the rule title of the captured text. Then, from
+  it), without one the rule title of the captured text. **On-device refinement first**
+  (`app/utils/titleRefinement.ts`, German only): when the browser's built-in language model
+  (Prompt API `LanguageModel`, desktop Chrome) reports `available` for `de`, `refineTitle()`
+  turns the text into a short formulated title (`acceptRefinedTitle`: one line, ≤ 60 chars /
+  8 words, not cut off, Latin script, no English or Romance function words; else `null`).
+  Once per recording: when the final text reaches `DEVICE_REFINE_MIN_WORDS` (40), else after
+  stop. `create()` is only called in state `available`, so nothing is ever downloaded here;
+  any other state, error or unusable answer silently keeps the rule title. No network: the
+  model runs in the browser outside the page thread (not exposed in Web Workers), the page only
+  awaits it, so capture and live transcript keep running. Only when it gives no title, from
   `TITLE_REFINE_MIN_WORDS` (6) words, `useTitleJob().suggestTitleRemote` (hub `kind:"text"`
   job, profile `title-de`, first 4000 chars, reads `structured.title.title`, always deletes the
-  job, null on any failure) may replace it ("Titel wird verfeinert…"); a typed title or save
-  aborts it and is never overwritten. A title field cleared before saving saves under
-  `suggestTitle` again.
+  job, null on any failure) may replace it ("Titel wird verfeinert…"). Either result replaces
+  the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
+  start or leaving the page abort both and a late answer is dropped. A title field cleared
+  before saving saves under `suggestTitle` again.
 - **Automatic titles**: one rule, `deriveTitle(text)` (`app/utils/titleSuggestion.ts`, no
   network): first Markdown heading, else the first sentence/clause (a line break ends it;
   list markers, link targets, filler and dictation-command words dropped, no leading/trailing
@@ -337,6 +347,7 @@ app/
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
 ├── utils/hubTokenSync.ts            # pure per-user hub token sync (pull/push over a remote interface)
 ├── utils/debugProbe.ts             # temporary mobile diagnostics (live + Prompt API) for /debug
+├── utils/titleRefinement.ts         # on-device title refinement via the browser Prompt API (available-only, never downloads)
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css
 
