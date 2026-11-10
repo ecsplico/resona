@@ -60,7 +60,7 @@ if data == b"METALOOM":
     sys.exit(1)  # a native abort exits non-zero; only the stderr marker identifies OOM
 if data == b"ENV":
     text = json.dumps(dict(os.environ))
-elif data.startswith(b"%PDF-"):
+elif data.startswith((b"%PDF-", b"PK\x03\x04")):
     text = "suffix=" + Path(args.input).suffix
 else:
     text = "hallo welt"
