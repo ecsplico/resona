@@ -4,9 +4,10 @@
 // Brings a blank Directus instance up to the state described in
 // directus/bootstrap.md: the `recordings` + `transcripts` + `documents`
 // collections (missing fields are added to existing installs), a non-admin
-// `user` role/policy/permissions, and the `transcribe-worker` admin
-// user whose static token is pinned to DIRECTUS_TOKEN (so the worker just
-// works — no copy-paste). Safe to run repeatedly: every step checks first.
+// `user` role/policy/permissions, the create ownership guard flows, and the
+// `transcribe-worker` admin user whose static token is pinned to DIRECTUS_TOKEN
+// (so the worker just works — no copy-paste). Safe to run repeatedly: every step
+// checks first.
 //
 // Env (all read from the compose environment / .env):
 //   DIRECTUS_URL      base URL          (default http://localhost:7700)
@@ -365,27 +366,37 @@ function stableJson(value) {
 // payload must be set and readable *with the caller's permissions* (`$trigger`),
 // else the flow rejects and Directus aborts the create. The read rules above make
 // "readable" mean "the user's own"; admins (the project-worker) read everything.
-// collection → parent fields (M2O, see RELATIONS)
+// collection → parents (M2O field, related collection, extra filter on the parent)
 const OWNERSHIP_GUARDS = {
-	transcripts: ["recording"],
-	transcript_corrections: ["recording", "transcript"],
+	transcripts: [{ field: "recording", collection: "recordings" }],
+	transcript_corrections: [
+		{ field: "recording", collection: "recordings" },
+		// and the transcript belongs to that recording
+		{ field: "transcript", collection: "transcripts", filter: { recording: { _eq: "{{$trigger.payload.recording}}" } } },
+	],
 };
 
 function guardSpec(collection, parents) {
-	const related = field => RELATIONS.find(([c, f]) => c === collection && f === field)[2];
 	const operations = [
 		{
 			key: "parents_set",
 			name: "Parents set",
 			type: "condition",
-			options: { filter: { _and: parents.map(f => ({ $trigger: { payload: { [f]: { _nnull: true } } } })) } },
+			options: { filter: { _and: parents.map(p => ({ $trigger: { payload: { [p.field]: { _nnull: true } } } })) } },
 		},
-		...parents.map(f => ({
-			key: `own_${f}`,
-			name: `Own ${f}`,
+		...parents.map(p => ({
+			key: `own_${p.field}`,
+			name: `Own ${p.field}`,
 			type: "item-read",
 			// a single key reads one item, which throws when the caller cannot read it
-			options: { collection: related(f), key: `{{$trigger.payload.${f}}}`, permissions: "$trigger", emitEvents: false },
+			// (or it fails the filter)
+			options: {
+				collection: p.collection,
+				key: `{{$trigger.payload.${p.field}}}`,
+				...(p.filter ? { query: { filter: p.filter } } : {}),
+				permissions: "$trigger",
+				emitEvents: false,
+			},
 		})),
 	];
 	return {
@@ -395,7 +406,7 @@ function guardSpec(collection, parents) {
 			status: "active",
 			trigger: "event",
 			accountability: null,
-			description: `Bootstrap: ${parents.join(", ")} of a new ${collection} row must be the creator's own`,
+			description: `Bootstrap: ${parents.map(p => p.field).join(", ")} of a new ${collection} row must be the creator's own`,
 			options: { type: "filter", scope: ["items.create"], collections: [collection] },
 		},
 		operations,
@@ -413,28 +424,35 @@ function describeFlow(flow, ops) {
 	return { flow: { name, icon, status, trigger, accountability, description, options }, chain };
 }
 
+// Runs before ensureUserRole drops the old create validations, and never leaves a
+// collection without an active guard: a replacement is built inactive, switched on
+// with its first operation in one PATCH, and only then are older copies deleted.
 async function ensureOwnershipGuards() {
 	for (const [collection, parents] of Object.entries(OWNERSHIP_GUARDS)) {
 		const spec = guardSpec(collection, parents);
-		const wanted = { flow: spec.flow, chain: spec.operations.map(o => ({ ...o, reject: null })) };
-		const existing = (await api("GET", `/flows?filter[name][_eq]=${spec.flow.name}&limit=1`))[0];
-		if (existing) {
-			const ops = await api("GET", `/operations?filter[flow][_eq]=${existing.id}&limit=-1`);
-			if (stableJson(describeFlow(existing, ops)) === stableJson(wanted)) {
-				console.log(`= flow ${spec.flow.name} exists`);
-				continue;
+		const wanted = stableJson({ flow: spec.flow, chain: spec.operations.map(o => ({ ...o, reject: null })) });
+		const existing = await api("GET", `/flows?filter[name][_eq]=${spec.flow.name}&limit=-1`);
+		let keep = null;
+		for (const flow of existing) {
+			const ops = await api("GET", `/operations?filter[flow][_eq]=${flow.id}&limit=-1`);
+			if (!keep && stableJson(describeFlow(flow, ops)) === wanted) keep = flow;
+		}
+		if (!keep) {
+			keep = await api("POST", "/flows", { ...spec.flow, status: "inactive" });
+			// created last-to-first so each operation can point at its successor;
+			// positions only lay the chain out left to right in the Data Studio grid
+			let next = null;
+			for (const [i, op] of [...spec.operations.entries()].reverse()) {
+				const row = await api("POST", "/operations", { ...op, flow: keep.id, resolve: next, position_x: 19 + 18 * i, position_y: 1 });
+				next = row.id;
 			}
-			await api("DELETE", `/flows/${existing.id}`); // operations cascade
+			await api("PATCH", `/flows/${keep.id}`, { operation: next, status: spec.flow.status });
 		}
-		const flow = await api("POST", "/flows", spec.flow);
-		// created last-to-first so each operation can point at its successor
-		let next = null;
-		for (const [i, op] of [...spec.operations.entries()].reverse()) {
-			const row = await api("POST", "/operations", { ...op, flow: flow.id, resolve: next, position_x: 19 + 18 * i, position_y: 1 });
-			next = row.id;
+		for (const flow of existing) {
+			if (flow.id !== keep.id) await api("DELETE", `/flows/${flow.id}`); // operations cascade
 		}
-		await api("PATCH", `/flows/${flow.id}`, { operation: next });
-		console.log(`${existing ? "~" : "+"} flow ${spec.flow.name}`);
+		const unchanged = existing.length === 1 && existing[0].id === keep.id;
+		console.log(`${unchanged ? "=" : existing.length ? "~" : "+"} flow ${spec.flow.name}`);
 	}
 }
 
@@ -468,8 +486,8 @@ async function main() {
 	await ensureCollections();
 	await ensureFields();
 	await ensureRelations();
-	await ensureUserRole();
 	await ensureOwnershipGuards();
+	await ensureUserRole();
 	await ensureWorker();
 	console.log("✓ bootstrap complete");
 }

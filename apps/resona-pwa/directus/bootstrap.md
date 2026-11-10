@@ -16,6 +16,9 @@ to exactly the state documented below:
 - the non-admin **`user`** role + `user-policy` + owner-scoped permissions (§2),
   plus `directus_files` upload/read/update for the owner (needed for audio and
   document files);
+- the **create ownership guard flows** `resona-owner-guard-transcripts` and
+  `resona-owner-guard-transcript_corrections` (§2): a user may only create a
+  transcript or correction on their own recording;
 - the custom field **`directus_users.hub_token`** (string, hidden) plus `user`-policy
   `directus_users` read/update restricted to `id = $CURRENT_USER` and the fields
   `id`/`hub_token`: the user's own Resona hub token, synced across their devices by
@@ -125,11 +128,15 @@ blocking filter flow per collection (`resona-owner-guard-transcripts`,
 `resona-owner-guard-transcript_corrections`, trigger `items.create`): a condition
 requires the parent ids (`recording`; for corrections also `transcript`), then a
 *Read Data* operation per parent reads it with the caller's permissions
-(`$trigger`). A parent the user cannot read (someone else's, missing) rejects the
-flow and Directus aborts the create with 403 (no parent id: 400); a batch is rolled
-back as a whole. Admin tokens (the project-worker) read every parent. The bootstrap
-recreates a flow whose definition differs (`~ flow …`); do not edit or disable
-these flows in the Data Studio.
+(`$trigger`); a correction's transcript must also belong to its `recording`. A
+parent the user cannot read (someone else's, missing) rejects the flow and Directus
+aborts the create with 403 (no parent id: 400); a batch is rolled back as a whole.
+Admin tokens (the project-worker) read every parent. The bootstrap installs the
+guards before it syncs the permissions and replaces a flow whose definition differs
+(`~ flow …`) by building the new one inactive, activating it, then deleting the
+old, so a collection is never unguarded. Flows are not part of
+`schema-snapshot.yaml`: a manual setup needs the bootstrap (or the same flows built
+in the Data Studio). Do not edit or disable these flows there.
 
 The project-worker authenticates with a **static service token** (admin role),
 which bypasses the user policy.
