@@ -5,6 +5,9 @@ import LivePage from "~/pages/live.vue";
 import { HubError } from "~/composables/useHub";
 import { DEVICE_SPEECH_HINTS } from "~/composables/useDeviceSpeech";
 
+const unfinished = vi.hoisted(() => ({ discardUnfinished: vi.fn(async (_id: string) => {}) }));
+vi.mock("~/data/unfinishedRecordings", () => unfinished);
+
 const live = vi.hoisted(() => ({
 	partial: null as null | { value: string },
 	final: null as null | { value: string },
@@ -210,6 +213,7 @@ mockNuxtImport("useRecorder", () => () => ({
 	stop: recorderStop,
 	pause: vi.fn(),
 	resume: vi.fn(),
+	sessionId: ref<string | null>("live-1"),
 }));
 
 const store = vi.hoisted(() => ({
@@ -374,6 +378,8 @@ describe("live transcription page", () => {
 			.toBeLessThan(store.createTranscript.mock.invocationCallOrder[0]!);
 
 		expect(nav.leaveTo).toHaveBeenCalledWith("/");
+		// Saved for good: the IndexedDB copy of the live audio goes.
+		expect(unfinished.discardUnfinished).toHaveBeenCalledWith("live-1");
 	});
 
 	it("surfaces an error and does not navigate when saving fails", async () => {
@@ -393,6 +399,8 @@ describe("live transcription page", () => {
 		await w.vm.$nextTick();
 
 		expect(nav.leaveTo).not.toHaveBeenCalled();
+		// Not saved: the copy stays for the next open of the list.
+		expect(unfinished.discardUnfinished).not.toHaveBeenCalled();
 		const err = w.find("[data-testid=\"live-save-error\"]");
 		expect(err.exists()).toBe(true);
 		expect(err.text()).toContain("Speichern fehlgeschlagen");

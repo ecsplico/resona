@@ -1,6 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { effectScope } from "vue";
-import { useRecorder } from "~/composables/useRecorder";
+import { RECORDER_TIMESLICE_MS, useRecorder } from "~/composables/useRecorder";
+
+const unfinished = vi.hoisted(() => ({
+	beginUnfinished: vi.fn(async (_meta: Record<string, unknown>) => {}),
+	appendUnfinishedChunk: vi.fn(async (_id: string, _part: number, _seq: number, _chunk: Blob, _elapsed: number) => {}),
+	claimUnfinished: vi.fn((_id: string) => {}),
+	releaseUnfinished: vi.fn((_id: string) => {}),
+}));
+vi.mock("~/data/unfinishedRecordings", () => unfinished);
+
+const wake = vi.hoisted(() => ({ acquire: vi.fn(), release: vi.fn() }));
+vi.mock("~/composables/useWakeLock", () => ({ useWakeLock: () => ({ held: { value: false }, ...wake }) }));
+
+const merge = vi.hoisted(() => ({
+	mergeToWav: vi.fn(async (_parts: Blob[]) => ({ blob: new Blob(["merged"], { type: "audio/wav" }), seconds: 9 })),
+}));
+vi.mock("~/utils/audioMerge", () => merge);
 
 // A minimal fake MediaRecorder that mirrors the subset of the API the
 // composable relies on. happy-dom implements none of it.
@@ -20,8 +36,16 @@ class FakeMediaRecorder {
 		FakeMediaRecorder.instances.push(this);
 	}
 
-	start(): void {
+	timeslice: number | undefined;
+
+	start(timeslice?: number): void {
+		this.timeslice = timeslice;
 		this.state = "recording";
+	}
+
+	/** A timeslice elapsed: the browser hands over the audio so far. */
+	emit(text: string): void {
+		this.ondataavailable?.({ data: new Blob([text], { type: "audio/webm" }) });
 	}
 
 	pause(): void {
@@ -230,5 +254,163 @@ describe("useRecorder", () => {
 		expect(current.state).toBe("recording");
 		expect(current.stream.getTracks()[0]!.stop).not.toHaveBeenCalled();
 		expect(r.recording.value).toBe(true);
+	});
+});
+
+/** A stream whose single track can fire `mute`/`ended` like a real MediaStreamTrack. */
+function listenableStream(): { stream: MediaStream; track: EventTarget & { stop: ReturnType<typeof vi.fn> } } {
+	const track = Object.assign(new EventTarget(), { stop: vi.fn(), kind: "audio" });
+	return { stream: { getTracks: () => [track as unknown as MediaStreamTrack] } as unknown as MediaStream, track };
+}
+
+describe("useRecorder: persistence, interruptions, wake lock", () => {
+	let visibility: DocumentVisibilityState = "visible";
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+		FakeMediaRecorder.instances = [];
+		globalThis.MediaRecorder = FakeMediaRecorder as unknown as typeof MediaRecorder;
+		Object.defineProperty(globalThis.navigator, "mediaDevices", { value: { getUserMedia }, configurable: true });
+		getUserMedia.mockImplementation(async () => listenableStream().stream);
+		delete (globalThis as Record<string, unknown>).AudioContext;
+		delete (globalThis as Record<string, unknown>).webkitAudioContext;
+		visibility = "visible";
+		Object.defineProperty(document, "visibilityState", { get: () => visibility, configurable: true });
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		Reflect.deleteProperty(document, "visibilityState");
+	});
+
+	it("records in timeslices and writes every chunk to IndexedDB under its session", async () => {
+		const r = useRecorder({ persist: () => ({ kind: "record", label: "Visite" }) });
+		await r.start();
+		const rec = FakeMediaRecorder.instances[0]!;
+		expect(rec.timeslice).toBe(RECORDER_TIMESLICE_MS);
+		const id = r.sessionId.value!;
+		expect(unfinished.claimUnfinished).toHaveBeenCalledWith(id);
+
+		await vi.advanceTimersByTimeAsync(4000);
+		rec.emit("a");
+		const blob = await r.stop();
+
+		expect(unfinished.beginUnfinished).toHaveBeenCalledWith(expect.objectContaining({ id, kind: "record", label: "Visite", mime: "audio/webm;codecs=opus" }));
+		expect(unfinished.appendUnfinishedChunk.mock.calls.map(c => [c[0], c[1], c[2], c[4]])).toEqual([[id, 0, 0, 4], [id, 0, 1, 4]]);
+		// The caller discards the session once the audio is saved; stop keeps it.
+		expect(r.sessionId.value).toBe(id);
+		expect(await blob.text()).toBe("achunk");
+	});
+
+	it("without persist nothing goes to IndexedDB", async () => {
+		const r = useRecorder();
+		await r.start();
+		FakeMediaRecorder.instances[0]!.emit("a");
+		await r.stop();
+		expect(r.sessionId.value).toBeNull();
+		expect(unfinished.beginUnfinished).not.toHaveBeenCalled();
+		expect(unfinished.appendUnfinishedChunk).not.toHaveBeenCalled();
+	});
+
+	it("a muted track interrupts; continuing records a new part and stop returns one recording", async () => {
+		const first = listenableStream();
+		getUserMedia.mockImplementationOnce(async () => first.stream);
+		const r = useRecorder({ persist: () => ({ kind: "record" }) });
+		await r.start();
+		await vi.advanceTimersByTimeAsync(2000);
+
+		first.track.dispatchEvent(new Event("mute"));
+		await vi.waitFor(() => expect(r.interrupted.value).toBe("muted"));
+		expect(r.recording.value).toBe(true);
+		expect(r.interruption.value).toContain("Bisher Aufgenommenes bleibt erhalten.");
+		expect(FakeMediaRecorder.instances[0]!.state).toBe("inactive");
+		expect(first.track.stop).toHaveBeenCalled();
+		// Nothing is recorded meanwhile, so the clock stands still.
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(r.elapsed.value).toBe(2);
+		// Pause is not offered while interrupted.
+		r.pause();
+		expect(r.paused.value).toBe(false);
+
+		expect(await r.continueRecording()).toBe(true);
+		expect(r.interrupted.value).toBeNull();
+		expect(getUserMedia).toHaveBeenCalledTimes(2);
+		const second = FakeMediaRecorder.instances[1]!;
+		expect(second.state).toBe("recording");
+		second.emit("b");
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(r.elapsed.value).toBe(3);
+
+		const blob = await r.stop();
+		expect(merge.mergeToWav).toHaveBeenCalledTimes(1);
+		const parts = merge.mergeToWav.mock.calls[0]![0];
+		expect(await Promise.all(parts.map(p => p.text()))).toEqual(["chunk", "bchunk"]);
+		expect(blob.type).toBe("audio/wav");
+		expect(r.recording.value).toBe(false);
+		// Both parts went to the same session, part by part.
+		const id = r.sessionId.value;
+		expect(unfinished.appendUnfinishedChunk.mock.calls.map(c => [c[0], c[1]])).toEqual([[id, 0], [id, 1], [id, 1]]);
+	});
+
+	it("an ended track interrupts too, and stop then returns what was recorded", async () => {
+		const first = listenableStream();
+		getUserMedia.mockImplementationOnce(async () => first.stream);
+		const r = useRecorder();
+		await r.start();
+		FakeMediaRecorder.instances[0]!.emit("a");
+		first.track.dispatchEvent(new Event("ended"));
+		await vi.waitFor(() => expect(r.interrupted.value).toBe("ended"));
+
+		const blob = await r.stop();
+		expect(await blob.text()).toBe("achunk");
+		expect(merge.mergeToWav).not.toHaveBeenCalled();
+		expect(r.interrupted.value).toBeNull();
+	});
+
+	it("hiding the page interrupts a recording of its own microphone", async () => {
+		const r = useRecorder();
+		await r.start();
+		visibility = "hidden";
+		document.dispatchEvent(new Event("visibilitychange"));
+		await vi.waitFor(() => expect(r.interrupted.value).toBe("hidden"));
+		await r.stop();
+	});
+
+	it("a caller's stream (live) is never interrupted", async () => {
+		const shared = listenableStream();
+		const r = useRecorder();
+		await r.start(shared.stream);
+		shared.track.dispatchEvent(new Event("mute"));
+		visibility = "hidden";
+		document.dispatchEvent(new Event("visibilitychange"));
+		await Promise.resolve();
+		expect(r.interrupted.value).toBeNull();
+		expect(FakeMediaRecorder.instances[0]!.state).toBe("recording");
+		await r.stop();
+	});
+
+	it("a microphone that cannot be reopened keeps the interruption with the reason", async () => {
+		const first = listenableStream();
+		getUserMedia.mockImplementationOnce(async () => first.stream);
+		const r = useRecorder();
+		await r.start();
+		first.track.dispatchEvent(new Event("mute"));
+		await vi.waitFor(() => expect(r.interrupted.value).toBe("muted"));
+
+		getUserMedia.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
+		expect(await r.continueRecording()).toBe(false);
+		expect(r.interrupted.value).toBe("muted");
+		expect(r.interruption.value).toContain("Mikrofonzugriff wurde verweigert.");
+		await r.stop();
+	});
+
+	it("holds the wake lock from start to stop", async () => {
+		const r = useRecorder();
+		await r.start();
+		expect(wake.acquire).toHaveBeenCalledTimes(1);
+		expect(wake.release).not.toHaveBeenCalled();
+		await r.stop();
+		expect(wake.release).toHaveBeenCalled();
 	});
 });

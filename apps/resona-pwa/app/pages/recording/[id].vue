@@ -562,6 +562,17 @@ async function startRedictation(): Promise<void> {
 	}
 }
 
+// "Weiter diktieren" in the list row menu: start a part once this recording takes one.
+const redictationRequest = useRedictationRequest();
+const redictationReady = computed(() =>
+	redictationRequest.value === id && canEdit.value && !postprocessing.value && pttState.value === "idle" && !redict.recording.value,
+);
+watch(redictationReady, (ready) => {
+	if (!ready) return;
+	redictationRequest.value = null;
+	void startRedictation();
+}, { immediate: true, flush: "post" });
+
 async function finishRedictation(): Promise<void> {
 	const partId = redictMicPart;
 	redictMicPart = null;
@@ -817,6 +828,7 @@ onUnmounted(() => {
 	window.removeEventListener("keydown", onKeyDown);
 	window.removeEventListener("keyup", onKeyUp);
 	window.removeEventListener("beforeunload", onBeforeUnload);
+	if (redictationRequest.value === id) redictationRequest.value = null;
 });
 </script>
 
@@ -1449,8 +1461,10 @@ onUnmounted(() => {
 				:levels="redict.recorder.levels.value"
 				:paused="redict.recorder.paused.value"
 				:pending="redict.transcribing.value"
+				:interruption="redict.recorder.interruption.value"
 				@pause="redict.recorder.pause()"
 				@resume="redict.recorder.resume()"
+				@continue="redict.recorder.continueRecording()"
 				@stop="finishRedictation"
 				@cancel="cancelRedictation"
 			/>

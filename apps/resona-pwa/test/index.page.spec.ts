@@ -8,7 +8,21 @@ import IndexPage from "~/pages/index.vue";
 import RecordingsPane from "~/components/RecordingsPane.vue";
 import type { Recording } from "~/types/directus";
 import { useHubSettings } from "~/composables/useHubSettings";
-import { provideShell, useRecordingsRefresh, useSettingsDrawer } from "~/composables/useShell";
+import { provideShell, useRecordingsRefresh, useRedictationRequest, useSettingsDrawer } from "~/composables/useShell";
+import type { UnfinishedRecording } from "~/data/unfinishedRecordings";
+
+// Recordings a killed page left behind; the real store needs IndexedDB.
+const unfinished = vi.hoisted(() => ({
+	rows: [] as UnfinishedRecording[],
+	listUnfinished: vi.fn(async () => [] as UnfinishedRecording[]),
+	loadUnfinished: vi.fn(async (_id: string) => null as { meta: UnfinishedRecording; blob: Blob; seconds: number } | null),
+	claimUnfinished: vi.fn((_id: string) => {}),
+	discardUnfinished: vi.fn(async (_id: string) => {}),
+	beginUnfinished: vi.fn(async () => {}),
+	appendUnfinishedChunk: vi.fn(async () => {}),
+	releaseUnfinished: vi.fn((_id: string) => {}),
+}));
+vi.mock("~/data/unfinishedRecordings", () => unfinished);
 
 const recA: Recording = {
 	id: "rec-a",
@@ -108,6 +122,68 @@ describe("index (recordings list) page", () => {
 		error.value = null;
 		route.path = "/";
 		saveRecording.mockResolvedValue({ ...recA, id: "rec-new", title: "Diktat" });
+		unfinished.rows = [];
+		unfinished.listUnfinished.mockImplementation(async () => unfinished.rows);
+		unfinished.discardUnfinished.mockImplementation(async (id: string) => {
+			unfinished.rows = unfinished.rows.filter(r => r.id !== id);
+		});
+	});
+
+	describe("unfinished recordings from a killed page", () => {
+		const meta: UnfinishedRecording = {
+			id: "s1",
+			kind: "record",
+			label: null,
+			mime: "audio/webm",
+			startedAt: "2026-06-19T08:30:00.000Z",
+			updatedAt: "2026-06-19T08:31:05.000Z",
+			elapsed: 65,
+		};
+
+		it("keeping one opens the save sheet with its audio and deletes the copy once saved", async () => {
+			unfinished.rows = [meta];
+			unfinished.loadUnfinished.mockResolvedValue({ meta, blob: new Blob(["rec"], { type: "audio/webm" }), seconds: 65 });
+			const w = await mountSuspended(IndexPage);
+			await flushPromises();
+			const offer = w.find("[data-testid=\"unfinished-recording\"]");
+			expect(offer.text()).toContain("Nicht gespeichert: Aufnahme");
+			expect(offer.text()).toContain("(1:05 min)");
+
+			await offer.find("[data-testid=\"unfinished-keep\"]").trigger("click");
+			await flushPromises();
+			expect(unfinished.claimUnfinished).toHaveBeenCalledWith("s1");
+			expect(w.find("[data-testid=\"unfinished-recording\"]").exists()).toBe(false);
+			const sheet = w.findComponent({ name: "SaveSheet" });
+			expect(sheet.exists()).toBe(true);
+			expect(unfinished.discardUnfinished).not.toHaveBeenCalled();
+
+			sheet.vm.$emit("save", { title: "Gerettet", language: "de", profile: "default", transcribe: true });
+			await flushPromises();
+			const saved = saveRecording.mock.calls[0]![0] as { blob: Blob; duration_seconds: number };
+			expect(await saved.blob.text()).toBe("rec");
+			expect(saved.duration_seconds).toBe(65);
+			expect(unfinished.discardUnfinished).toHaveBeenCalledWith("s1");
+		});
+
+		it("discarding one deletes it and hides the offer", async () => {
+			unfinished.rows = [meta];
+			const w = await mountSuspended(IndexPage);
+			await flushPromises();
+			await w.find("[data-testid=\"unfinished-discard\"]").trigger("click");
+			await flushPromises();
+			expect(unfinished.discardUnfinished).toHaveBeenCalledWith("s1");
+			expect(w.find("[data-testid=\"unfinished-recording\"]").exists()).toBe(false);
+			expect(saveRecording).not.toHaveBeenCalled();
+		});
+	});
+
+	it("\"Weiter diktieren\" opens the recording and asks its page to start re-dictation", async () => {
+		const w = await mountSuspended(IndexPage);
+		w.findAllComponents({ name: "RecordingListItem" })[0]!.vm.$emit("action", "redictate");
+		await flushPromises();
+		expect(useRedictationRequest().value).toBe("rec-a");
+		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-a");
+		useRedictationRequest().value = null;
 	});
 
 	it("shows the recordings pane on phones and the empty detail when the layout holds the pane", async () => {

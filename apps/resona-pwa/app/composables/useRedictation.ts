@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from "vue";
 import { HubError, type HubJob } from "~/composables/useHub";
 import { deleteJobQuietly, isTransient, jobFailureMessage, jobReadErrorMessage } from "~/data/localProcessor";
+import { discardUnfinished } from "~/data/unfinishedRecordings";
 import { mergeToWav } from "~/utils/audioMerge";
 import type { Recording } from "~/types/directus";
 
@@ -36,13 +37,17 @@ export interface RedictationHooks {
 	onAudio(result: RedictationAudio): void;
 }
 
-/** The open part's meter and pause controls, for the record bar. */
+/** The open part's meter, pause and interruption controls, for the record bar. */
 export interface RedictationMeter {
 	elapsed: Ref<number>;
 	levels: Ref<number[]>;
 	paused: Ref<boolean>;
+	/** German text while the part is interrupted (microphone lost, app in background), else null. */
+	interruption: ComputedRef<string | null>;
 	pause(): void;
 	resume(): void;
+	/** Records on after an interruption; the new audio joins the same part. */
+	continueRecording(): Promise<boolean>;
 }
 
 export interface Redictation {
@@ -95,7 +100,7 @@ function transcribeErrorMessage(err: unknown): string {
 
 /** Upload name for a recorded part, extension from its MIME type. */
 function partFilename(part: Blob, recording: Recording): string {
-	const ext = part.type.includes("ogg") ? "ogg" : part.type.includes("mp4") ? "m4a" : "webm";
+	const ext = part.type.includes("wav") ? "wav" : part.type.includes("ogg") ? "ogg" : part.type.includes("mp4") ? "m4a" : "webm";
 	return `${recording.title || recording.id}-nachdiktat.${ext}`;
 }
 
@@ -115,7 +120,10 @@ function onBeforeUnload(event: Event): void {
  * `busy` or a part `failed`.
  */
 export function useRedictation(hooks: RedictationHooks): Redictation {
-	const recorder = useRecorder();
+	// Every part also goes to IndexedDB while recorded, so a killed page offers it again.
+	const recorder = useRecorder({
+		persist: () => ({ kind: "redictation", label: `Nachdiktat ${hooks.recording()?.title ?? ""}`.trim() }),
+	});
 	const hub = useHub();
 	const store = useDataStore();
 
@@ -136,6 +144,8 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 	// Current attempt per part: a retry, discard or dispose makes older polls stale.
 	const attempts = new Map<string, number>();
 	const wakers = new Set<() => void>();
+	// Persisted recorder session per stopped part, dropped once its audio is in the recording.
+	const sessions = new Map<string, string>();
 	let disposed = false;
 	// Appends run one after another, so parts join the audio in stop order.
 	let mergeChain: Promise<void> = Promise.resolve();
@@ -307,6 +317,7 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 				const result = await appendAudio(partId, blob);
 				if (result.ok) {
 					setPart(partId, { audio: "saved", audioError: null });
+					dropSession(partId);
 					settle(partId);
 				}
 				else {
@@ -364,10 +375,18 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		// The recorder runs for this start (nothing came in between), so stopping it
 		// here can only close this attempt's microphone.
 		if (current !== micAttempt) {
+			const session = recorder.sessionId.value;
 			await recorder.stop();
+			if (session) void discardUnfinished(session);
 			return false;
 		}
 		return true;
+	}
+
+	function dropSession(partId: string): void {
+		const session = sessions.get(partId);
+		sessions.delete(partId);
+		if (session) void discardUnfinished(session);
 	}
 
 	async function cancel(): Promise<void> {
@@ -375,7 +394,9 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		micAttempt += 1;
 		recording.value = false;
 		micPart = null;
+		const session = recorder.sessionId.value;
 		await recorder.stop();
+		if (session) void discardUnfinished(session);
 	}
 
 	async function finish(): Promise<boolean> {
@@ -383,12 +404,15 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		if (!recording.value || id === null) return false;
 		micAttempt += 1;
 		micPart = null;
+		const session = recorder.sessionId.value;
 		const blob = await recorder.stop();
 		recording.value = false;
 		if (blob.size === 0) {
+			if (session) void discardUnfinished(session);
 			startError.value = "Die Aufnahme ist leer.";
 			return false;
 		}
+		if (session) sessions.set(id, session);
 		blobs.set(id, blob);
 		parts.value = [...parts.value, { id, status: "transcribing", error: null, audio: "appending", audioError: null }];
 		queueAudio(id, blob);
@@ -412,6 +436,7 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		const part = parts.value.find(p => p.id === partId);
 		if (part?.status !== "error" && part?.audio !== "failed") return;
 		forget(partId);
+		dropSession(partId);
 	}
 
 	onScopeDispose(() => {

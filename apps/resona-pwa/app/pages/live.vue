@@ -6,6 +6,7 @@ import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composable
 import { describeClose } from "~/composables/useLive";
 import { LIVE_SUGGESTION_MIN_WORDS, meaningfulWordCount, suggestTitle, TITLE_REFINE_MIN_WORDS } from "~/utils/titleSuggestion";
 import { refineTitle as refineTitleOnDevice } from "~/utils/titleRefinement";
+import { discardUnfinished } from "~/data/unfinishedRecordings";
 
 const cfg = useRuntimeConfig().public;
 const nav = useBackNav();
@@ -69,7 +70,17 @@ const startNotice = computed<{ kind: string; text: string } | null>(() => {
 	return issue ? { kind: issue.kind, text: HUB_ISSUES[issue.kind].text(issue.detail) } : null;
 });
 
-const recorder = useRecorder();
+// The live audio also goes to IndexedDB as it is recorded, so a killed page offers it again.
+const recorder = useRecorder({ persist: () => ({ kind: "live", label: presetTitle || "Live-Diktat" }) });
+// Persisted recorder session of the captured audio, deleted once it is saved or thrown away.
+let capturedSession: string | null = null;
+
+function dropCapturedSession(): void {
+	const session = capturedSession;
+	capturedSession = null;
+	if (session) void discardUnfinished(session);
+}
+
 const store = useDataStore();
 const { copy } = useExport();
 
@@ -382,6 +393,7 @@ async function stopLive(): Promise<void> {
 	stoppedTitleSuggestion.value = ruleTitleSuggestion.value;
 	sessionActive.value = false;
 	capturedDuration.value = recorder.elapsed.value;
+	capturedSession = recorder.sessionId.value;
 	capturedBlob.value = await recorder.stop();
 	// Snapshot AFTER the recorder.stop() await: yielding to the microtask queue
 	// lets Vue flush any pending reactive updates from WebSocket messages (e.g.
@@ -442,6 +454,8 @@ async function confirmSave(): Promise<void> {
 			duration_seconds: capturedDuration.value,
 		};
 		const recording = await store.createRecording(input, blob, `${recordingTitle}.webm`);
+		// The audio is stored with the recording now.
+		dropCapturedSession();
 
 		await store.createTranscript(recording.id, { text: capturedText.value, engine: capturedEngine.value });
 
@@ -459,6 +473,7 @@ async function confirmSave(): Promise<void> {
 function cancelSave(): void {
 	cancelTitleRefinement();
 	showTitlePrompt.value = false;
+	dropCapturedSession();
 	void nav.leaveTo("/");
 }
 

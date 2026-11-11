@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { computed, h, nextTick, ref, type Ref } from "vue";
-import { flushPromises, type VueWrapper } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, type VueWrapper } from "@vue/test-utils";
 import { mountSuspended, mockNuxtImport, mockComponent } from "@nuxt/test-utils/runtime";
 import RecordingPage from "~/pages/recording/[id].vue";
 import type { Recording, Transcript } from "~/types/directus";
 import type { RedictationAudio, RedictationHooks, RedictationPart } from "~/composables/useRedictation";
 import { useHubSettings } from "~/composables/useHubSettings";
 import { usePttDiagnostics } from "~/composables/usePttDiagnostics";
-import { useRecordingsRefresh } from "~/composables/useShell";
+import { useRecordingsRefresh, useRedictationRequest } from "~/composables/useShell";
+
+// A page left mounted by an earlier spec would still answer a "Weiter diktieren" request.
+enableAutoUnmount(afterEach);
 
 // ProseMirror/TipTap doesn't render meaningfully under happy-dom, so the page's
 // editor is stubbed with a plain textarea that honours the same v-model +
@@ -188,6 +191,8 @@ const redict = vi.hoisted(() => ({
 	retry: vi.fn((_partId: string) => {}),
 	retryAudio: vi.fn((_partId: string) => {}),
 	discard: vi.fn((_partId: string) => {}),
+	interruption: null as Ref<string | null> | null,
+	continueRecording: vi.fn(async () => true),
 }));
 
 mockNuxtImport("useRedictation", () => (hooks: RedictationHooks) => {
@@ -199,7 +204,15 @@ mockNuxtImport("useRedictation", () => (hooks: RedictationHooks) => {
 	const transcribing = computed(() => parts.value.filter(p => p.status === "transcribing").length);
 	let micPart: string | null = null;
 	return {
-		recorder: { elapsed: ref(0), levels: ref([] as number[]), paused: ref(false), pause: vi.fn(), resume: vi.fn() },
+		recorder: {
+			elapsed: ref(0),
+			levels: ref([] as number[]),
+			paused: ref(false),
+			interruption: (redict.interruption = ref<string | null>(null)),
+			pause: vi.fn(),
+			resume: vi.fn(),
+			continueRecording: redict.continueRecording,
+		},
 		recording: recordingRef,
 		startError,
 		parts,
@@ -943,6 +956,38 @@ describe("recording detail page", () => {
 	describe("re-dictation (Weiter aufnehmen)", () => {
 		const area = (w: VueWrapper) => w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement;
 		const chips = (w: VueWrapper) => area(w).dataset.dictationParts;
+
+		it("starts a part on its own when the list row asked for \"Weiter diktieren\"", async () => {
+			const request = useRedictationRequest();
+			request.value = "rec-1";
+			const w = await mountSuspended(RecordingPage);
+			await vi.waitFor(() => expect(redict.start).toHaveBeenCalledWith("part-1"));
+			expect(request.value).toBeNull();
+			await flushPromises();
+			expect(w.find("[data-testid=\"record-bar\"]").exists()).toBe(true);
+		});
+
+		it("ignores a request for another recording", async () => {
+			const request = useRedictationRequest();
+			request.value = "rec-2";
+			await mountSuspended(RecordingPage);
+			await flushPromises();
+			expect(redict.start).not.toHaveBeenCalled();
+			expect(request.value).toBe("rec-2");
+			request.value = null;
+		});
+
+		it("an interrupted part shows the reason; Fortsetzen records on", async () => {
+			const w = await mountSuspended(RecordingPage);
+			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+			await flushPromises();
+			redict.interruption!.value = "Die App war im Hintergrund. Bisher Aufgenommenes bleibt erhalten.";
+			await nextTick();
+			expect(w.find("[data-testid=\"interruption\"]").text()).toContain("Die App war im Hintergrund.");
+			expect(w.find("[data-testid=\"record-bar-label\"]").text()).toBe("Unterbrochen");
+			await w.find("[data-testid=\"pause\"]").trigger("click");
+			expect(redict.continueRecording).toHaveBeenCalledTimes(1);
+		});
 
 		it("records in the record bar in place of the player, with a chip at the end", async () => {
 			const w = await mountSuspended(RecordingPage);

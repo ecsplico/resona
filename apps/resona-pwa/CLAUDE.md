@@ -263,6 +263,22 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   gespeichert" for `retryAudio` (appended at the end then); a throwing append never breaks the
   chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
   page adds a route-leave/update `confirm`.
+- **Recording resilience** (record sheet, live, re-dictation part): `useRecorder` holds a screen
+  wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
+  unsupported → nothing) and records with a 4 s timeslice (`RECORDER_TIMESLICE_MS`). With
+  `persist`, every chunk goes to IndexedDB (`data/unfinishedRecordings.ts`, databases
+  `resona-unfinished-recordings|chunks`, both data modes); a page owns its sessions via a Web Lock
+  `resona-unfinished:<id>`, so only sessions nobody holds are offered. The caller discards the
+  session (`sessionId`) once the audio is stored for good (saved recording, appended part,
+  cancel). `RecordingsPane` offers left-over sessions ("Nicht gespeichert …", Behalten → save
+  sheet / Verwerfen). On a microphone the recorder opened itself (record sheet, re-dictation),
+  track `mute`/`ended` or `pagehide`/hidden page while recording closes the part and sets
+  `interruption` ("Aufnahme unterbrochen": `HRecordingSheet`/`HRecordBar` show Fortsetzen →
+  `continueRecording()` new part, or Beenden); `stop()` merges several parts with `mergeToWav`
+  into one WAV. Live passes its capture stream, so it is not interrupted (wake lock + chunks only).
+- **"Weiter diktieren"** in the list row menu (done or failed recordings): `RecordingsPane` sets
+  `useRedictationRequest()` (useShell) to the id and opens the recording; its detail page starts
+  a re-dictation part as soon as it can and clears the request.
 - **Dictation chips** (`utils/dictationPart.ts`, TipTap inline atom, attrs `partId` + `status`
   `recording|transcribing|error`): push-to-talk and every re-dictated part put a chip at the
   caret (or the end when not editing); it moves with edits and adds nothing to the plain text
@@ -353,7 +369,7 @@ app/
 │   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids, `pending` live-region count), ... (design system)
 │   ├── AppHeader                    # wordmark, ServerStatus, section tabs, settings cog
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
-│   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Löschen)
+│   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Weiter diktieren (done or error) / Löschen)
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)

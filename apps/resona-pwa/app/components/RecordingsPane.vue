@@ -6,9 +6,17 @@ import type { QueuedItem } from "~/composables/useOfflineQueue";
 import type { RowAction } from "~/components/RecordingListItem.vue";
 import { humanizeError } from "#shared/errors";
 import type { SaveRequest } from "~/data/types";
+import {
+	claimUnfinished,
+	discardUnfinished,
+	listUnfinished,
+	loadUnfinished,
+	type UnfinishedRecording,
+} from "~/data/unfinishedRecordings";
 
 const { items, pending, error, list, refresh, remove } = useRecordings();
-const recorder = useRecorder();
+// Records into IndexedDB as it goes, so a killed page can offer the audio again.
+const recorder = useRecorder({ persist: () => ({ kind: "record" }) });
 const { saveRecording } = useUpload();
 const { copy, toText, downloadMarkdown } = useExport();
 const store = useDataStore();
@@ -42,6 +50,8 @@ const showSave = ref(false);
 const pendingBlob = ref<Blob | null>(null);
 const pendingDuration = ref(0);
 const pendingTitle = ref("");
+// Persisted recorder session behind `pendingBlob`; deleted once the audio is saved or discarded.
+const pendingSession = ref<string | null>(null);
 const uploadInput = ref<HTMLInputElement | null>(null);
 
 function applyFilters(): void {
@@ -196,9 +206,17 @@ async function askDelete(recording: Recording): Promise<void> {
 	deleteDialog.value?.querySelector<HTMLElement>("[data-testid=\"cancel-delete\"]")?.focus();
 }
 
+const redictationRequest = useRedictationRequest();
+
+function redictate(recording: Recording): void {
+	redictationRequest.value = recording.id;
+	void openRoute(`/recording/${recording.id}`);
+}
+
 const rowActions: Record<RowAction, (recording: Recording) => void> = {
 	share: shareRecording,
 	export: recording => void exportRecording(recording),
+	redictate,
 	delete: recording => void askDelete(recording),
 };
 
@@ -289,11 +307,20 @@ async function startRecording(): Promise<void> {
 
 async function stopRecording(): Promise<void> {
 	pendingDuration.value = recorder.elapsed.value;
+	const session = recorder.sessionId.value;
 	const blob = await recorder.stop();
 	pendingBlob.value = blob;
+	pendingSession.value = session;
 	pendingTitle.value = "";
 	showRecorder.value = false;
 	showSave.value = true;
+}
+
+/** Deletes the persisted copy of `pendingBlob` (saved for good, or thrown away). */
+function dropPendingSession(): void {
+	const session = pendingSession.value;
+	pendingSession.value = null;
+	if (session) void discardUnfinished(session).then(refreshUnfinished);
 }
 
 function triggerUpload(): void {
@@ -312,6 +339,7 @@ function onUpload(event: Event): void {
 		return;
 	}
 	pendingBlob.value = file;
+	pendingSession.value = null;
 	pendingDuration.value = 0;
 	pendingTitle.value = file.name.replace(/\.[^.]+$/, "");
 	showSave.value = true;
@@ -319,7 +347,9 @@ function onUpload(event: Event): void {
 }
 
 async function cancelRecording(): Promise<void> {
+	const session = recorder.sessionId.value;
 	await recorder.stop();
+	if (session) void discardUnfinished(session);
 	pendingBlob.value = null;
 	showRecorder.value = false;
 }
@@ -340,6 +370,7 @@ async function onSave(payload: SaveRequest): Promise<void> {
 	});
 	pendingBlob.value = null;
 	showSave.value = false;
+	dropPendingSession();
 	await refresh();
 	await refreshQueued();
 	// Desktop: open the new recording in the right pane next to the list.
@@ -351,6 +382,64 @@ async function onSave(payload: SaveRequest): Promise<void> {
 function onDiscard(): void {
 	pendingBlob.value = null;
 	showSave.value = false;
+	dropPendingSession();
+}
+
+// Recordings a killed or crashed page left in IndexedDB: offered one at a time.
+const unfinished = ref<UnfinishedRecording[]>([]);
+const unfinishedBusy = ref(false);
+const unfinishedError = ref<string | null>(null);
+const offeredUnfinished = computed(() => (showSave.value || showRecorder.value ? null : unfinished.value[0] ?? null));
+
+async function refreshUnfinished(): Promise<void> {
+	unfinished.value = await listUnfinished();
+}
+
+function formatUnfinished(meta: UnfinishedRecording): string {
+	const date = new Date(meta.startedAt);
+	const when = Number.isNaN(date.getTime())
+		? ""
+		: ` vom ${date.toLocaleDateString("de-DE")} ${date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
+	const total = Math.max(0, Math.round(meta.elapsed));
+	const length = `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, "0")}`;
+	const what = meta.label ? `„${meta.label}“` : "Aufnahme";
+	return `Nicht gespeichert: ${what}${when} (${length} min).`;
+}
+
+/** Opens the save sheet with the recovered audio; it is deleted from IndexedDB once saved or discarded there. */
+async function keepUnfinished(meta: UnfinishedRecording): Promise<void> {
+	if (unfinishedBusy.value) return;
+	unfinishedBusy.value = true;
+	unfinishedError.value = null;
+	try {
+		const recovered = await loadUnfinished(meta.id);
+		if (!recovered) {
+			// Nothing was written before the page went away.
+			await discardUnfinished(meta.id);
+			await refreshUnfinished();
+			return;
+		}
+		// This page holds it now, so the offer goes away (and other tabs do not offer it).
+		claimUnfinished(meta.id);
+		unfinished.value = unfinished.value.filter(m => m.id !== meta.id);
+		pendingBlob.value = recovered.blob;
+		pendingDuration.value = recovered.seconds;
+		pendingTitle.value = meta.label ?? "";
+		pendingSession.value = meta.id;
+		showSave.value = true;
+	}
+	catch (err) {
+		unfinishedError.value = humanizeError(err, "Die Aufnahme konnte nicht geladen werden.");
+	}
+	finally {
+		unfinishedBusy.value = false;
+	}
+}
+
+async function discardOffered(meta: UnfinishedRecording): Promise<void> {
+	unfinishedError.value = null;
+	await discardUnfinished(meta.id);
+	await refreshUnfinished();
 }
 
 // Other views (the detail page) ask for a reload after changing a recording.
@@ -372,6 +461,7 @@ onBeforeUnmount(() => {
 
 onMounted(() => {
 	void list({ search: search.value, since: since.value });
+	void refreshUnfinished();
 	void refreshQueued();
 	startPolling();
 	// Drain the offline queue to Directus whenever connectivity returns; refresh
@@ -413,6 +503,41 @@ onMounted(() => {
 				@click="settings.show()"
 			>
 				Token eintragen
+			</button>
+		</div>
+
+		<div
+			v-if="offeredUnfinished"
+			class="pane__notice"
+			role="region"
+			aria-label="Nicht gespeicherte Aufnahme"
+			data-testid="unfinished-recording"
+		>
+			<p class="pane__notice-text">
+				{{ formatUnfinished(offeredUnfinished) }}
+				<span
+					v-if="unfinishedError"
+					role="alert"
+					data-testid="unfinished-error"
+				>{{ unfinishedError }}</span>
+			</p>
+			<button
+				class="pane__notice-action"
+				type="button"
+				:disabled="unfinishedBusy"
+				data-testid="unfinished-discard"
+				@click="discardOffered(offeredUnfinished)"
+			>
+				Verwerfen
+			</button>
+			<button
+				class="pane__notice-action"
+				type="button"
+				:disabled="unfinishedBusy"
+				data-testid="unfinished-keep"
+				@click="keepUnfinished(offeredUnfinished)"
+			>
+				Behalten
 			</button>
 		</div>
 
@@ -664,8 +789,10 @@ onMounted(() => {
 			:elapsed="recorder.elapsed.value"
 			:levels="recorder.levels.value"
 			:paused="recorder.paused.value"
+			:interruption="recorder.interruption.value"
 			@pause="recorder.pause()"
 			@resume="recorder.resume()"
+			@continue="recorder.continueRecording()"
 			@stop="stopRecording"
 			@cancel="cancelRecording"
 		/>
