@@ -194,6 +194,10 @@ def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.Jo
         "profile": fields.get("profile") or None,
         "private": _form_bool(fields.get("private"), default=True),
     }
+    if _form_bool(fields.get("diarize"), default=False, name="diarize"):
+        # Part of the request, so the Idempotency-Key hash tells a diarized replay apart;
+        # left out when false so keys recorded before diarization keep matching.
+        body["options"] = {"diarize": True}
     try:
         return jobs_routes.JobRequest.model_validate(body), response_format
     except ValidationError as exc:
@@ -266,7 +270,7 @@ async def create_transcription(
         if len(key) > jobs_routes.MAX_IDEMPOTENCY_KEY_CHARS or not key.isprintable():
             raise api_error(400, "invalid_idempotency_key", "Idempotency-Key is too long or not printable")
         req, response_format = _job_request(fields, upload_id)
-        diarize = _form_bool(fields.get("diarize"), default=False, name="diarize")
+        diarize = bool((req.options or {}).get("diarize"))
         options = jobs_routes.snapshot_options(jobs_routes.AudioOptions(diarize=diarize))
         _, body = await run_in_threadpool(jobs_routes._admit, organization_id, key, req, options)
     except BaseException:

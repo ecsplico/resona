@@ -290,6 +290,20 @@ def test_transcription_diarize_job_is_not_offered_to_a_plain_worker(org_http, fr
     assert claim.status_code == 204
 
 
+def test_transcription_idempotency_key_tells_diarize_apart(org_http, fresh_org, wav_bytes, sync_wait):
+    sync_wait(0.1)
+    headers = {"Idempotency-Key": "sync-diarize-replay"}
+    plain = org_http.post("/v1/audio/transcriptions", files={"file": ("a.wav", wav_bytes, "audio/wav")},
+                          headers=headers)
+    assert plain.status_code == 504
+
+    diarized = org_http.post("/v1/audio/transcriptions", files={"file": ("a.wav", wav_bytes, "audio/wav")},
+                             data={"diarize": "true"}, headers=headers)
+
+    assert diarized.status_code == 409
+    assert _error(diarized)["error"] == "idempotency_conflict"
+
+
 def test_transcription_times_out_with_job_location_and_job_continues(org_http, wav_bytes, sync_wait):
     sync_wait(0.3)
     resp = org_http.post("/v1/audio/transcriptions", files={"file": ("a.wav", wav_bytes, "audio/wav")})
