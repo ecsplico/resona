@@ -108,6 +108,7 @@ nav:
     - Admin Console Design Direction: design/admin-console.md
   - Maybe Features:
     - YouTube-Share (Studie): maybe-features/youtube-share.md
+    - Sprechertrennung (Studie): maybe-features/diarization.md
     - Forge-Editor-Integration (Studie): maybe-features/forge-editor-integration.md
 
 # Agent workflow config (issue tracker, labels, domain docs) is not site content.
