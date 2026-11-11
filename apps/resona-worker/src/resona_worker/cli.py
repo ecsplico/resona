@@ -17,7 +17,6 @@ from .config import (
     ConfigError,
     PreparedCapability,
     WorkerConfig,
-    load_capabilities,
     load_manifest,
     load_token,
     validate_hub_url,
@@ -50,11 +49,13 @@ def run(
 ) -> None:
     """Claim and execute jobs for this worker until stopped."""
     try:
+        manifest = load_manifest(capabilities_file)
         config = WorkerConfig(
             hub_url=hub,
             token=load_token(token_file),
             work_dir=work_dir,
-            capabilities=load_capabilities(capabilities_file),
+            capabilities=manifest.candidates(),
+            diarize=manifest.diarizer is not None,
         )
     except (ConfigError, OSError) as exc:
         typer.echo(f"configuration error: {exc}", err=True)

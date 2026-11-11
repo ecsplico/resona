@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from resona_eval import FixtureRun, load_corpus
 from resona_eval.corpus import Fixture
-from resona_job_core import JobResult, Provenance, StageProvenance
+from resona_job_core import JobResult, Provenance, Segment, StageProvenance
 
 CORPUS_DIR = Path(__file__).resolve().parents[3] / "eval" / "corpus"
 
@@ -37,13 +37,22 @@ def perfect_markdown(fixture: Fixture) -> str:
     return "\n\n".join(parts)
 
 
+def perfect_segments(fixture: Fixture) -> list[Segment]:
+    """Speaker sections a flawless diarized transcription of ``fixture`` would produce."""
+    numbers: dict[str, int] = {}
+    return [Segment(start=t.start, end=t.end, text=t.text, speaker=numbers.setdefault(t.speaker, len(numbers) + 1))
+            for t in fixture.speakers]
+
+
 def make_result(fixture: Fixture, *, text: str | None = None, markdown: str | None = None,
-                raw_text: str | None = None, accelerator: str = "cpu") -> JobResult:
+                raw_text: str | None = None, accelerator: str = "cpu",
+                segments: list[Segment] | None = None) -> JobResult:
     if fixture.kind == "audio":
         stages = [StageProvenance(stage="asr", engine="faster-whisper", model="Systran/faster-whisper-large-v3",
                                   model_revision="rev-asr", accelerator=accelerator, seconds=1.0)]
         raw = fixture.reference if text is None else text
         return JobResult(kind="audio", raw_text=raw, markdown=raw, language="de",
+                         segments=perfect_segments(fixture) if segments is None else segments,
                          provenance=Provenance(stages=stages, runtime_version="0.1.0", worker_id="w1"))
     stages = [StageProvenance(stage="layout", engine="docling", model="docling-standard",
                               model_revision="rev-layout", accelerator=accelerator, seconds=1.0)]

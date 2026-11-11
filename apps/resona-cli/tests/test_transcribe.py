@@ -120,6 +120,17 @@ def test_submits_private_audio_job_with_flags(tmp_path, hub):
     assert (tmp_path / "out" / "a.md").exists()
 
 
+def test_diarize_flag_reaches_submitted_audio_options(tmp_path, hub):
+    audio = make_wav(tmp_path / "a.wav")
+    client = make_client()
+
+    result = invoke(client, [str(audio), "--diarize"])
+
+    assert result.exit_code == 0, result.output
+    assert client.submit_job.call_args.kwargs["options"] == AudioOptions(diarize=True)
+
+
+
 def test_allow_cloud_submits_non_private(tmp_path, hub):
     audio = make_wav(tmp_path / "a.wav")
     client = make_client()

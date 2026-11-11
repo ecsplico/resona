@@ -19,6 +19,7 @@ import httpx
 import pytest
 from resona_job_core import Candidate
 
+from resona_worker import prepare as prepare_module
 from resona_worker.config import WorkerConfig
 from resona_worker.hub import HubClient
 from resona_worker.supervisor import Supervisor
@@ -58,6 +59,13 @@ if data == b"METALOOM":
     )
     sys.stderr.flush()
     sys.exit(1)  # a native abort exits non-zero; only the stderr marker identifies OOM
+if data == b"DIARIZER_MISSING":
+    sys.exit(7)
+if data == b"DIARIZER_OOM":
+    # ASR done, the diarizer stage starts and the OOM killer takes the process.
+    sys.stderr.write("resona-stage: diarize\n")
+    sys.stderr.flush()
+    os.kill(os.getpid(), signal.SIGKILL)
 if data == b"ENV":
     text = json.dumps(dict(os.environ))
 elif data.startswith((b"%PDF-", b"PK\x03\x04")):
@@ -141,6 +149,8 @@ class FakeHub:
         self.approved = True
         self.approved_private = True
         self.approved_capabilities = [candidate]
+        # The heartbeat reply advertises `diarize` claim support, as hubs since diarization do.
+        self.diarize_supported = True
         self.job_heartbeat_status = 200
         self.policy_status = 200
         self.policy_body: dict[str, Any] = {"allowed": True}
@@ -181,6 +191,7 @@ class FakeHub:
                     "approved_private": self.approved_private,
                     "approved_capabilities": [c.model_dump(mode="json") for c in self.approved_capabilities],
                     "server_time": _iso(timedelta(0)),
+                    **({"diarize": True} if self.diarize_supported else {}),
                 },
             )
         if path == "/v1/workers/claim":
@@ -235,12 +246,14 @@ def build_supervisor(tmp_path: Path, executor_script: Path):
         capabilities: tuple[Candidate, ...],
         lease_heartbeat_seconds: float = 30.0,
         endpoint_transport: httpx.BaseTransport | None = None,
+        diarize: bool = False,
     ) -> Supervisor:
         config = WorkerConfig(
             hub_url=HUB,
             token=TOKEN,
             work_dir=tmp_path / "work",
             capabilities=capabilities,
+            diarize=diarize,
             executor=(sys.executable, str(executor_script)),
             lease_heartbeat_seconds=lease_heartbeat_seconds,
             claim_wait_seconds=0,
@@ -321,12 +334,29 @@ else:
               {"stage": "ocr", "engine": cand["ocr_engine"], "model": "apple-vision", "accelerator": "metal", "seconds": 0.1}]
 if "garbage" in cand["model"]:
     text = "lorem ipsum"
+segments = []
+if (snapshot.get("options") or {}).get("diarize"):
+    # Two-speaker fixture: speaker change in the pause; "monologue" models hear one speaker.
+    diarizer = "nvidia/Nemotron-3-Diarization"
+    second = 1 if "monologue" in cand["model"] else 2
+    segments = [{"start": 0.0, "end": 2.04, "text": "Guten Morgen.", "speaker": 1},
+                {"start": 3.12, "end": 7.04, "text": "Der Befund ist unauffällig.", "speaker": second}]
+    text = "Guten Morgen. Der Befund ist unauffällig."
+    stages.append({"stage": "diarize", "engine": "nemotron-diarization", "model": diarizer,
+                   "model_revision": loaded(diarizer, "main"), "accelerator": device, "seconds": 0.1})
 structured = {"env": sorted(os.environ), "input_suffix": Path(args.input).suffix}
 result = {"kind": snapshot["kind"], "raw_text": text, "markdown": text, "provenance": {"stages": stages},
-          "structured": structured, "language": snapshot["language"]}
+          "structured": structured, "language": snapshot["language"], "segments": segments}
 Path(args.out).write_text(json.dumps(result))
 Path(args.metrics).write_text(json.dumps({"peak_accelerator_bytes": 123456}))
 '''
+
+
+@pytest.fixture(autouse=True)
+def no_diarizer(monkeypatch) -> None:
+    """Prepare as without the ``diarize`` extra (the workspace installs it): no diarizer
+    weights are pinned or downloaded. Diarizer tests patch ``_diarizer_model`` back in."""
+    monkeypatch.setattr(prepare_module, "_diarizer_model", lambda: None)
 
 
 @pytest.fixture

@@ -47,6 +47,8 @@ class ClaimRequest(BaseModel):
     capabilities: list[Candidate] = Field(default_factory=list)
     # Also offer text (postprocess-only) jobs; older workers omit it and never receive them.
     text_jobs: bool = False
+    # Also offer diarize jobs; true only when the worker's prepare verified the diarizer.
+    diarize: bool = False
 
 
 class FailRequest(BaseModel):
@@ -71,6 +73,7 @@ class HeartbeatRequest(BaseModel):
     runtime_version: str = Field(default="", max_length=128)
     reported_capabilities: list[Candidate] = Field(default_factory=list)
     text_jobs: bool = False
+    diarize: bool = False
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -140,6 +143,7 @@ async def heartbeat(request: Request, principal: Principal = Depends(worker_prin
         runtime_version=body.runtime_version,
         reported=body.reported_capabilities,
         text_jobs=body.text_jobs,
+        diarize=body.diarize,
     )
 
 
@@ -192,6 +196,7 @@ async def claim(
             organization_id=principal.organization_id,
             capabilities=body.capabilities,
             text_jobs=body.text_jobs,
+            diarize=body.diarize,
         )
         if result is not None:
             return JSONResponse(result.to_json(), status_code=200)

@@ -2,9 +2,11 @@
 
 Absolute checks (always): no missing table cell, no reading-order failure, no word
 emitted on a silence fixture. Regression checks (against a comparable baseline):
-no per-fixture WER/CER more than ``TOLERANCE`` absolute above the baseline, no
-candidate fixture or metric absent from the baseline (``baseline_required:<id>``)
-and no baseline fixture absent from the candidate (``missing_fixture:<id>``).
+no per-fixture WER/CER/DER more than ``TOLERANCE`` absolute above the baseline, no
+speaker attribution more than ``TOLERANCE`` below it, no candidate fixture or metric
+absent from the baseline (``baseline_required:<id>``) and no baseline fixture absent
+from the candidate (``missing_fixture:<id>``). ``speaker_count_error`` is reported and
+must be in the baseline too, but is not compared.
 
 Without any comparable baseline the outcome is ``baseline_required``: the gate does
 not pass, but ``record()`` reports whether the absolute checks passed, which is what
@@ -18,7 +20,10 @@ from dataclasses import dataclass
 
 TOLERANCE = 0.02
 ABSOLUTE_METRICS = ("missing_cells", "order_failures", "silence_insertions")
-REGRESSION_METRICS = ("wer", "cer")
+HIGHER_IS_WORSE = ("wer", "cer", "der")
+LOWER_IS_WORSE = ("speaker_attribution",)
+REGRESSION_METRICS = HIGHER_IS_WORSE + LOWER_IS_WORSE
+REPORTED_METRICS = ("speaker_count_error",)
 BASELINE_REQUIRED = "baseline_required"
 
 
@@ -60,12 +65,16 @@ def evaluate_gate(
         if reference is None:
             failures.append(f"{BASELINE_REQUIRED}:{fixture_id}")
             continue
-        for name in REGRESSION_METRICS:
+        for name in REGRESSION_METRICS + REPORTED_METRICS:
             if name not in metrics:
                 continue
             if name not in reference:
                 failures.append(f"{BASELINE_REQUIRED}:{fixture_id}:{name}")
-            elif metrics[name] - reference[name] > tolerance + 1e-9:
+                continue
+            if name in REPORTED_METRICS:
+                continue
+            worse = metrics[name] - reference[name] if name in HIGHER_IS_WORSE else reference[name] - metrics[name]
+            if worse > tolerance + 1e-9:
                 failures.append(f"regression:{fixture_id}:{name}")
     if baseline is not None:
         failures.extend(f"missing_fixture:{fixture_id}" for fixture_id in sorted(set(baseline) - set(candidate)))

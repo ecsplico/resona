@@ -7,6 +7,8 @@ change to the rules needs a new identifier and new baselines.
 from __future__ import annotations
 
 import re
+from collections.abc import Hashable, Iterable, Mapping, Sequence
+from typing import Protocol
 
 import jiwer
 
@@ -142,3 +144,116 @@ def reading_order_failures(markdown: str, anchors: list[str]) -> int:
             continue
         position = index + len(needle)
     return failures
+
+
+class Turn(Protocol):
+    """A reference speaker turn (``resona_eval.corpus.SpeakerTurn``)."""
+
+    speaker: str
+    start: float
+    end: float
+    text: str
+
+
+class SpeakerSegment(Protocol):
+    """A hypothesis segment (``resona_job_core.Segment``); ``speaker`` None = unattributed."""
+
+    start: float
+    end: float
+    text: str
+    speaker: int | None
+
+
+def _best_matching(weights: Mapping[tuple[Hashable, Hashable], float]) -> float:
+    """Largest total weight of a one-to-one mapping between hypothesis and reference labels.
+
+    ``weights`` maps ``(hyp, ref)`` to the score that pair earns when mapped. Exact: a DP
+    over subsets of the smaller label side (fine for the ≤ 8 speakers a diarizer emits).
+    """
+    hyps = sorted({h for h, _ in weights}, key=repr)
+    refs = sorted({r for _, r in weights}, key=repr)
+    if len(refs) > len(hyps):
+        hyps, refs = refs, hyps
+        weights = {(r, h): w for (h, r), w in weights.items()}
+    best = {0: 0.0}  # bitmask of used ``refs`` → best total
+    for h in hyps:
+        step = dict(best)
+        for mask, total in best.items():
+            for j, r in enumerate(refs):
+                w = weights.get((h, r), 0.0)
+                if mask & (1 << j) or w <= 0:
+                    continue
+                key = mask | (1 << j)
+                if total + w > step.get(key, -1.0):
+                    step[key] = total + w
+        best = step
+    return max(best.values())
+
+
+def speaker_attribution(reference_turns: Sequence[Turn], hypothesis_segments: Sequence[SpeakerSegment]) -> float:
+    """Share of reference words whose aligned hypothesis word carries the right speaker.
+
+    Words are ``text-v1`` normalized and aligned by :func:`word_alignment`; only
+    ``equal``/``substitute`` pairs can count. Hypothesis speakers are mapped one-to-one onto
+    reference speakers so that the most words count; an unmapped or missing speaker is
+    wrong. Reference without words: 1.0.
+    """
+    ref = [(word, t.speaker) for t in reference_turns for word in normalize(t.text).split()]
+    if not ref:
+        return 1.0
+    hyp = [(word, s.speaker) for s in hypothesis_segments for word in normalize(s.text).split()]
+    alignment = word_alignment(" ".join(w for w, _ in ref), " ".join(w for w, _ in hyp))
+    pairs: dict[tuple[Hashable, Hashable], float] = {}
+    i = j = 0
+    for entry in alignment:
+        if entry["op"] in ("equal", "substitute"):
+            hyp_speaker = hyp[j][1]
+            if hyp_speaker is not None:
+                key = (hyp_speaker, ref[i][1])
+                pairs[key] = pairs.get(key, 0.0) + 1
+            i, j = i + 1, j + 1
+        elif entry["op"] == "delete":
+            i += 1
+        else:
+            j += 1
+    return _best_matching(pairs) / len(ref)
+
+
+def _active(spans: Iterable[tuple[float, float, Hashable]], start: float, end: float) -> set[Hashable]:
+    return {label for s, e, label in spans if s <= start and e >= end}
+
+
+def der(reference_turns: Sequence[Turn], hypothesis_segments: Sequence[SpeakerSegment]) -> float:
+    """Time-based diarization error rate: (miss + false alarm + confusion) / reference speech.
+
+    Collar 0, overlapping speech scored (a span where two reference speakers talk counts
+    twice), hypothesis speakers mapped one-to-one onto reference speakers to minimise the
+    error. A hypothesis segment without speaker is speech that maps to nobody. No
+    reference speech: 0.0 without hypothesis speech, else 1.0.
+    """
+    ref = [(t.start, t.end, t.speaker) for t in reference_turns if t.end > t.start]
+    # Unattributed segments stay apart (one label each) so they never merge into a speaker.
+    hyp = [(s.start, s.end, ("speaker", s.speaker) if s.speaker is not None else ("unattributed", k))
+           for k, s in enumerate(hypothesis_segments) if s.end > s.start]
+    bounds = sorted({t for s, e, _ in ref + hyp for t in (s, e)})
+    total = scored = 0.0
+    overlap: dict[tuple[Hashable, Hashable], float] = {}
+    for start, end in zip(bounds, bounds[1:]):
+        span = end - start
+        refs, hyps = _active(ref, start, end), _active(hyp, start, end)
+        total += span * len(refs)
+        scored += span * max(len(refs), len(hyps))
+        for h in hyps:
+            if h[0] == "unattributed":
+                continue
+            for r in refs:
+                overlap[(h, r)] = overlap.get((h, r), 0.0) + span
+    if total == 0:
+        return 0.0 if scored == 0 else 1.0
+    return (scored - _best_matching(overlap)) / total
+
+
+def speaker_count_error(reference_turns: Sequence[Turn], hypothesis_segments: Sequence[SpeakerSegment]) -> int:
+    """|hypothesis speakers − reference speakers|; segments without speaker name nobody."""
+    hyp = {s.speaker for s in hypothesis_segments if s.speaker is not None}
+    return abs(len(hyp) - len({t.speaker for t in reference_turns}))

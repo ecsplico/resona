@@ -261,6 +261,20 @@ def test_submit_job_sends_typed_options(audio_file, client):
     assert doc_body["options"] == {"ocr": "force", "page_start": 2, "page_end": 3}
 
 
+def test_submit_job_sends_diarize_only_when_true(audio_file, client):
+    # Hubs predating diarize validate options with extra="forbid": the default stays off the wire.
+    with respx.mock as mock:
+        respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
+        respx.post(f"{BASE}/v1/jobs").mock(
+            return_value=httpx.Response(202, json={"job_id": 1, "status": "pending"}))
+        client.submit_job(audio_file, kind="audio", options={"diarize": False})
+        client.submit_job(audio_file, kind="audio", options=AudioOptions(diarize=True))
+        plain = json.loads(mock.calls[1].request.content)["options"]
+        diarized = json.loads(mock.calls[3].request.content)["options"]
+    assert "diarize" not in plain
+    assert diarized["diarize"] is True
+
+
 def test_submit_job_uses_given_idempotency_key(audio_file, client):
     with respx.mock:
         respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
@@ -548,6 +562,16 @@ def test_create_transcription_sends_private_true_by_default(client, audio_file):
         client.create_transcription(audio_file, private=False)
     assert b'name="private"\r\n\r\ntrue' in route.calls[0].request.content
     assert b'name="private"\r\n\r\nfalse' in route.calls[1].request.content
+
+
+def test_create_transcription_sends_diarize_only_when_true(client, audio_file):
+    with respx.mock:
+        route = respx.post(f"{BASE}/v1/audio/transcriptions").mock(
+            return_value=httpx.Response(200, json={"text": "hallo"}))
+        client.create_transcription(audio_file)
+        client.create_transcription(audio_file, diarize=True)
+    assert b'name="diarize"' not in route.calls[0].request.content
+    assert b'name="diarize"\r\n\r\ntrue' in route.calls[1].request.content
 
 
 def test_create_transcription_timeout_carries_job_id(client, audio_file):

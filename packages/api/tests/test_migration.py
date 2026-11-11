@@ -243,6 +243,33 @@ def test_v4_database_gains_testbench_tables_and_keeps_jobs(legacy_db, monkeypatc
     assert "AUTOINCREMENT" in run_ddl and "AUTOINCREMENT" in item_ddl
 
 
+def test_v6_database_gains_worker_diarize_flag_off_for_existing_workers(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:6])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 6)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    raw = sqlite3.connect(legacy_db)  # a v6 hub's models had no worker.diarize
+    raw.execute("ALTER TABLE worker DROP COLUMN diarize")
+    raw.execute(
+        "INSERT INTO worker (id, organization_id, name, approved, approved_private, approved_capabilities, "
+        "reported_capabilities, text_jobs) VALUES ('w1', 'bootstrap-org', 'gpu-box', 1, 1, '[]', '[]', 1)"
+    )
+    raw.commit()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    version = raw.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    row = raw.execute("SELECT text_jobs, diarize FROM worker WHERE id = 'w1'").fetchone()
+    jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
+    raw.close()
+    assert version == schema.TARGET_VERSION >= 7
+    assert row == (1, 0) and jobs == 2
+
+
+
 def test_v3_database_never_reissues_a_deleted_job_id(legacy_db, monkeypatch):
     from resona_api.db.models import Job
 

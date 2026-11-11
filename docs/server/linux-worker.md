@@ -40,6 +40,8 @@ Without `--extra cuda` (the default `WORKER_EXTRAS="--extra audio-cpu --extra do
 
 Use the image by digest only (`resona-worker@sha256:…` locally, or the released `ghcr.io/…@sha256:…`). Never use `:latest` or `:cuda`.
 
+Speaker diarization is optional: add `--extra diarize` to `WORKER_EXTRAS` (`"WORKER_EXTRAS=--extra cuda --extra documents --extra diarize"`). `prepare` downloads the pinned `nvidia/Nemotron-3-Diarization` weights with the others and runs a two-speaker check on the GPU; only a worker whose manifest records the diarizer takes diarized jobs.
+
 ## 2. Enroll on the hub
 
 On the hub host:

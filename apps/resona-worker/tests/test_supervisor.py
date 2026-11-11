@@ -96,6 +96,47 @@ def test_plain_engine_failure_is_retryable_without_withdrawal(build_supervisor, 
     assert (failure["code"], failure["retryable"], failure["withdraw_capability"]) == ("engine_error", True, None)
 
 
+def test_diarize_is_claimed_only_from_a_hub_that_advertises_it(build_supervisor, fakes) -> None:
+    # A hub predating diarization omits `diarize` in its heartbeat reply and rejects the
+    # field in claim bodies (422); the heartbeat body may keep it (unknown fields ignored).
+    hub = fakes.FakeHub(CAND)
+    hub.diarize_supported = False
+    hub.claimed = True
+    supervisor = build_supervisor(hub, capabilities=(CAND,), diarize=True)
+
+    assert supervisor.run(once=True) == 0
+
+    assert hub.heartbeat_bodies[-1]["diarize"] is True
+    claim_body = json.loads(hub.paths("/claim")[-1][3])
+    assert "diarize" not in claim_body
+
+    hub.diarize_supported = True
+    supervisor.run(once=True)
+
+    assert json.loads(hub.paths("/claim")[-1][3])["diarize"] is True
+
+
+@pytest.mark.parametrize("job_input", [b"DIARIZER_MISSING", b"DIARIZER_OOM"])
+def test_diarizer_failure_keeps_the_asr_tuple_and_stops_offering_diarize(build_supervisor, fakes, job_input) -> None:
+    hub = fakes.FakeHub(CAND, job_input=job_input)
+    supervisor = build_supervisor(hub, capabilities=(CAND,), diarize=True)
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert failure["retryable"] is True
+    assert failure["withdraw_capability"] is None
+    assert failure["code"] == ("diarizer_unavailable" if job_input == b"DIARIZER_MISSING" else "out_of_memory")
+
+    supervisor.run(once=True)
+
+    heartbeat = hub.heartbeat_bodies[-1]
+    assert heartbeat["reported_capabilities"] == [CAND.model_dump(mode="json")]
+    assert "diarize" not in heartbeat
+    assert "diarize" not in json.loads(hub.paths("/claim")[-1][3])
+
+
 def test_claims_only_tuples_both_tested_here_and_approved_by_the_hub(build_supervisor, fakes) -> None:
     untested = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
     unapproved = Candidate(engine="faster-whisper", model="large-v3", accelerator="cpu")

@@ -61,11 +61,12 @@ def _cache_dir() -> str | None:
     return os.environ.get("HF_HUB_CACHE") or os.environ.get("HUGGINGFACE_HUB_CACHE") or None
 
 
-def local_snapshot(repo: str, revision: str | None) -> Path | None:
+def local_snapshot(repo: str, revision: str | None, allow_patterns: list[str] | None = None) -> Path | None:
     """Return the cached snapshot of ``repo`` at ``revision`` (branch, tag or commit; default main).
 
     Uses the local cache only; returns ``None`` when the weights are not prepared
-    or ``huggingface_hub`` is not installed in this environment.
+    or ``huggingface_hub`` is not installed in this environment. A snapshot prepared
+    with ``allow_patterns`` is complete only for those patterns, so lookups pass the same.
     """
     try:
         from huggingface_hub import snapshot_download
@@ -74,21 +75,34 @@ def local_snapshot(repo: str, revision: str | None) -> Path | None:
         return None
     try:
         path = Path(
-            snapshot_download(repo_id=repo, revision=revision, local_files_only=True, cache_dir=_cache_dir())
+            snapshot_download(
+                repo_id=repo,
+                revision=revision,
+                local_files_only=True,
+                cache_dir=_cache_dir(),
+                allow_patterns=allow_patterns,
+            )
         )
     except (LocalEntryNotFoundError, HFValidationError, FileNotFoundError):
         return None
     return path if path.is_dir() else None
 
 
-def download_snapshot(repo: str, revision: str) -> Path:
-    """Fetch ``repo`` at ``revision`` into the HF cache (preparation only, never while serving)."""
+def download_snapshot(repo: str, revision: str, allow_patterns: list[str] | None = None) -> Path:
+    """Fetch ``repo`` at ``revision`` into the HF cache (preparation only, never while serving).
+
+    ``allow_patterns`` limits the download to the files the loader reads (repos that also
+    ship other runtimes' formats)."""
     try:
         from huggingface_hub import snapshot_download
     except ImportError:
         raise WeightsError("huggingface_hub is not installed in this environment") from None
     try:
-        return Path(snapshot_download(repo_id=repo, revision=revision, cache_dir=_cache_dir()))
+        return Path(
+            snapshot_download(
+                repo_id=repo, revision=revision, cache_dir=_cache_dir(), allow_patterns=allow_patterns
+            )
+        )
     except Exception as exc:  # noqa: BLE001 - network/auth/revision errors all mean "not prepared"
         raise WeightsError(f"download of {repo}@{revision} failed: {exc.__class__.__name__}") from None
 
@@ -113,7 +127,9 @@ def _point_ref(snapshot: Path, ref: str, commit: str) -> None:
         raise
 
 
-def ensure_pinned_snapshot(repo: str, ref: str | None, pin: str, *, offline: bool) -> Path:
+def ensure_pinned_snapshot(
+    repo: str, ref: str | None, pin: str, *, offline: bool, allow_patterns: list[str] | None = None
+) -> Path:
     """Make ``repo`` at ``ref`` (what the engine loads; default ``main``) resolve to commit ``pin``.
 
     Online, the pinned commit is always fetched through ``snapshot_download``: it checks
@@ -130,14 +146,14 @@ def ensure_pinned_snapshot(repo: str, ref: str | None, pin: str, *, offline: boo
     if is_commit(ref) and ref != pin:
         raise WeightsError(f"{repo} is loaded at {ref}, the release pins {pin}")
     if offline:
-        snapshot = local_snapshot(repo, pin)
+        snapshot = local_snapshot(repo, pin, allow_patterns)
         if snapshot is None:
             raise WeightsError(f"{repo}@{pin} is not in the local HuggingFace cache and --offline forbids downloading it")
     else:
-        snapshot = download_snapshot(repo, pin)
+        snapshot = download_snapshot(repo, pin, allow_patterns=allow_patterns)
     if not is_commit(ref):
         _point_ref(snapshot, ref, pin)
-    resolved = local_snapshot(repo, ref)
+    resolved = local_snapshot(repo, ref, allow_patterns)
     if resolved is None or resolved.name != pin:
         found = resolved.name if resolved is not None else "nothing"
         raise WeightsError(f"{repo}@{ref} resolves to {found} in the local cache, the release pins {pin}")

@@ -15,6 +15,7 @@ for the candidate; nothing is downloaded while serving a job.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import platform
 import re
@@ -30,7 +31,15 @@ from pydantic import ValidationError
 from resona_job_core import Candidate, JobResult, Provenance, Segment, StageProvenance
 from resona_job_core.options import Language
 
-from .weights import is_hub_repo, is_whisper_alias, local_snapshot, whisper_checkpoint, whisper_revision
+from .weights import (
+    WeightsError,
+    is_hub_repo,
+    is_whisper_alias,
+    local_snapshot,
+    release_model_pins,
+    whisper_checkpoint,
+    whisper_revision,
+)
 
 
 class ExitCode(IntEnum):
@@ -40,6 +49,15 @@ class ExitCode(IntEnum):
     UNSUPPORTED_CAPABILITY = 4
     OUT_OF_MEMORY = 5
     INVALID_SNAPSHOT = 6
+    # The diarizer stage failed (not installed, weights not prepared, out of memory).
+    # The supervisor stops offering diarization but keeps the ASR tuple.
+    DIARIZER_UNAVAILABLE = 7
+    DIARIZER_OUT_OF_MEMORY = 8
+
+
+# Written to stderr before the diarizer loads, so the supervisor can tell a native
+# out-of-memory abort (SIGKILL, ``[metal::malloc]``) in that stage from one in ASR.
+DIARIZE_STAGE_MARKER = "resona-stage: diarize"
 
 
 class ExecutionFailure(Exception):
@@ -259,17 +277,131 @@ def audio_markdown(segments: list[Segment], text: str) -> str:
     return "\n\n".join(" ".join(paragraph) for paragraph in paragraphs)
 
 
+# Speaker label of a diarized Markdown section, by transcript language.
+_SPEAKER_LABEL = {"de": "Sprecher"}
+_DEFAULT_SPEAKER_LABEL = "Speaker"
+
+
+def _engine_words(seg: Any) -> list[Any]:
+    """The word timestamps of one engine segment (dicts or objects, Whisper-style ``word``)."""
+    from resona_diarize import Word
+
+    raw = seg.get("words") if isinstance(seg, Mapping) else getattr(seg, "words", None)
+    words = []
+    for item in raw or []:
+        if isinstance(item, Mapping):
+            start, end, text = item.get("start"), item.get("end"), item.get("word", item.get("text", ""))
+        else:
+            start, end = getattr(item, "start", None), getattr(item, "end", None)
+            text = getattr(item, "word", getattr(item, "text", ""))
+        if start is None or end is None:
+            continue
+        words.append(Word(float(start), float(end), str(text)))
+    return words
+
+
+def diarized_transcript(
+    raw_segments: list[Any], text: str, duration: float, turns: list[Any], language: str | None
+) -> tuple[list[Segment], str] | None:
+    """Speaker sections and their Markdown, or ``None`` when the diarizer found no speech.
+
+    Every word gets the speaker whose turns cover most of it; consecutive words of one
+    speaker form a section, which becomes one ``Segment`` with ``speaker``. A segment
+    without word timestamps counts as one word; an engine without segments, as one word
+    spanning the recording. In Markdown each section starts with ``**Sprecher N:** ``
+    (``Speaker`` for other languages) and is broken into paragraphs like
+    :func:`audio_markdown`, over the ASR segments inside it.
+    """
+    from resona_diarize import Word, assign_words, sections
+
+    words: list[Word] = []
+    owners: list[int] = []
+    for index, seg in enumerate(raw_segments):
+        found = _engine_words(seg)
+        if not found:
+            plain = _segment(seg)
+            found = [Word(plain.start, plain.end, f" {plain.text}")] if plain.text else []
+        words.extend(found)
+        owners.extend([index] * len(found))
+    if not words and text:
+        words, owners = [Word(0.0, duration, f" {text}")], [0]
+    groups = sections(words, assign_words(words, turns))
+    if not groups:
+        return None
+
+    label = _SPEAKER_LABEL.get(language or "", _DEFAULT_SPEAKER_LABEL)
+    segments: list[Segment] = []
+    blocks: list[str] = []
+    position = 0
+    for group in groups:
+        group_owners = owners[position : position + len(group.words)]
+        position += len(group.words)
+        # One piece per ASR segment inside the section, for paragraph breaks at pauses.
+        pieces: list[Segment] = []
+        run: list[Any] = []
+        for word, owner, next_owner in zip(group.words, group_owners, [*group_owners[1:], None], strict=True):
+            run.append(word)
+            if next_owner != owner:
+                piece = "".join(w.text for w in run).strip()
+                pieces.append(Segment(start=run[0].start, end=run[-1].end, text=piece))
+                run = []
+        segments.append(Segment(start=group.start, end=group.end, text=group.text, speaker=group.speaker))
+        blocks.append(f"**{label} {group.speaker}:** {audio_markdown(pieces, group.text)}")
+    return segments, "\n\n".join(blocks)
+
+
+def _diarizer_weights() -> tuple[str, str, Path]:
+    """(engine, model, pinned local snapshot) of the release's diarizer; missing = not prepared."""
+    try:
+        from resona_diarize import ENGINE, MODEL, WEIGHT_PATTERNS
+    except ImportError:
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, "diarizer not installed") from None
+    try:
+        pin = release_model_pins().get(MODEL)
+    except WeightsError:
+        pin = None
+    snapshot = local_snapshot(MODEL, pin, WEIGHT_PATTERNS) if pin else None
+    if snapshot is None:
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, "diarizer weights not prepared on this worker")
+    return ENGINE, MODEL, snapshot
+
+
+def _diarize(audio: Any, candidate: Candidate, snapshot: Path) -> tuple[list[Any], float]:
+    """Speaker turns of the recording on the candidate's accelerator, and the seconds it took."""
+    print(DIARIZE_STAGE_MARKER, file=sys.stderr, flush=True)
+    try:
+        from resona_diarize.model import Diarizer
+
+        diarizer = Diarizer(str(snapshot), _DEVICE[candidate.accelerator])
+    except ImportError:
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, "diarizer dependencies missing") from None
+    except Exception as exc:
+        if _is_out_of_memory(exc):
+            raise ExecutionFailure(ExitCode.DIARIZER_OUT_OF_MEMORY) from None
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "diarizer load failed") from None
+    started = time.perf_counter()
+    try:
+        turns = diarizer(audio)
+    except Exception as exc:
+        if _is_out_of_memory(exc):
+            raise ExecutionFailure(ExitCode.DIARIZER_OUT_OF_MEMORY) from None
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "diarization failed") from None
+    return turns, time.perf_counter() - started
+
+
 def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
-    from resona_asr_core.audio import load_audio_path
+    from resona_asr_core.audio import SAMPLE_RATE, load_audio_path
     from resona_asr_core.model_cache import configure_model_cache
 
     options = snapshot.get("options") or {}
     if not isinstance(options, dict):
         raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "options must be an object")
+    diarize = bool(options.get("diarize", False))
 
     engine_cls = _load_engine(candidate.engine)
     configure_model_cache()
     model_arg, revision = _resolve_weights(candidate)
+    diarizer_weights = _diarizer_weights() if diarize else None
     _require_accelerator(candidate)
     try:
         audio = load_audio_path(input_path)
@@ -293,7 +425,8 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
             audio,
             language=snapshot.get("language") or "de",
             task="translate" if options.get("translate") else "transcribe",
-            word_timestamps=bool(options.get("word_timestamps", False)),
+            # Speaker assignment is per word: diarized jobs always need word timestamps.
+            word_timestamps=diarize or bool(options.get("word_timestamps", False)),
             vad_filter=bool(options.get("vad_filter", False)),
         )
     except Exception as exc:
@@ -303,25 +436,48 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
     seconds = time.perf_counter() - started
 
     text = str(out.get("text", "")).strip()
-    segments = [_segment(seg) for seg in out.get("segments", []) or []]
+    language = out.get("language") or snapshot.get("language")
+    raw_segments = list(out.get("segments", []) or [])
+    segments = [_segment(seg) for seg in raw_segments]
+    markdown = audio_markdown(segments, text)
+    stages = [
+        StageProvenance(
+            stage="asr",
+            engine=candidate.engine,
+            model=candidate.model,
+            model_revision=revision,
+            accelerator=candidate.accelerator,
+            seconds=seconds,
+        )
+    ]
+    if diarizer_weights is not None:
+        engine, model, weights = diarizer_weights
+        # One process, one device: free the ASR model before loading the diarizer.
+        del transcriber
+        gc.collect()
+        turns, diarize_seconds = _diarize(audio, candidate, weights)
+        # A translated transcript is English, whatever language was spoken.
+        label_language = "en" if options.get("translate") else language
+        diarized = diarized_transcript(raw_segments, text, len(audio) / SAMPLE_RATE, turns, label_language)
+        if diarized is not None:
+            segments, markdown = diarized
+        stages.append(
+            StageProvenance(
+                stage="diarize",
+                engine=engine,
+                model=model,
+                model_revision=weights.name,
+                accelerator=candidate.accelerator,
+                seconds=diarize_seconds,
+            )
+        )
     return JobResult(
         kind="audio",
         raw_text=text,
-        markdown=audio_markdown(segments, text),
-        language=out.get("language") or snapshot.get("language"),
+        markdown=markdown,
+        language=language,
         segments=segments,
-        provenance=Provenance(
-            stages=[
-                StageProvenance(
-                    stage="asr",
-                    engine=candidate.engine,
-                    model=candidate.model,
-                    model_revision=revision,
-                    accelerator=candidate.accelerator,
-                    seconds=seconds,
-                )
-            ],
-        ),
+        provenance=Provenance(stages=stages),
     )
 
 

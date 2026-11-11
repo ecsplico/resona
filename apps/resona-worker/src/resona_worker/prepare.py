@@ -41,7 +41,7 @@ from pydantic import ValidationError
 from resona_asr_core.model_cache import configure_model_cache
 from resona_job_core import Candidate, JobResult, OrganizationSettings
 
-from .config import CapabilitiesManifest, PreparedCapability, WeightRecord, runtime_version
+from .config import CapabilitiesManifest, PreparedCapability, PreparedDiarizer, WeightRecord, runtime_version
 from .execute import ExitCode, subprocess_env
 from .weights import (
     WeightsError,
@@ -94,6 +94,15 @@ _SYNTHETIC: dict[str, tuple[_Synthetic, ...]] = {
         ),
     ),
 }
+
+# Two synthetic speakers (macOS `say`: Anna, then Eddy). Speaker 1's clip ends at 2.51 s,
+# speaker 2's starts at 3.31 s; the detected change must fall in that pause, give or take
+# DIARIZE_TOLERANCE_SECONDS.
+_DIARIZE = _Synthetic(
+    fixture="de_two_speakers.wav", language="de", options={"diarize": True}, expected=("guten morgen", "befund")
+)
+_DIARIZE_PAUSE = (2.51, 3.31)
+DIARIZE_TOLERANCE_SECONDS = 0.5
 
 
 def profile_candidates(settings: OrganizationSettings, profile: str) -> list[tuple[str, Candidate]]:
@@ -334,6 +343,60 @@ def prepare_candidate(
     )
 
 
+def _diarizer_model() -> tuple[str, list[str]] | None:
+    """(HF repo, weight file patterns) of the installed diarizer; ``None`` without the ``diarize`` extra."""
+    try:
+        from resona_diarize import MODEL, WEIGHT_PATTERNS
+    except ImportError:
+        return None
+    return MODEL, list(WEIGHT_PATTERNS)
+
+
+def pin_diarizer(model_pins: Mapping[str, str], *, offline: bool = False) -> WeightRecord | None:
+    """Pin the installed diarizer's weights like :func:`pin_weights`; ``None`` when not installed."""
+    installed = _diarizer_model()
+    if installed is None:
+        return None
+    repo, patterns = installed
+    pinned = _pin(model_pins, repo)
+    try:
+        ensure_pinned_snapshot(repo, None, pinned, offline=offline, allow_patterns=patterns)
+    except WeightsError as exc:
+        raise PrepareError(str(exc)) from None
+    return WeightRecord(repo=repo, revision=pinned)
+
+
+def prepare_diarizer(
+    candidate: Candidate,
+    *,
+    executor: Sequence[str],
+    model_pins: Mapping[str, str],
+    weights: WeightRecord,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> PreparedDiarizer:
+    """A synthetic two-speaker job with ``candidate``: two speakers, in order, changing in the pause.
+
+    The diarizer runs on the accelerator of the job's ASR candidate, which must be ``candidate``'s.
+    """
+    run, result = _run_synthetic("audio", _DIARIZE, candidate, executor, timeout)
+    _check_recorded_revisions("diarize", result, model_pins)
+    label = f"synthetic diarize run with {candidate.engine}/{candidate.model}"
+    stage = next((s for s in result.provenance.stages if s.stage == "diarize"), None)
+    if stage is None or stage.model != weights.repo or stage.accelerator != candidate.accelerator:
+        raise PrepareError(f"{label} did not run {weights.repo} on {candidate.accelerator}")
+    speakers = [segment.speaker for segment in result.segments]
+    if speakers != [1, 2]:
+        raise PrepareError(f"{label} found speakers {speakers}, expected [1, 2]")
+    first, second = result.segments
+    change = (first.end + second.start) / 2
+    low, high = _DIARIZE_PAUSE
+    if not low - DIARIZE_TOLERANCE_SECONDS <= change <= high + DIARIZE_TOLERANCE_SECONDS:
+        raise PrepareError(f"{label} put the speaker change at {change:.2f} s, expected {low}-{high} s")
+    return PreparedDiarizer(
+        weights=weights, candidate=candidate, seconds=round(run.seconds, 3), accelerator=stage.accelerator
+    )
+
+
 def prepare(
     settings: OrganizationSettings,
     profile: str,
@@ -350,6 +413,10 @@ def prepare(
     installed release's packaged pins. Every model a candidate loads must be pinned, and all
     of them are pinned in the local caches (downloaded unless ``offline``) before the first
     synthetic run.
+
+    With the ``diarize`` extra installed and an audio candidate in the profile, the diarizer
+    is pinned too and must pass a two-speaker job with the first audio candidate; the
+    manifest then records it, which lets the worker claim ``diarize`` jobs.
     """
     pairs = profile_candidates(settings, profile)
     if model_pins is None:
@@ -360,6 +427,8 @@ def prepare(
     # The execution subprocess honours RESONA_MODELS_DIR the same way.
     configure_model_cache()
     weights = [pin_weights(kind, candidate, model_pins, offline=offline) for kind, candidate in pairs]
+    audio = next((candidate for kind, candidate in pairs if kind == "audio"), None)
+    diarizer_weights = pin_diarizer(model_pins, offline=offline) if audio is not None else None
     tested = []
     for (kind, candidate), pinned in zip(pairs, weights, strict=True):
         item = prepare_candidate(
@@ -368,12 +437,18 @@ def prepare(
         tested.append(item)
         if on_tested is not None:
             on_tested(item)
+    diarizer = None
+    if audio is not None and diarizer_weights is not None:
+        diarizer = prepare_diarizer(
+            audio, executor=executor, timeout=timeout, model_pins=model_pins, weights=diarizer_weights
+        )
     return CapabilitiesManifest(
         profile=profile,
         prepared_at=datetime.now(UTC),
         runtime_version=runtime_version(),
         platform=f"{sys.platform}-{platform.machine()}",
         tested=tested,
+        diarizer=diarizer,
     )
 
 

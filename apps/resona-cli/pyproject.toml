@@ -64,6 +64,8 @@ Issues = "https://github.com/ecsplico/resona/issues"
 kokoro = ["resona-tts-local[kokoro]"]
 # `resona doc --local`: in-process Docling conversion.
 documents = ["resona-worker[documents]"]
+# `resona transcribe --local --diarize`: Nemotron-3-Diarization in the execution subprocess.
+diarize = ["resona-worker[diarize]"]
 whisper = ["resona-engine-whisper"]
 voxtral = ["resona-engine-voxtral"]
 # Apple Silicon GPU-accelerated engines (mac arm64 only; no-ops elsewhere).

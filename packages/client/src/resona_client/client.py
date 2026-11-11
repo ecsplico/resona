@@ -242,7 +242,11 @@ def _checked_options(
             checked = model.model_validate(dict(options))
         except ValidationError as exc:
             raise ValueError(f"invalid {kind} options: {exc}") from exc
-    return checked.model_dump(mode="json", exclude_none=True)
+    dumped = checked.model_dump(mode="json", exclude_none=True)
+    # A false ``diarize`` is the default: leave it out so hubs predating it (extra="forbid") accept the job.
+    if dumped.get("diarize") is False:
+        del dumped["diarize"]
+    return dumped
 
 
 class ResonaClient:
@@ -736,16 +740,21 @@ class ResonaClient:
         execution_profile: Optional[str] = None,
         private: bool = True,
         profile: Optional[str] = None,
+        diarize: bool = False,
     ) -> dict:
         """Transcribe audio through the OpenAI-compatible adapter. POST /v1/audio/transcriptions
 
         The hub queues a normal audio job and waits a bounded time for a worker.
         ``model="whisper-1"`` means the execution profile's default; any other value
-        is an override that must be an approved candidate.
+        is an override that must be an approved candidate. ``diarize=True`` labels
+        speakers (only workers that diarize run the job); the field is sent only then.
+        A hub predating diarization ignores the field: the result comes back without
+        speaker labels and without an error (``submit_job`` gets a 422 there instead).
 
         Returns:
             Dict with key ``text`` (``json`` and ``text`` formats).
-            With ``response_format="verbose_json"``: ``text``, ``language``, ``duration``, ``segments``.
+            With ``response_format="verbose_json"``: ``text``, ``language``, ``duration``, ``segments``
+            (each with ``speaker`` when diarized).
 
         Raises SyncWaitTimeout (504) when no worker finished in time; the job keeps
         running and ``job_id`` identifies it for ``wait_for_job``/``get_result``.
@@ -763,6 +772,8 @@ class ResonaClient:
             "profile": profile,
         }
         data.update({k: v for k, v in optional.items() if v})
+        if diarize:
+            data["diarize"] = "true"
         content_type = mimetypes.guess_type(audio_path.name)[0] or "application/octet-stream"
         with open(audio_path, "rb") as f:
             resp = self._client.post(

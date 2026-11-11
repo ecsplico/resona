@@ -11,6 +11,7 @@ import re
 
 _FORBIDDEN, _LINE, _BLOCK = 0, 1, 2
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_SPEAKER_LABEL = re.compile(r"^\*\*([^*\n]{1,60}):\*\* ", re.MULTILINE)
 _FENCE = ("```", "~~~")
 
 
@@ -82,7 +83,9 @@ def markup_signature(text: str) -> tuple:
 
     HTML comments (Docling placeholders such as ``<!-- image -->`` and
     ``<!-- formula-not-decoded -->``) in order, the heading level of every heading line,
-    and the number of cells of every table line.
+    the number of cells of every table line, and the speaker labels of a diarized
+    transcript (``**Sprecher 1:** `` or a renamed ``**Anna:** `` at a line start) in order,
+    so a pass that drops, merges or renames a speaker is caught.
     """
     comments = tuple(_COMMENT.findall(text))
     headings: list[int] = []
@@ -95,7 +98,8 @@ def markup_signature(text: str) -> tuple:
                 headings.append(level)
         elif stripped.startswith("|"):
             table_rows.append(stripped.rstrip().count("|"))
-    return comments, tuple(headings), tuple(table_rows)
+    speakers = tuple(_SPEAKER_LABEL.findall(text))
+    return comments, tuple(headings), tuple(table_rows), speakers
 
 
 def length_deviation(before: str, after: str) -> float:

@@ -22,12 +22,21 @@
 | `fr-scan-pdf` | French paragraphs with é è à ç, raster only; job option `languages: ["fr"]` | CER |
 | `it-scan-pdf` | Italian paragraphs with à ì ò ù, raster only; job option `languages: ["it"]` | CER |
 | `es-scan-pdf` | Spanish paragraphs with ñ á é í ó ú ¿ ¡, raster only; job option `languages: ["es"]` | CER |
+| `de-two-speakers` | German doctor/patient consultation, 2 `say` voices (Anna, Sandy), ~47 s, two short backchannels; job option `diarize: true` | WER, CER, speaker attribution, DER, speaker count |
+| `de-case-conference` | German case conference, 4 `say` voices (Anna, Flo, Sandy, Reed), ~81 s, four short backchannels; job option `diarize: true` | WER, CER, speaker attribution, DER, speaker count |
 
 The hard fixtures (from `degraded-scan-pdf` on) are rendered with Bitstream Vera Sans, which ships with reportlab (Bitstream Vera Fonts license), so they do not depend on system fonts. `bad-text-layer` measures what a bad invisible layer does in the default `auto` mode. Docling does not count an invisible text layer as page text, so `auto` OCRs the page, and the OCR text replaces the garbled layer wherever OCR finds text; only `ocr=off` returns the layer. A visible, digital text layer is kept in `auto`. There is no Korean fixture: the bundled RapidOCR recognizer has no Korean weights.
 
 ### Per-fixture job options
 
-A document fixture may set `options` in the manifest, for example `{"languages": ["fr"]}` or `{"ocr": "force"}`. They are typed as `DocumentOptions`, so the loader refuses a corpus with invalid options (`invalid document options`). They are merged over the default options of every evaluation job of that fixture (the fixture language as `languages`), locally and with `--remote`. A document fixture without `languages` in its options needs a fixture language that is a document language. Audio fixtures cannot set options.
+A fixture may set `options` in the manifest, typed by its kind so the loader refuses invalid options (`invalid document options` / `invalid audio options`). They are merged over the default options of every evaluation job of that fixture, locally and with `--remote`:
+
+- Document fixtures take `DocumentOptions`, for example `{"languages": ["fr"]}` or `{"ocr": "force"}`, merged over the fixture language as `languages`. A document fixture without `languages` in its options needs a fixture language that is a document language.
+- Audio fixtures take `AudioOptions`, for example `{"diarize": true}`, merged over the defaults of a normal audio job (`vad_filter` on).
+
+### Diarization fixtures
+
+A fixture with `options.diarize` carries its reference speaker turns: `speakers: [{speaker, start, end, text}]`, in order of `start`. The generator mixes one `say` clip per turn, trimmed to its voiced span, so `start`/`end` are the exact sample span of that clip (rounded to 0.1 ms). Backchannels ("Mhm.", "Okay.") start 0.35 s before the previous turn ends, so the reference contains overlapping speech. The loader checks that the turn texts make up the `reference`, that only `diarize` fixtures carry `speakers`, and that the speaker checks (`speaker_attribution`, `der`, `speaker_count`) appear only on such fixtures.
 
 ### Corpus hash
 
@@ -40,9 +49,9 @@ uv run --no-project --with reportlab==5.1.0 --with pillow==12.2.0 --with numpy==
     python eval/corpus/make_corpus.py --only hard
 ```
 
-`--only hard` regenerates the hard document fixtures and is byte-reproducible with the pinned versions above. `--only base` (or the default `all`) also regenerates the original fixtures and needs macOS with the German voice Anna and the system Arial; their bytes may differ on another macOS version, so leave them untouched unless they must change. `MANIFEST.json` is always rewritten from the files on disk.
+`--only hard` regenerates the hard document fixtures and is byte-reproducible with the pinned versions above. `--only conversations` regenerates the two diarization conversations (macOS German voices Anna, Flo, Sandy and Reed; seeded pauses and noise, so it is reproducible on the same macOS version). `--only base` (or the default `all`) also regenerates the original fixtures and needs macOS with the German voice Anna and the system Arial; their bytes may differ on another macOS version, so leave them untouched unless they must change. `MANIFEST.json` is always rewritten from the files on disk; conversations that are not regenerated keep their reference turns from the current manifest.
 
-Any change to the manifest changes the corpus hash. Every baseline must then be measured and promoted again (`resona eval promote --rebaseline`). Baselines promoted on an earlier corpus are no longer comparable and report `baseline_required` until they are promoted again. This happened when the hard fixtures were added, and again when the French, Italian and Spanish scans replaced the duplicate `bad-text-layer-force` fixture.
+Any change to the manifest changes the corpus hash. Every baseline must then be measured and promoted again (`resona eval promote --rebaseline`). Baselines promoted on an earlier corpus are no longer comparable and report `baseline_required` until they are promoted again. This happened when the hard fixtures were added, again when the French, Italian and Spanish scans replaced the duplicate `bad-text-layer-force` fixture, and again when the diarization conversations were added.
 
 !!! warning "No private material"
     Do not add private audio, patient documents or transcripts derived from them to `eval/corpus/`. Keep operator corpora outside Git and outside public artifacts.
@@ -60,14 +69,18 @@ Scores are numbers only. Reports and hub records never contain transcripts or Ma
 - **Silence insertions** is the number of words emitted on the silence fixture.
 - **Missing cells** is the number of required cell values not found in a Markdown pipe table.
 - **Order failures** is the number of reading-order anchors that are not found after the previous anchor.
+- **Speaker attribution** (diarization fixtures, from `segments[].speaker`) is the share of reference words whose aligned hypothesis word (the `text-v1` word alignment WER uses; equal and substituted pairs) carries the right speaker. Hypothesis speakers are mapped one-to-one onto reference speakers so that the most words count; a word of an unmapped or missing speaker is wrong. Higher is better.
+- **DER** is the time-based diarization error rate: missed speech + false alarm + speaker confusion over total reference speech, collar 0, overlapping speech scored, with the error-minimising one-to-one speaker mapping.
+- **Speaker count error** is |hypothesis speakers − reference speakers|. It is reported, not gated.
+- A diarization fixture whose result has no segments, or a segment without `speaker`, scores speaker attribution 0 and DER 1.0.
 
 ## The gate
 
 | Check | Fails when |
 |---|---|
 | Absolute | any missing table cell, reading-order failure or silence insertion |
-| Regression | any fixture's WER or CER is more than **0.02 absolute** above the baseline |
-| Coverage | a fixture or metric is absent from the baseline (`baseline_required:<id>`), or a baseline fixture was not evaluated (`missing_fixture:<id>`) |
+| Regression | any fixture's WER, CER or DER is more than **0.02 absolute** above the baseline, or its speaker attribution more than **0.02 absolute** below it |
+| Coverage | a fixture or metric (including `speaker_count_error`) is absent from the baseline (`baseline_required:<id>`), or a baseline fixture was not evaluated (`missing_fixture:<id>`) |
 
 If no baseline exists for the profile and platform, or the baseline was measured on another corpus hash, the outcome is `baseline_required`. That is a nonzero exit, not a pass.
 

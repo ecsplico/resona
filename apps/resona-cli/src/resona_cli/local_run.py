@@ -50,6 +50,9 @@ _EXIT_MESSAGES = {
        "(prepare them with `resona-worker prepare`)",
     5: "out_of_memory",
     6: "invalid_snapshot",
+    7: "diarizer_unavailable: the diarizer or its pinned weights are not installed on this machine "
+       "(install `resona-cli[diarize]` and prepare the weights with `resona worker prepare`)",
+    8: "out_of_memory: the diarizer ran out of memory",
 }
 
 

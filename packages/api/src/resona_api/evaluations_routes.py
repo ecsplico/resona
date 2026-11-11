@@ -11,7 +11,9 @@ Promoting an evaluation makes it the next baseline revision of its
 of that tuple. The hub re-checks the gate itself: the first baseline (or one on
 a changed corpus) needs zero silence insertions, missing cells and order
 failures; later baselines additionally need every baseline fixture and metric
-present and no WER/CER regression above :data:`REGRESSION_LIMIT`.
+present, no WER/CER/DER regression above :data:`REGRESSION_LIMIT` and no
+speaker attribution more than that limit below the baseline. The speaker count
+error of diarize fixtures is reported, never gated.
 
 Every recorded fixture declares its kind and corpus checks, and must carry
 exactly the metrics those checks produce, so an empty metrics object cannot
@@ -42,16 +44,24 @@ router = APIRouter(tags=["Evaluations"])
 
 REGRESSION_LIMIT = 0.02
 ABSOLUTE_CHECKS = ("silence_insertions", "missing_cells", "order_failures")
-RATE_METRICS = ("wer", "cer")
+# Lower is better; a value above baseline + limit is a regression.
+RATE_METRICS = ("wer", "cer", "der")
+# Higher is better; a value below baseline - limit is a regression.
+SCORE_METRICS = ("speaker_attribution",)
+# Reported only: must be present when the baseline has it, never compared.
+REPORTED_METRICS = ("speaker_count_error",)
 METRIC_OF_CHECK = {
     "wer": "wer",
     "cer": "cer",
     "silence": "silence_insertions",
     "table_cells": "missing_cells",
     "reading_order": "order_failures",
+    "speaker_attribution": "speaker_attribution",
+    "der": "der",
+    "speaker_count": "speaker_count_error",
 }
 CHECKS_OF_KIND = {
-    "audio": frozenset({"wer", "cer", "silence"}),
+    "audio": frozenset({"wer", "cer", "silence", "speaker_attribution", "der", "speaker_count"}),
     "document": frozenset({"cer", "table_cells", "reading_order"}),
 }
 MAX_BODY_BYTES = 1024 * 1024
@@ -69,9 +79,14 @@ class FixtureMetrics(BaseModel):
     silence_insertions: Optional[StrictInt] = Field(default=None, ge=0)
     missing_cells: Optional[StrictInt] = Field(default=None, ge=0)
     order_failures: Optional[StrictInt] = Field(default=None, ge=0)
+    speaker_attribution: Optional[float] = Field(default=None, ge=0, le=1)
+    der: Optional[float] = Field(default=None, ge=0)
+    speaker_count_error: Optional[StrictInt] = Field(default=None, ge=0)
 
 
-Check = Literal["wer", "cer", "silence", "table_cells", "reading_order"]
+Check = Literal[
+    "wer", "cer", "silence", "table_cells", "reading_order", "speaker_attribution", "der", "speaker_count"
+]
 
 
 class FixtureChecks(BaseModel):
@@ -157,14 +172,15 @@ def absolute_failures(fixtures: dict[str, dict[str, Any]]) -> list[str]:
 def regression_failures(
     fixtures: dict[str, dict[str, Any]], baseline: dict[str, dict[str, Any]]
 ) -> list[str]:
-    """Missing baseline fixtures/metrics and WER/CER regressions above the limit."""
+    """Missing baseline fixtures/metrics, WER/CER/DER regressions above the limit and
+    speaker attribution drops below it."""
     failures = []
     for fixture_id in sorted(baseline):
         candidate = fixtures.get(fixture_id)
         if candidate is None:
             failures.append(f"{fixture_id}: baseline_required (fixture missing from evaluation)")
             continue
-        for metric in (*RATE_METRICS, *ABSOLUTE_CHECKS):
+        for metric in (*RATE_METRICS, *SCORE_METRICS, *ABSOLUTE_CHECKS, *REPORTED_METRICS):
             reference = baseline[fixture_id].get(metric)
             if reference is None:
                 continue
@@ -173,6 +189,8 @@ def regression_failures(
                 failures.append(f"{fixture_id}: {metric} missing")
             elif metric in RATE_METRICS and value > reference + REGRESSION_LIMIT + _EPSILON:
                 failures.append(f"{fixture_id}: {metric} {value:.4f} > baseline {reference:.4f} + {REGRESSION_LIMIT}")
+            elif metric in SCORE_METRICS and value < reference - REGRESSION_LIMIT - _EPSILON:
+                failures.append(f"{fixture_id}: {metric} {value:.4f} < baseline {reference:.4f} - {REGRESSION_LIMIT}")
     return failures
 
 

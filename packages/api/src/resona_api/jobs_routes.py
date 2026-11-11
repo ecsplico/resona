@@ -58,7 +58,15 @@ from resona_postprocess.profile import ProfileError
 from . import clock, releases, storage
 from . import engine_registry as reg
 from .auth import ROLE_ORG_ADMIN, Principal, client_principal, hash_token
-from .broker import JOB_DELETED, _finish_terminal, _immediate, _remove_input, endpoints_assigned, purge_job
+from .broker import (
+    JOB_DELETED,
+    _finish_terminal,
+    _immediate,
+    _remove_input,
+    endpoints_assigned,
+    purge_job,
+    wants_diarize,
+)
 from .db.engine import engine
 from .db.models import (
     Credential,
@@ -138,6 +146,16 @@ class JobRequest(BaseModel):
 _OPTIONS_MODEL: dict[str, type[BaseModel]] = {"audio": AudioOptions, "document": DocumentOptions, "text": TextOptions}
 
 
+def snapshot_options(options: BaseModel) -> dict[str, Any]:
+    """Typed options as stored in the execution snapshot. ``diarize`` appears only when
+    true, so workers on a release predating it (``extra="forbid"``) still run every
+    other audio job."""
+    dumped = options.model_dump(mode="json", exclude_none=True)
+    if dumped.get("diarize") is False:
+        del dumped["diarize"]
+    return dumped
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _storage_id(session: Session, organization_id: str) -> str:
@@ -165,6 +183,7 @@ class OnlineWorker:
     capabilities: frozenset[Candidate]
     runtime_version: str | None
     text_jobs: bool = False
+    diarize: bool = False
 
 
 def _online_workers(session: Session, organization_id: str, now: datetime) -> list[OnlineWorker]:
@@ -191,6 +210,7 @@ def _online_workers(session: Session, organization_id: str, now: datetime) -> li
             capabilities=frozenset(approved & reported),
             runtime_version=worker.runtime_version,
             text_jobs=worker.text_jobs,
+            diarize=worker.diarize,
         ))
     return online
 
@@ -223,7 +243,8 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
 
     ``no_capable_worker``: no online worker of the job's privacy class offers one of
     its candidates (with the job's worker-assigned endpoints); for a text job, none
-    reports that it runs text jobs with those endpoints. ``release_not_approved``:
+    reports that it runs text jobs with those endpoints; for a diarize job, none of
+    those workers reports ``diarize``. ``release_not_approved``:
     such workers exist, but none runs a release approved for the job (for a text
     job: a release the hub knows, staged or bundled).
     ``waiting_capacity``: an eligible worker is online and busy.
@@ -235,10 +256,11 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
         [None] if job.kind == "text"
         else [Candidate.model_validate(item) for item in snapshot.get("candidates", [])]
     )
+    diarize = wants_diarize(snapshot, job.kind)
     capable = [
         (worker, candidate)
         for worker in ctx.workers
-        if worker.approved_private == job.private
+        if worker.approved_private == job.private and (worker.diarize or not diarize)
         for candidate in wanted
         if (worker.text_jobs if candidate is None else candidate in worker.capabilities)
         and endpoints_assigned(snapshot, job.kind, candidate, worker_id=worker.worker_id, settings=ctx.settings)
@@ -856,7 +878,7 @@ def admit_testbench_job(session: Session, organization_id: str, *, kind: str, la
         check_policy(policy, [_candidate_stage(candidate, kind, settings)])
     except PolicyDenied as exc:
         raise api_error(403, "policy_denied", f"{exc.stage}: {exc.reason}") from None
-    options = _OPTIONS_MODEL[kind].model_validate({}).model_dump(mode="json", exclude_none=True)
+    options = snapshot_options(_OPTIONS_MODEL[kind].model_validate({}))
     if kind == "document":
         _option_compatible([candidate], options, language, media_type)
     snapshot = _snapshot_body(
@@ -1026,7 +1048,7 @@ async def submit_job(
         message = validation_message(exc) if isinstance(exc, ValidationError) else "body must be JSON"
         raise api_error(422, "invalid_request", message) from None
     try:
-        options = _OPTIONS_MODEL[req.kind].model_validate(req.options or {}).model_dump(mode="json", exclude_none=True)
+        options = snapshot_options(_OPTIONS_MODEL[req.kind].model_validate(req.options or {}))
     except ValidationError as exc:
         raise api_error(422, "invalid_options", validation_message(exc)) from None
     if req.kind == "text":

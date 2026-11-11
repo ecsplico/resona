@@ -162,7 +162,7 @@ def list_engines(principal: Principal = Depends(client_principal)):
         return _org_engines(session, principal.organization_id)
 
 
-def _form_bool(value: str | None, *, default: bool) -> bool:
+def _form_bool(value: str | None, *, default: bool, name: str = "private") -> bool:
     if value is None:
         return default
     lowered = value.strip().lower()
@@ -170,7 +170,7 @@ def _form_bool(value: str | None, *, default: bool) -> bool:
         return True
     if lowered in ("false", "0", "no"):
         return False
-    raise api_error(422, "invalid_request", "private must be true or false")
+    raise api_error(422, "invalid_request", f"{name} must be true or false")
 
 
 def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.JobRequest, str]:
@@ -194,6 +194,10 @@ def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.Jo
         "profile": fields.get("profile") or None,
         "private": _form_bool(fields.get("private"), default=True),
     }
+    if _form_bool(fields.get("diarize"), default=False, name="diarize"):
+        # Part of the request, so the Idempotency-Key hash tells a diarized replay apart;
+        # left out when false so keys recorded before diarization keep matching.
+        body["options"] = {"diarize": True}
     try:
         return jobs_routes.JobRequest.model_validate(body), response_format
     except ValidationError as exc:
@@ -231,7 +235,8 @@ def _openai_response(result: JobResult, response_format: str):
         return PlainTextResponse(text)
     payload: dict = {"text": text}
     if response_format == "verbose_json":
-        segments = [seg.model_dump() for seg in result.segments]
+        # ``speaker`` only on diarized results; other segments keep the pre-diarization shape.
+        segments = [seg.model_dump(exclude_none=True) for seg in result.segments]
         payload.update({
             "language": result.language,
             "duration": segments[-1]["end"] if segments else 0.0,
@@ -253,7 +258,8 @@ async def create_transcription(
     Multipart fields: ``file`` plus OpenAI ``model``, ``language``,
     ``response_format`` (json|text|verbose_json), ``prompt``/``temperature``
     (ignored) and Resona ``engine``, ``execution_profile``, ``profile``,
-    ``private`` (default true). Admission is identical to ``POST /v1/jobs``.
+    ``private`` (default true), ``diarize`` (default false: label speakers, needs a
+    worker that diarizes). Admission is identical to ``POST /v1/jobs``.
     """
     organization_id = principal.organization_id
     with Session(db_engine) as session:
@@ -264,7 +270,8 @@ async def create_transcription(
         if len(key) > jobs_routes.MAX_IDEMPOTENCY_KEY_CHARS or not key.isprintable():
             raise api_error(400, "invalid_idempotency_key", "Idempotency-Key is too long or not printable")
         req, response_format = _job_request(fields, upload_id)
-        options = jobs_routes.AudioOptions().model_dump(mode="json")
+        diarize = bool((req.options or {}).get("diarize"))
+        options = jobs_routes.snapshot_options(jobs_routes.AudioOptions(diarize=diarize))
         _, body = await run_in_threadpool(jobs_routes._admit, organization_id, key, req, options)
     except BaseException:
         await run_in_threadpool(jobs_routes.discard_upload, organization_id, upload_id)

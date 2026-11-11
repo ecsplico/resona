@@ -174,6 +174,16 @@ def test_unapproved_worker_heartbeats_but_cannot_claim(http, fresh_org):
     assert job_row(job_id).status == JobStatus.PENDING
 
 
+def test_heartbeat_reply_advertises_diarize_claims(http, fresh_org):
+    # Workers send `diarize` in claim bodies only to hubs that say so (older hubs answer 422).
+    _, headers = make_worker(fresh_org)
+
+    beat = heartbeat(http, headers)
+
+    assert beat.status_code == 200
+    assert beat.json()["diarize"] is True
+
+
 def test_revoked_worker_is_rejected_and_loses_input_download(http, fresh_org):
     make_job(fresh_org)
     worker_id, headers = make_worker(fresh_org)

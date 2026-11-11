@@ -23,6 +23,8 @@ apple = ["resona-engine-mlx-whisper>=0.1.0"]
 documents = ["resona-engine-docling>=0.1.0"]
 # Linux NVIDIA profile: openai-whisper on the cu130 Torch wheels (see the root index config).
 cuda = ["resona-engine-whisper>=0.1.0"]
+# Speaker diarization (Nemotron-3-Diarization via transformers); prepare checks it when installed.
+diarize = ["resona-diarize>=0.2.3"]
 
 [project.scripts]
 resona-worker = "resona_worker.cli:app"
@@ -38,3 +40,4 @@ resona-engine-faster-whisper = { workspace = true }
 resona-engine-mlx-whisper = { workspace = true }
 resona-engine-docling = { workspace = true }
 resona-engine-whisper = { workspace = true }
+resona-diarize = { workspace = true }

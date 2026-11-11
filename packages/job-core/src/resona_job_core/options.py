@@ -48,6 +48,9 @@ class AudioOptions(BaseModel):
     translate: bool = False
     word_timestamps: bool = False
     vad_filter: bool = True
+    # Split the transcript into speaker turns ("who spoke when"). Only workers that
+    # prepared the diarizer claim such jobs; segments then carry ``speaker``.
+    diarize: bool = False
 
 
 class TextOptions(BaseModel):

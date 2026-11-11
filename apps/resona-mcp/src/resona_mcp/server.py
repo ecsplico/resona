@@ -124,6 +124,13 @@ RequiredProfile = Annotated[
     Optional[str],
     Field(default=None, max_length=64, description="Required. Name of a stored postprocess profile on the hub."),
 ]
+Diarize = Annotated[
+    bool,
+    Field(default=False, description="Label who spoke when. The result's segments then carry a 1-based "
+                                     "'speaker' number and the Markdown starts each speaker section with "
+                                     "'**Sprecher N:**' (German) or '**Speaker N:**'. Needs a worker with "
+                                     "a verified diarizer; until one is online the job stays pending."),
+]
 
 
 def _api_error(exc: ResonaAPIError) -> ToolError:
@@ -213,10 +220,17 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         profile: PostprocessProfile = None,
         instructions: UserInstructions = None,
         options: Optional[AudioOptions] = None,
+        diarize: Diarize = False,
         private: Private = True,
         idempotency_key: IdempotencyKey = None,
     ) -> dict[str, Any]:
-        """Submit an audio transcription job; returns {job_id, status, private} immediately."""
+        """Submit an audio transcription job; returns {job_id, status, private} immediately.
+
+        With diarize=true the result's segments carry a 'speaker' number and the Markdown
+        has one paragraph per speaker section starting with '**Sprecher N:**' (German) or
+        '**Speaker N:**'."""
+        if diarize:
+            options = (options or AudioOptions()).model_copy(update={"diarize": True})
         return await submit(
             ctx, kind="audio", upload_id=upload_id, path=path, options=options,
             execution_profile=execution_profile, language=language, profile=profile,

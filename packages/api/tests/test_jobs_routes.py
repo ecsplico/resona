@@ -159,6 +159,77 @@ def test_queue_reason_ignores_approved_tuples_the_worker_does_not_offer(http, fr
     assert claim(http, worker, caps=()).status_code == 204
 
 
+# ── Diarization ──────────────────────────────────────────────────────────────
+
+def _beat(http, worker, *, diarize):
+    resp = http.post("/v1/workers/heartbeat", headers=worker, json={
+        "worker_protocol": 1, "runtime_version": hub_release_id(), "ready": True,
+        "reported_capabilities": [MAC_AUDIO.model_dump(mode="json")], "diarize": diarize,
+    })
+    assert resp.status_code == 200, resp.text
+
+
+def _claim(http, worker, *, diarize):
+    return http.post("/v1/workers/claim?wait=0", headers=worker, json={
+        "capabilities": [MAC_AUDIO.model_dump(mode="json")], "diarize": diarize})
+
+
+def test_diarize_job_waits_for_and_goes_only_to_a_diarizing_worker(http, fresh_org, client_headers, wav_bytes):
+    headers = client_headers(fresh_org)
+    job_id = new_job(http, headers, wav_bytes, options={"diarize": True})
+    assert json.loads(job_row(job_id).execution_snapshot)["options"]["diarize"] is True
+    _, worker = make_worker(fresh_org)
+
+    _beat(http, worker, diarize=False)
+    assert http.get(f"/v1/jobs/{job_id}", headers=headers).json()["queue_reason"] == "no_capable_worker"
+    assert _claim(http, worker, diarize=False).status_code == 204
+    row = job_row(job_id)
+    assert (row.status, row.attempt, row.worker_id) == (JobStatus.PENDING, 0, None)
+
+    _beat(http, worker, diarize=True)
+    assert http.get(f"/v1/jobs/{job_id}", headers=headers).json()["queue_reason"] == "waiting_capacity"
+    granted = _claim(http, worker, diarize=True)
+    assert granted.status_code == 200 and granted.json()["job_id"] == job_id
+    assert granted.json()["execution_snapshot"]["options"]["diarize"] is True
+
+
+def test_plain_audio_job_snapshot_omits_diarize_and_any_worker_claims_it(http, fresh_org, client_headers, wav_bytes):
+    # Workers predating diarize validate options with extra="forbid": a false flag is never sent.
+    headers = client_headers(fresh_org)
+    job_id = new_job(http, headers, wav_bytes, options={"diarize": False})
+    assert "diarize" not in json.loads(job_row(job_id).execution_snapshot)["options"]
+    _, worker = make_worker(fresh_org)
+    assert _claim(http, worker, diarize=True).json()["job_id"] == job_id
+
+
+def _post_segments(http, job_id, worker, lease, segments):
+    result = {"schema_version": 1, "kind": "audio", "raw_text": "Hallo Welt", "markdown": "Hallo Welt",
+              "segments": segments, "provenance": {"stages": []}}
+    body = json.dumps(result).encode()
+    return http.post(f"/v1/workers/jobs/{job_id}/result", content=body, headers={
+        **worker, "X-Resona-Lease": lease, "Content-Type": "application/json",
+        "X-Resona-Result-Sha256": hashlib.sha256(body).hexdigest(),
+    })
+
+
+def test_result_carries_speaker_only_when_the_worker_sent_one(http, fresh_org, client_headers, wav_bytes):
+    headers = client_headers(fresh_org)
+    _, worker = make_worker(fresh_org)
+    plain = new_job(http, headers, wav_bytes)
+    lease = _claim(http, worker, diarize=True).json()["lease_token"]
+    assert _post_segments(http, plain, worker, lease, [{"start": 0.0, "end": 1.0, "text": "Hallo"}]).status_code == 200
+    assert http.get(f"/v1/jobs/{plain}/result", headers=headers).json()["segments"] == [
+        {"start": 0.0, "end": 1.0, "text": "Hallo"}]
+
+    diarized = new_job(http, headers, wav_bytes, options={"diarize": True})
+    lease = _claim(http, worker, diarize=True).json()["lease_token"]
+    sections = [{"start": 0.0, "end": 1.0, "text": "Hallo", "speaker": 1},
+                {"start": 1.0, "end": 2.0, "text": "Welt", "speaker": 2}]
+    assert _post_segments(http, diarized, worker, lease, sections).status_code == 200
+    assert http.get(f"/v1/jobs/{diarized}/result", headers=headers).json()["segments"] == sections
+
+
+
 def test_result_expires_after_retention(http, fresh_org, client_headers, wav_bytes, monkeypatch):
     headers = client_headers(fresh_org)
     job_id = new_job(http, headers, wav_bytes)

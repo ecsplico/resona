@@ -37,6 +37,7 @@ COPY packages/engine-server/ ./packages/engine-server/
 COPY packages/engine-faster-whisper/ ./packages/engine-faster-whisper/
 COPY packages/engine-whisper/ ./packages/engine-whisper/
 COPY packages/engine-docling/ ./packages/engine-docling/
+COPY packages/diarize/ ./packages/diarize/
 
 # A uv-managed CPython (not the base image's) so the same /opt/python + venv copy
 # runs on the CUDA runtime base, which ships no Python 3.12 of its own. The uv cache

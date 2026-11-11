@@ -44,7 +44,7 @@ def downloads(monkeypatch, hf_cache) -> list[tuple[str, str]]:
     """Fake network: a download caches the requested commit (no refs), like ``snapshot_download``."""
     fetched: list[tuple[str, str]] = []
 
-    def download(repo: str, revision: str) -> Path:
+    def download(repo: str, revision: str, allow_patterns: list[str] | None = None) -> Path:
         fetched.append((repo, revision))
         return hf_cache.add(repo, revision)
 
@@ -152,7 +152,7 @@ def test_offline_names_the_missing_repo_at_its_pinned_revision(hf_cache, downloa
 
 
 def test_failed_download_fails_before_any_synthetic_run(monkeypatch, hf_cache) -> None:
-    def offline(repo: str, revision: str) -> Path:
+    def offline(repo: str, revision: str, allow_patterns: list[str] | None = None) -> Path:
         raise WeightsError(f"download of {repo}@{revision} failed: ConnectError")
 
     monkeypatch.setattr(weights_module, "download_snapshot", offline)
@@ -292,3 +292,48 @@ def test_missing_whisper_checkpoint_is_downloaded_unless_offline(tmp_path: Path,
     with pytest.raises(PrepareError, match="download of whisper large-v3 failed"):
         prepare(_cuda_settings([CUDA_AUDIO]), "linux-cuda", executor=NEVER_RUN, model_pins=pins)
     assert fetched == ["large-v3"]
+
+
+DIARIZER = "nvidia/Nemotron-3-Diarization"
+DIARIZER_PIN = "52a432672732425e4c19765b9fec9b5810e6f4ba"
+
+
+@pytest.fixture
+def diarizer(monkeypatch, cached) -> None:
+    """The ``diarize`` extra installed, its weights cached at the pin."""
+    monkeypatch.setattr(prepare_module, "_diarizer_model", lambda: (DIARIZER, ["*.json", "model.safetensors"]))
+    cached.add(DIARIZER, DIARIZER_PIN, "main")
+
+
+def test_installed_diarizer_passing_the_two_speaker_job_is_recorded(prepare_executor: Path, diarizer, downloads) -> None:
+    manifest = prepare(
+        _settings([AUDIO], []), "mac-private", executor=(sys.executable, str(prepare_executor)),
+        model_pins={**PINS, DIARIZER: DIARIZER_PIN},
+    )
+
+    assert manifest.diarizer is not None
+    assert (manifest.diarizer.weights.repo, manifest.diarizer.weights.revision) == (DIARIZER, DIARIZER_PIN)
+    assert manifest.diarizer.candidate == AUDIO
+    assert manifest.diarizer.accelerator == "metal"
+    assert (DIARIZER, DIARIZER_PIN) in downloads
+
+
+def test_diarizer_that_hears_one_speaker_fails_prepare(prepare_executor: Path, diarizer) -> None:
+    monologue = AUDIO.model_copy(update={"model": "monologue/whisper"})
+    pins = {monologue.model: SNAPSHOT_HASH, DIARIZER: DIARIZER_PIN}
+
+    with pytest.raises(PrepareError, match=r"found speakers \[1, 1\], expected \[1, 2\]"):
+        prepare(_settings([monologue], []), "mac-private", executor=(sys.executable, str(prepare_executor)), model_pins=pins)
+
+
+def test_installed_diarizer_needs_a_release_pin(prepare_executor: Path, diarizer) -> None:
+    with pytest.raises(PrepareError, match=f"does not pin a revision for {DIARIZER}"):
+        prepare(_settings([AUDIO], []), "mac-private", executor=NEVER_RUN, model_pins=PINS)
+
+
+def test_document_only_profile_skips_the_diarizer(prepare_executor: Path, diarizer) -> None:
+    manifest = prepare(
+        _settings([], [DOC]), "mac-private", executor=(sys.executable, str(prepare_executor)), model_pins=PINS
+    )
+
+    assert manifest.diarizer is None

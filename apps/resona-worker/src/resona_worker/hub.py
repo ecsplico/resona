@@ -79,6 +79,8 @@ class HeartbeatReply(BaseModel):
     approved: bool
     approved_private: bool = False
     approved_capabilities: list[Candidate] = Field(default_factory=list)
+    # The hub accepts `diarize` in claim bodies; hubs predating diarization omit it.
+    diarize: bool = False
 
 
 class ClaimedJob(BaseModel):
@@ -189,7 +191,9 @@ class HubClient:
 
     # -- registration -------------------------------------------------------
 
-    def heartbeat(self, capabilities: list[Candidate], *, ready: bool, runtime: str) -> HeartbeatReply:
+    def heartbeat(
+        self, capabilities: list[Candidate], *, ready: bool, runtime: str, diarize: bool = False
+    ) -> HeartbeatReply:
         body = {
             "runtime_version": runtime,
             "worker_protocol": WORKER_PROTOCOL,
@@ -198,6 +202,10 @@ class HubClient:
             # Every worker runs text (postprocess-only) jobs: they need no ML dependencies.
             "text_jobs": True,
         }
+        if diarize:
+            # Sent only when true. Hubs predating diarization ignore unknown heartbeat fields;
+            # their claim body rejects them, so the supervisor gates the claim on the reply.
+            body["diarize"] = True
 
         def op() -> HeartbeatReply:
             response = self._client.post("/v1/workers/heartbeat", json=body)
@@ -220,8 +228,12 @@ class HubClient:
 
     # -- claiming -----------------------------------------------------------
 
-    def claim(self, capabilities: list[Candidate], *, wait: int) -> ClaimedJob | None:
-        body = {"capabilities": [c.model_dump(mode="json") for c in capabilities], "text_jobs": True}
+    def claim(self, capabilities: list[Candidate], *, wait: int, diarize: bool = False) -> ClaimedJob | None:
+        body: dict[str, object] = {"capabilities": [c.model_dump(mode="json") for c in capabilities], "text_jobs": True}
+        if diarize:
+            # Callers pass true only when the hub's heartbeat reply advertised `diarize`:
+            # older hubs answer an unknown claim field with 422.
+            body["diarize"] = True
 
         def op() -> ClaimedJob | None:
             response = self._client.post(

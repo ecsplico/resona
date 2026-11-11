@@ -28,5 +28,10 @@
     "engine": "docling-tableformer",
     "model": "docling-project/docling-models",
     "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  {
+    "engine": "nemotron-diarization",
+    "model": "nvidia/Nemotron-3-Diarization",
+    "revision": "52a432672732425e4c19765b9fec9b5810e6f4ba"
   }
 ]
