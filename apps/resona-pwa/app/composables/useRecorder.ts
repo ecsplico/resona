@@ -57,6 +57,47 @@ function getAudioContextCtor(): typeof AudioContext | undefined {
 	return (g.AudioContext ?? g.webkitAudioContext) as typeof AudioContext | undefined;
 }
 
+/**
+ * One audio recording at a time: the surface every recording flow uses
+ * (new recording, push-to-talk, re-dictation, live audio, /debug).
+ */
+export interface Recorder {
+	recording: Ref<boolean>;
+	paused: Ref<boolean>;
+	/** Seconds recorded, pauses excluded. */
+	elapsed: Ref<number>;
+	/** Recent input levels (0–1), newest last, at most 100. */
+	levels: Ref<number[]>;
+	/** Why recording stopped by itself; null while it records (or never interrupts). */
+	interrupted: Ref<InterruptReason | null>;
+	/** Why continuing after an interruption failed (German), else null. */
+	interruptError: Ref<string | null>;
+	/** German notice for an interruption, null when there is none. */
+	interruption: ComputedRef<string | null>;
+	/** Persisted IndexedDB session of the current (or last) recording; null when not persisted. */
+	sessionId: Ref<string | null>;
+	/**
+	 * False when it did not start (already recording, or superseded while starting).
+	 * `existing` (record a caller's stream) is web only; the native recorder ignores it.
+	 */
+	start: (existing?: MediaStream) => Promise<boolean>;
+	pause: () => void;
+	resume: () => void;
+	/** After an interruption: records a new part; false when it cannot (or nothing was interrupted). */
+	continueRecording: () => Promise<boolean>;
+	/** Resolves the recorded audio; an empty Blob when nothing was recorded. */
+	stop: () => Promise<Blob>;
+}
+
+/**
+ * The native recorder inside the Capacitor app (keeps recording while the phone is
+ * locked; reports no interruptions and persists no chunks, see `useNativeRecorder`),
+ * the browser's MediaRecorder everywhere else. `options` only apply to the web recorder.
+ */
+export function useRecorder(options: RecorderOptions = {}): Recorder {
+	return hasNativeRecorder() ? useNativeRecorder() : useWebRecorder(options);
+}
+
 async function openMicrophone(): Promise<MediaStream> {
 	// Browsers hide mediaDevices outside a secure context (HTTPS or localhost),
 	// e.g. on http://<hostname>:7730 from another device.
@@ -85,8 +126,8 @@ function releaseStream(s: MediaStream): void {
 }
 
 /**
- * Records the microphone (or a caller's stream) in timeslices. A recording may
- * consist of several parts: when the microphone goes silent (`mute`), ends, or
+ * MediaRecorder in the web view: records the microphone (or a caller's stream) in
+ * timeslices. A recording may consist of several parts: when the microphone goes silent (`mute`), ends, or
  * the page is hidden while recording, the open part is closed and the recorder
  * waits in `interrupted` (nothing is recorded meanwhile) until
  * `continueRecording()` gets a new stream for a new part or `stop()` ends it.
@@ -95,7 +136,7 @@ function releaseStream(s: MediaStream): void {
  * `persist`, every chunk also goes to IndexedDB (`data/unfinishedRecordings.ts`);
  * the caller discards the session (`sessionId`) once the audio is stored for good.
  */
-export function useRecorder(options: RecorderOptions = {}) {
+export function useWebRecorder(options: RecorderOptions = {}): Recorder {
 	const recording: Ref<boolean> = ref(false);
 	const paused: Ref<boolean> = ref(false);
 	const elapsed: Ref<number> = ref(0);

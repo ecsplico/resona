@@ -22,7 +22,8 @@ resona/
 │   ├── resona-mcp/         ← resona-mcp: MCP server (stdio + hosted Streamable HTTP /mcp) over the hub job API
 │   │                         (no bundled web UI; browser use goes through the Resona PWA standalone mode)
 │   └── resona-pwa/         ← Resona PWA: Nuxt 4 SPA (bun) + Directus data layer + resona-project-worker. Own toolchain,
-│                             own CLAUDE.md; NOT a uv workspace member
+│                             own CLAUDE.md; NOT a uv workspace member. Capacitor app shell (android/, ios/,
+│                             native background recording): docs/guide/pwa-app.md
 └── packages/
     ├── asr-core/           ← resona-asr-core: lean ASR contracts (protocol, registry, audio, live_transcriber). No FastAPI.
     ├── engine-server/      ← resona-engine-server: FastAPI HTTP/WS app, :7001. Depends on asr-core.

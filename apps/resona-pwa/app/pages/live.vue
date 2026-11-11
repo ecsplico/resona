@@ -100,7 +100,9 @@ async function reopenLiveStream(): Promise<MediaStream> {
 }
 
 // The live audio also goes to IndexedDB as it is recorded, so a killed page offers it again.
-const recorder = useRecorder({
+// Live records the stream it already streams to the hub, so it stays on the web
+// recorder: live dictation runs in the web view and is foreground-only, in the app too.
+const recorder = useWebRecorder({
 	persist: () => ({ kind: "live", label: presetTitle || "Live-Diktat" }),
 	reopen: reopenLiveStream,
 });
@@ -123,7 +125,6 @@ function dropCapturedSession(): void {
 	capturedSession = null;
 	if (session) void discardUnfinished(session);
 }
-
 const store = useDataStore();
 const { copy } = useExport();
 

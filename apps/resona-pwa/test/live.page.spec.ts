@@ -207,7 +207,7 @@ const recorderContinue = vi.hoisted(() => vi.fn(async () => true));
 const recorderInterrupted = ref<string | null>(null);
 const recorderInterruption = ref<string | null>(null);
 
-mockNuxtImport("useRecorder", () => () => ({
+mockNuxtImport("useWebRecorder", () => () => ({
 	recording: ref(false),
 	paused: ref(false),
 	elapsed: ref(7),

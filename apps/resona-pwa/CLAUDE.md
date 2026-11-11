@@ -263,7 +263,8 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   gespeichert" for `retryAudio` (appended at the end then); a throwing append never breaks the
   chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
   page adds a route-leave/update `confirm`.
-- **Recording resilience** (record sheet, live, re-dictation part): `useRecorder` holds a screen
+- **Recording resilience** (record sheet, live, re-dictation part; web recorder only, the
+  Capacitor app's native recorder has none of it): `useWebRecorder` holds a screen
   wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
   unsupported → nothing) and records with a 4 s timeslice (`RECORDER_TIMESLICE_MS`). With
   `persist`, every chunk goes to IndexedDB (`data/unfinishedRecordings.ts`, databases
@@ -320,6 +321,24 @@ submits pending rows to the hub and polls their jobs, the same state machine as
 `worker/`. Processing only happens while the app is open, and it needs a hub device
 token (no token → nothing is processed).
 
+### Capacitor app (prototype, Android first)
+
+`capacitor.config.ts` + committed native projects `android/`, `ios/` wrap the static SPA
+(`bun run cap:build` = `RESONA_CAPACITOR=1 nuxt generate && cap sync`; that flag disables
+`@vite-pwa/nuxt`, so no service worker). Debug APK: `bun run cap:apk`. Build, device test and
+findings: `docs/guide/pwa-app.md` (monorepo root). Recording goes through the `Recorder`
+interface: `useRecorder()` returns `useNativeRecorder()` inside the app
+(`hasNativeRecorder()`: `@capgo/capacitor-audio-recorder`, `audio/mp4`; on Android a
+`microphone` foreground service with a notification runs for the whole recording, refusing
+to record when it cannot start; elapsed is wall-clock based; no interruptions, no IndexedDB
+chunks: `interrupted`/`interruption`/`sessionId` stay null, `continueRecording()` is false,
+`persist`/`reopen` options are ignored), `useWebRecorder(options)` (MediaRecorder with the
+wake lock, chunks and interruptions above) elsewhere. `live.vue` always uses
+`useWebRecorder()`: live dictation stays in the web view and is foreground-only. Not in the
+app: Nitro routes (calendar,
+debug-report, `/directus` proxy), the web share target, Directus cookie login/SSO (`SameSite=Lax`
+refresh cookie, see the findings doc). The hub needs `https://localhost` in `CORS_ORIGINS`.
+
 ## Tech stack
 
 - **Nuxt 4** (`app/` dir layout, SPA `ssr: false`), **bun** (`bun@1.3.14`), TypeScript
@@ -327,6 +346,8 @@ token (no token → nothing is processed).
   `app/assets/css/tokens.css`. **No `tailwind.config.js`.**
 - **@directus/sdk v22** — `createDirectus<Schema>(url).with(authentication("json")).with(rest())`
 - **@vite-pwa/nuxt** — service worker + manifest (installable, offline)
+- **Capacitor 8** (app shell only) — `@capgo/capacitor-audio-recorder`,
+  `@capawesome-team/capacitor-android-foreground-service`, `@capacitor/filesystem`
 - **@vueuse/nuxt** (useWebSocket), **@nuxt/fonts** (Fraunces / Instrument Sans / JetBrains Mono)
 - **idb-keyval** — IndexedDB offline queue
 - **Vitest 4** + **@nuxt/test-utils** (environment `nuxt`, happy-dom); **fake-indexeddb**
@@ -348,9 +369,10 @@ app/
 │   ├── documents/[id].vue           # document detail: markdown, retry, copy/.md export, delete
 │   └── recording/[id].vue           # detail: player, transcript edit, export
 ├── composables/                     # useDirectus, useRecordings, useRecording,
-│   │                                #   useRecorder, useUpload, useProfiles, useLive,
-│   │                                #   useCalendar, useTranscriptEdit, useExport,
-│   │                                #   useOfflineQueue
+│   │                                #   useRecorder (Recorder interface, web/native pick),
+│   │                                #   useNativeRecorder (Capacitor app), useUpload,
+│   │                                #   useProfiles, useLive, useCalendar,
+│   │                                #   useTranscriptEdit, useExport, useOfflineQueue
 │   │                                # useWakeLock: screen wake lock, re-requested when visible again
 │   │                                # useShell: shell context (wide ≥ 960 px, paneInLayout) +
 │   │                                #   useSettingsDrawer (drawer state owned by the layout)
@@ -512,6 +534,8 @@ Never commit `.env` (gitignored); only `.env.example` is tracked.
 | `bun run test` | Vitest once · `bun run test:watch` for watch mode |
 | `bun run lint` | ESLint · `bun run lint:fix` to auto-fix |
 | `bun run typecheck` | `nuxt typecheck` (vue-tsc) |
+| `bun run cap:build` | Static SPA for the Capacitor app + `cap sync` (`docs/guide/pwa-app.md`) |
+| `bun run cap:apk` | `cap:build` + Android debug APK (needs JDK 21 + Android SDK) |
 
 Gates before considering work done: **test, lint, typecheck** all green (plus `build`
 for PWA-manifest/service-worker changes).
@@ -542,8 +566,9 @@ for PWA-manifest/service-worker changes).
   diagnostics route `server/api/debug-report.post.ts` (rate-limited, size-capped, logs a
   redacted report, stores nothing; to be removed) — it's otherwise a pure SPA: no page
   rendering (`ssr: false`), no business logic server-side.
-- Don't deploy via `nuxt generate` (static) now that Nitro routes exist — use the Nitro
-  Node/serverless server (`nuxt build` → `node .output/server`).
+- Don't deploy the web app via `nuxt generate` (static) now that Nitro routes exist — use the
+  Nitro Node/serverless server (`nuxt build` → `node .output/server`). The only static build
+  is the Capacitor app's web assets (`bun run cap:build`).
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.
 - Don't set `engine` on a `recordings` row — it belongs on `transcripts`.
 - Don't set live-WS auth via headers — browsers can't; use `?token=`.

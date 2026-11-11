@@ -1,5 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
 
+// `bun run cap:build` sets this: the static SPA bundled into the Capacitor app
+// (docs/guide/pwa-app.md in the monorepo). The app ships its own assets, so no service worker.
+const capacitorBuild = process.env.RESONA_CAPACITOR === "1";
+
 export default defineNuxtConfig({
 	modules: ["@nuxt/eslint", "@nuxt/fonts", "@vueuse/nuxt", "@vite-pwa/nuxt"],
 	ssr: false,
@@ -60,6 +64,7 @@ export default defineNuxtConfig({
 	},
 	pwa: {
 		registerType: "autoUpdate",
+		disable: capacitorBuild,
 		manifest: {
 			name: "Resona",
 			short_name: "Resona",
