@@ -16,6 +16,10 @@ to exactly the state documented below:
 - the non-admin **`user`** role + `user-policy` + owner-scoped permissions (§2),
   plus `directus_files` upload/read/update for the owner (needed for audio and
   document files);
+- a check that the **create ownership guard** extension
+  `directus-extension-resona-owner-guard` is loaded and enabled (§2): a user may only
+  create a transcript or correction on their own recording. The bootstrap stops
+  (`✗ extension … is not loaded`) before touching any permission when it is missing;
 - the custom field **`directus_users.hub_token`** (string, hidden) plus `user`-policy
   `directus_users` read/update restricted to `id = $CURRENT_USER` and the fields
   `id`/`hub_token`: the user's own Resona hub token, synced across their devices by
@@ -102,8 +106,9 @@ snapshot (§4).
 Create a role **"user"** (non-admin). Add a policy with:
 - `recordings`, `documents`: read/create/update/delete where `user_created = $CURRENT_USER`
 - `transcripts`: read/update/delete where `recording.user_created = $CURRENT_USER`;
-  **create** validated against the same relational filter (parent recording
-  owned by the current user)
+  create without an item rule (see below)
+- `transcript_corrections`: read own (`user_created`), create (see below); never
+  updated or deleted by users
 - create/update carry **explicit field lists**: the job bookkeeping (`hub_job_*`,
   `postprocess_job_*`, `postprocess_error`, `postprocess_queue_reason`) is the
   project-worker's, so a user can never point a row at another hub job of the
@@ -114,6 +119,29 @@ Create a role **"user"** (non-admin). Add a policy with:
 - `directus_users`: read (`id`, `hub_token`) and update (`hub_token`) where
   `id = $CURRENT_USER` — the user's own hub token, nothing else. Needs the custom
   field `hub_token` (string) on `directus_users`.
+
+**Create ownership guard (hook extension).** Directus 11 ignores item rules
+(`permissions`) on create and checks `validation` against the request payload, where
+an M2O is a bare id: a relational validation such as `recording.user_created =
+$CURRENT_USER` therefore rejected every create ("Value is required"), and an item rule
+would let a user attach rows to someone else's recording. The create permissions
+carry neither; the hook extension
+`directus/extensions/directus-extension-resona-owner-guard` checks instead: on
+`items.create` of `transcripts` and `transcript_corrections` by a non-admin it
+requires the parent ids (`recording`; for corrections also `transcript`) and reads
+each parent with the caller's permissions; a correction's transcript must also belong
+to its `recording`. A parent the user cannot read (someone else's, missing) aborts the
+create with 403 (no parent id or a nested create: 400); a batch is rolled back as a
+whole. Admin tokens (the project-worker) are not checked.
+
+The extension is versioned code, baked into the Directus image by
+`directus/Dockerfile.directus` (pinned to a Directus minor; all three compose files
+build it), so it cannot be edited in the Data Studio and needs no bootstrap step. A
+manual setup must run that image (or copy `directus/extensions/` into
+`/directus/extensions/`). Upgrading Directus: bump the `FROM` line; the PWA CI job
+`directus` builds the image and runs `directus/verify-permissions.mjs` (own, foreign,
+missing parent, batch, correction and worker cases) against it, which can also be run
+against a local stack with the bootstrap's env.
 
 The project-worker authenticates with a **static service token** (admin role),
 which bypasses the user policy.

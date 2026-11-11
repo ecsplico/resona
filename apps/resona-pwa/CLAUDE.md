@@ -437,6 +437,14 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
 - **documents**: `id, user_created, date_created, date_updated, title, file (→
   directus_files), status (pending|processing|done|error), error_message, markdown,
   pages (json), hub_job_id, hub_job_key`.
+- **Create ownership** of `transcripts` / `transcript_corrections` (parent recording,
+  and transcript, must be the user's) is enforced by the hook extension
+  `directus/extensions/directus-extension-resona-owner-guard`, not by the permission:
+  Directus 11 ignores item rules on create and validates relational rules against the
+  bare-id payload (which rejected every create, #19). Directus therefore runs from
+  `directus/Dockerfile.directus` (pinned minor + extension) in every compose file;
+  `bootstrap.mjs` refuses to run without the extension; CI job `directus` runs
+  `directus/verify-permissions.mjs` against it. Details: `directus/bootstrap.md` §2.
 
 The live path stamps the transcripts row's `engine` (`web-speech` / hub engine /
 `hub-live`, `+<correction engine>` when corrected); the manual-save path writes it

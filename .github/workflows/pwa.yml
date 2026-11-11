@@ -59,3 +59,37 @@ jobs:
 
       - name: Test
         run: uv run --python 3.12 pytest -q
+
+  # The user policy + owner-guard extension against a real Directus (#19): the
+  # image from directus/Dockerfile.directus (pinned minor), bootstrap.mjs twice
+  # (idempotent), then directus/verify-permissions.mjs.
+  directus:
+    runs-on: ubuntu-24.04
+    env:
+      DIRECTUS_URL: http://localhost:8055
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: ci-admin-password
+      DIRECTUS_TOKEN: ci-worker-token
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start Directus
+        run: |
+          docker build -t resona-directus -f directus/Dockerfile.directus directus
+          docker run -d --name directus -p 8055:8055 \
+            -e SECRET=ci-secret-not-used-anywhere-else \
+            -e ADMIN_EMAIL -e ADMIN_PASSWORD \
+            -e DB_CLIENT=sqlite3 -e DB_FILENAME=/directus/database/data.db \
+            resona-directus
+          for i in $(seq 90); do curl -sf "$DIRECTUS_URL/server/health" >/dev/null && exit 0; sleep 2; done
+          docker logs directus; exit 1
+
+      - name: Bootstrap
+        run: node directus/bootstrap.mjs && node directus/bootstrap.mjs
+
+      - name: Verify permissions
+        run: node directus/verify-permissions.mjs
+
+      - name: Directus logs
+        if: failure()
+        run: docker logs directus

@@ -4,7 +4,10 @@
 # reached over the network via RESONA_API_URL below.
 services:
   directus:
-    image: directus/directus:11
+    # directus/directus pinned + Resona's owner-guard extension (directus/bootstrap.md §2)
+    build:
+      context: ./directus
+      dockerfile: Dockerfile.directus
     ports:
       - "7700:8055"
     volumes:

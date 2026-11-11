@@ -10,7 +10,11 @@
 # reached over the network via RESONA_API_URL below.
 services:
   directus:
-    image: directus/directus:11
+    # directus/directus pinned + Resona's owner-guard extension (directus/bootstrap.md §2);
+    # built like directus-bootstrap below, since Coolify has no checkout to bind-mount
+    build:
+      context: ./directus
+      dockerfile: Dockerfile.directus
     expose:
       - "8055"
     volumes:

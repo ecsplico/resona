@@ -4,9 +4,10 @@
 // Brings a blank Directus instance up to the state described in
 // directus/bootstrap.md: the `recordings` + `transcripts` + `documents`
 // collections (missing fields are added to existing installs), a non-admin
-// `user` role/policy/permissions, and the `transcribe-worker` admin
-// user whose static token is pinned to DIRECTUS_TOKEN (so the worker just
-// works — no copy-paste). Safe to run repeatedly: every step checks first.
+// `user` role/policy/permissions (after checking that the owner-guard extension is
+// loaded), and the `transcribe-worker` admin user whose static token is pinned to
+// DIRECTUS_TOKEN (so the worker just works — no copy-paste). Safe to run
+// repeatedly: every step checks first.
 //
 // Env (all read from the compose environment / .env):
 //   DIRECTUS_URL      base URL          (default http://localhost:7700)
@@ -255,12 +256,13 @@ const PERMISSIONS = [
 		fields: ["title", "title_auto", "status", "error_message", "review_status", "audio_file", "duration_seconds"],
 	},
 	{ collection: "recordings", action: "delete", permissions: { user_created: OWNER } },
-	// transcripts: scoped to the parent recording's owner
+	// transcripts: scoped to the parent recording's owner. Create has no item rule:
+	// Directus 11 ignores `permissions` on create and checks `validation` against the
+	// request payload, where `recording` is a bare id, so the former relational
+	// validation rejected every create ("Value is required"). The owner-guard
+	// extension (see OWNER_GUARD_EXTENSION) checks the parent instead.
 	{ collection: "transcripts", action: "read", permissions: { recording: { user_created: OWNER } } },
-	{
-		collection: "transcripts", action: "create", validation: { recording: { user_created: OWNER } },
-		fields: ["recording", "text", "engine"],
-	},
+	{ collection: "transcripts", action: "create", fields: ["recording", "text", "engine"] },
 	{
 		collection: "transcripts", action: "update", permissions: { recording: { user_created: OWNER } },
 		// the text plus the "Nachbearbeiten" request (status `pending`) and undo (null);
@@ -269,9 +271,10 @@ const PERMISSIONS = [
 		fields: ["text", "raw_text", "applied_profile", "processed_text", "postprocess_status", "postprocess_profile"],
 	},
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
-	// corrections: write + read own; never updated or deleted by users
+	// corrections: write + read own; never updated or deleted by users. Create: see
+	// transcripts.
 	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
-	{ collection: "transcript_corrections", action: "create", validation: { recording: { user_created: OWNER } } },
+	{ collection: "transcript_corrections", action: "create" },
 	// documents: full CRUD scoped to owner
 	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "documents", action: "create", permissions: {}, fields: ["title", "file", "status"] },
@@ -358,6 +361,22 @@ function stableJson(value) {
 			: v);
 }
 
+// ── ownership guard on create ──────────────────────────────────────────────
+// The users' transcript/correction creates carry no item rule (see PERMISSIONS); the
+// hook extension in directus/extensions/ checks that the parent recording is the
+// user's own. It ships in the Directus image (directus/Dockerfile.directus). Runs
+// before ensureUserRole: without the guard the bootstrap stops, so an older install
+// keeps its old create rules (which reject every user create) instead of losing them.
+const OWNER_GUARD_EXTENSION = "directus-extension-resona-owner-guard";
+
+async function ensureOwnerGuard() {
+	const extensions = await api("GET", "/extensions");
+	const guard = extensions.find(e => e.schema?.name === OWNER_GUARD_EXTENSION);
+	if (!guard) die(`extension ${OWNER_GUARD_EXTENSION} is not loaded — run Directus from directus/Dockerfile.directus`);
+	if (guard.meta?.enabled === false) die(`extension ${OWNER_GUARD_EXTENSION} is disabled — enable it (Settings → Extensions)`);
+	console.log(`= extension ${OWNER_GUARD_EXTENSION} loaded`);
+}
+
 // ── worker user + pinned static token ──────────────────────────────────────
 async function ensureWorker() {
 	const adminRole = (await api("GET", "/roles?filter[name][_eq]=Administrator&limit=1"))[0];
@@ -388,6 +407,7 @@ async function main() {
 	await ensureCollections();
 	await ensureFields();
 	await ensureRelations();
+	await ensureOwnerGuard();
 	await ensureUserRole();
 	await ensureWorker();
 	console.log("✓ bootstrap complete");

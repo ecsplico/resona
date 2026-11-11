@@ -1,0 +1,6 @@
+# Directus with Resona's extensions baked in (built, not bind-mounted: Coolify runs
+# the raw compose where the git checkout is not on the host filesystem).
+# Pinned to a minor: the ownership guard relies on Directus' create semantics, so a
+# Directus upgrade goes through the PWA CI job `directus` first (it builds this file).
+FROM directus/directus:11.17
+COPY extensions/ /directus/extensions/
