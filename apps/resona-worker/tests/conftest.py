@@ -307,6 +307,12 @@ if snapshot["kind"] == "audio":
     text = "Guten Tag, das ist ein Test."
     stages = [{"stage": "asr", "engine": cand["engine"], "model": cand["model"],
                "model_revision": loaded(cand["model"], cand["model_revision"]), "accelerator": device, "seconds": 0.1}]
+elif Path(args.input).suffix == ".docx":
+    if "noword" in cand["model"]:
+        sys.exit(3)
+    text = "## Synthetischer Befund\n\nDie Straße führt über die Brücke.\n\n- Erster Punkt\n\n| Temperatur | normal |"
+    stages = [{"stage": "layout", "engine": "docling-msword", "model": "docling-msword-backend", "accelerator": "cpu",
+               "seconds": 0.01}]
 else:
     text = "Dies ist ein synthetisches Testdokument. Die Straße führt über die Brücke."
     layout = "docling-project/docling-layout-heron"
