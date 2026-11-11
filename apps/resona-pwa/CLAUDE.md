@@ -275,10 +275,13 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   track `mute`/`ended` or `pagehide`/hidden page while recording closes the part and sets
   `interruption` ("Aufnahme unterbrochen": `HRecordingSheet`/`HRecordBar` show Fortsetzen →
   `continueRecording()` new part, or Beenden); `stop()` merges several parts with `mergeToWav`
-  into one WAV. Live passes its capture stream, so it is not interrupted (wake lock + chunks only).
+  into one WAV. Live passes its shared stream plus `reopen` (fresh `getUserMedia`, also fed to
+  the capture), so it is interrupted the same way: transcription stops with the audio,
+  `live-interrupted` offers Fortsetzen, and the page holds its own wake lock for the session.
 - **"Weiter diktieren"** in the list row menu (done or failed recordings): `RecordingsPane` sets
-  `useRedictationRequest()` (useShell) to the id and opens the recording; its detail page starts
-  a re-dictation part as soon as it can and clears the request.
+  `useRedictationRequest()` (useShell) to the id and opens the recording (a blocked navigation
+  clears it); the detail page answers it once the recording is loaded: it starts a part when
+  it can take one right then, otherwise drops the request.
 - **Dictation chips** (`utils/dictationPart.ts`, TipTap inline atom, attrs `partId` + `status`
   `recording|transcribing|error`): push-to-talk and every re-dictated part put a chip at the
   caret (or the end when not editing); it moves with edits and adds nothing to the plain text
@@ -348,6 +351,7 @@ app/
 │   │                                #   useRecorder, useUpload, useProfiles, useLive,
 │   │                                #   useCalendar, useTranscriptEdit, useExport,
 │   │                                #   useOfflineQueue
+│   │                                # useWakeLock: screen wake lock, re-requested when visible again
 │   │                                # useShell: shell context (wide ≥ 960 px, paneInLayout) +
 │   │                                #   useSettingsDrawer (drawer state owned by the layout)
 │   │                                # useHub: the only hub HTTP client (token, engines, jobs)
@@ -363,10 +367,11 @@ app/
 │   ├── types.ts                     # DataStore interface shared by both backends
 │   ├── directusStore.ts             # DataStore over Directus (directus mode)
 │   ├── localStore.ts                # DataStore over IndexedDB (standalone mode)
-│   └── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
+│   ├── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
+│   └── unfinishedRecordings.ts      # IndexedDB chunks of recordings in progress (recovery after a kill)
 ├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
-│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids, `pending` live-region count), ... (design system)
+│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden; "Unterbrochen" state emits `continue`), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids and interrupted state, `pending` live-region count), ... (design system)
 │   ├── AppHeader                    # wordmark, ServerStatus, section tabs, settings cog
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Weiter diktieren (done or error) / Löschen)
@@ -395,7 +400,7 @@ Escape, Tab and choosing an item close it and return focus to the button, an out
 closes it without moving focus; it emits `open` when it opens; the menu is
 `position: fixed` because `.h-list` clips with `overflow: hidden`; clicks are stopped so
 the row never opens). `RecordingListItem` emits one `action` event with a typed
-`RowAction` (`share` | `export` | `delete`) plus `menu-open`; `RecordingsPane` maps each
+`RowAction` (`share` | `export` | `redictate` | `delete`) plus `menu-open`; `RecordingsPane` maps each
 action to its handler. Teilen = `navigator.share({title, text})`, called synchronously in
 the tap (iOS drops the user activation across an await): opening the menu of a done
 recording prefetches its share text into a per-id cache (pruned when the row leaves the

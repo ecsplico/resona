@@ -33,8 +33,12 @@ const INTERRUPT_TEXT: Record<InterruptReason, string> = {
 export interface RecorderOptions {
 	/** Keep the audio in IndexedDB while recording, so a killed page can offer it again. */
 	persist?: () => { kind: UnfinishedKind; label?: string | null };
-	/** Hold a screen wake lock while recording (default true). */
-	wakeLock?: boolean;
+	/**
+	 * For a caller's stream (`start(stream)`): opens a fresh one after an interruption and
+	 * hands it to the caller's other consumers too. Without it a caller's stream is never
+	 * interrupted, since the recorder cannot reopen it.
+	 */
+	reopen?: () => Promise<MediaStream>;
 }
 
 function getSupportedMime(): string {
@@ -82,14 +86,14 @@ function releaseStream(s: MediaStream): void {
 
 /**
  * Records the microphone (or a caller's stream) in timeslices. A recording may
- * consist of several parts: when a microphone it opened itself goes silent
- * (`mute`), ends, or the page is hidden while recording, the open part is closed
- * and the recorder waits in `interrupted` (nothing is recorded meanwhile) until
- * `continueRecording()` opens the microphone for a new part or `stop()` ends it.
- * `stop()` returns one blob: the single part as recorded, several parts merged
- * into one 16 kHz WAV. With `persist`, every chunk also goes to IndexedDB
- * (`data/unfinishedRecordings.ts`); the caller discards the session
- * (`sessionId`) once the audio is stored for good.
+ * consist of several parts: when the microphone goes silent (`mute`), ends, or
+ * the page is hidden while recording, the open part is closed and the recorder
+ * waits in `interrupted` (nothing is recorded meanwhile) until
+ * `continueRecording()` gets a new stream for a new part or `stop()` ends it.
+ * A caller's stream is only watched with `reopen`. `stop()` returns one blob:
+ * the single part as recorded, several parts merged into one 16 kHz WAV. With
+ * `persist`, every chunk also goes to IndexedDB (`data/unfinishedRecordings.ts`);
+ * the caller discards the session (`sessionId`) once the audio is stored for good.
  */
 export function useRecorder(options: RecorderOptions = {}) {
 	const recording: Ref<boolean> = ref(false);
@@ -106,7 +110,7 @@ export function useRecorder(options: RecorderOptions = {}) {
 		return `${INTERRUPT_TEXT[interrupted.value]} ${interruptError.value ?? "Bisher Aufgenommenes bleibt erhalten."}`;
 	});
 
-	const wake = options.wakeLock === false ? null : useWakeLock();
+	const wake = useWakeLock();
 
 	let active: MediaRecorder | null = null;
 	// Resolves once the last closed part delivered its final chunk.
@@ -115,8 +119,10 @@ export function useRecorder(options: RecorderOptions = {}) {
 	let recordingMime = "";
 	let stream: MediaStream | null = null;
 	let ownsStream = false;
-	// The recorder opened the microphone itself, so it may close and reopen it on interruption.
+	// The recorder can get a new microphone stream after an interruption (its own, or `reopen`).
 	let resumable = false;
+	// The current recording runs on a stream the caller passed to `start()`.
+	let callerStream = false;
 	let continuing = false;
 	let persistChain: Promise<void> = Promise.resolve();
 	const claimed = new Set<string>();
@@ -351,7 +357,8 @@ export function useRecorder(options: RecorderOptions = {}) {
 		stopTracks();
 		stream = next;
 		ownsStream = owned;
-		resumable = owned;
+		resumable = owned || options.reopen !== undefined;
+		callerStream = !owned;
 
 		parts = [];
 		partEnded = Promise.resolve();
@@ -361,12 +368,20 @@ export function useRecorder(options: RecorderOptions = {}) {
 		sessionId.value = null;
 		const meta = options.persist?.();
 		const id = meta ? crypto.randomUUID() : null;
+		sessionId.value = id;
+		try {
+			startPart(next);
+		}
+		catch (err) {
+			// No MediaRecorder for this stream (e.g. an unsupported container): nothing to keep or hold.
+			sessionId.value = null;
+			stopTracks();
+			throw err;
+		}
 		if (id) {
-			sessionId.value = id;
 			claimed.add(id);
 			claimUnfinished(id);
 		}
-		startPart(next);
 		if (meta && id) {
 			const now = new Date().toISOString();
 			const mime = recordingMime;
@@ -378,11 +393,11 @@ export function useRecorder(options: RecorderOptions = {}) {
 		recording.value = true;
 		paused.value = false;
 
-		if (owned) {
+		if (resumable) {
 			watchStream(next);
 			watchPage(true);
 		}
-		wake?.acquire();
+		wake.acquire();
 		startTimer();
 		startLevels(next);
 		return true;
@@ -400,7 +415,7 @@ export function useRecorder(options: RecorderOptions = {}) {
 		const gen = startGen;
 		let next: MediaStream;
 		try {
-			next = await openMicrophone();
+			next = callerStream ? await options.reopen!() : await openMicrophone();
 		}
 		catch (err) {
 			if (gen === startGen) interruptError.value = err instanceof Error ? err.message : String(err);
@@ -414,7 +429,7 @@ export function useRecorder(options: RecorderOptions = {}) {
 			return false;
 		}
 		stream = next;
-		ownsStream = true;
+		ownsStream = !callerStream;
 		watchStream(next);
 		startPart(next);
 		interrupted.value = null;
@@ -456,7 +471,7 @@ export function useRecorder(options: RecorderOptions = {}) {
 		interrupted.value = null;
 		interruptError.value = null;
 		cleanup();
-		wake?.release();
+		wake.release();
 		await persistChain;
 		if (blobs.length <= 1) {
 			return blobs[0] ?? new Blob([], { type: mime });
@@ -476,7 +491,7 @@ export function useRecorder(options: RecorderOptions = {}) {
 		const rec = active;
 		cleanup();
 		if (rec && rec.state !== "inactive") rec.stop();
-		wake?.release();
+		wake.release();
 		// Sessions the caller did not discard stay in IndexedDB and become recoverable.
 		for (const id of claimed) releaseUnfinished(id);
 		claimed.clear();

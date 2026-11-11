@@ -562,15 +562,16 @@ async function startRedictation(): Promise<void> {
 	}
 }
 
-// "Weiter diktieren" in the list row menu: start a part once this recording takes one.
+// "Weiter diktieren" in the list row menu: answered once, as soon as the recording is loaded.
+// A page that cannot take a part right then (dictating, post-processing, not transcribed)
+// drops it, so the microphone never opens later on its own.
 const redictationRequest = useRedictationRequest();
-const redictationReady = computed(() =>
-	redictationRequest.value === id && canEdit.value && !postprocessing.value && pttState.value === "idle" && !redict.recording.value,
-);
-watch(redictationReady, (ready) => {
-	if (!ready) return;
+watch([redictationRequest, loading, recording], () => {
+	if (redictationRequest.value !== id || loading.value || !recording.value) return;
 	redictationRequest.value = null;
-	void startRedictation();
+	if (canEdit.value && !postprocessing.value && pttState.value === "idle" && !redict.recording.value) {
+		void startRedictation();
+	}
 }, { immediate: true, flush: "post" });
 
 async function finishRedictation(): Promise<void> {

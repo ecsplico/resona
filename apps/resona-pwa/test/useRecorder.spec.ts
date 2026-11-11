@@ -377,7 +377,7 @@ describe("useRecorder: persistence, interruptions, wake lock", () => {
 		await r.stop();
 	});
 
-	it("a caller's stream (live) is never interrupted", async () => {
+	it("a caller's stream without reopen is never interrupted", async () => {
 		const shared = listenableStream();
 		const r = useRecorder();
 		await r.start(shared.stream);
@@ -388,6 +388,25 @@ describe("useRecorder: persistence, interruptions, wake lock", () => {
 		expect(r.interrupted.value).toBeNull();
 		expect(FakeMediaRecorder.instances[0]!.state).toBe("recording");
 		await r.stop();
+	});
+
+	it("a caller's stream with reopen is interrupted and continues on the reopened stream", async () => {
+		const shared = listenableStream();
+		const fresh = listenableStream();
+		const reopen = vi.fn(async () => fresh.stream);
+		const r = useRecorder({ reopen });
+		await r.start(shared.stream);
+		shared.track.dispatchEvent(new Event("mute"));
+		await vi.waitFor(() => expect(r.interrupted.value).toBe("muted"));
+		// The caller owns that stream: the recorder never stops its tracks.
+		expect(shared.track.stop).not.toHaveBeenCalled();
+
+		expect(await r.continueRecording()).toBe(true);
+		expect(reopen).toHaveBeenCalledTimes(1);
+		expect(getUserMedia).not.toHaveBeenCalled();
+		expect(FakeMediaRecorder.instances[1]!.stream).toBe(fresh.stream);
+		await r.stop();
+		expect(fresh.track.stop).not.toHaveBeenCalled();
 	});
 
 	it("a microphone that cannot be reopened keeps the interruption with the reason", async () => {

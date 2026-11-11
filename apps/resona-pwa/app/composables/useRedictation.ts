@@ -3,6 +3,7 @@ import { HubError, type HubJob } from "~/composables/useHub";
 import { deleteJobQuietly, isTransient, jobFailureMessage, jobReadErrorMessage } from "~/data/localProcessor";
 import { discardUnfinished } from "~/data/unfinishedRecordings";
 import { mergeToWav } from "~/utils/audioMerge";
+import { audioExtension } from "~/utils/audioFile";
 import type { Recording } from "~/types/directus";
 
 /**
@@ -100,8 +101,7 @@ function transcribeErrorMessage(err: unknown): string {
 
 /** Upload name for a recorded part, extension from its MIME type. */
 function partFilename(part: Blob, recording: Recording): string {
-	const ext = part.type.includes("wav") ? "wav" : part.type.includes("ogg") ? "ogg" : part.type.includes("mp4") ? "m4a" : "webm";
-	return `${recording.title || recording.id}-nachdiktat.${ext}`;
+	return `${recording.title || recording.id}-nachdiktat.${audioExtension(part.type)}`;
 }
 
 function onBeforeUnload(event: Event): void {

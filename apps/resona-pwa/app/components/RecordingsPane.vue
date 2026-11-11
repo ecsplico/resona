@@ -11,6 +11,7 @@ import {
 	discardUnfinished,
 	listUnfinished,
 	loadUnfinished,
+	releaseUnfinished,
 	type UnfinishedRecording,
 } from "~/data/unfinishedRecordings";
 
@@ -208,15 +209,19 @@ async function askDelete(recording: Recording): Promise<void> {
 
 const redictationRequest = useRedictationRequest();
 
-function redictate(recording: Recording): void {
+async function redictate(recording: Recording): Promise<void> {
 	redictationRequest.value = recording.id;
-	void openRoute(`/recording/${recording.id}`);
+	const failure = await openRoute(`/recording/${recording.id}`);
+	// Navigation blocked (unsaved edits kept): the request must not start a later visit.
+	if (isNavigationFailure(failure) && redictationRequest.value === recording.id) {
+		redictationRequest.value = null;
+	}
 }
 
 const rowActions: Record<RowAction, (recording: Recording) => void> = {
 	share: shareRecording,
 	export: recording => void exportRecording(recording),
-	redictate,
+	redictate: recording => void redictate(recording),
 	delete: recording => void askDelete(recording),
 };
 
@@ -449,6 +454,8 @@ watch(useRecordingsRefresh().signal, () => {
 });
 
 onBeforeUnmount(() => {
+	// A kept session still waiting in the save sheet becomes recoverable again.
+	if (pendingSession.value) releaseUnfinished(pendingSession.value);
 	if (noticeTimer) {
 		clearTimeout(noticeTimer);
 		noticeTimer = null;

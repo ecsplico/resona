@@ -203,16 +203,22 @@ const status = {
 
 const recorderStart = vi.hoisted(() => vi.fn(async () => {}));
 const recorderStop = vi.hoisted(() => vi.fn(async () => new Blob(["x"], { type: "audio/webm" })));
+const recorderContinue = vi.hoisted(() => vi.fn(async () => true));
+const recorderInterrupted = ref<string | null>(null);
+const recorderInterruption = ref<string | null>(null);
 
 mockNuxtImport("useRecorder", () => () => ({
 	recording: ref(false),
 	paused: ref(false),
 	elapsed: ref(7),
 	levels: ref([] as number[]),
+	interrupted: recorderInterrupted,
+	interruption: recorderInterruption,
 	start: recorderStart,
 	stop: recorderStop,
 	pause: vi.fn(),
 	resume: vi.fn(),
+	continueRecording: recorderContinue,
 	sessionId: ref<string | null>("live-1"),
 }));
 
@@ -236,6 +242,8 @@ describe("live transcription page", () => {
 		partial.value = "";
 		final.value = "";
 		status.value = "OPEN";
+		recorderInterrupted.value = null;
+		recorderInterruption.value = null;
 		live.error ??= ref<string | null>(null);
 		live.error.value = null;
 		live.closeInfo ??= ref<{ code: number; reason: string } | null>(null);
@@ -865,7 +873,7 @@ describe("live transcription page", () => {
 			});
 
 			it("transcript and audio recording keep running while the model works", async () => {
-				const stream = {} as MediaStream;
+				const stream = { getTracks: () => [] } as unknown as MediaStream;
 				Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn(async () => stream) } });
 				try {
 					const { answer, session } = pendingModel();
@@ -894,6 +902,32 @@ describe("live transcription page", () => {
 				}
 			});
 		});
+	});
+
+	it("an interrupted recording pauses transcription with the audio and offers Fortsetzen", async () => {
+		const track = { stop: vi.fn() };
+		const stream = { getTracks: () => [track] } as unknown as MediaStream;
+		Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn(async () => stream) } });
+		try {
+			const w = await mountLive();
+			expect(w.find("[data-testid=\"live-interrupted\"]").exists()).toBe(false);
+
+			recorderInterrupted.value = "hidden";
+			recorderInterruption.value = "Die App war im Hintergrund.";
+			await flush();
+			const notice = w.find("[data-testid=\"live-interrupted\"]");
+			expect(notice.text()).toContain("Aufnahme unterbrochen");
+			expect(notice.text()).toContain("Die App war im Hintergrund.");
+			// No text without audio: transcription and the microphone stop with the recording.
+			expect(capture.stop).toHaveBeenCalled();
+			expect(track.stop).toHaveBeenCalled();
+
+			await w.find("[data-testid=\"live-continue\"]").trigger("click");
+			expect(recorderContinue).toHaveBeenCalledTimes(1);
+		}
+		finally {
+			Reflect.deleteProperty(navigator, "mediaDevices");
+		}
 	});
 
 	it("stamps the selected hub engine, else the listen default, else hub-live", async () => {

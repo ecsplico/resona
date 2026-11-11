@@ -70,8 +70,51 @@ const startNotice = computed<{ kind: string; text: string } | null>(() => {
 	return issue ? { kind: issue.kind, text: HUB_ISSUES[issue.kind].text(issue.detail) } : null;
 });
 
+// The microphone stream shared by capture (transcription) and recorder (audio).
+let liveStream: MediaStream | null = null;
+
+function releaseLiveStream(): void {
+	for (const track of liveStream?.getTracks() ?? []) track.stop();
+	liveStream = null;
+}
+
+/** After an interruption: a fresh microphone for the recorder's next part and the transcription. */
+async function reopenLiveStream(): Promise<MediaStream> {
+	let next: MediaStream;
+	try {
+		next = await navigator.mediaDevices.getUserMedia({ audio: true });
+	}
+	catch (err) {
+		throw new Error("Mikrofon konnte nicht gestartet werden.", { cause: err });
+	}
+	if (!sessionActive.value) {
+		// Stopped while the microphone was opening: transcription stays off.
+		for (const track of next.getTracks()) track.stop();
+		throw new Error("Live-Diktat wurde beendet.");
+	}
+	releaseLiveStream();
+	liveStream = next;
+	capture.stop();
+	await capture.start(next);
+	return next;
+}
+
 // The live audio also goes to IndexedDB as it is recorded, so a killed page offers it again.
-const recorder = useRecorder({ persist: () => ({ kind: "live", label: presetTitle || "Live-Diktat" }) });
+const recorder = useRecorder({
+	persist: () => ({ kind: "live", label: presetTitle || "Live-Diktat" }),
+	reopen: reopenLiveStream,
+});
+// Also without a recorder (no supported container) the screen stays on while live runs.
+const sessionWake = useWakeLock();
+
+// Interrupted (microphone lost, app in the background): transcription pauses with the
+// audio, so the text never holds what the recording misses. "Fortsetzen" reopens both.
+watch(() => recorder.interrupted.value, (reason) => {
+	if (!reason || !sessionActive.value) return;
+	capture.stop();
+	releaseLiveStream();
+});
+
 // Persisted recorder session of the captured audio, deleted once it is saved or thrown away.
 let capturedSession: string | null = null;
 
@@ -351,6 +394,7 @@ async function startLive(): Promise<void> {
 		}
 	}
 	sessionActive.value = true;
+	sessionWake.acquire();
 	cancelTitleRefinement();
 	deviceRun = null;
 	deviceTitle.value = null;
@@ -370,6 +414,7 @@ async function startLive(): Promise<void> {
 			// no mic permission — fall through to transcript-only mode
 		}
 		if (stream) {
+			liveStream = stream;
 			await capture.start(stream);
 			startCorrection(language);
 			await startSource(language);
@@ -424,6 +469,8 @@ async function stopLive(): Promise<void> {
 	unsubscribeFinal?.();
 	unsubscribeFinal = null;
 	capture.stop();
+	releaseLiveStream();
+	sessionWake.release();
 	applySuggestedTitle();
 	showTitlePrompt.value = true;
 	void refineTitle();
@@ -477,7 +524,10 @@ function cancelSave(): void {
 	void nav.leaveTo("/");
 }
 
-onBeforeUnmount(cancelTitleRefinement);
+onBeforeUnmount(() => {
+	cancelTitleRefinement();
+	releaseLiveStream();
+});
 
 onMounted(async () => {
 	await Promise.all([
@@ -624,6 +674,25 @@ onMounted(async () => {
 		</p>
 
 		<div
+			v-if="sessionActive && recorder.interruption.value"
+			class="live__interrupted"
+			role="alert"
+			data-testid="live-interrupted"
+		>
+			<p class="live__interrupted-text">
+				<strong>Aufnahme unterbrochen</strong>
+				{{ recorder.interruption.value }}
+			</p>
+			<HButton
+				variant="primary"
+				data-testid="live-continue"
+				@click="recorder.continueRecording()"
+			>
+				Fortsetzen
+			</HButton>
+		</div>
+
+		<div
 			v-if="!showTitlePrompt && !sessionActive"
 			class="live__controls"
 		>
@@ -758,6 +827,9 @@ onMounted(async () => {
 .live__suggestion { margin:0 0 12px; color:var(--on-night-mute); font-size:var(--fs-sm); line-height:1.4; }
 
 .live__notice { width:calc(100% - 40px); max-width:72ch; margin:0 auto 12px; padding:12px 14px; border:1px solid color-mix(in srgb, var(--warning) 45%, transparent); border-radius:var(--r-md); background:var(--night-raised); color:var(--on-night); font-size:var(--fs-sm); line-height:1.5; }
+.live__interrupted { width:calc(100% - 40px); max-width:72ch; margin:0 auto 12px; padding:12px 14px; display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; border:1px solid color-mix(in srgb, var(--warning) 45%, transparent); border-radius:var(--r-md); background:var(--night-raised); color:var(--on-night); font-size:var(--fs-sm); line-height:1.5; }
+.live__interrupted-text { flex:1 1 220px; margin:0; }
+.live__interrupted-text strong { display:block; }
 
 .live__controls { display:flex; justify-content:center; padding:28px 0 calc(40px + env(safe-area-inset-bottom)); }
 .live__stop { width:72px; height:72px; border-radius:50%; border:none; background:var(--accent); color:var(--white); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:var(--shadow-deep); transition:background-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }

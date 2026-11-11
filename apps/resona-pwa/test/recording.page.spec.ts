@@ -977,6 +977,18 @@ describe("recording detail page", () => {
 			request.value = null;
 		});
 
+		it("a request the recording cannot take right then is dropped, never started later", async () => {
+			recording.value = baseRecording({ status: "pending" });
+			const request = useRedictationRequest();
+			request.value = "rec-1";
+			await mountSuspended(RecordingPage);
+			await flushPromises();
+			expect(request.value).toBeNull();
+			recording.value = baseRecording();
+			await flushPromises();
+			expect(redict.start).not.toHaveBeenCalled();
+		});
+
 		it("an interrupted part shows the reason; Fortsetzen records on", async () => {
 			const w = await mountSuspended(RecordingPage);
 			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
