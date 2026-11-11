@@ -4,10 +4,10 @@
 // Brings a blank Directus instance up to the state described in
 // directus/bootstrap.md: the `recordings` + `transcripts` + `documents`
 // collections (missing fields are added to existing installs), a non-admin
-// `user` role/policy/permissions, the create ownership guard flows, and the
-// `transcribe-worker` admin user whose static token is pinned to DIRECTUS_TOKEN
-// (so the worker just works — no copy-paste). Safe to run repeatedly: every step
-// checks first.
+// `user` role/policy/permissions (after checking that the owner-guard extension is
+// loaded), and the `transcribe-worker` admin user whose static token is pinned to
+// DIRECTUS_TOKEN (so the worker just works — no copy-paste). Safe to run
+// repeatedly: every step checks first.
 //
 // Env (all read from the compose environment / .env):
 //   DIRECTUS_URL      base URL          (default http://localhost:7700)
@@ -259,8 +259,8 @@ const PERMISSIONS = [
 	// transcripts: scoped to the parent recording's owner. Create has no item rule:
 	// Directus 11 ignores `permissions` on create and checks `validation` against the
 	// request payload, where `recording` is a bare id, so the former relational
-	// validation rejected every create ("Value is required"). OWNERSHIP_GUARDS below
-	// checks the parent instead.
+	// validation rejected every create ("Value is required"). The owner-guard
+	// extension (see OWNER_GUARD_EXTENSION) checks the parent instead.
 	{ collection: "transcripts", action: "read", permissions: { recording: { user_created: OWNER } } },
 	{ collection: "transcripts", action: "create", fields: ["recording", "text", "engine"] },
 	{
@@ -272,7 +272,7 @@ const PERMISSIONS = [
 	},
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
 	// corrections: write + read own; never updated or deleted by users. Create: see
-	// transcripts and OWNERSHIP_GUARDS.
+	// transcripts.
 	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "transcript_corrections", action: "create" },
 	// documents: full CRUD scoped to owner
@@ -361,99 +361,20 @@ function stableJson(value) {
 			: v);
 }
 
-// ── ownership guards on create ─────────────────────────────────────────────
-// A blocking `items.create` filter flow per collection: every parent id in the
-// payload must be set and readable *with the caller's permissions* (`$trigger`),
-// else the flow rejects and Directus aborts the create. The read rules above make
-// "readable" mean "the user's own"; admins (the project-worker) read everything.
-// collection → parents (M2O field, related collection, extra filter on the parent)
-const OWNERSHIP_GUARDS = {
-	transcripts: [{ field: "recording", collection: "recordings" }],
-	transcript_corrections: [
-		{ field: "recording", collection: "recordings" },
-		// and the transcript belongs to that recording
-		{ field: "transcript", collection: "transcripts", filter: { recording: { _eq: "{{$trigger.payload.recording}}" } } },
-	],
-};
+// ── ownership guard on create ──────────────────────────────────────────────
+// The users' transcript/correction creates carry no item rule (see PERMISSIONS); the
+// hook extension in directus/extensions/ checks that the parent recording is the
+// user's own. It ships in the Directus image (directus/Dockerfile.directus). Runs
+// before ensureUserRole: without the guard the bootstrap stops, so an older install
+// keeps its old create rules (which reject every user create) instead of losing them.
+const OWNER_GUARD_EXTENSION = "directus-extension-resona-owner-guard";
 
-function guardSpec(collection, parents) {
-	const operations = [
-		{
-			key: "parents_set",
-			name: "Parents set",
-			type: "condition",
-			options: { filter: { _and: parents.map(p => ({ $trigger: { payload: { [p.field]: { _nnull: true } } } })) } },
-		},
-		...parents.map(p => ({
-			key: `own_${p.field}`,
-			name: `Own ${p.field}`,
-			type: "item-read",
-			// a single key reads one item, which throws when the caller cannot read it
-			// (or it fails the filter)
-			options: {
-				collection: p.collection,
-				key: `{{$trigger.payload.${p.field}}}`,
-				...(p.filter ? { query: { filter: p.filter } } : {}),
-				permissions: "$trigger",
-				emitEvents: false,
-			},
-		})),
-	];
-	return {
-		flow: {
-			name: `resona-owner-guard-${collection}`,
-			icon: "shield",
-			status: "active",
-			trigger: "event",
-			accountability: null,
-			description: `Bootstrap: ${parents.map(p => p.field).join(", ")} of a new ${collection} row must be the creator's own`,
-			options: { type: "filter", scope: ["items.create"], collections: [collection] },
-		},
-		operations,
-	};
-}
-
-/** The flow as Directus stores it, reduced to what guardSpec sets (op chain in order). */
-function describeFlow(flow, ops) {
-	const byId = new Map(ops.map(o => [o.id, o]));
-	const chain = [];
-	for (let op = byId.get(flow.operation); op; op = byId.get(op.resolve)) {
-		chain.push({ key: op.key, name: op.name, type: op.type, options: op.options, reject: op.reject });
-	}
-	const { name, icon, status, trigger, accountability, description, options } = flow;
-	return { flow: { name, icon, status, trigger, accountability, description, options }, chain };
-}
-
-// Runs before ensureUserRole drops the old create validations, and never leaves a
-// collection without an active guard: a replacement is built inactive, switched on
-// with its first operation in one PATCH, and only then are older copies deleted.
-async function ensureOwnershipGuards() {
-	for (const [collection, parents] of Object.entries(OWNERSHIP_GUARDS)) {
-		const spec = guardSpec(collection, parents);
-		const wanted = stableJson({ flow: spec.flow, chain: spec.operations.map(o => ({ ...o, reject: null })) });
-		const existing = await api("GET", `/flows?filter[name][_eq]=${spec.flow.name}&limit=-1`);
-		let keep = null;
-		for (const flow of existing) {
-			const ops = await api("GET", `/operations?filter[flow][_eq]=${flow.id}&limit=-1`);
-			if (!keep && stableJson(describeFlow(flow, ops)) === wanted) keep = flow;
-		}
-		if (!keep) {
-			keep = await api("POST", "/flows", { ...spec.flow, status: "inactive" });
-			// created last-to-first so each operation can point at its successor;
-			// positions only lay the chain out left to right in the Data Studio grid
-			let next = null;
-			for (const [i, op] of [...spec.operations.entries()].reverse()) {
-				const row = await api("POST", "/operations", { ...op, flow: keep.id, resolve: next, position_x: 19 + 18 * i, position_y: 1 });
-				next = row.id;
-			}
-			await api("PATCH", `/flows/${keep.id}`, { operation: next, status: spec.flow.status });
-		}
-		for (const flow of existing) {
-			if (flow.id !== keep.id) await api("DELETE", `/flows/${flow.id}`); // operations cascade
-		}
-		const unchanged = existing.length === 1 && existing[0].id === keep.id;
-		console.log(`${unchanged ? "=" : existing.length ? "~" : "+"} flow ${spec.flow.name}`);
-	}
+async function ensureOwnerGuard() {
+	const extensions = await api("GET", "/extensions");
+	const guard = extensions.find(e => e.schema?.name === OWNER_GUARD_EXTENSION);
+	if (!guard) die(`extension ${OWNER_GUARD_EXTENSION} is not loaded — run Directus from directus/Dockerfile.directus`);
+	if (guard.meta?.enabled === false) die(`extension ${OWNER_GUARD_EXTENSION} is disabled — enable it (Settings → Extensions)`);
+	console.log(`= extension ${OWNER_GUARD_EXTENSION} loaded`);
 }
 
 // ── worker user + pinned static token ──────────────────────────────────────
@@ -486,7 +407,7 @@ async function main() {
 	await ensureCollections();
 	await ensureFields();
 	await ensureRelations();
-	await ensureOwnershipGuards();
+	await ensureOwnerGuard();
 	await ensureUserRole();
 	await ensureWorker();
 	console.log("✓ bootstrap complete");
