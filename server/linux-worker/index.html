@@ -2776,6 +2776,7 @@
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>-t<span class="w"> </span>resona-worker:&lt;release&gt;-cuda<span class="w"> </span>.
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>docker<span class="w"> </span>image<span class="w"> </span>inspect<span class="w"> </span>--format<span class="w"> </span><span class="s1">&#39;{{.Id}}&#39;</span><span class="w"> </span>resona-worker:&lt;release&gt;-cuda<span class="w">    </span><span class="c1"># sha256:… digest</span>
 </code></pre></div>
+<p>Without <code>--extra cuda</code> (the default <code>WORKER_EXTRAS="--extra audio-cpu --extra documents"</code>) the same Dockerfile builds the CPU image: it installs the torch/torchvision versions from <code>uv.lock</code> as CPU wheels from <code>https://download.pytorch.org/whl/cpu</code> (<code>TORCH_CPU_INDEX</code> build arg) and no <code>nvidia-*</code>, <code>cuda-*</code> or <code>triton</code> packages. <code>uv.lock</code> itself pins the cu130 wheels on Linux; <code>apps/resona-worker/docker/sync.sh</code> swaps them only in the CPU image.</p>
 <p>Use the image by digest only (<code>resona-worker@sha256:…</code> locally, or the released <code>ghcr.io/…@sha256:…</code>). Never use <code>:latest</code> or <code>:cuda</code>.</p>
 <h2 id="2-enroll-on-the-hub">2. Enroll on the hub<a class="headerlink" href="#2-enroll-on-the-hub" title="Permanent link">&para;</a></h2>
 <p>On the hub host:</p>
