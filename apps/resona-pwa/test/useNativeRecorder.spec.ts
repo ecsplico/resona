@@ -127,6 +127,33 @@ describe("useNativeRecorder", () => {
 		expect(r.recording.value).toBe(false);
 	});
 
+	it("a restart while the stale start is still pending keeps the new recording", async () => {
+		const { promise: pending, resolve: release } = Promise.withResolvers<undefined>();
+		recorder.startRecording.mockImplementationOnce(() => {
+			calls.push("startRecording");
+			return pending;
+		});
+		const r = useNativeRecorder();
+		const first = r.start();
+		await vi.waitFor(() => expect(recorder.startRecording).toHaveBeenCalled());
+		await r.stop();
+		const second = r.start();
+		release(undefined);
+
+		expect(await first).toBe(false);
+		expect(await second).toBe(true);
+		expect(r.recording.value).toBe(true);
+		// The stale recording and its service are gone before the new ones start.
+		expect(calls.slice(calls.indexOf("cancelRecording"))).toEqual([
+			"cancelRecording",
+			"stopService",
+			"notificationPermission",
+			"createChannel",
+			"startService",
+			"startRecording",
+		]);
+	});
+
 	it("refuses with a German message when the microphone is denied", async () => {
 		recorder.requestPermissions.mockImplementation(async () => ({ recordAudio: "denied" }));
 		const r = useNativeRecorder();

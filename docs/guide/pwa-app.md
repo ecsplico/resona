@@ -21,9 +21,10 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
   (`@capawesome-team/capacitor-android-foreground-service`) with the persistent
   notification "Resona nimmt auf", then starts the recorder. The service keeps the
   process alive, holds a partial wake lock and lets the app keep the microphone
-  while locked. It stops when the recording stops. If the service cannot start, the
-  app refuses to record ("Hintergrundaufnahme konnte nicht gestartet werden.")
-  instead of recording something that silently stops at the next lock.
+  while locked. It stops when the recording stops. If the bridge reports that the
+  service cannot start, the app refuses to record ("Hintergrundaufnahme konnte nicht
+  gestartet werden."). The plugin resolves once it has asked Android for the service;
+  a failure inside the service itself (`startForeground`) is only logged natively.
 - Elapsed time is computed from the wall clock, so the recording sheet shows the
   right length after unlocking (web view timers stall while locked).
 - On stop the app reads the recorded file back into the web view
@@ -65,15 +66,22 @@ lets the web view read the responses.
 
 ## Device test (Android)
 
+Before: the hub has an online, approved worker and a promoted release for the
+organization's default execution profile (otherwise the job waits in the queue,
+`queue_reason` in `resona jobs get`).
+
 1. Install: `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`, or copy
    the APK to the phone and open it (allow "install unknown apps" for the file manager).
 2. Open Resona → Einstellungen → Verbindung: enter the hub token.
 3. Tap record. Allow the microphone and notifications. The notification
    "Resona nimmt auf" appears.
 4. Speak, lock the screen, keep speaking now and then for 10 minutes.
-5. Unlock, open Resona (the notification opens it), stop and save.
-6. Expected: the saved recording lasts about as long as the whole session, and the
-   transcript covers what was said while locked.
+5. Unlock, open Resona (the notification opens it), note the elapsed time on the
+   recording sheet, stop and save.
+6. Keep the app open until the recording shows its transcript: in standalone mode the
+   queue is only processed while the app runs.
+7. Expected: the player's duration matches the elapsed time noted in step 5
+   (about 10 minutes), and the transcript covers what was said while locked.
 
 Battery savers of some vendors (Samsung, Xiaomi, Huawei) kill foreground services
 anyway; if the recording ends early, set Resona to "unrestricted" battery use.
@@ -82,11 +90,11 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 
 | Area | State |
 | --- | --- |
-| Batch recording while locked (Android) | Native recorder + `microphone` foreground service. Debug APK builds from the repo; long locked recordings on a real phone still need the device test above |
+| Batch recording while locked (Android) | Native recorder + `microphone` foreground service. Checked on an Android 15 emulator (debug APK, standalone mode): 180 s with the screen off, the service stayed in the foreground (type `0x80`, wake lock held), the saved `.m4a` was 197 s long for 196 s shown on the recording sheet. Long recordings on a real phone (vendor battery savers, real mic) still need the device test above |
 | Push-to-talk, re-dictation | Native recorder too; same upload → hub job flow |
 | Live dictation | **Foreground only**, as in the browser. It streams PCM from `getUserMedia` over the `/v1/listen` WebSocket in the web view, and `live.vue` keeps `useWebRecorder()` for the audio of that same stream. Background live would need native PCM capture and a native WebSocket client |
 | Standalone data mode | Works without login: IndexedDB + hub token; processing runs while the app is open |
-| Directus login | Blocked as is. The SDK runs in cookie mode: the refresh token is an httpOnly cookie of the Directus host. From the app origin `https://localhost` that cookie is third-party, and Android WebView rejects third-party cookies by default (Capacitor does not enable them). Password login gets an access token, but the session ends at the first refresh (~15 min). Fix options: JSON auth mode in the app (refresh token in app storage), or enable third-party cookies in `MainActivity` plus `SameSite=None` refresh cookies on Directus |
+| Directus login | Blocked as is. The SDK runs in cookie mode: the refresh token is an httpOnly cookie of the Directus host, and from the app origin `https://localhost` that is a cross-site cookie. The WebView accepts third-party cookies (Capacitor enables them), but Directus sets the refresh cookie `SameSite=Lax` (`REFRESH_TOKEN_COOKIE_SAME_SITE` in `docker-compose.coolify.yml`), so it is not sent on the app's cross-site refresh. Password login gets an access token, but the session ends at the first refresh (~15 min). Fix options: JSON auth mode in the app (refresh token in app storage), or `SameSite=None` refresh cookies on Directus. Either way Directus `CORS_ORIGIN` must also list `https://localhost` |
 | Keycloak SSO | Blocked by the same cookie, plus the return: Directus redirects back to a web URL, not into the app. Needs the system browser (`@capacitor/browser`) + an app link / custom scheme deep link + a token handover Directus SSO does not offer today (it only sets the cookie) |
 | Nitro routes | Not in the app (static build): calendar (`/api/calendar`), `/api/debug-report`, the `/directus` proxy. `NUXT_PUBLIC_DIRECTUS_URL` must be the absolute Directus URL |
 | Share target | The web manifest share target does not apply; the app would need an Android `SEND` intent filter |

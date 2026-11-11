@@ -51,6 +51,16 @@ async function stopRecordingService(): Promise<void> {
 	}
 }
 
+// One native recorder and one service per app: their calls run one at a time, so
+// a stale start cancelling its recording can never cancel a newer start's.
+let nativeLane: Promise<unknown> = Promise.resolve();
+
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+	const run = nativeLane.then(task, task);
+	nativeLane = run.catch(() => undefined);
+	return run;
+}
+
 /** The file URI an unclean Android stop still kept on disk (rejection `data.uri`). */
 function uriFromError(err: unknown): string {
 	const data = (err as { data?: { uri?: unknown } } | null)?.data;
@@ -145,22 +155,35 @@ export function useNativeRecorder(): Recorder {
 
 		// Without the service Android cuts the microphone once the screen locks:
 		// refuse rather than record something that silently stops.
-		try {
-			await startRecordingService();
-		}
-		catch (err) {
-			throw new Error("Hintergrundaufnahme konnte nicht gestartet werden.", { cause: err });
-		}
-		try {
-			await CapacitorAudioRecorder.startRecording();
-		}
-		catch (err) {
-			await stopRecordingService();
-			throw new Error("Mikrofon konnte nicht gestartet werden.", { cause: err });
-		}
-		if (gen !== startGen || recording.value) {
-			await CapacitorAudioRecorder.cancelRecording().catch(() => undefined);
-			await stopRecordingService();
+		const started = await serialized(async () => {
+			if (gen !== startGen) {
+				return false;
+			}
+			try {
+				await startRecordingService();
+			}
+			catch (err) {
+				throw new Error("Hintergrundaufnahme konnte nicht gestartet werden.", { cause: err });
+			}
+			if (gen !== startGen) {
+				await stopRecordingService();
+				return false;
+			}
+			try {
+				await CapacitorAudioRecorder.startRecording();
+			}
+			catch (err) {
+				await stopRecordingService();
+				throw new Error("Mikrofon konnte nicht gestartet werden.", { cause: err });
+			}
+			if (gen !== startGen || recording.value) {
+				await CapacitorAudioRecorder.cancelRecording().catch(() => undefined);
+				await stopRecordingService();
+				return false;
+			}
+			return true;
+		});
+		if (!started) {
 			return false;
 		}
 
@@ -181,7 +204,13 @@ export function useNativeRecorder(): Recorder {
 		}
 		pausedAt = Date.now();
 		paused.value = true;
-		void CapacitorAudioRecorder.pauseRecording().catch(() => undefined);
+		void CapacitorAudioRecorder.pauseRecording().catch(() => {
+			// Still recording natively: show it, so the clock matches the audio.
+			if (recording.value && paused.value) {
+				pausedMs += Date.now() - pausedAt;
+				paused.value = false;
+			}
+		});
 	}
 
 	function resume(): void {
@@ -190,7 +219,13 @@ export function useNativeRecorder(): Recorder {
 		}
 		pausedMs += Date.now() - pausedAt;
 		paused.value = false;
-		void CapacitorAudioRecorder.resumeRecording().catch(() => undefined);
+		void CapacitorAudioRecorder.resumeRecording().catch(() => {
+			// Still paused natively: show it rather than count time that is not recorded.
+			if (recording.value && !paused.value) {
+				pausedAt = Date.now();
+				paused.value = true;
+			}
+		});
 	}
 
 	async function stop(): Promise<Blob> {
@@ -204,18 +239,20 @@ export function useNativeRecorder(): Recorder {
 		tick();
 		stopTimers();
 
-		let uri: string;
-		try {
-			uri = (await CapacitorAudioRecorder.stopRecording()).uri ?? "";
-		}
-		catch (err) {
-			uri = uriFromError(err);
-		}
-		finally {
-			recording.value = false;
-			paused.value = false;
-			await stopRecordingService();
-		}
+		// Never rejects: an unclean stop still reports the file it kept.
+		const uri = await serialized(async () => {
+			try {
+				return (await CapacitorAudioRecorder.stopRecording()).uri ?? "";
+			}
+			catch (err) {
+				return uriFromError(err);
+			}
+			finally {
+				await stopRecordingService().catch(() => undefined);
+			}
+		});
+		recording.value = false;
+		paused.value = false;
 		if (!uri) {
 			return empty;
 		}
@@ -242,8 +279,10 @@ export function useNativeRecorder(): Recorder {
 		stopTimers();
 		if (active) {
 			active = false;
-			void CapacitorAudioRecorder.cancelRecording().catch(() => undefined);
-			void stopRecordingService();
+			void serialized(async () => {
+				await CapacitorAudioRecorder.cancelRecording().catch(() => undefined);
+				await stopRecordingService();
+			});
 		}
 	});
 

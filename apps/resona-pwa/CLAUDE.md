@@ -323,6 +323,8 @@ refresh cookie, see the findings doc). The hub needs `https://localhost` in `COR
   `app/assets/css/tokens.css`. **No `tailwind.config.js`.**
 - **@directus/sdk v22** — `createDirectus<Schema>(url).with(authentication("json")).with(rest())`
 - **@vite-pwa/nuxt** — service worker + manifest (installable, offline)
+- **Capacitor 8** (app shell only) — `@capgo/capacitor-audio-recorder`,
+  `@capawesome-team/capacitor-android-foreground-service`, `@capacitor/filesystem`
 - **@vueuse/nuxt** (useWebSocket), **@nuxt/fonts** (Fraunces / Instrument Sans / JetBrains Mono)
 - **idb-keyval** — IndexedDB offline queue
 - **Vitest 4** + **@nuxt/test-utils** (environment `nuxt`, happy-dom); **fake-indexeddb**
@@ -539,8 +541,9 @@ for PWA-manifest/service-worker changes).
   diagnostics route `server/api/debug-report.post.ts` (rate-limited, size-capped, logs a
   redacted report, stores nothing; to be removed) — it's otherwise a pure SPA: no page
   rendering (`ssr: false`), no business logic server-side.
-- Don't deploy via `nuxt generate` (static) now that Nitro routes exist — use the Nitro
-  Node/serverless server (`nuxt build` → `node .output/server`).
+- Don't deploy the web app via `nuxt generate` (static) now that Nitro routes exist — use the
+  Nitro Node/serverless server (`nuxt build` → `node .output/server`). The only static build
+  is the Capacitor app's web assets (`bun run cap:build`).
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.
 - Don't set `engine` on a `recordings` row — it belongs on `transcripts`.
 - Don't set live-WS auth via headers — browsers can't; use `?token=`.
