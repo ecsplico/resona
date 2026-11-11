@@ -92,7 +92,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 | --- | --- |
 | Batch recording while locked (Android) | Native recorder + `microphone` foreground service. Checked on an Android 15 emulator (debug APK, standalone mode): 180 s with the screen off, the service stayed in the foreground (type `0x80`, wake lock held), the saved `.m4a` was 197 s long for 196 s shown on the recording sheet. Long recordings on a real phone (vendor battery savers, real mic) still need the device test above |
 | Push-to-talk, re-dictation | Native recorder too; same upload → hub job flow |
-| Interruptions, recovery after a kill (#33) | Web recorder only. The native recorder is not interrupted by lock or background (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". It keeps no IndexedDB chunks: if Android kills the app mid-recording, the `.m4a` stays in the app cache but the app does not offer it again. Recovery would need the plugin's crash-safe `aac` format plus a scan of that cache on start |
+| Interruptions, recovery after a kill (#33) | Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits `recordingInterruptionBegan`/`Ended`, which the app does not handle yet, so the clock keeps running. It keeps no IndexedDB chunks: if Android kills the app mid-recording, the `.m4a` stays in the app cache but the app does not offer it again. Recovery would need the plugin's crash-safe `aac` format plus a scan of that cache on start |
 | Live dictation | **Foreground only**, as in the browser. It streams PCM from `getUserMedia` over the `/v1/listen` WebSocket in the web view, and `live.vue` keeps `useWebRecorder()` for the audio of that same stream. Background live would need native PCM capture and a native WebSocket client |
 | Standalone data mode | Works without login: IndexedDB + hub token; processing runs while the app is open |
 | Directus login | Blocked as is. The SDK runs in cookie mode: the refresh token is an httpOnly cookie of the Directus host, and from the app origin `https://localhost` that is a cross-site cookie. The WebView accepts third-party cookies (Capacitor enables them), but Directus sets the refresh cookie `SameSite=Lax` (`REFRESH_TOKEN_COOKIE_SAME_SITE` in `docker-compose.coolify.yml`), so it is not sent on the app's cross-site refresh. Password login gets an access token, but the session ends at the first refresh (~15 min). Fix options: JSON auth mode in the app (refresh token in app storage), or `SameSite=None` refresh cookies on Directus. Either way Directus `CORS_ORIGIN` must also list `https://localhost` |
@@ -106,8 +106,9 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 - Apple developer account (99 USD/year), bundle id `de.ecsplico.resona`, signing in Xcode.
 - First build on a Mac with Xcode: `bun run cap:build && npx cap open ios`, set the
   team, run on a device. The recorder plugin keeps recording in the background with
-  the audio background mode; interruptions (calls) split the recording and the plugin
-  joins the parts on stop.
+  the audio background mode. Calls interrupt it: the plugin only resumes when iOS
+  allows it (`recordingInterruptionEnded.shouldResume`), so the app has to handle those
+  events (show the interruption, resume or stop) before iOS is usable; about half a day.
 - Hub CORS: add `capacitor://localhost`.
 - App Store review needs a privacy policy, the microphone purpose string (set) and a
   reason for background audio (dictation). TestFlight internal testing needs no review.

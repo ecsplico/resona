@@ -105,6 +105,7 @@ describe("useNativeRecorder", () => {
 		r.resume();
 		await vi.advanceTimersByTimeAsync(2000);
 		expect(r.elapsed.value).toBe(603);
+		await r.stop();
 	});
 
 	it("a stop() while the native recorder starts cancels that recording", async () => {
@@ -152,6 +153,7 @@ describe("useNativeRecorder", () => {
 			"startService",
 			"startRecording",
 		]);
+		await r.stop();
 	});
 
 	it("refuses with a German message when the microphone is denied", async () => {
@@ -185,5 +187,20 @@ describe("useNativeRecorder", () => {
 
 		expect(blob.size).toBe(0);
 		expect(filesystem.deleteFile).not.toHaveBeenCalled();
+	});
+
+	it("a second recorder cannot start while one records, and leaves its service running", async () => {
+		const first = useNativeRecorder();
+		expect(await first.start()).toBe(true);
+		calls.length = 0;
+
+		const second = useNativeRecorder();
+		await expect(second.start()).rejects.toThrow("Es läuft bereits eine Aufnahme.");
+		expect(calls).not.toContain("stopService");
+		expect(calls).not.toContain("startRecording");
+
+		await first.stop();
+		expect(await second.start()).toBe(true);
+		await second.stop();
 	});
 });

@@ -54,6 +54,9 @@ async function stopRecordingService(): Promise<void> {
 // One native recorder and one service per app: their calls run one at a time, so
 // a stale start cancelling its recording can never cancel a newer start's.
 let nativeLane: Promise<unknown> = Promise.resolve();
+// Some recorder instance holds the native recording (and the service); only read and
+// written inside the lane, so a second instance's failed start never stops that service.
+let nativeBusy = false;
 
 function serialized<T>(task: () => Promise<T>): Promise<T> {
 	const run = nativeLane.then(task, task);
@@ -73,11 +76,14 @@ function uriFromError(err: unknown): string {
  * locked or the app is in the background; elapsed time is wall-clock based
  * for the same reason (web view timers stall while locked).
  *
- * Not supported here, by design: interruptions (the foreground service keeps the
- * microphone, so `interrupted` stays null and `continueRecording()` is false) and
+ * Not supported here: interruptions (`interrupted` stays null, `continueRecording()`
+ * is false). Locking the phone does not interrupt (the foreground service keeps the
+ * microphone), but a phone call does: Android then feeds silence without telling the
+ * plugin, and the iOS interruption events of the plugin are not handled. Neither is
  * IndexedDB chunk persistence (`sessionId` stays null: the audio is a native file
- * until `stop()`, so a killed app offers nothing to recover). A screen wake lock is
- * not needed either: the service holds a partial wake lock while recording.
+ * until `stop()`, so a killed app offers nothing to recover), nor a caller's stream
+ * (`start()` always records the microphone). A screen wake lock is not needed: the
+ * service holds a partial wake lock while recording.
  */
 export function useNativeRecorder(): Recorder {
 	const recording: Ref<boolean> = ref(false);
@@ -168,6 +174,9 @@ export function useNativeRecorder(): Recorder {
 			if (gen !== startGen) {
 				return false;
 			}
+			if (nativeBusy) {
+				throw new Error("Es läuft bereits eine Aufnahme.");
+			}
 			try {
 				await startRecordingService();
 			}
@@ -190,6 +199,7 @@ export function useNativeRecorder(): Recorder {
 				await stopRecordingService();
 				return false;
 			}
+			nativeBusy = true;
 			return true;
 		});
 		if (!started) {
@@ -257,6 +267,7 @@ export function useNativeRecorder(): Recorder {
 				return uriFromError(err);
 			}
 			finally {
+				nativeBusy = false;
 				await stopRecordingService().catch(() => undefined);
 			}
 		});
@@ -290,6 +301,7 @@ export function useNativeRecorder(): Recorder {
 			active = false;
 			void serialized(async () => {
 				await CapacitorAudioRecorder.cancelRecording().catch(() => undefined);
+				nativeBusy = false;
 				await stopRecordingService();
 			});
 		}

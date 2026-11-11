@@ -263,7 +263,8 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   gespeichert" for `retryAudio` (appended at the end then); a throwing append never breaks the
   chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
   page adds a route-leave/update `confirm`.
-- **Recording resilience** (record sheet, live, re-dictation part): `useRecorder` holds a screen
+- **Recording resilience** (record sheet, live, re-dictation part; web recorder only, the
+  Capacitor app's native recorder has none of it): `useWebRecorder` holds a screen
   wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
   unsupported → nothing) and records with a 4 s timeslice (`RECORDER_TIMESLICE_MS`). With
   `persist`, every chunk goes to IndexedDB (`data/unfinishedRecordings.ts`, databases

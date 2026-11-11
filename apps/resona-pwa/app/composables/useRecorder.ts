@@ -76,7 +76,10 @@ export interface Recorder {
 	interruption: ComputedRef<string | null>;
 	/** Persisted IndexedDB session of the current (or last) recording; null when not persisted. */
 	sessionId: Ref<string | null>;
-	/** False when it did not start (already recording, or superseded while starting). */
+	/**
+	 * False when it did not start (already recording, or superseded while starting).
+	 * `existing` (record a caller's stream) is web only; the native recorder ignores it.
+	 */
 	start: (existing?: MediaStream) => Promise<boolean>;
 	pause: () => void;
 	resume: () => void;
@@ -87,9 +90,9 @@ export interface Recorder {
 }
 
 /**
- * The native recorder inside the Capacitor app (keeps recording while the
- * phone is locked, so it neither interrupts nor persists chunks), the browser's
- * MediaRecorder everywhere else. `options` only apply to the web recorder.
+ * The native recorder inside the Capacitor app (keeps recording while the phone is
+ * locked; reports no interruptions and persists no chunks, see `useNativeRecorder`),
+ * the browser's MediaRecorder everywhere else. `options` only apply to the web recorder.
  */
 export function useRecorder(options: RecorderOptions = {}): Recorder {
 	return hasNativeRecorder() ? useNativeRecorder() : useWebRecorder(options);
