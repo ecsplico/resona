@@ -5258,7 +5258,7 @@ requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
 
 [[package]]
 name = "resona-diarize"
-version = "0.2.1"
+version = "0.2.3"
 source = { editable = "packages/diarize" }
 dependencies = [
     { name = "librosa" },
