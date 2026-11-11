@@ -19,6 +19,7 @@ import httpx
 import pytest
 from resona_job_core import Candidate
 
+from resona_worker import prepare as prepare_module
 from resona_worker.config import WorkerConfig
 from resona_worker.hub import HubClient
 from resona_worker.supervisor import Supervisor
@@ -321,12 +322,29 @@ else:
               {"stage": "ocr", "engine": cand["ocr_engine"], "model": "apple-vision", "accelerator": "metal", "seconds": 0.1}]
 if "garbage" in cand["model"]:
     text = "lorem ipsum"
+segments = []
+if (snapshot.get("options") or {}).get("diarize"):
+    # Two-speaker fixture: speaker change in the pause; "monologue" models hear one speaker.
+    diarizer = "nvidia/Nemotron-3-Diarization"
+    second = 1 if "monologue" in cand["model"] else 2
+    segments = [{"start": 0.0, "end": 2.04, "text": "Guten Morgen.", "speaker": 1},
+                {"start": 3.12, "end": 7.04, "text": "Der Befund ist unauffällig.", "speaker": second}]
+    text = "Guten Morgen. Der Befund ist unauffällig."
+    stages.append({"stage": "diarize", "engine": "nemotron-diarization", "model": diarizer,
+                   "model_revision": loaded(diarizer, "main"), "accelerator": device, "seconds": 0.1})
 structured = {"env": sorted(os.environ), "input_suffix": Path(args.input).suffix}
 result = {"kind": snapshot["kind"], "raw_text": text, "markdown": text, "provenance": {"stages": stages},
-          "structured": structured, "language": snapshot["language"]}
+          "structured": structured, "language": snapshot["language"], "segments": segments}
 Path(args.out).write_text(json.dumps(result))
 Path(args.metrics).write_text(json.dumps({"peak_accelerator_bytes": 123456}))
 '''
+
+
+@pytest.fixture(autouse=True)
+def no_diarizer(monkeypatch) -> None:
+    """Prepare as without the ``diarize`` extra (the workspace installs it): no diarizer
+    weights are pinned or downloaded. Diarizer tests patch ``_diarizer_model`` back in."""
+    monkeypatch.setattr(prepare_module, "_diarizer_model", lambda: None)
 
 
 @pytest.fixture

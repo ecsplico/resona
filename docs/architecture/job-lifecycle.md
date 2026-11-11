@@ -32,7 +32,7 @@ pending → processing → completed | failed | cancelled
 
 | State | Meaning |
 |-------|---------|
-| `pending` | Waiting for a capable worker; `queue_reason` says why: `waiting_capacity` (an eligible worker is online and busy), `release_not_approved` (a worker offers one of the job's tuples, but its release has no promoted evaluation for the job's execution profile and platform) or `no_capable_worker` (no online worker of the job's privacy class offers one, e.g. the only CUDA worker runs without a usable GPU) |
+| `pending` | Waiting for a capable worker; `queue_reason` says why: `waiting_capacity` (an eligible worker is online and busy), `release_not_approved` (a worker offers one of the job's tuples, but its release has no promoted evaluation for the job's execution profile and platform) or `no_capable_worker` (no online worker of the job's privacy class offers one, e.g. the only CUDA worker runs without a usable GPU, or a `diarize` job and no such worker reports a verified diarizer) |
 | `processing` | Claimed by a worker under a lease |
 | `completed` | Result accepted and stored |
 | `failed` | Terminal error, `attempts_exhausted` (3 assignments) or `deadline_exceeded` (24 h) |

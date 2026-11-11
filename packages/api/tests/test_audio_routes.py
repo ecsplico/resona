@@ -195,11 +195,12 @@ def _transcribe_in_background(http, data, wav_bytes):
     return thread, holder
 
 
-def _claim_when_queued(http, worker, timeout=10.0) -> dict:
+def _claim_when_queued(http, worker, timeout=10.0, *, diarize=False) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         resp = http.post("/v1/workers/claim?wait=0",
-                         json={"capabilities": [MAC_AUDIO.model_dump(mode="json")]}, headers=worker)
+                         json={"capabilities": [MAC_AUDIO.model_dump(mode="json")], "diarize": diarize},
+                         headers=worker)
         if resp.status_code == 200:
             return resp.json()
         time.sleep(0.05)
@@ -260,6 +261,33 @@ def test_transcription_verbose_json_and_text_formats(org_http, fresh_org, wav_by
     _complete(org_http, worker, lease, markdown="nur text", raw_text="nur text")
     thread.join(timeout=10)
     assert holder["resp"].text == "nur text"
+
+
+def test_transcription_diarize_verbose_json_carries_speakers(org_http, fresh_org, wav_bytes, sync_wait):
+    worker = _worker(fresh_org)
+    sections = [{"start": 0.0, "end": 1.5, "text": "Hallo", "speaker": 1},
+                {"start": 1.5, "end": 2.25, "text": "Welt", "speaker": 2}]
+    thread, holder = _transcribe_in_background(
+        org_http, {"response_format": "verbose_json", "diarize": "true"}, wav_bytes)
+    lease = _claim_when_queued(org_http, worker, diarize=True)
+    assert lease["execution_snapshot"]["options"]["diarize"] is True
+    _complete(org_http, worker, lease, markdown="**Sprecher 1:** Hallo\n\n**Sprecher 2:** Welt",
+              raw_text="Hallo Welt", segments=sections)
+    thread.join(timeout=10)
+    body = holder["resp"].json()
+    assert body["segments"] == sections
+    assert body["text"] == "**Sprecher 1:** Hallo\n\n**Sprecher 2:** Welt"
+
+
+def test_transcription_diarize_job_is_not_offered_to_a_plain_worker(org_http, fresh_org, wav_bytes, sync_wait):
+    sync_wait(0.3)
+    worker = _worker(fresh_org)
+    resp = org_http.post("/v1/audio/transcriptions", files={"file": ("a.wav", wav_bytes, "audio/wav")},
+                         data={"diarize": "true"})
+    assert resp.status_code == 504
+    claim = org_http.post("/v1/workers/claim?wait=0",
+                          json={"capabilities": [MAC_AUDIO.model_dump(mode="json")]}, headers=worker)
+    assert claim.status_code == 204
 
 
 def test_transcription_times_out_with_job_location_and_job_continues(org_http, wav_bytes, sync_wait):

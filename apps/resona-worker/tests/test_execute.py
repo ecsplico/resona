@@ -129,7 +129,7 @@ def test_engine_failures_map_out_of_memory_separately(tmp_path: Path, monkeypatc
 
 def test_hub_hosted_model_without_local_weights_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(execute, "_load_engine", lambda name: object)
-    monkeypatch.setattr(execute, "local_snapshot", lambda repo, revision: None)
+    monkeypatch.setattr(execute, "local_snapshot", lambda repo, revision, allow_patterns=None: None)
 
     code = main(
         [
@@ -155,7 +155,7 @@ def test_provenance_records_the_loaded_snapshot_revision(tmp_path: Path, monkeyp
             return {"text": "Guten Tag", "language": "de", "segments": []}
 
     monkeypatch.setattr(execute, "_load_engine", lambda name: Engine)
-    monkeypatch.setattr(execute, "local_snapshot", lambda repo, revision: snapshot_dir)
+    monkeypatch.setattr(execute, "local_snapshot", lambda repo, revision, allow_patterns=None: snapshot_dir)
     out = tmp_path / "out.json"
 
     code = main(

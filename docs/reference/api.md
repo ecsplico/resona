@@ -99,7 +99,7 @@ Content-Type: application/json
 | `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
 | `profile` | string | no (yes for `text`) | Name of a postprocess profile stored on the hub |
 | `instructions` | string | no | 1–8000 characters of user instructions for the profile's `llm`/`extract` steps (see [User instructions](#user-instructions)). Without a profile that has such a step → `422 invalid_instructions` |
-| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`. Document: see [Document options](#document-options) |
+| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`, `diarize` (label speakers; result segments carry `speaker`, only workers that diarize claim the job). Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
 
@@ -189,7 +189,7 @@ JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending
 
 | Value | Meaning |
 |-------|---------|
-| `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs) with the job's worker-assigned endpoints |
+| `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs; `diarize` jobs: also reports `diarize`) with the job's worker-assigned endpoints |
 | `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release. Text jobs: the worker's release is neither staged nor the bundled release; stage it |
 | `waiting_capacity` | An eligible worker is online and busy |
 
@@ -228,6 +228,8 @@ POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
 A call with an expired or replaced lease, or on a cancelled or deleted job, returns `409 stale_lease`. An incompatible worker protocol returns `426`. `withdraw_capability` in a `fail` body is recorded in the job's error message only: the hub never changes a worker's approved capabilities; the worker itself stops offering the withdrawn tuple until it is prepared again.
 
 Heartbeat and claim bodies carry `text_jobs: true` from workers that run [text jobs](#text-jobs) (every current `resona-worker`; no capability tuple is needed, so a worker whose tuples are all unusable still polls for them). A claim without it never receives a text job, so older workers keep working unchanged.
+
+Likewise `diarize: true` comes only from workers whose `prepare` verified the speaker diarizer. An audio job with `options.diarize` is offered only to a claim carrying it; other claims skip it without touching the job. The hub stores the flag per worker (`Worker.diarize`, schema migration 7) for `queue_reason`. A false `diarize` is left out of the execution snapshot, so workers predating the option still run every other audio job.
 
 ---
 
@@ -351,6 +353,7 @@ then waits up to `RESONA_SYNC_WAIT_SECONDS` (default `60`) for a worker to finis
 | `execution_profile` | string | no | Execution profile (default: the organization's default) |
 | `profile` | string | no | Stored organization profile name; omit to use the organization default |
 | `private` | bool | no | Default `true`; `false` needs `cloud_enabled=true` for the organization |
+| `diarize` | bool | no | Default `false`; `true` labels speakers (`AudioOptions.diarize`): `verbose_json` segments carry `speaker`, the text has `**Sprecher N:**`/`**Speaker N:**` paragraphs |
 
 Errors:
 
@@ -381,6 +384,17 @@ Das ist ein Test.
   "language": "de",
   "duration": 3.2,
   "segments": [{"start": 0.0, "end": 3.2, "text": "Das ist ein Test."}]
+}
+
+// verbose_json with diarize=true: each segment is one speaker section
+{
+  "text": "**Sprecher 1:** Guten Tag.\n\n**Sprecher 2:** Hallo.",
+  "language": "de",
+  "duration": 2.4,
+  "segments": [
+    {"start": 0.0, "end": 1.1, "text": "Guten Tag.", "speaker": 1},
+    {"start": 1.1, "end": 2.4, "text": "Hallo.", "speaker": 2}
+  ]
 }
 ```
 

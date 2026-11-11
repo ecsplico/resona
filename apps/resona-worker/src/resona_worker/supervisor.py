@@ -287,7 +287,9 @@ class Supervisor:
             clear_drained(self._config.work_dir)
             claimable = [c for c in self._config.capabilities if c not in self._withdrawn]
             try:
-                reply = self._hub.heartbeat(claimable, ready=bool(claimable), runtime=runtime_version())
+                reply = self._hub.heartbeat(
+                    claimable, ready=bool(claimable), runtime=runtime_version(), diarize=self._config.diarize
+                )
             except HubUnavailable:
                 if once:
                     return 1
@@ -325,7 +327,7 @@ class Supervisor:
 
     def _claim(self, capabilities: list[Candidate]) -> tuple[ClaimedJob, float] | None:
         started_mono, started_wall = self._monotonic(), self._wall()
-        job = self._hub.claim(capabilities, wait=self._config.claim_wait_seconds)
+        job = self._hub.claim(capabilities, wait=self._config.claim_wait_seconds, diarize=self._config.diarize)
         if job is None:
             return None
         return job, lease_deadline_mono(started_mono, started_wall, job.lease_until)
@@ -620,9 +622,14 @@ class Supervisor:
     def _upload(self, job: ClaimedJob, keeper: LeaseKeeper, result: JobResult, job_dir: Path) -> None:
         keeper.check()
         body_path = job_dir / "result.json"
-        # An unset raw_markdown is left out so hubs that predate the field accept unpolished results.
-        unset = {"raw_markdown"} if result.raw_markdown is None else None
-        body_path.write_text(result.model_dump_json(exclude=unset), encoding="utf-8")
+        # Unset optional fields (raw_markdown, a segment's speaker) are left out so hubs that
+        # predate them accept results that do not use them.
+        exclude: dict[str, Any] = {}
+        if result.raw_markdown is None:
+            exclude["raw_markdown"] = True
+        if all(segment.speaker is None for segment in result.segments):
+            exclude["segments"] = {"__all__": {"speaker"}}
+        body_path.write_text(result.model_dump_json(exclude=exclude or None), encoding="utf-8")
         sha, size = sha256_file(body_path)
         if size > MAX_RESULT_BYTES:
             raise JobFailure("result_too_large", retryable=False)

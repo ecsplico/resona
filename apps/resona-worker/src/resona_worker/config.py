@@ -43,6 +43,21 @@ class PreparedCapability(BaseModel):
     stage_accelerators: dict[str, str] = Field(default_factory=dict, description="actual accelerator per executed stage")
 
 
+class PreparedDiarizer(BaseModel):
+    """The speaker diarizer passed a synthetic two-speaker job on this worker.
+
+    Its presence in the manifest is what lets the worker report and claim ``diarize`` jobs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    weights: WeightRecord
+    # The audio candidate the check ran with; the diarizer runs on its accelerator.
+    candidate: Candidate
+    seconds: float
+    accelerator: str
+
+
+
 class CapabilitiesManifest(BaseModel):
     """Written by ``resona-worker prepare``; the only source of tuples a worker reports and claims."""
 
@@ -54,6 +69,7 @@ class CapabilitiesManifest(BaseModel):
     runtime_version: str
     platform: str
     tested: list[PreparedCapability]
+    diarizer: PreparedDiarizer | None = None
 
     def candidates(self) -> tuple[Candidate, ...]:
         return tuple(dict.fromkeys(item.candidate for item in self.tested))
@@ -112,6 +128,8 @@ class WorkerConfig:
     token: str = field(repr=False)
     work_dir: Path
     capabilities: tuple[Candidate, ...]
+    # The manifest records a passed diarizer check: report and claim ``diarize`` jobs.
+    diarize: bool = False
     executor: tuple[str, ...] = (sys.executable, "-m", "resona_worker.execute")
     lease_heartbeat_seconds: float = 30.0
     claim_wait_seconds: int = 25

@@ -61,6 +61,7 @@ def body(release_id: str, fixtures: dict | None = None, *, passed: bool = True, 
 _CHECK_OF_METRIC = {
     "wer": "wer", "cer": "cer", "silence_insertions": "silence",
     "missing_cells": "table_cells", "order_failures": "reading_order",
+    "speaker_attribution": "speaker_attribution", "der": "der", "speaker_count_error": "speaker_count",
 }
 
 
@@ -229,6 +230,35 @@ def test_later_promotion_checks_revision_and_regressions(http, fresh_org, admin_
     ok = promote(http, admin, record(http, admin, within), 1)
     assert ok.status_code == 200
     assert ok.json()["baseline_revision"] == 2
+
+
+def _with_dialog(release_id: str, **metrics) -> dict:
+    payload = body(release_id)
+    payload["fixtures"]["dialog"] = {
+        "wer": 0.1, "cer": 0.05, "speaker_attribution": 0.9, "der": 0.1, "speaker_count_error": 0, **metrics,
+    }
+    return payload
+
+
+def test_diarize_metrics_are_recorded_and_gated_on_promotion(http, fresh_org, admin_headers, release_id) -> None:
+    admin = admin_headers(fresh_org)
+    first = record(http, admin, _with_dialog(release_id))
+    assert http.get(f"/v1/evaluations/{first}", headers=admin).json()["fixtures"]["dialog"]["der"] == 0.1
+    assert promote(http, admin, first, None).status_code == 200
+
+    dropped = promote(http, admin, record(http, admin, _with_dialog(release_id, speaker_attribution=0.879)), 1)
+    assert (dropped.status_code, error_code(dropped)) == (422, "gate_failed")
+    assert "dialog: speaker_attribution 0.8790 < baseline 0.9000" in message(dropped)
+
+    worse_der = promote(http, admin, record(http, admin, _with_dialog(release_id, der=0.121)), 1)
+    assert (worse_der.status_code, error_code(worse_der)) == (422, "gate_failed")
+    assert "dialog: der 0.1210 > baseline 0.1000" in message(worse_der)
+
+    # The speaker count error is reported, never compared; attribution and DER stay within the limit.
+    within = _with_dialog(release_id, speaker_attribution=0.88, der=0.12, speaker_count_error=1)
+    ok = promote(http, admin, record(http, admin, within), 1)
+    assert ok.status_code == 200 and ok.json()["baseline_revision"] == 2
+
 
 
 @pytest.mark.parametrize(

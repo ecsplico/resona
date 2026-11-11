@@ -30,6 +30,12 @@ uv run hf download docling-project/docling-layout-heron
 uv run hf download docling-project/docling-models --revision v2.3.0
 ```
 
+Speaker diarization (`resona transcribe --diarize`) is optional. Add `--extra diarize` to the `uv sync` above and fetch its pinned weights; `prepare` then runs a two-speaker check and records the diarizer in the capabilities manifest, and only then does the worker take diarized jobs. Without the extra those jobs stay pending with `no_capable_worker`. Pass `--extras apple,documents,diarize` to `resona-worker update` to keep it across updates.
+
+```bash
+uv run hf download nvidia/Nemotron-3-Diarization config.json processor_config.json model.safetensors
+```
+
 ## 2. Enroll on the hub
 
 On the hub host:

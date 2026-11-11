@@ -48,6 +48,7 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 | `--instructions TEXT` / `--instructions-file PATH` | (none) | User instructions for the profile's LLM steps (user message; the profile's prompt stays the system message). Needs a `--profile` with an `llm`/`extract` step. Also on `resona doc` and `resona postprocess` |
 | `--translate` | off | Translate to English |
 | `--word-timestamps` | off | Request word timestamps |
+| `--diarize` | off | Label who spoke when; see **Speaker diarization** below |
 | `--local` | off | Process on this machine with cached hub settings instead of the hub |
 
 **Outputs**
@@ -66,6 +67,17 @@ For every job one policy summary line goes to stderr, e.g.
 `job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed`.
 
 **Exit codes:** `0` success, `1` error or timeout, `2` `policy_denied` or colliding output names.
+
+**Speaker diarization**
+
+`--diarize` sets `options.diarize` on the job (hub and `--local` alike). The result's `segments`
+are then speaker sections, each with a 1-based `speaker` number in order of first appearance, and
+the Markdown has one paragraph per section starting with `**Sprecher N:** ` (job language `de`) or
+`**Speaker N:** ` (other languages); long sections continue in further paragraphs without a label.
+The provenance gains a `diarize` stage. Only a worker whose `prepare` verified the diarizer takes
+such a job; until one is online it stays `pending` with `queue_reason: no_capable_worker`. An LLM
+polish step with `preserve_markup` keeps the raw chunk when the model drops, merges or renames a
+speaker label.
 
 **Examples**
 
@@ -87,6 +99,9 @@ resona transcribe dictation.mp3 --profile medical-de
 
 # Allow cloud stages (organization must have cloud_enabled=true)
 resona transcribe interview.mp3 --allow-cloud --language en
+
+# Label speakers in a conversation
+resona transcribe interview.m4a --diarize
 
 # Explicit local run with cached hub settings and an inline profile
 resona transcribe dictation.mp3 --local --profile '{"name":"x","steps":[{"type":"replacements","rules":[{"pattern":"Komma","replacement":","}]}]}'
@@ -260,6 +275,7 @@ resona watch DIRECTORY [OPTIONS]
 | `--engine NAME` / `--model NAME` | (profile) | Override; must match an approved candidate |
 | `--profile NAME` | (none) | Stored postprocess profile name (file/inline JSON only with `--local`) |
 | `--local` | off | Process on this machine with cached hub settings |
+| `--diarize` | off | Label who spoke when, as `resona transcribe --diarize` |
 
 **Examples**
 

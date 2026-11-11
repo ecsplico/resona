@@ -33,6 +33,8 @@ def watch_directory(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     local: bool = typer.Option(False, "--local",
         help="Process on this machine with cached hub settings instead of the hub."),
+    diarize: bool = typer.Option(False, "--diarize",
+        help="Label who spoke when (**Sprecher N:** sections), like `resona transcribe --diarize`."),
 ):
     """Watch a directory and transcribe each new audio file as a private job.
 
@@ -47,7 +49,7 @@ def watch_directory(
         kind="audio", files=[], output_dir=output_dir, force=force, as_json=False,
         no_wait=False, wait_timeout=None, private=True, execution_profile=execution_profile,
         language=language, engine=engine, model=model, profile=profile,
-        options=AudioOptions(), local=local,
+        options=AudioOptions(diarize=diarize), local=local,
     )
     seen: set[Path] = set()
     typer.echo(f"Watching {directory} for audio files (recursive={recursive}, "

@@ -146,6 +146,18 @@ def test_submit_with_upload_id_returns_job_immediately(hub, payload):
     assert kwargs["options"] == AudioOptions(word_timestamps=True)
 
 
+@pytest.mark.parametrize("args, expected", [
+    ({"diarize": True}, AudioOptions(diarize=True)),
+    ({"diarize": True, "options": {"word_timestamps": True}}, AudioOptions(word_timestamps=True, diarize=True)),
+    ({"options": {"diarize": True}}, AudioOptions(diarize=True)),
+    ({}, None),
+])
+def test_transcribe_audio_passes_diarize_into_audio_options(hub, payload, args, expected):
+    payload(call(remote(hub), "transcribe_audio", {"upload_id": "upl_" + "c" * 24, **args}))
+    _, (_, kwargs) = hub.calls[0]
+    assert kwargs["options"] == expected
+
+
 def test_convert_document_rejects_out_of_range_image_scale(hub, error_text):
     error_text(call(remote(hub), "convert_document",
                     {"upload_id": "upl_" + "c" * 24, "options": {"image_scale": 8}}))

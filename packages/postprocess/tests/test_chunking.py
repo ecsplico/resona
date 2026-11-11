@@ -91,3 +91,37 @@ def test_markup_signature_sees_placeholders_headings_and_table_shape() -> None:
     assert markup_signature(base) != markup_signature(base.replace(" <!-- image -->", ""))
     assert markup_signature(base) != markup_signature(base.replace("# Titel", "## Titel"))
     assert markup_signature(base) != markup_signature(base.replace("| 1 | 2 |", "| 1 2 |"))
+
+
+_DIARIZED = (
+    "**Sprecher 1:** guten tag wie geht es ihnen\n\n"
+    "**Sprecher 2:** danke gut\n\n"
+    "weiter ohne marke im selben abschnitt\n\n"
+    "**Sprecher 1:** schön\n"
+)
+
+
+def test_markup_signature_accepts_text_only_changes_in_a_diarized_transcript() -> None:
+    polished = (_DIARIZED.replace("guten tag wie", "Guten Tag, wie")
+                .replace("danke gut", "Danke, gut."))
+
+    assert markup_signature(polished) == markup_signature(_DIARIZED)
+
+
+@pytest.mark.parametrize("changed", [
+    _DIARIZED.replace("**Sprecher 2:** danke gut", "danke gut"),  # label dropped
+    _DIARIZED.replace("**Sprecher 2:** ", "**Sprecher 1:** "),  # speakers merged
+    _DIARIZED.replace("**Sprecher 2:**", "**Anna:**"),  # renamed
+    _DIARIZED.replace("ihnen\n\n**Sprecher 2:** ", "ihnen **Sprecher 2:** "),  # label moved into text
+])
+def test_markup_signature_rejects_changed_speaker_labels(changed: str) -> None:
+    assert markup_signature(changed) != markup_signature(_DIARIZED)
+
+
+def test_split_never_separates_a_speaker_label_from_its_text() -> None:
+    text = "".join(f"**Sprecher {n % 2 + 1}:** {_paragraph(n)}\n\n" for n in range(10))
+
+    chunks = split_markdown(text, 300)
+
+    assert len(chunks) > 1
+    assert all(chunk.startswith("**Sprecher ") for chunk in chunks)

@@ -64,7 +64,9 @@ def test_document_options_compatible_with_an_ocr_engine_have_no_conflict(fields:
 
 
 def test_audio_options_forbid_engine_keyword_forwarding() -> None:
-    assert AudioOptions().model_dump() == {"translate": False, "word_timestamps": False, "vad_filter": True}
+    assert AudioOptions().model_dump() == {
+        "translate": False, "word_timestamps": False, "vad_filter": True, "diarize": False
+    }
     with pytest.raises(ValidationError):
         AudioOptions(beam_size=5)
 

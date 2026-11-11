@@ -11,8 +11,8 @@ credential, staged release), the evaluation summary is recorded on the hub
 ``resona eval promote <id> --report <dir>/report.json`` promotes a recorded
 evaluation on the hub and pins it in ``eval/baselines.json``.
 
-Fixture ``options`` from the manifest are merged into each document job's default
-options. ``--postprocess-profile <name>`` (``--remote`` only) runs the document jobs
+Fixture ``options`` from the manifest (document ``ocr``…, audio ``diarize``) are merged
+into each job's default options. ``--postprocess-profile <name>`` (``--remote`` only) runs the document jobs
 with that hub postprocess profile; such a run is measurement-only: it is never
 compared with a baseline, not recorded on the hub and cannot be promoted, because
 baselines measure the plain engines.
@@ -32,7 +32,6 @@ from typing import Any, Optional
 
 import typer
 from resona_client.client import (
-    AudioOptions,
     PolicyDeniedError,
     ResonaAPIError,
     ResonaClient,
@@ -68,10 +67,10 @@ eval_app = typer.Typer(help="Evaluate an execution profile against the corpus an
 def _fixture_options(fixture: Fixture) -> dict[str, Any]:
     """The options a normal job gets by default (``vad_filter`` on), so eval measures production.
 
-    Document fixtures merge their manifest ``options`` (e.g. ``ocr=force``) over the defaults.
+    Fixtures merge their manifest ``options`` (e.g. ``ocr=force``, ``diarize``) over the defaults.
     """
     if fixture.kind == "audio":
-        return AudioOptions().model_dump()
+        return fixture.audio_options().model_dump()
     return fixture.document_options().model_dump(exclude_none=True)
 
 

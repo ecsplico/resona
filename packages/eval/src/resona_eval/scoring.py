@@ -5,7 +5,10 @@ postprocessing); documents on ``markdown`` because table structure and reading
 order only exist there. Postprocessing (polish) rewrites ``markdown`` and leaves
 ``raw_text`` as the engine produced it, so a plain run scores the engine's Markdown
 and a ``--postprocess-profile`` run scores the polished Markdown, both after
-``markdown-v1`` normalization. Only numbers leave this module, never text.
+``markdown-v1`` normalization. Diarization fixtures are scored on ``segments[].speaker``
+against their reference turns; a diarization result with a segment lacking ``speaker``
+(or no segments at all) attributes nothing: ``speaker_attribution`` 0 and ``der`` 1.0.
+Only numbers leave this module, never text.
 """
 
 from __future__ import annotations
@@ -15,11 +18,14 @@ from resona_job_core import JobResult
 from .corpus import Fixture
 from .metrics import (
     cer,
+    der,
     inserted_words,
     missing_table_cells,
     normalize,
     normalize_markdown,
     reading_order_failures,
+    speaker_attribution,
+    speaker_count_error,
     wer,
 )
 
@@ -48,4 +54,14 @@ def score_fixture(fixture: Fixture, result: JobResult) -> FixtureMetrics:
         metrics["missing_cells"] = len(missing_table_cells(result.markdown, fixture.table_cells))
     if "reading_order" in fixture.checks:
         metrics["order_failures"] = reading_order_failures(result.markdown, fixture.reading_order)
+    if fixture.speakers:
+        segments = result.segments
+        attributed = bool(segments) and all(s.speaker is not None for s in segments)
+        if "speaker_attribution" in fixture.checks:
+            value = speaker_attribution(fixture.speakers, segments) if attributed else 0.0
+            metrics["speaker_attribution"] = round(value, 4)
+        if "der" in fixture.checks:
+            metrics["der"] = round(der(fixture.speakers, segments), 4) if attributed else 1.0
+        if "speaker_count" in fixture.checks:
+            metrics["speaker_count_error"] = speaker_count_error(fixture.speakers, segments)
     return metrics

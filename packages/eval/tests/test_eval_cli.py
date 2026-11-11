@@ -37,9 +37,12 @@ def _baseline_file(tmp_path, corpus, fixtures, *, corpus_sha=None):
 def _perfect_metrics(corpus):
     metrics = {}
     for f in corpus.fixtures:
-        m = {k: 0.0 for k in ("wer", "cer") if k in f.checks}
+        m = {k: 0.0 for k in ("wer", "cer", "der") if k in f.checks}
         m.update({k: 0 for k, check in (("silence_insertions", "silence"), ("missing_cells", "table_cells"),
-                                        ("order_failures", "reading_order")) if check in f.checks})
+                                        ("order_failures", "reading_order"),
+                                        ("speaker_count_error", "speaker_count")) if check in f.checks})
+        if "speaker_attribution" in f.checks:
+            m["speaker_attribution"] = 1.0
         metrics[f.id] = m
     return metrics
 
@@ -218,6 +221,7 @@ def test_fixture_options_reach_the_submitted_jobs(corpus, tmp_path, result_for):
     assert by_fixture["fr-scan-pdf"]["options"] == {"languages": ["fr"]}
     assert by_fixture["bad-text-layer"]["options"] == {"languages": ["de"]}
     assert by_fixture["de-speech"]["options"] == {"translate": False, "word_timestamps": False, "vad_filter": True}
+    assert by_fixture["de-case-conference"]["options"]["diarize"] is True
 
 
 def test_postprocess_profile_applies_to_document_jobs_only_and_is_measurement_only(corpus, tmp_path, result_for):

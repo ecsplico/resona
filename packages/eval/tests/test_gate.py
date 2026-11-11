@@ -6,6 +6,8 @@ BASELINE = {
     "de-speech": {"wer": 0.05, "cer": 0.02},
     "silence": {"silence_insertions": 0},
     "table-columns-pdf": {"cer": 0.01, "missing_cells": 0, "order_failures": 0},
+    "de-case-conference": {"wer": 0.05, "cer": 0.02, "speaker_attribution": 0.95, "der": 0.10,
+                           "speaker_count_error": 0},
 }
 
 
@@ -58,6 +60,26 @@ def test_baseline_fixture_not_evaluated_fails():
     candidate = _candidate()
     del candidate["de-speech"]
     assert evaluate_gate(candidate, BASELINE).failures == ("missing_fixture:de-speech",)
+
+
+def test_speaker_attribution_drop_and_der_rise_beyond_tolerance_fail():
+    conference = "de-case-conference"
+    dropped = evaluate_gate(_candidate(**{conference: {"speaker_attribution": 0.92}}), BASELINE)
+    assert dropped.failures == (f"regression:{conference}:speaker_attribution",)
+    assert evaluate_gate(_candidate(**{conference: {"speaker_attribution": 0.94}}), BASELINE).passed
+    assert evaluate_gate(_candidate(**{conference: {"speaker_attribution": 1.0}}), BASELINE).passed
+    rose = evaluate_gate(_candidate(**{conference: {"der": 0.13}}), BASELINE)
+    assert rose.failures == (f"regression:{conference}:der",)
+    assert evaluate_gate(_candidate(**{conference: {"der": 0.12, "speaker_count_error": 2}}), BASELINE).passed
+
+
+def test_speaker_metric_missing_from_baseline_is_baseline_required():
+    baseline = {fid: dict(metrics) for fid, metrics in BASELINE.items()}
+    for name in ("speaker_attribution", "der", "speaker_count_error"):
+        del baseline["de-case-conference"][name]
+    gate = evaluate_gate(_candidate(), baseline)
+    assert gate.failures == tuple(f"baseline_required:de-case-conference:{name}"
+                                  for name in ("der", "speaker_attribution", "speaker_count_error"))
 
 
 def test_no_baseline_is_baseline_required_but_promotable_when_absolute_checks_pass(perfect_runs):

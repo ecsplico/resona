@@ -1,6 +1,6 @@
 # Studie: Sprechertrennung (Diarisierung) in Resona und Forge
 
-Status: Empfehlung, nicht geplant. Stand: 2026-11-10.
+Status: R1, R2 und R4 umgesetzt (Branch `feat/diarization`), R3 mit Korpus und Gate umgesetzt; Baselines müssen neu gemessen werden. Erste echte Messung (M5 Pro, mlx-whisper + Nemotron, Metal): `de-two-speakers` Wortzuordnung 98,3 %, DER 16,6 %; `de-case-conference` (4 Stimmen, 81 s) Wortzuordnung 80,2 %, DER 31,3 %, nur 3 Sprecher erkannt. Stand: 2026-11-11.
 
 **Frage:** Wie bauen wir „wer hat wann gesprochen“ am besten in Resona und in den Forge-Editor ein?
 

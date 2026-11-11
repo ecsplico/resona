@@ -189,7 +189,9 @@ class HubClient:
 
     # -- registration -------------------------------------------------------
 
-    def heartbeat(self, capabilities: list[Candidate], *, ready: bool, runtime: str) -> HeartbeatReply:
+    def heartbeat(
+        self, capabilities: list[Candidate], *, ready: bool, runtime: str, diarize: bool = False
+    ) -> HeartbeatReply:
         body = {
             "runtime_version": runtime,
             "worker_protocol": WORKER_PROTOCOL,
@@ -198,6 +200,9 @@ class HubClient:
             # Every worker runs text (postprocess-only) jobs: they need no ML dependencies.
             "text_jobs": True,
         }
+        if diarize:
+            # Sent only when true, so hubs predating diarization keep accepting the body.
+            body["diarize"] = True
 
         def op() -> HeartbeatReply:
             response = self._client.post("/v1/workers/heartbeat", json=body)
@@ -220,8 +225,10 @@ class HubClient:
 
     # -- claiming -----------------------------------------------------------
 
-    def claim(self, capabilities: list[Candidate], *, wait: int) -> ClaimedJob | None:
-        body = {"capabilities": [c.model_dump(mode="json") for c in capabilities], "text_jobs": True}
+    def claim(self, capabilities: list[Candidate], *, wait: int, diarize: bool = False) -> ClaimedJob | None:
+        body: dict[str, object] = {"capabilities": [c.model_dump(mode="json") for c in capabilities], "text_jobs": True}
+        if diarize:
+            body["diarize"] = True
 
         def op() -> ClaimedJob | None:
             response = self._client.post(

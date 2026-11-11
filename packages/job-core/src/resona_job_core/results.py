@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Strict(BaseModel):
@@ -16,9 +16,13 @@ class _Strict(BaseModel):
 
 
 class Segment(_Strict):
+    """One transcript span. Diarized results (``AudioOptions.diarize``) carry ``speaker``:
+    1-based, numbered in order of first appearance; a segment never spans a speaker change."""
+
     start: float
     end: float
     text: str
+    speaker: int | None = Field(default=None, ge=1)
 
 
 class BBox(_Strict):
@@ -53,7 +57,7 @@ class StageProvenance(_Strict):
     execution process, recorded on stages that ran on ``cuda``/``metal``; stages run
     together by one engine call (Docling layout + table structure) share the value."""
 
-    stage: Literal["asr", "ocr", "layout", "llm"]
+    stage: Literal["asr", "diarize", "ocr", "layout", "llm"]
     engine: str
     model: str
     model_revision: str | None = None

@@ -8,9 +8,11 @@ Run from the repository root:
 ``--only base`` regenerates the original fixtures (macOS ``say`` with the German voice
 Anna and the system Arial are required); ``--only hard`` regenerates only the hard
 document fixtures, which use Bitstream Vera Sans bundled with reportlab (no system
-font, so the pinned versions above reproduce them byte for byte). Fixture files that
-are not regenerated are kept untouched; MANIFEST.json is always rewritten from the
-files on disk.
+font, so the pinned versions above reproduce them byte for byte); ``--only conversations``
+regenerates the multi-speaker conversations (macOS ``say`` with the German voices Anna,
+Flo, Sandy and Reed). Fixture files that are not regenerated are kept untouched (the
+conversations' reference turns are then kept from the current MANIFEST.json);
+MANIFEST.json is always rewritten from the files on disk.
 
 Every fixture is generated here from invented text; nothing is recorded from a person
 and no private document is involved. The references below are the exact source texts.
@@ -37,6 +39,12 @@ Hard document fixtures (single A4 page, raster pages at 150 dpi, seeded noise):
   fr_scan.pdf, it_scan.pdf, es_scan.pdf
                        French, Italian and Spanish paragraphs with their accents
                        (é è à ç, à ì ò ù, ñ á é í ó ú ¿ ¡) as a raster, no text layer.
+
+Diarization fixtures (``options: {"diarize": true}``, reference ``speakers`` = the exact
+sample span of every turn's voiced clip, rounded to 0.1 ms):
+  de_two_speakers.wav     doctor/patient consultation, 2 voices, ~40 s.
+  de_case_conference.wav  case conference, 4 voices, ~80 s, with short backchannels
+                          ("Mhm.", "Okay.") overlapping the previous turn by 0.35 s.
 """
 
 from __future__ import annotations
@@ -46,6 +54,7 @@ import hashlib
 import io
 import json
 import subprocess
+import tempfile
 import wave
 from pathlib import Path
 
@@ -96,6 +105,51 @@ NUMBERS = (
     "Bitte bringen Sie 3 Kopien und 25 Euro mit. "
     "Die Zimmernummer lautet 108."
 )
+
+# Multi-speaker conversations for diarization: (voice, text) turns. A backchannel starts
+# BACKCHANNEL_OVERLAP_S before the previous turn ends; every other turn follows a seeded pause.
+BACKCHANNEL_OVERLAP_S = 0.35
+DOCTOR_PATIENT = (
+    ("Anna", "Guten Tag, Frau Berger. Was führt Sie heute zu mir?"),
+    ("Sandy", "Seit etwa zwei Wochen habe ich Kopfschmerzen, vor allem morgens nach dem Aufstehen."),
+    ("Anna", "Mhm."),
+    ("Sandy", "Manchmal ist mir dabei auch schwindelig, und die Tabletten aus der Apotheke helfen kaum."),
+    ("Anna", "Welche Tabletten nehmen Sie, und wie oft am Tag?"),
+    ("Sandy", "Ibuprofen vierhundert Milligramm, meistens zweimal täglich."),
+    ("Anna", "Haben Sie Ihren Blutdruck in letzter Zeit gemessen?"),
+    ("Sandy", "Nein, das habe ich schon lange nicht mehr gemacht."),
+    ("Anna", "Dann messen wir ihn gleich. Bitte machen Sie den linken Arm frei."),
+    ("Sandy", "Okay."),
+    ("Anna", "Der Wert liegt bei hundertsechzig zu hundert. Das ist deutlich zu hoch."),
+    ("Sandy", "Kommen die Kopfschmerzen davon?"),
+    ("Anna", "Gut möglich. Wir messen eine Woche lang zu Hause und sehen uns am Montag wieder."),
+)
+CASE_CONFERENCE = (
+    ("Anna", "Guten Morgen zusammen. Wir beginnen mit der Fallbesprechung von Herrn Weber, Zimmer zwölf."),
+    ("Flo", "Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und Schlafstörungen."),
+    ("Anna", "Mhm."),
+    ("Flo", "Die Medikation mit Sertralin fünfzig Milligramm haben wir gestern auf hundert Milligramm erhöht."),
+    ("Sandy", "Wie verträgt er die Erhöhung? Gab es Übelkeit oder Unruhe?"),
+    ("Flo", "Bisher keine Nebenwirkungen. Er schläft allerdings weiterhin schlecht, meistens nur vier Stunden."),
+    ("Reed", "Ja, genau."),
+    ("Reed", "Das kann ich aus der Pflege bestätigen. Nachts klingelt er häufig und wirkt dann sehr angespannt."),
+    ("Anna", "Dann sollten wir über eine Bedarfsmedikation für die Nacht sprechen."),
+    ("Sandy", "Ich würde Mirtazapin fünfzehn Milligramm zur Nacht vorschlagen, das hilft auch beim Appetit."),
+    ("Flo", "Einverstanden."),
+    ("Anna", "Gut. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin fünfzehn Milligramm "
+             "zur Nacht."),
+    ("Reed", "Soll ich den Schlaf weiter protokollieren?"),
+    ("Anna", "Ja, bitte jede Nacht. Wir besprechen den Verlauf am Freitag erneut."),
+    ("Sandy", "Und die Ergotherapie? Er hat die ersten beiden Termine abgesagt."),
+    ("Flo", "Ich spreche heute Nachmittag mit ihm darüber. Vielleicht ist die Gruppe am Anfang zu groß für ihn."),
+    ("Sandy", "Okay."),
+    ("Anna", "Dann kommen wir zur nächsten Patientin, Frau Schulz in Zimmer acht."),
+)
+BACKCHANNELS = frozenset({"Mhm.", "Ja, genau.", "Einverstanden.", "Okay."})
+CONVERSATIONS = {  # fixture id → (file, turns, seed, description)
+    "de-two-speakers": ("de_two_speakers.wav", DOCTOR_PATIENT, 21, "doctor/patient consultation, 2 speakers"),
+    "de-case-conference": ("de_case_conference.wav", CASE_CONFERENCE, 7, "case conference, 4 speakers"),
+}
 
 PAGE_TEXT: list[list[str]] = [
     [
@@ -222,6 +276,66 @@ def make_silence(path: Path, seconds: float = 6.0) -> None:
         out.setsampwidth(2)
         out.setframerate(SAMPLE_RATE)
         out.writeframes(pcm.tobytes())
+
+
+def _read_pcm(path: Path) -> np.ndarray:
+    with wave.open(str(path), "rb") as clip:
+        assert (clip.getnchannels(), clip.getsampwidth(), clip.getframerate()) == (1, 2, SAMPLE_RATE)
+        return np.frombuffer(clip.readframes(clip.getnframes()), dtype="<i2").astype(np.float32) / 32768
+
+
+def _voiced(voice: str, text: str, tmp: Path) -> np.ndarray:
+    """``say`` clip of one turn, trimmed to its voiced span so the reference turn is exact."""
+    path = tmp / "clip.wav"
+    subprocess.run(
+        ["say", "-v", f"{voice} (Deutsch (Deutschland))", f"--data-format=LEI16@{SAMPLE_RATE}",
+         "--file-format=WAVE", "-o", str(path), text],
+        check=True,
+    )
+    audio = _read_pcm(path)
+    active = np.flatnonzero(np.abs(audio) > 0.01)
+    return audio[active[0]:active[-1] + 1]
+
+
+def make_conversation(path: Path, turns: tuple[tuple[str, str], ...], seed: int) -> list[dict]:
+    """Mix the turns into one 16 kHz mono WAV; returns the exact reference speaker turns."""
+    rng = np.random.default_rng(seed)
+    track = np.zeros(0, dtype=np.float32)
+    reference: list[dict] = []
+    cursor = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for voice, text in turns:
+            clip = _voiced(voice, text, Path(tmp))
+            if text in BACKCHANNELS and reference:
+                start = max(0, cursor - int(BACKCHANNEL_OVERLAP_S * SAMPLE_RATE))
+            else:
+                start = cursor + int(rng.uniform(0.25, 0.8) * SAMPLE_RATE)
+            end = start + len(clip)
+            if end > len(track):
+                track = np.concatenate([track, np.zeros(end - len(track), dtype=np.float32)])
+            track[start:end] += clip
+            reference.append({"speaker": voice, "start": round(start / SAMPLE_RATE, 4),
+                              "end": round(end / SAMPLE_RATE, 4), "text": text})
+            cursor = max(cursor, end)
+    track = np.concatenate([track, np.zeros(int(0.5 * SAMPLE_RATE), dtype=np.float32)])
+    track += rng.normal(0.0, 0.002, len(track)).astype(np.float32)  # not digitally silent between turns
+    pcm = np.clip(np.round(track * 32767), -32768, 32767).astype("<i2")
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(SAMPLE_RATE)
+        out.writeframes(pcm.tobytes())
+    return reference
+
+
+def _committed_speakers() -> dict[str, list[dict]]:
+    """Reference turns of the conversations in the current MANIFEST.json, by fixture id; a run
+    that does not regenerate the conversations keeps their turns from there."""
+    manifest = HERE / "MANIFEST.json"
+    if not manifest.is_file():
+        return {}
+    fixtures = json.loads(manifest.read_text(encoding="utf-8"))["fixtures"]
+    return {f["id"]: f["speakers"] for f in fixtures if "speakers" in f}
 
 
 def make_digital(path: Path) -> None:
@@ -499,9 +613,10 @@ def _first_sentence(paragraph: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--only", choices=("all", "base", "hard"), default="all",
+    parser.add_argument("--only", choices=("all", "base", "hard", "conversations"), default="all",
                         help="which fixture files to regenerate (MANIFEST.json is always rewritten)")
     only = parser.parse_args().only
+    speakers = _committed_speakers()
     if only in ("all", "base"):
         say_wav(SPEECH, HERE / "de_speech.wav")
         say_wav(NUMBERS, HERE / "de_numbers.wav")
@@ -517,6 +632,9 @@ def main() -> None:
         make_bad_text_layer(HERE / "bad_text_layer.pdf")
         for language in FOREIGN_SCANS:
             make_foreign_scan(HERE / f"{language}_scan.pdf", language)
+    if only in ("all", "conversations"):
+        for fixture_id, (file, turns, seed, _) in CONVERSATIONS.items():
+            speakers[fixture_id] = make_conversation(HERE / file, turns, seed)
 
     page_text = "\n".join(" ".join(lines) for lines in PAGE_TEXT)
     table_reference = "\n".join(
@@ -547,6 +665,21 @@ def main() -> None:
     for fixture in fixtures:
         fixture["license"] = LICENSE
     fixtures += _hard_fixtures(doc_source)
+    for fixture_id, (file, turns, seed, description) in CONVERSATIONS.items():
+        if fixture_id not in speakers:
+            raise SystemExit(f"no reference turns for {fixture_id}; regenerate with --only conversations")
+        fixtures.append({
+            "id": fixture_id, "kind": "audio", "file": file, "language": "de",
+            "source": f"synthetic German {description} (text invented for testing), macOS `say` voices "
+                      f"{', '.join(dict.fromkeys(v for v, _ in turns))} (Deutsch (Deutschland)), each turn "
+                      f"trimmed to its voiced span, pauses 0.25-0.8 s (seed {seed}), backchannels overlap "
+                      f"the previous turn by {BACKCHANNEL_OVERLAP_S} s, noise sigma 0.002",
+            "reference": " ".join(text for _, text in turns),
+            "checks": ["wer", "cer", "speaker_attribution", "der", "speaker_count"],
+            "options": {"diarize": True},
+            "speakers": speakers[fixture_id],
+            "license": LICENSE,
+        })
     missing = sorted({f["file"] for f in fixtures if not (HERE / f["file"]).is_file()})
     if missing:
         raise SystemExit(f"missing fixture files {missing}; regenerate them with --only all")

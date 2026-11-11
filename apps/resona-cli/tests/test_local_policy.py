@@ -159,6 +159,18 @@ def test_local_runs_cached_candidate_in_private_subprocess_and_marks_cache_stale
     assert "revision 7" in result.output and "stale" in result.output
 
 
+def test_local_diarize_reaches_the_execution_snapshot(tmp_path, execution):
+    audio = _make_wav(tmp_path / "audio.wav")
+    _cache_settings(default_execution_profile="cpu-private")
+
+    result = runner.invoke(app, ["transcribe", str(audio), "--local", "--diarize"])
+
+    assert result.exit_code == 0, result.output
+    [call] = execution.calls
+    assert call["snapshot"]["options"]["diarize"] is True
+
+
+
 def test_local_rejects_unapproved_override(tmp_path, execution):
     audio = _make_wav(tmp_path / "audio.wav")
 

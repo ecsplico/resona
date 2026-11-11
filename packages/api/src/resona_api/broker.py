@@ -260,8 +260,9 @@ def record_heartbeat(
     runtime_version: str,
     reported: list[Candidate],
     text_jobs: bool = False,
+    diarize: bool = False,
 ) -> dict[str, Any]:
-    """Record readiness, version and whether the worker runs text jobs. Approval fields are never touched here."""
+    """Record readiness, version and whether the worker runs text jobs and diarizes. Approval fields are never touched here."""
     now = _now()
     worker = session.get(Worker, worker_id)
     if worker is None or worker.organization_id != organization_id or worker.revoked_at is not None:
@@ -269,6 +270,7 @@ def record_heartbeat(
     worker.runtime_version = runtime_version
     worker.reported_capabilities = _dump_candidates(reported)
     worker.text_jobs = text_jobs
+    worker.diarize = diarize
     worker.last_seen = now
     session.add(worker)
     session.commit()
@@ -330,6 +332,11 @@ def cloud_denied(job: Job, settings: OrganizationSettings | None) -> bool:
     return not job.private and (settings is None or not settings.cloud_enabled)
 
 
+def wants_diarize(snapshot: dict[str, Any], kind: str) -> bool:
+    """Whether an audio job asked for speaker diarization (``AudioOptions.diarize``)."""
+    return kind == "audio" and bool((snapshot.get("options") or {}).get("diarize"))
+
+
 def try_claim(
     session: Session,
     *,
@@ -337,14 +344,16 @@ def try_claim(
     organization_id: str,
     capabilities: list[Candidate],
     text_jobs: bool = False,
+    diarize: bool = False,
 ) -> Claim | None:
     """Claim the oldest eligible pending job, or return None when nothing is eligible.
 
     Eligible: privacy class equal to the worker's approval (private jobs only on
     private-approved workers, cloud opt-in jobs only on non-private ones), a
     snapshot candidate both offered and hub-approved (for a text job: the worker
-    asked for text jobs), a worker release approved for it, and every
-    worker-assigned endpoint of the job assigned to this worker.
+    asked for text jobs; for a diarize job: the worker claims with ``diarize``),
+    a worker release approved for it, and every worker-assigned endpoint of the
+    job assigned to this worker.
     Ineligible jobs are skipped, never modified: non-private jobs whose
     organization disabled cloud processing are failed by :func:`sweep_leases`.
     """
@@ -354,6 +363,7 @@ def try_claim(
     with _immediate(session):
         worker = _approved_worker(session, worker_id=worker_id, organization_id=organization_id)
         worker.last_seen = now
+        worker.diarize = diarize
         session.add(worker)
         allowed = set(_candidates(worker.approved_capabilities)) & requested
         if not allowed and not text_jobs:
@@ -381,6 +391,8 @@ def try_claim(
             if job.kind == "text" and not text_jobs:
                 continue
             snapshot = _snapshot(job)
+            if wants_diarize(snapshot, job.kind) and not diarize:
+                continue
             offered: list[Candidate | None] = (
                 [None] if job.kind == "text" else [c for c in _snapshot_candidates(job) if c in allowed]
             )

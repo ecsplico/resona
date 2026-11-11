@@ -184,7 +184,8 @@ def _convert_legacy_rows(conn: sqlite3.Connection, storage_id: str) -> list[Path
                 result_expires = stamp  # nothing to serve: already expired
                 result = _legacy_result(rec)
                 if result is not None:
-                    data = result.model_dump_json().encode()
+                    # Legacy rows are never diarized: keep ``speaker`` out for clients predating it.
+                    data = result.model_dump_json(exclude={"segments": {"__all__": {"speaker"}}}).encode()
                     sha256 = hashlib.sha256(data).hexdigest()
                     path = storage.result_path(storage_id, job_id)
                     storage.write_bytes_atomic(path, data)
@@ -438,6 +439,23 @@ def _v6_worker_text_jobs(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 7: workers report whether they diarize ───────────────────
+#
+# A job with ``AudioOptions.diarize`` needs a worker whose prepare verified the
+# diarizer; the heartbeat reports ``diarize`` so ``queue_reason`` can tell
+# whether any worker would claim one. On a fresh database migration 1 already
+# created the column from the ORM metadata.
+
+def _v7_worker_diarize(conn: sqlite3.Connection) -> AfterCommit | None:
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(worker)")}
+    if "diarize" not in columns:
+        conn.execute("ALTER TABLE worker ADD COLUMN diarize BOOLEAN NOT NULL DEFAULT 0")
+    if "diarize" not in {r[1] for r in conn.execute("PRAGMA table_info(worker)")}:
+        raise SchemaError("migration 7 did not add worker.diarize")
+    return None
+
+
+
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (1, _v1_identity_settings_jobs),
@@ -446,6 +464,7 @@ MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (4, _v4_job_autoincrement),
     (5, _v5_testbench),
     (6, _v6_worker_text_jobs),
+    (7, _v7_worker_diarize),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]
