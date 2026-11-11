@@ -3285,6 +3285,12 @@
 <td>engine default</td>
 <td>Recognizer confidence threshold. Only <code>rapidocr</code> (<code>text_score</code>, default <code>0.5</code>). Requires OCR</td>
 </tr>
+<tr>
+<td><code>remove_repeated_headers</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Drops text blocks repeated in the top (20%) or bottom (15%) band of at least half the pages (letterheads, patient header lines, fax headers, footers); the first occurrence stays and <code>repeated_header_blocks_removed:&lt;n&gt;</code> is added to <code>warnings</code>. Also valid with <code>ocr: off</code></td>
+</tr>
 </tbody>
 </table>
 <p>Combinations no worker can run are rejected at submission with <code>422 invalid_options</code> instead of being ignored:

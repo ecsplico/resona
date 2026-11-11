@@ -2503,7 +2503,7 @@
 </tr>
 <tr>
 <td><code>convert_document(upload_id \| path, …, options?)</code></td>
-<td>Submit a PDF/image → Markdown job → <code>{job_id, status, private}</code>. <code>options</code>: <code>languages</code> (<code>de</code>, <code>en</code>, <code>fr</code>, <code>it</code>, <code>es</code>, <code>ko</code>), <code>ocr</code>, <code>ocr_engine</code>, <code>page_start</code>, <code>page_end</code>, <code>pipeline</code>, <code>image_scale</code> (1.0–4.0, OCR raster multiplier), <code>ocr_min_confidence</code> (0–1, <code>rapidocr</code> only); see the <a href="../../reference/api/#document-options">API reference</a>.</td>
+<td>Submit a PDF/image → Markdown job → <code>{job_id, status, private}</code>. <code>options</code>: <code>languages</code> (<code>de</code>, <code>en</code>, <code>fr</code>, <code>it</code>, <code>es</code>, <code>ko</code>), <code>ocr</code>, <code>ocr_engine</code>, <code>page_start</code>, <code>page_end</code>, <code>pipeline</code>, <code>image_scale</code> (1.0–4.0, OCR raster multiplier), <code>ocr_min_confidence</code> (0–1, <code>rapidocr</code> only), <code>remove_repeated_headers</code> (drop letterheads and footers repeated on most pages); see the <a href="../../reference/api/#document-options">API reference</a>.</td>
 </tr>
 <tr>
 <td><code>postprocess_text(upload_id \| path \| job_id, profile, instructions?, language?, private=true, idempotency_key?)</code></td>
