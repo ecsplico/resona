@@ -562,6 +562,18 @@ async function startRedictation(): Promise<void> {
 	}
 }
 
+// "Weiter diktieren" in the list row menu: answered once, as soon as the recording is loaded.
+// A page that cannot take a part right then (dictating, post-processing, not transcribed)
+// drops it, so the microphone never opens later on its own.
+const redictationRequest = useRedictationRequest();
+watch([redictationRequest, loading, recording], () => {
+	if (redictationRequest.value !== id || loading.value || !recording.value) return;
+	redictationRequest.value = null;
+	if (canEdit.value && !postprocessing.value && pttState.value === "idle" && !redict.recording.value) {
+		void startRedictation();
+	}
+}, { immediate: true, flush: "post" });
+
 async function finishRedictation(): Promise<void> {
 	const partId = redictMicPart;
 	redictMicPart = null;
@@ -817,6 +829,7 @@ onUnmounted(() => {
 	window.removeEventListener("keydown", onKeyDown);
 	window.removeEventListener("keyup", onKeyUp);
 	window.removeEventListener("beforeunload", onBeforeUnload);
+	if (redictationRequest.value === id) redictationRequest.value = null;
 });
 </script>
 
@@ -1449,8 +1462,10 @@ onUnmounted(() => {
 				:levels="redict.recorder.levels.value"
 				:paused="redict.recorder.paused.value"
 				:pending="redict.transcribing.value"
+				:interruption="redict.recorder.interruption.value"
 				@pause="redict.recorder.pause()"
 				@resume="redict.recorder.resume()"
+				@continue="redict.recorder.continueRecording()"
 				@stop="finishRedictation"
 				@cancel="cancelRedictation"
 			/>

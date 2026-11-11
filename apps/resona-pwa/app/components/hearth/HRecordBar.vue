@@ -10,13 +10,18 @@ const props = withDefaults(defineProps<{
 	label?: string;
 	// Parts recorded earlier that are still being transcribed.
 	pending?: number;
+	// German reason while the recording is interrupted: the center button continues with a new part.
+	interruption?: string | null;
 }>(), {
 	paused: false,
 	label: "Nachdiktat",
 	pending: 0,
+	interruption: null,
 });
 
-const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: [] }>();
+const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: []; continue: [] }>();
+
+const halted = computed(() => props.paused || Boolean(props.interruption));
 
 // Compact meter: only the newest bars that fit next to the controls on a 390 px phone (5 px each incl. gap).
 const MAX_BARS = 24;
@@ -44,7 +49,10 @@ function formatTime(seconds: number): string {
 }
 
 function togglePause(): void {
-	if (props.paused) {
+	if (props.interruption) {
+		emit("continue");
+	}
+	else if (props.paused) {
 		emit("resume");
 	}
 	else {
@@ -56,7 +64,7 @@ function togglePause(): void {
 <template>
 	<div
 		class="h-rbar"
-		:class="{ 'is-paused': paused }"
+		:class="{ 'is-paused': halted }"
 		role="region"
 		:aria-label="label"
 		data-testid="record-bar"
@@ -66,7 +74,7 @@ function togglePause(): void {
 				<span
 					class="h-rbar__label"
 					data-testid="record-bar-label"
-				>{{ label }}</span>
+				>{{ interruption ? "Unterbrochen" : label }}</span>
 				<span class="h-rbar__timer">
 					<span
 						class="h-rbar__pulse"
@@ -122,14 +130,14 @@ function togglePause(): void {
 				<button
 					type="button"
 					class="h-rbar__btn h-rbar__btn--pause"
-					:class="{ 'is-paused': paused }"
+					:class="{ 'is-paused': halted }"
 					data-testid="pause"
-					:aria-label="paused ? 'Fortsetzen' : 'Pausieren'"
-					:title="paused ? 'Fortsetzen' : 'Pausieren'"
+					:aria-label="halted ? 'Fortsetzen' : 'Pausieren'"
+					:title="halted ? 'Fortsetzen' : 'Pausieren'"
 					@click="togglePause"
 				>
 					<svg
-						v-if="paused"
+						v-if="halted"
 						width="22"
 						height="22"
 						viewBox="0 0 24 24"
@@ -167,8 +175,8 @@ function togglePause(): void {
 					type="button"
 					class="h-rbar__btn h-rbar__btn--small"
 					data-testid="stop"
-					aria-label="Aufnahme beenden"
-					title="Aufnahme beenden"
+					:aria-label="interruption ? 'Beenden' : 'Aufnahme beenden'"
+					:title="interruption ? 'Beenden' : 'Aufnahme beenden'"
 					@click="emit('stop')"
 				>
 					<span class="h-rbar__square" />
@@ -176,6 +184,14 @@ function togglePause(): void {
 			</div>
 		</div>
 
+		<p
+			v-if="interruption"
+			class="h-rbar__notice"
+			role="alert"
+			data-testid="interruption"
+		>
+			{{ interruption }}
+		</p>
 		<!-- Always rendered so screen readers announce changes; empty while nothing is pending. -->
 		<p
 			class="h-rbar__status"
@@ -212,6 +228,7 @@ function togglePause(): void {
 /* Never display:none: a hidden live region may not announce when it gets text. Empty, it takes no height. */
 .h-rbar__status { margin:6px 0 0; font-family:var(--font-body); font-size:var(--fs-xs); color:var(--on-night-mute); }
 .h-rbar__status.is-empty { margin-top:0; }
+.h-rbar__notice { margin:8px 0 0; font-family:var(--font-body); font-size:var(--fs-sm); line-height:1.4; color:var(--on-night); }
 /* Paused: meter and pulse dimmed, pulse stops. */
 .h-rbar.is-paused .h-rbar__meter { opacity:.4; }
 .h-rbar.is-paused .h-rbar__pulse { animation:none; opacity:.35; }

@@ -63,12 +63,12 @@ describe("RecordingListItem", () => {
 		expect(trigger.attributes("aria-label")).toBe("Weitere Aktionen");
 		await trigger.trigger("click");
 		await flushPromises();
-		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Als Markdown exportieren", "Löschen"]);
+		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Als Markdown exportieren", "Weiter diktieren", "Löschen"]);
 		expect(w.emitted("open")).toBeFalsy();
 		expect(w.emitted("menu-open")).toHaveLength(1);
 	});
 
-	it.each(["share", "export", "delete"] as const)("emits action %s from the menu without emitting open", async (item) => {
+	it.each(["share", "export", "redictate", "delete"] as const)("emits action %s from the menu without emitting open", async (item) => {
 		const w = await mountSuspended(RecordingListItem, {
 			props: { recording: sample },
 		});
@@ -79,13 +79,22 @@ describe("RecordingListItem", () => {
 		expect(w.emitted("open")).toBeFalsy();
 	});
 
-	it("offers no Markdown export before the recording is transcribed", async () => {
+	it("offers neither Markdown export nor re-dictation before the recording is transcribed", async () => {
 		const w = await mountSuspended(RecordingListItem, {
 			props: { recording: { ...sample, status: "pending" } },
 		});
 		await w.find("[aria-haspopup=\"menu\"]").trigger("click");
 		await flushPromises();
 		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Löschen"]);
+	});
+
+	it("offers re-dictation, without export, for a failed transcription", async () => {
+		const w = await mountSuspended(RecordingListItem, {
+			props: { recording: { ...sample, status: "error" } },
+		});
+		await w.find("[aria-haspopup=\"menu\"]").trigger("click");
+		await flushPromises();
+		expect(w.findAll("[role=\"menuitem\"]").map(i => i.text())).toEqual(["Teilen", "Weiter diktieren", "Löschen"]);
 	});
 
 	it("emits open when the row is selected", async () => {

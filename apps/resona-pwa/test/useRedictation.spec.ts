@@ -25,9 +25,13 @@ const recorder = vi.hoisted(() => ({
 	elapsed: { value: 0 },
 	levels: { value: [] as number[] },
 	paused: { value: false },
+	sessionId: { value: null as string | null },
 	pause: vi.fn(),
 	resume: vi.fn(),
 }));
+
+const unfinished = vi.hoisted(() => ({ discardUnfinished: vi.fn(async (_id: string) => {}) }));
+vi.mock("~/data/unfinishedRecordings", () => unfinished);
 
 const merge = vi.hoisted(() => ({
 	// Every part adds 6 s to the merged audio.
@@ -97,6 +101,7 @@ describe("useRedictation", () => {
 		texts.length = 0;
 		errors.length = 0;
 		audio.length = 0;
+		recorder.sessionId.value = null;
 		scope = effectScope();
 	});
 
@@ -133,6 +138,34 @@ describe("useRedictation", () => {
 		expect(await Promise.all(parts.map(p => p.text()))).toEqual(["old-audio", "p1"]);
 		expect(store.replaceAudio).toHaveBeenCalledWith("rec-1", expect.any(Blob), "Visite.wav", 16);
 		expect(audio).toEqual([{ partId: "p1", ok: true, audio_file: "f-16", duration_seconds: 16 }]);
+	});
+
+	it("drops a part's IndexedDB copy only once its audio is in the recording, or when it is given up", async () => {
+		const r = setup();
+		recorder.sessionId.value = "s1";
+		await r.start("p1");
+		await r.finish();
+		expect(unfinished.discardUnfinished).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(unfinished.discardUnfinished).toHaveBeenCalledWith("s1");
+
+		// Append fails: the copy stays (a killed page still offers it) until the part is discarded.
+		unfinished.discardUnfinished.mockClear();
+		store.replaceAudio.mockRejectedValueOnce(new Error("offline"));
+		recorder.sessionId.value = "s2";
+		await r.start("p2");
+		await r.finish();
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(r.parts.value.find(p => p.id === "p2")?.audio).toBe("failed");
+		expect(unfinished.discardUnfinished).not.toHaveBeenCalled();
+		r.discard("p2");
+		expect(unfinished.discardUnfinished).toHaveBeenCalledWith("s2");
+
+		// Verwerfen while recording deletes the copy at once.
+		recorder.sessionId.value = "s3";
+		await r.start("p3");
+		await r.cancel();
+		expect(unfinished.discardUnfinished).toHaveBeenCalledWith("s3");
 	});
 
 	it("records the next part while the first transcribes; audio joins in stop order", async () => {
