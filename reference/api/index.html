@@ -3126,7 +3126,7 @@
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Content-Type: multipart/form-data   (field: file)
 </code></pre></div>
 <p>Returns <code>201 {"upload_id", "sha256", "size"}</code>. Empty file → <code>422 empty_upload</code>, unsupported media → <code>415 unsupported_media</code>, over 200 MiB → <code>413 too_large</code>. Both limits are enforced while streaming: the upload stops at the limit and nothing is kept. An upload that is not attached to a job expires after one hour. One upload can be used by exactly one job.</p>
-<p>Audio and document media are recognized by their magic bytes. A file that is neither, but is valid UTF-8 without NUL bytes (<code>.md</code>, <code>.txt</code>), is stored as a <code>text</code> upload for a <a href="#text-jobs">text job</a>; a text upload over <code>RESONA_MAX_TEXT_UPLOAD_BYTES</code> (default 2 MiB) → <code>413 too_large</code> as soon as the stream passes that size (the same applies to upload links). <code>POST /v1/audio/transcriptions</code> accepts media only.</p>
+<p>Audio and document media are recognized by their magic bytes. Documents are PDF, PNG, JPEG, TIFF and Word DOCX (<code>application/vnd.openxmlformats-officedocument.wordprocessingml.document</code>). ZIP magic alone is not enough for a DOCX: the package must contain <code>word/document.xml</code> and a <code>[Content_Types].xml</code> that declares the Word main part. Other ZIP-based Office formats (<code>.docm</code>, <code>.dotx</code>, <code>.xlsx</code>, <code>.pptx</code>, <code>.odt</code>) and legacy <code>.doc</code> → <code>415 unsupported_media</code>. A file that is neither, but is valid UTF-8 without NUL bytes (<code>.md</code>, <code>.txt</code>), is stored as a <code>text</code> upload for a <a href="#text-jobs">text job</a>; a text upload over <code>RESONA_MAX_TEXT_UPLOAD_BYTES</code> (default 2 MiB) → <code>413 too_large</code> as soon as the stream passes that size (the same applies to upload links). <code>POST /v1/audio/transcriptions</code> accepts media only.</p>
 <h4 id="upload-through-a-single-use-link">Upload through a single-use link<a class="headerlink" href="#upload-through-a-single-use-link" title="Permanent link">&para;</a></h4>
 <p>For a caller that must not hold the client credential, for example an agent sandbox behind the MCP server. The file goes to the hub with <code>curl</code>, so its bytes never pass through a model.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>POST /v1/upload-links
@@ -3305,6 +3305,17 @@ worker is <code>unsupported_capability</code>: that worker stops offering the ca
 <p>With OCR on, the worker turns every page upright first (Tesseract orientation detection, <code>osd</code> traineddata, required
 for every OCR engine; a worker without it answers <code>unsupported_capability</code>). Each turned page adds the result warning
 <code>page_rotated:&lt;page&gt;:&lt;clockwise degrees&gt;</code>; see <a href="../../guide/cli/#page-orientation">CLI: page orientation</a>.</p>
+<p><strong>DOCX.</strong> A Word document goes through Docling's Word backend, which reads the document XML: no layout
+model, no OCR, no orientation pass, no pages. Headings, lists and tables are kept (Word's Heading 1 becomes
+<code>##</code>, because Docling reserves <code>#</code> for a document title); embedded pictures become <code>&lt;!-- image --&gt;</code>
+placeholders as in PDFs. The result has <code>pages: []</code> and <code>language: null</code>. Options that act on pages or OCR
+are rejected at submission with <code>422 invalid_options</code> rather than ignored: <code>ocr</code> (except <code>off</code>),
+<code>ocr_engine</code>, <code>page_start</code>, <code>page_end</code>, <code>image_scale</code>, <code>ocr_min_confidence</code>, <code>remove_repeated_headers</code>
+(except <code>false</code>). <code>languages</code> and <code>pipeline</code> are accepted. Because no OCR runs, a DOCX job is not filtered
+by OCR engine: every docling candidate of the execution profile can run it, whatever its <code>ocr_engine</code> and
+the job language. There is no DOCX-only worker capability: a worker serves DOCX with its approved docling
+tuples, and <code>resona-worker prepare</code> approves a docling tuple only when it converts both the scanned PDF
+fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <h4 id="list-get-cancel-delete">List, get, cancel, delete<a class="headerlink" href="#list-get-cancel-delete" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>GET    /v1/jobs?cursor=&lt;opaque&gt;&amp;limit=&lt;1..100&gt;   → {items: [JobView], next_cursor}
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>GET    /v1/jobs/{id}                             → JobView

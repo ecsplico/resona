@@ -3147,7 +3147,9 @@ See <a href="../../getting-started/local-only/">Local-Only Mode</a>.</p>
 </div>
 <hr />
 <h2 id="doc">doc<a class="headerlink" href="#doc" title="Permanent link">&para;</a></h2>
-<p>Convert PDFs and images (<code>pdf</code>, <code>png</code>, <code>jpg</code>, <code>tif</code>) to Markdown as hub document jobs.
+<p>Convert PDFs, images and Word documents (<code>pdf</code>, <code>png</code>, <code>jpg</code>, <code>tif</code>, <code>docx</code>) to Markdown as hub document jobs.
+A DOCX takes no OCR or page flags: <code>--ocr</code> other than <code>off</code>, <code>--ocr-engine</code>, <code>--pages</code>, <code>--image-scale</code> and
+<code>--ocr-min-confidence</code> are rejected (hub: <code>422 invalid_options</code>); see <a href="../../reference/api/#document-options">Document options</a>.
 Inputs, outputs, exit codes and the shared flags (<code>--recursive</code>, <code>--output-dir</code>, <code>--force</code>,
 <code>--json</code>, <code>--no-wait</code>, <code>--timeout</code>, <code>--private</code>, <code>--allow-cloud</code>, <code>--execution-profile</code>,
 <code>--engine</code>, <code>--model</code>, <code>--profile</code>, <code>--local</code>) work as for <a href="#transcribe"><code>transcribe</code></a>.</p>
