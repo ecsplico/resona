@@ -5147,6 +5147,9 @@ apple = [
     { name = "resona-engine-mlx-whisper" },
     { name = "resona-engine-whispercpp" },
 ]
+diarize = [
+    { name = "resona-worker", extra = ["diarize"] },
+]
 documents = [
     { name = "resona-worker", extra = ["documents"] },
 ]
@@ -5203,6 +5206,7 @@ requires-dist = [
     { name = "resona-tts-local", editable = "packages/tts-local" },
     { name = "resona-tts-local", extras = ["kokoro"], marker = "extra == 'kokoro'", editable = "packages/tts-local" },
     { name = "resona-worker", editable = "apps/resona-worker" },
+    { name = "resona-worker", extras = ["diarize"], marker = "extra == 'diarize'", editable = "apps/resona-worker" },
     { name = "resona-worker", extras = ["documents"], marker = "extra == 'documents'", editable = "apps/resona-worker" },
     { name = "sounddevice", specifier = ">=0.5.1" },
     { name = "soundfile", specifier = ">=0.13.1" },
@@ -5211,7 +5215,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15.3" },
     { name = "websockets", specifier = ">=13.0" },
 ]
-provides-extras = ["kokoro", "documents", "whisper", "voxtral", "mlx", "whisper-cpp", "lightning-mlx", "apple", "parakeet", "all"]
+provides-extras = ["kokoro", "documents", "diarize", "whisper", "voxtral", "mlx", "whisper-cpp", "lightning-mlx", "apple", "parakeet", "all"]
 
 [[package]]
 name = "resona-client"

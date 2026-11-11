@@ -96,7 +96,11 @@ def assign_words(words: Sequence[Word], turns: Sequence[Turn]) -> list[int | Non
 
 def sections(words: Sequence[Word], speakers: Sequence[int | None]) -> list[Section]:
     """Group consecutive words of the same speaker. Words without a speaker (no turns at
-    all) join the current section; leading ones join the first speaker's."""
+    all) join the current section; leading ones join the first speaker's.
+
+    Speakers are numbered 1, 2, ... in order of first appearance in the words: a
+    diarizer speaker that got no word (a cough, a turn inside a pause) leaves no gap,
+    and the transcript always starts with speaker 1."""
     out: list[Section] = []
     pending: list[Word] = []
     for word, speaker in zip(words, speakers, strict=True):
@@ -108,7 +112,10 @@ def sections(words: Sequence[Word], speakers: Sequence[int | None]) -> list[Sect
             continue
         out.append(Section(speaker, (*pending, word)))
         pending = []
-    return out
+    numbers: dict[int, int] = {}
+    for section in out:
+        numbers.setdefault(section.speaker, len(numbers) + 1)
+    return [Section(numbers[s.speaker], s.words) for s in out]
 
 
 __all__ = ["Section", "Turn", "Word", "assign_words", "renumber", "sections", "speaker_at"]
