@@ -30,7 +30,7 @@ def _page_range(pages: Optional[str]) -> tuple[Optional[int], Optional[int]]:
 
 def document_options(ocr: Optional[str], ocr_engine: Optional[str], languages: Optional[str],
                      pages: Optional[str], image_scale: Optional[float],
-                     ocr_min_confidence: Optional[float]) -> DocumentOptions:
+                     ocr_min_confidence: Optional[float], remove_repeated_headers: bool) -> DocumentOptions:
     page_start, page_end = _page_range(pages)
     try:
         return DocumentOptions(
@@ -41,6 +41,7 @@ def document_options(ocr: Optional[str], ocr_engine: Optional[str], languages: O
             page_end=page_end,
             image_scale=image_scale,
             ocr_min_confidence=ocr_min_confidence,
+            remove_repeated_headers=True if remove_repeated_headers else None,
         )
     except ValidationError as e:
         problems = "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
@@ -85,6 +86,8 @@ def doc_files(
         help="1.0-4.0: multiplies the OCR raster resolution (1.0 = 216 dpi). Requires OCR."),
     ocr_min_confidence: Optional[float] = typer.Option(None, "--ocr-min-confidence",
         help="0-1: drop OCR text below this recognizer confidence (rapidocr only)."),
+    remove_repeated_headers: bool = typer.Option(False, "--remove-repeated-headers",
+        help="Drop letterheads, header lines and footers repeated on most pages (first occurrence stays)."),
     local: bool = typer.Option(False, "--local",
         help="Process on this machine with cached hub settings instead of the hub."),
 ):
@@ -95,7 +98,8 @@ def doc_files(
     """
     want_private = check_privacy_flags(private, allow_cloud)
     user_instructions = instructions_arg(instructions, instructions_file)
-    options = document_options(ocr, ocr_engine, languages, pages, image_scale, ocr_min_confidence)
+    options = document_options(ocr, ocr_engine, languages, pages, image_scale, ocr_min_confidence,
+                               remove_repeated_headers)
     files = expand_inputs(inputs, recursive, EXTENSIONS)
     if not files:
         typer.echo("No documents found.", err=True)

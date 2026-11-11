@@ -67,6 +67,13 @@ class DocumentOptions(BaseModel):
         default=None, ge=0.0, le=1.0,
         description="Drop OCR text below this recognizer confidence. Only engines with a threshold (rapidocr).",
     )
+    remove_repeated_headers: bool | None = Field(
+        default=None,
+        description=(
+            "Drop text blocks repeated in the top or bottom band of most pages (letterheads, patient header "
+            "lines, fax headers, footers); the first occurrence stays."
+        ),
+    )
 
     @model_validator(mode="after")
     def _check_page_range(self) -> DocumentOptions:

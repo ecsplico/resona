@@ -144,6 +144,7 @@ All fields are optional; an unset field is resolved by the execution profile and
 | `pipeline` | string | `standard` | Only `standard` |
 | `image_scale` | float 1.0–4.0 | `1.0` | Multiplies Docling's OCR raster: OCR crops are rendered at `3.0 × image_scale` × 72 dpi (216 dpi at `1.0`). Also sets Docling's `images_scale` for rendered page images, which Resona does not export. Requires OCR |
 | `ocr_min_confidence` | float 0–1 | engine default | Recognizer confidence threshold. Only `rapidocr` (`text_score`, default `0.5`). Requires OCR |
+| `remove_repeated_headers` | bool | `false` | Drops text blocks repeated in the top (20%) or bottom (15%) band of at least half the pages (letterheads, patient header lines, fax headers, footers); the first occurrence stays and `repeated_header_blocks_removed:<n>` is added to `warnings`. Also valid with `ocr: off` |
 
 Combinations no worker can run are rejected at submission with `422 invalid_options` instead of being ignored:
 `ocr_min_confidence` or an `image_scale` other than `1.0` with `ocr: off`; `ocr_min_confidence` with

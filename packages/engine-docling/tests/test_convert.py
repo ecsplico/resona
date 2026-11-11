@@ -13,6 +13,7 @@ from typing import get_args
 
 import pytest
 from docling.datamodel.base_models import InputFormat
+from docling_core.types.doc import BoundingBox, CoordOrigin, DocItemLabel, DoclingDocument, ProvenanceItem, Size
 from pydantic import ValidationError
 from resona_engine_docling import (
     ConflictingDocumentOptions,
@@ -359,3 +360,81 @@ def test_job_result_round_trips_through_json() -> None:
     assert restored.provenance.input_sha256 is not None
     assert restored.provenance.runtime_version is not None
     assert restored.provenance.runtime_version.startswith("docling==2.129")
+
+
+_HEADER, _BODY, _FOOTER = (780.0, 760.0), (450.0, 400.0), (40.0, 20.0)  # (top, bottom), bottom-left origin, H=800
+
+
+def _paged_document(pages: dict[int, list[tuple[str, tuple[float, float]]]]) -> DoclingDocument:
+    document = DoclingDocument(name="repeated")
+    for page_no, blocks in pages.items():
+        document.add_page(page_no=page_no, size=Size(width=600, height=800))
+        for text, (top, bottom) in blocks:
+            bbox = BoundingBox(l=50, t=top, r=550, b=bottom, coord_origin=CoordOrigin.BOTTOMLEFT)
+            prov = ProvenanceItem(page_no=page_no, bbox=bbox, charspan=(0, len(text)))
+            document.add_text(label=DocItemLabel.TEXT, text=text, prov=prov)
+    return document
+
+
+def test_repeated_header_is_kept_once_and_body_paragraphs_stay() -> None:
+    document = _paged_document({
+        page: [("Patientin: Erika Muster", _HEADER), (f"Absatz {word} des Berichts.", _BODY)]
+        for page, word in [(1, "eins"), (2, "zwei"), (3, "drei")]
+    })
+
+    removed = convert_module._mark_repeated_furniture(document)
+    markdown = document.export_to_markdown()
+
+    assert removed == 2
+    assert markdown.count("Patientin: Erika Muster") == 1
+    assert all(f"Absatz {word} des Berichts." in markdown for word in ("eins", "zwei", "drei"))
+
+
+def test_repeated_header_groups_ocr_variants_and_page_numbers() -> None:
+    document = _paged_document({
+        1: [("Patientin: Erika Muster", _HEADER), ("Erster Absatz.", _BODY), ("Seite 1/3", _FOOTER)],
+        2: [("Patlentin: Erika Muster", _HEADER), ("Zweiter Absatz.", _BODY), ("Seite 2/3", _FOOTER)],
+        3: [("Patientin: Erika Muster", _HEADER), ("Dritter Absatz.", _BODY), ("Seite 3/3", _FOOTER)],
+    })
+
+    removed = convert_module._mark_repeated_furniture(document)
+    markdown = document.export_to_markdown()
+
+    assert removed == 4
+    assert markdown.count("Erika Muster") == 1 and "Patlentin" not in markdown
+    assert "Seite 1/3" in markdown and "Seite 2/3" not in markdown and "Seite 3/3" not in markdown
+    assert all(text in markdown for text in ("Erster Absatz.", "Zweiter Absatz.", "Dritter Absatz."))
+
+
+def test_repeated_sentence_in_the_body_band_is_not_removed() -> None:
+    sentence = "Die Patientin wurde stationär aufgenommen."
+    document = _paged_document({page: [(sentence, _BODY)] for page in (1, 2, 3)})
+
+    removed = convert_module._mark_repeated_furniture(document)
+
+    assert removed == 0
+    assert document.export_to_markdown().count(sentence) == 3
+
+
+def test_repeated_header_keeps_an_earlier_body_occurrence_as_the_first() -> None:
+    line = "Fallnummer: 1234567"
+    document = _paged_document({
+        1: [(line, _BODY), ("Erster Absatz.", (350.0, 300.0))],
+        2: [(line, _HEADER), ("Zweiter Absatz.", _BODY)],
+        3: [(line, _HEADER), ("Dritter Absatz.", _BODY)],
+    })
+
+    removed = convert_module._mark_repeated_furniture(document)
+    markdown = document.export_to_markdown()
+
+    assert removed == 2
+    assert markdown.count(line) == 1
+    assert all(text in markdown for text in ("Erster Absatz.", "Zweiter Absatz.", "Dritter Absatz."))
+
+
+def test_repeated_header_filter_leaves_a_single_page_document_unchanged() -> None:
+    document = _paged_document({1: [("Patientin: Erika Muster", _HEADER), ("Ein Absatz.", _BODY)]})
+    before = document.export_to_markdown()
+
+    assert convert_module._mark_repeated_furniture(document) == 0
+    assert document.export_to_markdown() == before

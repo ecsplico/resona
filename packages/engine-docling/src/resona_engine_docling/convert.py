@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import logging
+import math
 import shutil
 import subprocess
 import sys
@@ -32,7 +33,7 @@ from docling.datamodel.pipeline_options import (
 )
 from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 from docling_core.types.doc import FormulaItem, PictureItem, TableItem, TextItem
-from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.document import ContentLayer, DoclingDocument
 from resona_job_core import (
     BBox,
     JobResult,
@@ -62,6 +63,11 @@ _TESSERACT_LANG = {"de": "deu", "en": "eng", "fr": "fra", "it": "ita", "es": "sp
 # Every Resona language that the shared rule (``document_options_conflict``) admits for RapidOCR is
 # served by the pinned wheel's bundled multilingual PP-OCRv6 recognizer, which this Docling code selects.
 _RAPIDOCR_LANG = "iso:de"
+# RapidOCR's default 1.6 dilates line boxes into the next line on dense German letters, and the
+# recognizer then emits garbage for whole lines. 1.2 read scanned clinic letters best in a sweep from
+# 1.0 to 1.4 but cost the Italian eval scan (CER 0 -> 0.23); 1.3 still reads those letter lines and
+# passes the eval gate. Docling merges ``rapidocr_params`` last into RapidOCR's params.
+_RAPIDOCR_PARAMS = {"Det.unclip_ratio": 1.3}
 # Docling renders OCR crops at ``OcrOptions.scale`` x 72 dpi (3.0 = 216 dpi); ``image_scale`` multiplies it.
 _OCR_BASE_SCALE = float(OcrOptions.model_fields["scale"].default)
 # RapidOCR's PP-OCR recognizer emits the CJK compatibility sign U+2103 for "°C", usually
@@ -163,7 +169,9 @@ def _ocr_options(options: DocumentOptions):  # type: ignore[no-untyped-def]
         return OcrMacOptions(lang=[_OCRMAC_LANG[lang] for lang in options.languages], mode=mode, scale=scale)
     if options.ocr_engine == "rapidocr":
         threshold = {} if options.ocr_min_confidence is None else {"text_score": options.ocr_min_confidence}
-        return RapidOcrOptions(lang=[_RAPIDOCR_LANG], mode=mode, scale=scale, **threshold)
+        return RapidOcrOptions(
+            lang=[_RAPIDOCR_LANG], mode=mode, scale=scale, rapidocr_params=dict(_RAPIDOCR_PARAMS), **threshold
+        )
     return TesseractCliOcrOptions(
         lang=[_TESSERACT_LANG[lang] for lang in options.languages], mode=mode, scale=scale
     )
@@ -259,6 +267,54 @@ def _normalize_rapidocr_glyphs(document: DoclingDocument) -> None:
                 cell.text = fix(cell.text)
         elif isinstance(item, TextItem):
             item.text = fix(item.text)
+
+
+_HEADER_BAND = 0.20  # a block whose bottom edge lies in the top 20% of the page height
+_FOOTER_BAND = 0.85  # a block whose top edge lies in the bottom 15% of the page height
+_MIN_HEADER_KEY = 4
+
+
+def _header_key(text: str) -> str:
+    """Comparison key that equates OCR variants and page numbers: "Patlentin 1/3" == "Patientin 2/3"."""
+    chars = ("#" if c.isdigit() else "i" if c == "l" else c if c.isalnum() else " " for c in text.lower())
+    return " ".join("".join(chars).split())
+
+
+def _mark_repeated_furniture(document: DoclingDocument) -> int:
+    """Move text blocks repeated in the header/footer band of most pages out of the body layer.
+
+    The first occurrence in the document stays, even when it is body text on an earlier page.
+    Docling's exports and ``iterate_items`` include only ``ContentLayer.BODY`` by default, so the
+    blocks leave markdown, raw_text and pages consistently; only whole blocks are removed, and
+    body-band blocks are never moved. Returns the number of blocks moved.
+    """
+    n_pages = len(document.pages)
+    if n_pages < 2:
+        return 0
+    by_key: dict[str, list[tuple[int, TextItem]]] = {}  # band blocks only
+    first_seen: dict[str, int] = {}  # lowest page of any block, in any position
+    for item, _level in document.iterate_items(with_groups=False):
+        if not isinstance(item, TextItem) or not item.prov:
+            continue
+        prov = item.prov[0]
+        key = _header_key(item.text)
+        if len(key) < _MIN_HEADER_KEY:
+            continue
+        first_seen[key] = min(prov.page_no, first_seen.get(key, prov.page_no))
+        height = document.pages[prov.page_no].size.height
+        box = prov.bbox.to_top_left_origin(height)
+        if box.b <= _HEADER_BAND * height or box.t >= _FOOTER_BAND * height:
+            by_key.setdefault(key, []).append((prov.page_no, item))
+    needed = max(2, math.ceil(n_pages / 2))
+    removed = 0
+    for key, occurrences in by_key.items():
+        if len({page_no for page_no, _ in occurrences}) < needed:
+            continue
+        for page_no, item in occurrences:
+            if page_no != first_seen[key]:
+                item.content_layer = ContentLayer.FURNITURE
+                removed += 1
+    return removed
 
 
 def _pages(document: DoclingDocument) -> list[Page]:
@@ -378,6 +434,10 @@ def convert_document(path: Path, *, options: DocumentOptions, accelerator: Accel
     warnings: list[str] = [f"page_rotated:{r.page}:{r.degrees}" for r in rotations]
     warnings.extend(collector.messages)
     warnings.extend(f"docling: {err.error_message[:300]}" for err in result.errors)
+    if options.remove_repeated_headers:
+        removed = _mark_repeated_furniture(document)
+        if removed:
+            warnings.append(f"repeated_header_blocks_removed:{removed}")
 
     markdown = document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
     raw_text = document.export_to_text()
