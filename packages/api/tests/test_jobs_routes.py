@@ -1,8 +1,10 @@
 """Behavioral tests for the client job routes (/v1/uploads, /v1/jobs...)."""
 
 import hashlib
+import io
 import json
 import uuid
+import zipfile
 from datetime import timedelta
 
 import pytest
@@ -338,6 +340,76 @@ def test_korean_document_is_routed_to_the_ocrmac_candidate(http, fresh_org, clie
 
     assert resp.status_code == 202
     assert _snapshot_ocr_engines(resp) == ["ocrmac"]
+
+
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_DOCX_MAIN = DOCX_TYPE + ".main+xml"
+
+
+def _package(parts: dict[str, str]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, body in parts.items():
+            archive.writestr(name, body)
+    return buffer.getvalue()
+
+
+def _ooxml(main_part: str, main_type: str) -> bytes:
+    types = (
+        '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        f'<Override PartName="/{main_part}" ContentType="{main_type}"/></Types>'
+    )
+    return _package({"[Content_Types].xml": types, main_part: "<document/>"})
+
+
+def _submit_docx(http, headers, **fields):
+    up = upload(http, headers, _ooxml("word/document.xml", _DOCX_MAIN), name="brief.docx", ctype=DOCX_TYPE)
+    assert up.status_code == 201, up.text
+    return submit(http, headers, {"kind": "document", "upload_id": up.json()["upload_id"], **fields})
+
+
+def test_docx_is_a_document_job_for_every_docling_candidate(http, fresh_org, client_headers):
+    # Korean rules out RapidOCR for a PDF; a DOCX runs no OCR, so the RapidOCR candidate still serves it.
+    resp = _submit_docx(http, client_headers(fresh_org), execution_profile="linux-cuda", language="ko",
+                        options={"ocr": "off"})
+
+    assert resp.status_code == 202, resp.text
+    assert _snapshot_ocr_engines(resp) == ["rapidocr"]
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"ocr": "auto"}, {"ocr_engine": "rapidocr"}, {"page_start": 2}, {"page_end": 1}, {"image_scale": 2.0},
+     {"ocr_min_confidence": 0.5}],
+)
+def test_page_and_ocr_options_are_refused_for_docx(http, fresh_org, client_headers, options):
+    headers = client_headers(fresh_org)
+
+    resp = _submit_docx(http, headers, execution_profile="private-auto", options=options)
+
+    assert resp.status_code == 422
+    assert error_code(resp) == "invalid_options"
+    assert "DOCX" in str(resp.json())
+    assert http.get("/v1/jobs", headers=headers).json()["items"] == []
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        _ooxml("xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"),
+        _ooxml("ppt/presentation.xml",
+               "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"),
+        _ooxml("word/document.xml", "application/vnd.ms-word.document.macroEnabled.main+xml"),  # .docm
+        _package({"mimetype": "application/vnd.oasis.opendocument.text", "content.xml": "<office/>"}),  # .odt
+        _package({"word/document.xml": "<document/>"}),  # no [Content_Types].xml
+        b"PK\x03\x04" + b"\x00" * 60,  # ZIP magic, no archive
+    ],
+    ids=["xlsx", "pptx", "docm", "odt", "no-content-types", "truncated"],
+)
+def test_other_zip_containers_stay_unsupported(http, fresh_org, client_headers, data):
+    resp = upload(http, client_headers(fresh_org), data, name="file.bin", ctype="application/octet-stream")
+
+    assert resp.status_code == 415 and error_code(resp) == "unsupported_media"
 
 
 # ── Admission policy and settings resolution ─────────────────────────────────

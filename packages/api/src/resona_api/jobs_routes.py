@@ -19,6 +19,8 @@ import logging
 import os
 import secrets
 import shutil
+import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,6 +37,7 @@ from starlette.concurrency import run_in_threadpool
 
 from resona_job_core import (
     DEFAULT_OCR_ENGINE,
+    DOCX_MEDIA_TYPE,
     MAX_INSTRUCTIONS_CHARS,
     AudioOptions,
     Candidate,
@@ -320,6 +323,29 @@ def sniff_media(head: bytes) -> tuple[str, str] | None:
     return None
 
 
+_ZIP_MAGIC = b"PK\x03\x04"
+# The main-part content type a Word document declares; macro-enabled (.docm) and template
+# (.dotx) packages declare others and stay unsupported, as do other Office/ODF containers.
+_DOCX_MAIN_PART = b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+_CONTENT_TYPES_MAX_BYTES = 1 << 20
+
+
+def sniff_docx(path: Path) -> bool:
+    """True when ``path`` is a ZIP package holding a Word document: ``word/document.xml`` plus a
+    ``[Content_Types].xml`` that declares the DOCX main part. ZIP magic alone is not enough."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = set(archive.namelist())
+            if "word/document.xml" not in names or "[Content_Types].xml" not in names:
+                return False
+            with archive.open("[Content_Types].xml") as handle:
+                content_types = handle.read(_CONTENT_TYPES_MAX_BYTES + 1)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError, RuntimeError,
+            NotImplementedError, ValueError, zlib.error):
+        return False  # damaged, encrypted or unreadable packages are not documents
+    return len(content_types) <= _CONTENT_TYPES_MAX_BYTES and _DOCX_MAIN_PART in content_types
+
+
 class _TextSniffer:
     """Incremental check that a streamed file is UTF-8 text without NUL bytes.
 
@@ -504,6 +530,8 @@ async def receive_upload(
         if field.size == 0:
             raise api_error(422, "empty_upload", "the uploaded file is empty")
         media = sniff_media(field.head)
+        if media is None and field.head.startswith(_ZIP_MAGIC) and await run_in_threadpool(sniff_docx, staged):
+            media = ("document", DOCX_MEDIA_TYPE)
         if media is None and field.text is not None and field.text.finish():
             media = _TEXT_TYPE
         if media is None:
@@ -640,7 +668,8 @@ def _candidate_stage(candidate: Candidate, kind: str, settings: OrganizationSett
     return Stage(name="asr" if kind == "audio" else "ocr", kind="asr" if kind == "audio" else "ocr")
 
 
-def _resolve_candidates(req: JobRequest, options: dict[str, Any], settings: OrganizationSettings) -> tuple[str, list[Candidate]]:
+def _resolve_candidates(req: JobRequest, options: dict[str, Any], settings: OrganizationSettings,
+                        media_type: str | None) -> tuple[str, list[Candidate]]:
     name = req.execution_profile or settings.default_execution_profile
     profile = settings.execution_profiles.get(name)
     if profile is None:
@@ -655,21 +684,24 @@ def _resolve_candidates(req: JobRequest, options: dict[str, Any], settings: Orga
     if not candidates:
         raise api_error(422, "unapproved_override", "engine/model override is not an approved candidate")
     ocr_engine = options.get("ocr_engine")
-    if ocr_engine is not None:
+    # A DOCX job runs no OCR: _option_compatible refuses ocr_engine there with the DOCX reason.
+    if ocr_engine is not None and media_type != DOCX_MEDIA_TYPE:
         candidates = [c for c in candidates if c.ocr_engine == ocr_engine]
         if not candidates:
             raise api_error(422, "invalid_options", "ocr_engine is not available in this execution profile")
     if req.kind == "document":
-        candidates = _option_compatible(candidates, options, req.language or settings.language)
+        candidates = _option_compatible(candidates, options, req.language or settings.language, media_type)
     return name, candidates
 
 
-def _option_compatible(candidates: list[Candidate], options: dict[str, Any], language: str) -> list[Candidate]:
+def _option_compatible(candidates: list[Candidate], options: dict[str, Any], language: str,
+                       media_type: str | None) -> list[Candidate]:
     """The document candidates whose OCR engine can run ``options``; 422 if none can.
 
     Resolves options as the worker does (the job language when options name none, the
     engine's default OCR engine when a candidate pins none), so the snapshot only offers
-    candidates whose workers will not reject the job after claiming it.
+    candidates whose workers will not reject the job after claiming it. A DOCX upload runs
+    no OCR, so its candidates are not filtered by OCR engine: any docling candidate serves it.
     """
     try:
         resolved = DocumentOptions.model_validate({"languages": [language], **options})
@@ -678,7 +710,9 @@ def _option_compatible(candidates: list[Candidate], options: dict[str, Any], lan
     compatible: list[Candidate] = []
     conflicts: list[str] = []
     for candidate in candidates:
-        conflict = document_options_conflict(resolved, candidate.ocr_engine or DEFAULT_OCR_ENGINE)
+        conflict = document_options_conflict(
+            resolved, candidate.ocr_engine or DEFAULT_OCR_ENGINE, media_type=media_type
+        )
         if conflict is None:
             compatible.append(candidate)
         elif conflict not in conflicts:
@@ -753,7 +787,7 @@ def _snapshot_body(*, kind: str, candidates: list[Candidate], language: str, opt
 
 
 def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
-                        options: dict[str, Any]) -> tuple[dict[str, Any], bytes | None]:
+                        options: dict[str, Any], media_type: str | None) -> tuple[dict[str, Any], bytes | None]:
     """Return the content-free execution snapshot and the postprocess profile document, if any."""
     try:
         revision, settings = current_settings(session, organization_id)
@@ -767,7 +801,7 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
             # No engine stage: the postprocess profile is the job; build_pipeline checks its stages.
             name, candidates = TEXT_EXECUTION_PROFILE, []
         else:
-            name, candidates = _resolve_candidates(req, options, settings)
+            name, candidates = _resolve_candidates(req, options, settings, media_type)
             check_policy(policy, [_candidate_stage(c, req.kind, settings) for c in candidates])
         postprocess = _resolve_postprocess(session, organization_id, req, settings, policy)
     except PolicyDenied as exc:
@@ -804,7 +838,7 @@ TESTBENCH_PROFILE = "testbench"
 
 
 def admit_testbench_job(session: Session, organization_id: str, *, kind: str, language: str,
-                        candidate: Candidate, source: Path, sha256: str) -> Job:
+                        candidate: Candidate, source: Path, sha256: str, media_type: str | None) -> Job:
     """Create a private ``testbench`` job for stored item bytes, pinned to exactly ``candidate``.
 
     Runs inside the caller's write transaction and does not commit. The candidate
@@ -824,7 +858,7 @@ def admit_testbench_job(session: Session, organization_id: str, *, kind: str, la
         raise api_error(403, "policy_denied", f"{exc.stage}: {exc.reason}") from None
     options = _OPTIONS_MODEL[kind].model_validate({}).model_dump(mode="json", exclude_none=True)
     if kind == "document":
-        _option_compatible([candidate], options, language)
+        _option_compatible([candidate], options, language, media_type)
     snapshot = _snapshot_body(
         kind=kind, candidates=[candidate], language=language, options=options, postprocess=None,
         policy=policy, revision=revision, execution_profile=TESTBENCH_PROFILE,
@@ -902,7 +936,9 @@ def _admit(organization_id: str, key: str, req: JobRequest,
                 if upload.media_family != req.kind:
                     raise api_error(422, "kind_mismatch", f"upload is not {req.kind} media")
 
-                snapshot, profile_document = _execution_snapshot(session, organization_id, req, options)
+                snapshot, profile_document = _execution_snapshot(
+                    session, organization_id, req, options, upload.media_type
+                )
                 job = Job(
                     organization_id=organization_id,
                     kind=req.kind,

@@ -12,6 +12,7 @@ from .settings import TEXT_EXECUTION_PROFILE, Candidate, ExecutionProfile, Organ
 from .options import (
     DEFAULT_OCR_ENGINE,
     MAX_INSTRUCTIONS_CHARS,
+    DOCX_MEDIA_TYPE,
     AudioOptions,
     DocumentOptions,
     DocumentPipeline,
@@ -46,6 +47,7 @@ __all__ = [
     "TextOptions",
     "DEFAULT_OCR_ENGINE",
     "MAX_INSTRUCTIONS_CHARS",
+    "DOCX_MEDIA_TYPE",
     "document_options_conflict",
     "BBox",
     "JobResult",

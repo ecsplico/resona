@@ -221,6 +221,15 @@ def test_failing_candidate_aborts_prepare(prepare_executor: Path, cached, model:
         )
 
 
+def test_document_candidate_that_cannot_convert_word_is_not_prepared(prepare_executor: Path, cached) -> None:
+    no_word = DOC.model_copy(update={"model": "docling-noword"})
+
+    with pytest.raises(PrepareError, match=r"\(word_de\.docx\) .* failed: engine_error"):
+        prepare(
+            _settings([], [no_word]), "mac-private", executor=(sys.executable, str(prepare_executor)), model_pins=PINS
+        )
+
+
 def test_unknown_profile_is_rejected() -> None:
     with pytest.raises(PrepareError, match="not defined"):
         prepare(_settings([AUDIO], []), "linux-cuda")

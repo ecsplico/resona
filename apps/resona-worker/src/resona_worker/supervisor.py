@@ -666,6 +666,8 @@ def _document_suffix(path: Path) -> str:
         return ".jpg"
     if head[:4] in (b"II*\x00", b"MM\x00*"):
         return ".tif"
+    if head.startswith(b"PK\x03\x04"):
+        return ".docx"  # the hub admits a ZIP document only after finding a Word package in it
     raise JobFailure("unsupported_input", retryable=False, message="input could not be processed")
 
 

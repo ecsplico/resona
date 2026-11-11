@@ -1,10 +1,11 @@
-"""Document OCR/conversion adapter (PDF/image -> Markdown) backed by in-process Docling.
+"""Document OCR/conversion adapter (PDF/image/DOCX -> Markdown) backed by in-process Docling.
 
 Deliberately NOT registered in the ``resona.engines`` entry-point group: that group
 asserts the audio ``Transcriber`` protocol.
 """
 
 from .convert import (
+    DOCX_SUFFIXES,
     ConflictingDocumentOptions,
     UnsupportedDocumentOptions,
     UnsupportedMediaType,
@@ -14,6 +15,7 @@ from .convert import (
 from .options import DocumentOptions
 
 __all__ = [
+    "DOCX_SUFFIXES",
     "ConflictingDocumentOptions",
     "DocumentOptions",
     "UnsupportedDocumentOptions",

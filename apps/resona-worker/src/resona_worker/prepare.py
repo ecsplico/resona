@@ -68,16 +68,30 @@ class _Synthetic:
     language: str
     options: dict[str, Any]
     expected: tuple[str, ...]
+    # The primary stage must run on the candidate's accelerator. A DOCX runs no model, so its
+    # Word backend reports ``cpu`` on every candidate.
+    primary_on_candidate: bool = True
 
 
-# Synthetic, non-sensitive fixtures shipped with the package (lower-cased expectations).
-_SYNTHETIC = {
-    "audio": _Synthetic(fixture="de_short.wav", language="de", options={}, expected=("guten tag", "test")),
-    "document": _Synthetic(
-        fixture="scan_de.pdf",
-        language="de",
-        options={"ocr": "force"},
-        expected=("synthetisches testdokument", "brücke"),
+# Synthetic, non-sensitive fixtures shipped with the package (lower-cased expectations). A document
+# candidate passes only when it converts both the scanned PDF (OCR) and the Word document (headings,
+# lists, tables); the capability's measurements come from the first run.
+_SYNTHETIC: dict[str, tuple[_Synthetic, ...]] = {
+    "audio": (_Synthetic(fixture="de_short.wav", language="de", options={}, expected=("guten tag", "test")),),
+    "document": (
+        _Synthetic(
+            fixture="scan_de.pdf",
+            language="de",
+            options={"ocr": "force"},
+            expected=("synthetisches testdokument", "brücke"),
+        ),
+        _Synthetic(
+            fixture="word_de.docx",
+            language="de",
+            options={},
+            expected=("## synthetischer befund", "brücke", "- erster punkt", "| temperatur"),
+            primary_on_candidate=False,
+        ),
     ),
 }
 
@@ -247,38 +261,28 @@ def _kill(pid: int) -> None:
         pass
 
 
-def _check_result(kind: str, candidate: Candidate, run: _Run) -> JobResult:
+def _check_result(kind: str, synthetic: _Synthetic, candidate: Candidate, run: _Run) -> JobResult:
+    label = f"synthetic {kind} run ({synthetic.fixture}) of {candidate.engine}/{candidate.model}"
     if run.exit_code != ExitCode.OK:
         name = ExitCode(run.exit_code).name.lower() if run.exit_code in set(ExitCode) else f"exit {run.exit_code}"
-        raise PrepareError(f"synthetic {kind} run of {candidate.engine}/{candidate.model} failed: {name}")
+        raise PrepareError(f"{label} failed: {name}")
     result = run.result
     if result is None or result.kind != kind:
-        raise PrepareError(f"synthetic {kind} run of {candidate.engine}/{candidate.model} wrote no valid result")
+        raise PrepareError(f"{label} wrote no valid result")
     text = f"{result.raw_text}\n{result.markdown}".lower()
-    missing = [phrase for phrase in _SYNTHETIC[kind].expected if phrase not in text]
+    missing = [phrase for phrase in synthetic.expected if phrase not in text]
     if missing:
-        raise PrepareError(
-            f"synthetic {kind} run of {candidate.engine}/{candidate.model} missed expected content ({len(missing)} phrase(s))"
-        )
+        raise PrepareError(f"{label} missed expected content ({len(missing)} phrase(s))")
     primary = "asr" if kind == "audio" else "layout"
-    if not any(s.stage == primary and s.accelerator == candidate.accelerator for s in result.provenance.stages):
-        raise PrepareError(
-            f"synthetic {kind} run of {candidate.engine}/{candidate.model} did not run {primary} on {candidate.accelerator}"
-        )
+    accelerator = candidate.accelerator if synthetic.primary_on_candidate else "cpu"
+    if not any(s.stage == primary and s.accelerator == accelerator for s in result.provenance.stages):
+        raise PrepareError(f"{label} did not run {primary} on {accelerator}")
     return result
 
 
-def prepare_candidate(
-    kind: str,
-    candidate: Candidate,
-    *,
-    executor: Sequence[str],
-    model_pins: Mapping[str, str],
-    weights: Sequence[WeightRecord],
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> PreparedCapability:
-    """One synthetic run of a candidate whose ``weights`` :func:`pin_weights` already pinned."""
-    synthetic = _SYNTHETIC[kind]
+def _run_synthetic(
+    kind: str, synthetic: _Synthetic, candidate: Candidate, executor: Sequence[str], timeout: float
+) -> tuple[_Run, JobResult]:
     snapshot = {
         "kind": kind,
         "candidate": candidate.model_dump(mode="json"),
@@ -292,15 +296,32 @@ def prepare_candidate(
         input_path = scratch / f"input{fixture.suffix}"
         input_path.write_bytes(fixture.read_bytes())
         run = _execute(executor, snapshot, input_path, scratch, timeout)
-    result = _check_result(kind, candidate, run)
-    _check_recorded_revisions(kind, result, model_pins)
+    return run, _check_result(kind, synthetic, candidate, run)
 
+
+def prepare_candidate(
+    kind: str,
+    candidate: Candidate,
+    *,
+    executor: Sequence[str],
+    model_pins: Mapping[str, str],
+    weights: Sequence[WeightRecord],
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> PreparedCapability:
+    """The synthetic runs of a candidate whose ``weights`` :func:`pin_weights` already pinned.
+
+    Every fixture of ``kind`` must pass; seconds, memory and stage devices come from the first.
+    """
+    runs = [_run_synthetic(kind, synthetic, candidate, executor, timeout) for synthetic in _SYNTHETIC[kind]]
     recorded = list(weights)
-    for stage in result.provenance.stages:
-        if is_hub_repo(stage.model) and stage.model_revision:
-            record = WeightRecord(repo=stage.model, revision=stage.model_revision)
-            if record not in recorded:
-                recorded.append(record)
+    for _, result in runs:
+        _check_recorded_revisions(kind, result, model_pins)
+        for stage in result.provenance.stages:
+            if is_hub_repo(stage.model) and stage.model_revision:
+                record = WeightRecord(repo=stage.model, revision=stage.model_revision)
+                if record not in recorded:
+                    recorded.append(record)
+    run, result = runs[0]
     accelerators = {f"{stage.stage}:{stage.engine}": stage.accelerator for stage in result.provenance.stages}
     return PreparedCapability(
         kind=kind,  # type: ignore[arg-type]
