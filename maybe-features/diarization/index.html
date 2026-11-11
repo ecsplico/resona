@@ -1,0 +1,3256 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modular audio transcription platform with pluggable ASR engines and composable postprocessing">
+      
+      
+      
+        <link rel="canonical" href="https://ecsplico.github.io/resona/maybe-features/diarization/">
+      
+      
+        <link rel="prev" href="../youtube-share/">
+      
+      
+        <link rel="next" href="../forge-editor-integration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Sprechertrennung (Studie) - Resona</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#studie-sprechertrennung-diarisierung-in-resona-und-forge" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Resona" class="md-header__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Resona
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sprechertrennung (Studie)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../server/docker/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Server Setup
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../configuration/environment/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/client/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../development/workflow/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../design/admin-product/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../youtube-share/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Maybe Features
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Resona" class="md-nav__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Resona
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/local-only/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local-Only Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/engines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engine Selection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/replacements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Text Replacements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Speech Synthesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/pwa-app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resona App (Capacitor)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Server Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/full-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Single-Host Stack (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/cpu-standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Single-Host Stack (Linux, no GPU)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/pwa-backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PWA Backups & Encryption at Rest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/config-files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/engine-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateless Engine Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/job-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Job Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-api
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/engine-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-engine-server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/asr-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-asr-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cloud-stt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-stt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cloud-tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-tts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/postprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-postprocess
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dev Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/adding-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding an Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Product Brief
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-console/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Design Direction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maybe Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Maybe Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../youtube-share/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-ausgangslage-kurz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Ausgangslage (kurz)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-messung-auf-dem-mac-m5-pro" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Messung auf dem Mac (M5 Pro)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-entscheidungen-und-begrundung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Entscheidungen und Begründung
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Entscheidungen und Begründung">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-wo-die-trennung-lauft-im-resona-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Wo die Trennung läuft: im Resona-Worker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-welches-modell-nemotron-3-diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Welches Modell: Nemotron-3-Diarization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-laufzeit-im-worker-transformers-mit-einer-abhangigkeitsprufung-vorweg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Laufzeit im Worker: transformers, mit einer Abhängigkeitsprüfung vorweg
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-datenvertrag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Datenvertrag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-wer-diarize-ausfuhren-darf-ein-merkmal-im-heartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Wer diarize ausführen darf: ein Merkmal im Heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-prufen-und-freigeben" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 Prüfen und Freigeben
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#37-postprocess-und-oberflachen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.7 Postprocess und Oberflächen
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-forge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Forge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-risiken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Risiken
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-offene-punkte" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Offene Punkte
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ticket-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ticket breakdown
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge-editor-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forge-Editor-Integration (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-ausgangslage-kurz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Ausgangslage (kurz)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-messung-auf-dem-mac-m5-pro" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Messung auf dem Mac (M5 Pro)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-entscheidungen-und-begrundung" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Entscheidungen und Begründung
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Entscheidungen und Begründung">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-wo-die-trennung-lauft-im-resona-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Wo die Trennung läuft: im Resona-Worker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-welches-modell-nemotron-3-diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Welches Modell: Nemotron-3-Diarization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-laufzeit-im-worker-transformers-mit-einer-abhangigkeitsprufung-vorweg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Laufzeit im Worker: transformers, mit einer Abhängigkeitsprüfung vorweg
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-datenvertrag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Datenvertrag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-wer-diarize-ausfuhren-darf-ein-merkmal-im-heartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Wer diarize ausführen darf: ein Merkmal im Heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-prufen-und-freigeben" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 Prüfen und Freigeben
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#37-postprocess-und-oberflachen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.7 Postprocess und Oberflächen
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-forge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Forge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-risiken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Risiken
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-offene-punkte" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Offene Punkte
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ticket-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ticket breakdown
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="studie-sprechertrennung-diarisierung-in-resona-und-forge">Studie: Sprechertrennung (Diarisierung) in Resona und Forge<a class="headerlink" href="#studie-sprechertrennung-diarisierung-in-resona-und-forge" title="Permanent link">&para;</a></h1>
+<p>Status: R1, R2 und R4 umgesetzt (Branch <code>feat/diarization</code>), R3 mit Korpus und Gate umgesetzt; Baselines müssen neu gemessen werden. Erste echte Messung (M5 Pro, mlx-whisper + Nemotron, Metal): <code>de-two-speakers</code> Wortzuordnung 98,3 %, DER 16,6 %; <code>de-case-conference</code> (4 Stimmen, 81 s) Wortzuordnung 80,2 %, DER 31,3 %, nur 3 Sprecher erkannt. Stand: 2026-11-11.</p>
+<p><strong>Frage:</strong> Wie bauen wir „wer hat wann gesprochen“ am besten in Resona und in den Forge-Editor ein?</p>
+<p><strong>Kurzfassung:</strong></p>
+<ul>
+<li><strong>Die Sprechertrennung läuft im Resona-Worker, nicht in Forge.</strong> Der Worker hat die Audiodaten, die Wortzeitstempel und das Datenschutzmodell (private Aufträge verlassen den freigegebenen Worker nicht). Forge bekommt fertige Sprecherwechsel und zeigt sie an.</li>
+<li><strong>Modell: NVIDIA <code>Nemotron-3-Diarization</code></strong>, lokal im Worker. Es ist ohne Freischaltung herunterladbar, kommerziell nutzbar, auf dem Mac schnell (13,4 min Audio in 5–9 s, Abschnitt 2) und kann später auch live trennen. pyannote <code>community-1</code> bleibt die Alternative, falls die deutsche Messung (Ticket R3) dagegen spricht oder Aufnahmen mehr als 8 Sprecher haben.</li>
+<li><strong>Zuordnung pro Wort, nicht pro ASR-Segment.</strong> In der Messung lag die Wortzuordnung bei 96–97 % richtig zugeordneten Wörtern, die Segmentzuordnung nur bei 80–82 % (Abschnitt 2). Der Worker muss dafür die Wortzeitstempel behalten, die er heute verwirft.</li>
+<li><strong>Ausgabe:</strong> <code>Segment.speaker</code> (1, 2, … in Reihenfolge des ersten Auftretens) und Markdown im Format <code>**Sprecher 1:** …</code>. Dasselbe Format nutzt der Forge-Editor schon für Redebeiträge (KI-Protokoll, <code>packages/editor/src/features/ai/protocol/chat.ts</code>); ob auch der Markdown-Import daraus Sprecherblöcke macht, ist nicht geprüft.</li>
+<li><strong>Forge:</strong> (1) Sprecher durch die vorhandene Transkriptionskette reichen, (2) einen <code>resona</code>-Anbieter über die Job-API, (3) „Sprecher umbenennen/zusammenführen“. Optional Deepgram-Diarisierung für Installationen ohne medizinische Daten.</li>
+</ul>
+<p>Markierung: <strong>[Annahme]</strong> = nicht geprüft; <strong>[INFERENCE]</strong> = aus gelesenem Code oder Messungen geschlossen, nicht ausgeführt. Bestandsaufnahme und Marktüberblick mit Quellen: <code>forge-mono/apps/editor-docs/research/diarization.md</code> (im Folgenden „Forge-Notiz“).</p>
+<hr />
+<h2 id="1-ausgangslage-kurz">1. Ausgangslage (kurz)<a class="headerlink" href="#1-ausgangslage-kurz" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Resona</strong> kennt keine Sprecher. <code>Segment</code> hat nur <code>start</code>, <code>end</code>, <code>text</code> und verbietet weitere Felder (<code>packages/job-core/src/resona_job_core/results.py</code>, <code>Segment</code>, <code>_Strict</code> mit <code>extra="forbid"</code>). Der Worker reicht <code>word_timestamps</code> an die Engine weiter, <code>_segment()</code> behält aber nur <code>start/end/text</code> (<code>apps/resona-worker/src/resona_worker/execute.py</code>, <code>_segment</code>). Die Wortzeiten werden also berechnet und weggeworfen.</li>
+<li><strong>Forge</strong> hat die Dokumentseite fast fertig: Der Block <code>transcriptSegment</code> trägt <code>speaker</code>, <code>start</code>, <code>end</code>; Redebeiträge heißen im KI-Protokoll <code>**Name:** Text</code>. Die Transkriptionskette verwirft Sprecher aber an drei Stellen: <code>timedSegments()</code> behält nur <code>{start, end, text}</code> (<code>packages/editor/src/server/extract.ts</code>), <code>SpeechSegment</code> hat kein <code>speaker</code> (<code>core/backend-types.ts</code>), und <code>renditionBody()</code> schreibt <code>speaker: ''</code> (<code>integrations/composite-ai/rendition.ts</code>). Alles geprüft am Stand vom 2026-11-10.</li>
+</ul>
+<h2 id="2-messung-auf-dem-mac-m5-pro">2. Messung auf dem Mac (M5 Pro)<a class="headerlink" href="#2-messung-auf-dem-mac-m5-pro" title="Permanent link">&para;</a></h2>
+<p>Zweck: die beiden offenen Fragen der Forge-Notiz beantworten, nämlich wie schnell die Modelle auf Apple Silicon und CPU sind, und ob Zuordnung pro Wort oder pro Segment nötig ist.</p>
+<p><strong>Aufbau</strong> (Skripte in <code>.scratch/diarization-bench/</code>, nicht eingecheckt):</p>
+<ul>
+<li>Testaudio: deutsche Fallbesprechung mit 4 Stimmen (<code>say</code>, Stimmen Anna, Flo, Sandy, Reed), 18 Wortbeiträge, darunter 4 kurze Rückmeldungen („Mhm.“, „Okay.“), die 0,35 s in den vorherigen Beitrag hineinlappen.</li>
+<li>Kurz: 80,6 s.</li>
+<li>Lang: dasselbe zehnmal hintereinander, 806 s.</li>
+<li>Referenz: die exakten Zeiten jedes Clips.</li>
+<li>ASR: <code>mlx-whisper</code> large-v3-turbo mit Wortzeitstempeln, 7 s bzw. 20 s Laufzeit.</li>
+<li>Maße:</li>
+<li>DER: Diarisierungsfehler, ohne Toleranzrand, Überlappung mitgezählt, mit <code>pyannote.metrics</code> berechnet.</li>
+<li>Wortzuordnung: Anteil der ASR-Wörter, die den richtigen Sprecher bekommen.</li>
+</ul>
+<p><strong>Ergebnis:</strong></p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Gerät</th>
+<th>Laufzeit kurz / lang</th>
+<th>DER kurz / lang</th>
+<th>Sprecher erkannt (kurz)</th>
+<th>Wortzuordnung kurz / lang</th>
+<th>Segmentzuordnung lang</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nemotron-3, NeMo-Speech.cpp, <code>--offline</code> (volle Aufmerksamkeit, nur ≤ 6,6 min)</td>
+<td>Metal</td>
+<td>0,46 s / –</td>
+<td>14,1 % / –</td>
+<td>4/4</td>
+<td>91,6 % / –</td>
+<td>–</td>
+</tr>
+<tr>
+<td>Nemotron-3, NeMo-Speech.cpp, <code>v3-offline</code></td>
+<td>Metal</td>
+<td>0,48 s / 5,3 s</td>
+<td>25,9 % / 11,5 %</td>
+<td>3/4</td>
+<td>79,2 % / 95,8 %</td>
+<td>80,4 %</td>
+</tr>
+<tr>
+<td>Nemotron-3, NeMo-Speech.cpp, <code>v3-offline</code></td>
+<td>CPU</td>
+<td>11,8 s / 59,3 s</td>
+<td>25,9 % / 11,7 %</td>
+<td>3/4</td>
+<td>79,2 % / 95,6 %</td>
+<td>80,4 %</td>
+</tr>
+<tr>
+<td>Nemotron-3, NeMo-Speech.cpp, <code>v3-streaming</code></td>
+<td>Metal</td>
+<td>4,6 s / 46,9 s</td>
+<td>21,2 % / 10,2 %</td>
+<td>4/4</td>
+<td>85,4 % / 97,6 %</td>
+<td>81,8 %</td>
+</tr>
+<tr>
+<td>Nemotron-3, transformers 5.22.2, offline</td>
+<td>MPS (PyTorch)</td>
+<td>11,4 s* / 9,5 s</td>
+<td>22,0 % / 6,6 %</td>
+<td>4/4</td>
+<td>80,3 % / 97,4 %</td>
+<td>80,9 %</td>
+</tr>
+<tr>
+<td>sherpa-onnx 2.x, pyannote-seg-3.0 + 3D-Speaker ERes2Net</td>
+<td>CPU, 4 Threads</td>
+<td>64,4 s / –</td>
+<td>–</td>
+<td>–</td>
+<td>82,0 % / –</td>
+<td>–</td>
+</tr>
+<tr>
+<td>sherpa-onnx 2.x, pyannote-seg-3.0 + NeMo TitaNet-small</td>
+<td>CPU, 4 Threads</td>
+<td>–</td>
+<td>–</td>
+<td>–</td>
+<td>84,3 % / –</td>
+<td>–</td>
+</tr>
+<tr>
+<td>pyannote <code>community-1</code></td>
+<td>–</td>
+<td>nicht gemessen: Modell auf Hugging Face freischaltpflichtig, Bedingungen für das Konto nicht akzeptiert</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>* inklusive einmaligem Aufwärmen von MPS; der zweite Aufruf (lang) zeigt die echte Geschwindigkeit (85-fach Echtzeit).</p>
+<p><strong>Was daraus folgt:</strong></p>
+<ol>
+<li><strong>Geschwindigkeit ist kein Problem.</strong></li>
+<li>Nemotron-3 trennt 13,4 min Audio auf dem Mac-GPU in 5–9 s, also schneller als das Whisper-Transkript (20 s).</li>
+<li>Selbst reine CPU schafft 13,6-fache Echtzeit. Damit passt die Funktion auch auf den CPU-Host (<code>docker-compose.cpu-standalone.yml</code>) <strong>[INFERENCE: Messung auf M5-CPU, nicht auf dem Linux-Host]</strong>.</li>
+<li>sherpa-onnx braucht für 80 s Audio 64 s auf der CPU. Es scheidet als Standard aus, bleibt aber die Option für Geräte ohne PyTorch.</li>
+<li><strong>Wortzuordnung ist Pflicht.</strong> Auf der langen Aufnahme liegt die Wortzuordnung 15–17 Punkte über der Segmentzuordnung. Whisper-Segmente laufen über Sprecherwechsel hinweg; das hatte die Forge-Notiz vermutet, die Messung bestätigt es.</li>
+<li>Den Wechsel zusätzlich auf das nächste Satzzeichen zu schieben (höchstens 3 Wörter Abstand) brachte nur +0 bis +1,7 Punkte, auf einer Variante −0,5. Das lohnt sich nicht als eigene Regel.</li>
+<li><strong>Kurze Aufnahmen mit vielen Sprechern sind die Schwachstelle.</strong></li>
+<li>In 80 s mit 4 Sprechern hat die Standardeinstellung (<code>v3-offline</code>) eine Stimme nicht als eigenen Sprecher erkannt.</li>
+<li>Die volle Aufmerksamkeit (<code>--offline</code>) fand alle 4. Sie gilt aber nur bis 6,6 min Audio (NeMo-Speech.cpp-Doku, „Diarize audio“).</li>
+<li>Folge für den Worker: Aufnahmen bis 6,6 min in einem Durchgang trennen, längere im Streaming-Modus mit großem Puffer <strong>[INFERENCE]</strong>.</li>
+<li><strong>Was weder ASR noch Diarisierung retten:</strong> Überlappende Rückmeldungen („Mhm.“, „Okay.“) hat Whisper gar nicht transkribiert. Es gibt also kein Wort, dem ein Sprecher zugeordnet werden könnte. Für lesbare Protokolle ist das hinnehmbar, für Gesprächsanalyse nicht.</li>
+<li><strong>Aussagekraft:</strong> Das Testaudio ist synthetisch. <code>say</code>-Stimmen sind gleichmäßiger als echte Sprecher, also ist die Messung eher zu günstig. Raumhall, Telefon und Dialekt fehlen. Die Zahlen belegen Geschwindigkeit und das Wort-vor-Segment-Ergebnis. Die deutsche Qualität belegen sie nicht. Dafür ist Ticket R3 da.</li>
+</ol>
+<h2 id="3-entscheidungen-und-begrundung">3. Entscheidungen und Begründung<a class="headerlink" href="#3-entscheidungen-und-begrundung" title="Permanent link">&para;</a></h2>
+<h3 id="31-wo-die-trennung-lauft-im-resona-worker">3.1 Wo die Trennung läuft: im Resona-Worker<a class="headerlink" href="#31-wo-die-trennung-lauft-im-resona-worker" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Ort</th>
+<th>Für</th>
+<th>Gegen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Resona-Worker (gewählt)</strong></td>
+<td>Datenschutz (private Aufträge bleiben auf dem freigegebenen Worker); Wortzeiten sind dort vorhanden; Gewichte gepinnt und geprüft wie bei den ASR-Modellen (<code>prepare</code>, <code>models.json</code>); eine Umsetzung für PWA, CLI, MCP und Forge</td>
+<td>Vertragsänderung über Hub, Worker und Client</td>
+</tr>
+<tr>
+<td>Forge-Server mit Cloud-Anbieter</td>
+<td>Am kleinsten</td>
+<td>Audio geht zum Anbieter, ungeeignet für medizinische Daten; 25-MB-Grenze in Forge</td>
+</tr>
+<tr>
+<td>Browser (sherpa-onnx WASM)</td>
+<td>Kein Serveraufwand</td>
+<td>In der Messung 1,25-fache Echtzeit schon nativ auf der CPU; Ergebnis muss trotzdem mit dem Server-Transkript zusammengeführt werden</td>
+</tr>
+</tbody>
+</table>
+<p>Die Zusammenführung von Wörtern und Sprecherwechseln gehört direkt neben den Diarisierer. Der Editor bekommt fertige Sprecherwechsel.</p>
+<h3 id="32-welches-modell-nemotron-3-diarization">3.2 Welches Modell: Nemotron-3-Diarization<a class="headerlink" href="#32-welches-modell-nemotron-3-diarization" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Kriterium</th>
+<th>Nemotron-3-Diarization</th>
+<th>pyannote <code>community-1</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lizenz</td>
+<td>OpenMDW-1.1, „ready for commercial or non-commercial use“ (<a href="https://huggingface.co/nvidia/Nemotron-3-Diarization">Modellkarte</a>)</td>
+<td>Gewichte CC-BY-4.0 (Namensnennung im Produkt), Code MIT</td>
+</tr>
+<tr>
+<td>Download</td>
+<td>Frei, ohne Konto (geprüft: <code>gated=False</code>)</td>
+<td><strong>Freischaltpflichtig</strong> (geprüft: <code>gated=auto</code>, 403 ohne Zustimmung). Jeder Worker-Host bräuchte bei <code>prepare</code> ein HF-Token mit akzeptierten Bedingungen</td>
+</tr>
+<tr>
+<td>Geschwindigkeit Mac</td>
+<td>Gemessen 85–150-fache Echtzeit (MPS/Metal)</td>
+<td>Keine veröffentlichten Zahlen für CPU/MPS; nicht gemessen</td>
+</tr>
+<tr>
+<td>Sprecherzahl</td>
+<td>Höchstens 8</td>
+<td>Unbegrenzt, Vorgaben <code>num/min/max_speakers</code></td>
+</tr>
+<tr>
+<td>Live</td>
+<td>Gleiches Modell kann streamen (ab 0,32 s Puffer)</td>
+<td>Nur Stapelverarbeitung</td>
+</tr>
+<tr>
+<td>Veröffentlichte Fehlerquote</td>
+<td>DIHARD III 12,73, CALLHOME 9,10 (NeMo-Protokoll)</td>
+<td>DIHARD3 20,2, AMI-IHM 17,0 (pyannote-Protokoll; nicht direkt vergleichbar)</td>
+</tr>
+<tr>
+<td>Deutsch</td>
+<td>Nicht unter den Trainingssprachen genannt</td>
+<td>Keine deutsche Messung veröffentlicht</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Entscheidung:</strong> Nemotron-3 als Standard. Den Ausschlag geben der freie Download, der zum Offline-/Pin-Modell des Workers passt, die gemessene Geschwindigkeit auf Mac und CPU und der Live-Pfad mit demselben Modell. Die Grenze von 8 Sprechern ist für Diktat, Visite und Teambesprechung unkritisch. pyannote kommt nur dann hinzu, wenn die deutsche Messung (R3) Nemotron klar schlechter zeigt oder Aufnahmen mit mehr als 8 Sprechern ein echter Anwendungsfall werden.</p>
+<p>DiariZen (beste veröffentlichte Werte) scheidet aus, weil seine Gewichte nur nichtkommerziell nutzbar sind (CC BY-NC 4.0). OpenAIs Diarisierungsmodell wird am 2027-02-26 abgeschaltet (beides Forge-Notiz, Abschnitt 3).</p>
+<h3 id="33-laufzeit-im-worker-transformers-mit-einer-abhangigkeitsprufung-vorweg">3.3 Laufzeit im Worker: transformers, mit einer Abhängigkeitsprüfung vorweg<a class="headerlink" href="#33-laufzeit-im-worker-transformers-mit-einer-abhangigkeitsprufung-vorweg" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Gewählt: transformers in-process</strong> (<code>AutoModelForAudioFrameClassification</code>, seit transformers 5.22.2 enthalten; geprüft in <code>src/transformers/models/__init__.py</code> des Tags <code>v5.22.2</code>).</li>
+<li>Passt zu allem, was der Worker schon tut: HF-Revision in <code>models.json</code> pinnen, in <code>prepare</code> laden, offline ausführen, Gerät über PyTorch prüfen, Provenienz mit <code>model_revision</code>.</li>
+<li>Gemessen auf MPS: 9,5 s für 806 s Audio.</li>
+<li><strong>Hindernis:</strong> Der Lock hat transformers 5.8.1 (macOS) und <strong>4.57.6 unter Linux</strong>. Linux ist durch <code>nemo-toolkit</code> 2.7.3 der Parakeet-Engine gebunden (<code>uv.lock</code>, Abhängigkeiten von <code>nemo-toolkit</code>). Auf beiden Plattformen muss transformers auf ≥ 5.22 angehoben werden. Unter Linux heißt das: NeMo anheben, oder prüfen, ob NeMos eigenes <code>SortformerEncLabelModel</code> in 2.7.3 die Nemotron-3-Datei lädt <strong>[Annahme: nicht geprüft]</strong>. Das ist der erste Schritt von Ticket R2.</li>
+<li><strong>Ausweichweg:</strong> NeMo-Speech.cpp (Apache-2.0), ein Binärprogramm für Metal, CUDA und CPU mit GGUF-Gewichten aus demselben HF-Repo. In der Messung war es der schnellste Weg. Dagegen spricht: Es gibt kein Python-Paket (PyPI: 404 für <code>nemo-speech</code>), das Programm ist Version 0.3.0 und müsste neben den Wheels im Release-Manifest gepinnt und verteilt werden. Nur nehmen, wenn die Abhängigkeitsfrage unter Linux nicht lösbar ist.</li>
+</ul>
+<h3 id="34-datenvertrag">3.4 Datenvertrag<a class="headerlink" href="#34-datenvertrag" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>AudioOptions.diarize: bool = False</code> (<code>packages/job-core/src/resona_job_core/options.py</code>). Keine Vorgabe der Sprecherzahl in der ersten Fassung: Nemotron erwartet keine <strong>[Annahme: in der transformers-Schnittstelle nicht gesehen]</strong>. Eine Vorgabe kommt erst mit pyannote.</li>
+<li><code>Segment.speaker: int | None = None</code>, 1-basiert in Reihenfolge des ersten Auftretens. So nummerieren auch Nemotron und die Ausgabe von NeMo-Speech.cpp. Eine Zahl statt eines Namens hält Übersetzung und Umbenennung aus dem Vertrag heraus.</li>
+<li>Die Segmente sind bei <code>diarize</code> die <strong>Sprecherabschnitte</strong>: ASR-Segmente werden an jedem Sprecherwechsel geteilt. Wortlisten kommen nicht in den Vertrag. Die Zusammenführung passiert im Worker, und ohne Wortlisten bleibt das Ergebnis klein. Wörter erst aufnehmen, wenn Forge Wort-für-Wort-Hervorhebung baut.</li>
+<li><code>StageProvenance.stage</code> bekommt <code>"diarize"</code>, mit Modell, Revision, Gerät und Sekunden.</li>
+<li><code>StageKind</code> in <code>policy.py</code> bleibt unverändert. Der Diarisierer ist eine In-Process-Stufe ohne Endpunkt, und <code>check_policy</code> prüft nur Stufen mit Endpunkt (<code>policy.py</code>, <code>check_policy</code>: <code>if ep is None: continue</code>). Cloud-Diarisierung wird nicht gebaut.</li>
+<li><strong>Markdown:</strong> ein Absatz pro Sprecherabschnitt, beginnend mit <code>**Sprecher N:**</code> (bei <code>language</code> ≠ <code>de</code>: <code>**Speaker N:**</code>). Lange Abschnitte werden weiter nach <code>audio_markdown</code> umbrochen (Pause, Satzende, Länge). Die Folgeabsätze tragen keine Marke [INFERENCE: so übernimmt Forge sie als Fließtext unter dem Sprecher; prüfen beim Bau].</li>
+<li><strong>Reihenfolge der Auslieferung:</strong> Wegen <code>extra="forbid"</code> lehnt ein alter Hub Ergebnisse mit <code>speaker</code> ab. Der Hub muss also zuerst ausgeliefert werden.</li>
+</ul>
+<h3 id="35-wer-diarize-ausfuhren-darf-ein-merkmal-im-heartbeat">3.5 Wer <code>diarize</code> ausführen darf: ein Merkmal im Heartbeat<a class="headerlink" href="#35-wer-diarize-ausfuhren-darf-ein-merkmal-im-heartbeat" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Ein Worker ohne vorbereitetes Modell darf keinen <code>diarize</code>-Auftrag annehmen. Dafür gibt es schon ein Vorbild: <code>text_jobs</code>.</li>
+<li>Der Worker meldet das Merkmal im Heartbeat und beim Claim (<code>apps/resona-worker/src/resona_worker/hub.py</code>).</li>
+<li>Der Hub speichert es pro Worker (<code>Worker.text_jobs</code>, Migration 6, <code>db/schema.py</code>).</li>
+<li><code>try_claim</code> filtert danach (<code>broker.py</code>).</li>
+<li>Für die Diarisierung genauso: Feld <code>diarize</code> im Heartbeat und Claim, neue Spalte <code>Worker.diarize</code> (Migration 7), <code>try_claim</code> bietet <code>diarize</code>-Aufträge nur solchen Workern an. <code>queue_reason</code> ist <code>no_capable_worker</code>, solange keiner online ist.</li>
+<li>Der Worker setzt das Merkmal nur, wenn <code>prepare</code> den Diarisierer erfolgreich geprüft hat (siehe 3.6). Das Ergebnis steht im Capabilities-Manifest.</li>
+</ul>
+<h3 id="36-prufen-und-freigeben">3.6 Prüfen und Freigeben<a class="headerlink" href="#36-prufen-und-freigeben" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>prepare</code>: lädt die gepinnte Nemotron-Revision und trennt eine Prüfdatei mit 2 Sprechern (<code>fixtures/de_two_speakers.wav</code>, mit <code>say</code> erzeugt wie die bestehenden Prüfdateien).</li>
+<li>Verlangt: 2 Sprecher, Wechsel an der richtigen Stelle (±0,5 s), richtige Revision in der Provenienz.</li>
+<li>Schlägt das fehl, bleibt das Merkmal aus. Das vorherige Manifest bleibt erhalten wie heute.</li>
+<li><code>resona-eval</code>:</li>
+<li>Neue Maße: Wortzuordnung (wie in Abschnitt 2) und DER. <code>pyannote-metrics</code> ist schon im Linux-Lock, die Maße lassen sich aber auch ohne pyannote-Abhängigkeit berechnen.</li>
+<li>Neue Korpusdateien: 2–3 deutsche Gespräche aus <code>make_corpus.py</code>.</li>
+<li>Die Gate-Regel gilt wie für WER: Verschlechterung um mehr als 0,02 absolut lässt das Gate durchfallen.</li>
+<li>Ab der Einführung des Merkmals laufen Produktionsaufträge mit <code>diarize</code> nur auf Releases, deren Evaluation diese Maße enthält <strong>[INFERENCE: Erweiterung von <code>releases.may_run</code>; Detailentscheidung beim Bau]</strong>.</li>
+</ul>
+<h3 id="37-postprocess-und-oberflachen">3.7 Postprocess und Oberflächen<a class="headerlink" href="#37-postprocess-und-oberflachen" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>LLM-Politur:</strong> Der Markup-Schutz (<code>markup_signature</code> in <code>packages/postprocess/src/resona_postprocess/chunking.py</code>) kennt Überschriften, Tabellen und HTML-Kommentare, aber keine Sprechermarken. Er muss die Folge der <code>**Sprecher N:**</code>-Marken einschließen. Sonst kann eine Politur Sprecher zusammenlegen, ohne dass ein Prüfschritt anschlägt.</li>
+<li><strong>CLI:</strong> <code>resona transcribe --diarize</code>.</li>
+<li><strong>MCP:</strong> <code>transcribe_audio(diarize=…)</code>.</li>
+<li><strong>OpenAI-kompatibler Weg:</strong> <code>verbose_json</code> gibt <code>speaker</code> ohne Änderung mit aus, weil <code>audio_routes.py</code> das ganze Segment ausgibt (Forge-Notiz 2.3). Anfordern lässt sich die Diarisierung dort über ein zusätzliches Formularfeld <code>diarize=true</code>.</li>
+<li><strong>PWA:</strong> zeigt das Markdown wie heute. Eine eigene Sprecheransicht ist nicht Teil dieses Vorhabens.</li>
+</ul>
+<h2 id="4-forge">4. Forge<a class="headerlink" href="#4-forge" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Schritt</th>
+<th>Wozu</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F1</td>
+<td>Sprecher durch die Kette reichen: <code>speaker?: string</code> an <code>SpeechSegment</code>, <code>ExtractResponse.segments</code>, <code>TranscriptionResult</code>; <code>timedSegments()</code> liest <code>speaker</code> (Zahl oder Text) und macht daraus „Sprecher N“; <code>renditionBody()</code> schreibt ihn</td>
+<td>Voraussetzung für jeden Anbieter</td>
+</tr>
+<tr>
+<td>F2</td>
+<td>Anbieter <code>resona</code> in <code>TranscriptionConfig</code>: Upload → <code>POST /v1/jobs</code> (<code>Idempotency-Key</code>, <code>private: true</code>, <code>options.diarize</code>) → Status abfragen → Ergebnis; liest <code>segments[].speaker</code></td>
+<td>Lange Aufnahmen ohne die 60-s-Grenze des synchronen Wegs; medizintauglich. Für diesen Anbieter die 25-MB-Grenze von Forge auf die Hub-Grenze anheben</td>
+</tr>
+<tr>
+<td>F3</td>
+<td>„Sprecher umbenennen…“ am Sprecherfeld: ändert alle Segmente der umgebenden Lesefassung in einer Transaktion; Auswahl eines vorhandenen Namens führt zusammen. Vorschläge aus <code>participants</code> der Aufnahme und der Sprecherliste des Hosts</td>
+<td>Diarisierung liefert „Sprecher 1/2“; ohne Umbenennen ist das Ergebnis mühsam</td>
+</tr>
+<tr>
+<td>F4</td>
+<td>Optional: Deepgram <code>diarize_model=latest</code> als Schalter in <code>TranscriptionConfig</code></td>
+<td>Für Forge-Installationen ohne Resona und ohne medizinische Daten; nutzt F1</td>
+</tr>
+</tbody>
+</table>
+<p>Nicht jetzt:</p>
+<ul>
+<li>Hervorheben des gerade abgespielten Segments (unabhängig davon sinnvoll).</li>
+<li>Sprecherregister mit Kennung und Farbe.</li>
+<li>Erneutes Trennen mit Übernahme der Namen.</li>
+<li>Live-Diarisierung im Diktat.</li>
+</ul>
+<p>Alles Weitere steht in der Forge-Notiz, Abschnitt 4.3 und 5.</p>
+<h2 id="5-risiken">5. Risiken<a class="headerlink" href="#5-risiken" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Deutsche Qualität ungemessen.</strong> Die eigene Messung ist synthetisch. Vor einer Qualitätsaussage braucht es echte deutsche Aufnahmen mit Einwilligung. Synthetische Korpusdateien sichern nur gegen Rückschritte.</li>
+<li><strong>transformers-Anhebung unter Linux</strong> kann Parakeet/NeMo brechen (3.3). Ausweichweg: NeMo-Speech.cpp.</li>
+<li><strong>Kurze Aufnahmen mit vielen Sprechern</strong> werden zusammengelegt (gemessen). Gegenmittel: voller Durchgang bis 6,6 min; die Messung in R3 entscheidet über Voreinstellungen.</li>
+<li><strong>Überlappungen und Rückmeldungen</strong> gehen verloren (gemessen: Whisper transkribiert sie nicht).</li>
+<li><strong>Datenschutz:</strong> Sprechertrennung speichert keine Stimmprofile. Wiedererkennung über Aufnahmen hinweg wäre ein eigenes Vorhaben mit biometrischen Daten und ist hier ausdrücklich ausgeschlossen.</li>
+</ul>
+<h2 id="6-offene-punkte">6. Offene Punkte<a class="headerlink" href="#6-offene-punkte" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Ab welcher Länge vom vollen Durchgang auf Streaming umschalten: fest 6,6 min oder kürzer? Entscheidet R3.</li>
+<li>Sollen Folgeabsätze eines langen Sprecherabschnitts die Marke wiederholen? Für Forge-Import und LLM-Politur ist eine Marke pro Absatz robuster, für das Lesen störender.</li>
+<li>Soll die Diarisierung pro Organisation Standard sein (Einstellung), oder immer pro Auftrag angefordert werden? Vorschlag: pro Auftrag, Standard aus.</li>
+<li>Die Begriffe <strong>Sprecher</strong>, <strong>Sprecherabschnitt</strong> und <strong>Diarisierung</strong> in <code>CONTEXT.md</code> aufnehmen, sobald gebaut.</li>
+</ul>
+<h2 id="ticket-breakdown">Ticket breakdown<a class="headerlink" href="#ticket-breakdown" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Ticket</th>
+<th>Repo</th>
+<th>Größe</th>
+<th>Blockiert durch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1</td>
+<td>Vertrag: <code>AudioOptions.diarize</code>, <code>Segment.speaker</code>, Provenienzstufe <code>diarize</code>; Hub nimmt die Option an und gibt <code>speaker</code> in <code>verbose_json</code> und Markdown-Abschnitten weiter; Client-Typen. Hub zuerst ausliefern</td>
+<td>resona</td>
+<td>M</td>
+<td>–</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>Worker-Stufe: transformers ≥ 5.22 auflösen (Linux/NeMo, sonst NeMo-Speech.cpp); Nemotron-Revision in <code>models.json</code>; <code>prepare</code> mit 2-Sprecher-Prüfdatei; Wortzeiten behalten, Wortzuordnung, Sprecherabschnitte, Markdown; Heartbeat-Merkmal <code>diarize</code>, Migration 7, <code>try_claim</code>-Filter</td>
+<td>resona</td>
+<td>L</td>
+<td>R1</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>Evaluation: Wortzuordnung + DER in <code>resona-eval</code>, deutsche Mehrsprecher-Korpusdateien, Gate-Regel; danach Entscheidung Nemotron-Voreinstellung bzw. pyannote</td>
+<td>resona</td>
+<td>M</td>
+<td>R1</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>Oberflächen: <code>resona transcribe --diarize</code>, MCP-Parameter, Formularfeld im OpenAI-Weg, Sprechermarken im <code>markup_signature</code></td>
+<td>resona</td>
+<td>S</td>
+<td>R2</td>
+</tr>
+<tr>
+<td>F1</td>
+<td>Sprecher durch die Forge-Transkriptionskette</td>
+<td>forge-mono</td>
+<td>S</td>
+<td>–</td>
+</tr>
+<tr>
+<td>F2</td>
+<td>Forge-Anbieter <code>resona</code> über die Job-API</td>
+<td>forge-mono</td>
+<td>M</td>
+<td>F1, R2</td>
+</tr>
+<tr>
+<td>F3</td>
+<td>Sprecher umbenennen/zusammenführen</td>
+<td>forge-mono</td>
+<td>S–M</td>
+<td>–</td>
+</tr>
+<tr>
+<td>F4</td>
+<td>Optional: Deepgram-Diarisierung</td>
+<td>forge-mono</td>
+<td>S</td>
+<td>F1</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../youtube-share/" class="md-footer__link md-footer__link--prev" aria-label="Previous: YouTube-Share (Studie)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                YouTube-Share (Studie)
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../forge-editor-integration/" class="md-footer__link md-footer__link--next" aria-label="Next: Forge-Editor-Integration (Studie)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Forge-Editor-Integration (Studie)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.instant", "navigation.top", "navigation.footer", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

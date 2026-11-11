@@ -2434,6 +2434,8 @@
       
         
       
+        
+      
     
     
     
@@ -2494,6 +2496,34 @@
     
   
     YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
   
 
     
@@ -2808,6 +2838,7 @@
 </code></pre></div>
 <p>Without <code>--extra cuda</code> (the default <code>WORKER_EXTRAS="--extra audio-cpu --extra documents"</code>) the same Dockerfile builds the CPU image: it installs the torch/torchvision versions from <code>uv.lock</code> as CPU wheels from <code>https://download.pytorch.org/whl/cpu</code> (<code>TORCH_CPU_INDEX</code> build arg) and no <code>nvidia-*</code>, <code>cuda-*</code> or <code>triton</code> packages. <code>uv.lock</code> itself pins the cu130 wheels on Linux; <code>apps/resona-worker/docker/sync.sh</code> swaps them only in the CPU image.</p>
 <p>Use the image by digest only (<code>resona-worker@sha256:…</code> locally, or the released <code>ghcr.io/…@sha256:…</code>). Never use <code>:latest</code> or <code>:cuda</code>.</p>
+<p>Speaker diarization is optional: add <code>--extra diarize</code> to <code>WORKER_EXTRAS</code> (<code>"WORKER_EXTRAS=--extra cuda --extra documents --extra diarize"</code>). <code>prepare</code> downloads the pinned <code>nvidia/Nemotron-3-Diarization</code> weights with the others and runs a two-speaker check on the GPU; only a worker whose manifest records the diarizer takes diarized jobs.</p>
 <h2 id="2-enroll-on-the-hub">2. Enroll on the hub<a class="headerlink" href="#2-enroll-on-the-hub" title="Permanent link">&para;</a></h2>
 <p>On the hub host:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>enroll<span class="w"> </span>gpu-pc<span class="w"> </span>--organization<span class="w"> </span>acme<span class="w">   </span><span class="c1"># prints worker_id and token once</span>

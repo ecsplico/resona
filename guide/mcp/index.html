@@ -2296,6 +2296,8 @@
       
         
       
+        
+      
     
     
     
@@ -2356,6 +2358,34 @@
     
   
     YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
   
 
     
@@ -2528,8 +2558,8 @@
 <td>Upload a tiny file inline (at most 8 MiB decoded) → <code>{upload_id, sha256, size}</code>. <code>sha256</code> is the hex digest of the original file; if the decoded content does not match it, nothing is uploaded. Models copy long base64 strings unreliably, so prefer <code>create_upload_url</code> for anything but a few KB.</td>
 </tr>
 <tr>
-<td><code>transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, instructions?, options?, private=true, idempotency_key?)</code></td>
-<td>Submit an audio job → <code>{job_id, status, private}</code> immediately. <code>options</code>: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>. <code>instructions</code> (also on <code>convert_document</code> and <code>postprocess_text</code>): user instructions for the profile's LLM steps, sent as the user message while the profile prompt stays the system message; needs a profile with an <code>llm</code>/<code>extract</code> step (else hub <code>422 invalid_instructions</code>).</td>
+<td><code>transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, instructions?, options?, diarize=false, private=true, idempotency_key?)</code></td>
+<td>Submit an audio job → <code>{job_id, status, private}</code> immediately. <code>options</code>: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>, <code>diarize</code>. <code>diarize=true</code> (same as <code>options.diarize</code>) labels who spoke when: the result's segments carry a 1-based <code>speaker</code> number and the Markdown starts each speaker section with <code>**Sprecher N:**</code> (language <code>de</code>) or <code>**Speaker N:**</code>; only a worker with a verified diarizer takes the job, until then it stays <code>pending</code> (<code>no_capable_worker</code>). <code>instructions</code> (also on <code>convert_document</code> and <code>postprocess_text</code>): user instructions for the profile's LLM steps, sent as the user message while the profile prompt stays the system message; needs a profile with an <code>llm</code>/<code>extract</code> step (else hub <code>422 invalid_instructions</code>).</td>
 </tr>
 <tr>
 <td><code>convert_document(upload_id \| path, …, options?)</code></td>
@@ -2562,6 +2592,7 @@
 </tbody>
 </table>
 <p>There are no tools that change settings or profiles, issue or revoke credentials, or enroll workers. Use <code>resona settings</code> and <code>resona-admin</code> for those.</p>
+<p>Speaker diarization (<code>diarize=true</code>) has limits: speakers can be merged on short recordings with several voices, at most 8 speakers, and engines without word timestamps split speakers only at segment boundaries. See <a href="../cli/#diarization-limits">CLI guide: Limits</a>.</p>
 <p>Jobs are private by default. <code>private=false</code> only works when the organization has enabled cloud processing; otherwise the hub answers <code>policy_denied</code>. There is no fallback to another provider or to local processing.</p>
 <p>A typical agent flow:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>create_upload_url()                            → {curl: &quot;curl … -F &#39;file=@&lt;PATH&gt;&#39; …&quot;}

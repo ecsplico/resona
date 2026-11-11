@@ -2362,6 +2362,8 @@
       
         
       
+        
+      
     
     
     
@@ -2422,6 +2424,34 @@
     
   
     YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
   
 
     
@@ -2654,16 +2684,19 @@
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>uv<span class="w"> </span>run<span class="w"> </span>hf<span class="w"> </span>download<span class="w"> </span>docling-project/docling-layout-heron
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>uv<span class="w"> </span>run<span class="w"> </span>hf<span class="w"> </span>download<span class="w"> </span>docling-project/docling-models<span class="w"> </span>--revision<span class="w"> </span>v2.3.0
 </code></pre></div>
+<p>Speaker diarization (<code>resona transcribe --diarize</code>) is optional. Add <code>--extra diarize</code> to the <code>uv sync</code> above and fetch its pinned weights; <code>prepare</code> then runs a two-speaker check and records the diarizer in the capabilities manifest, and only then does the worker take diarized jobs. Without the extra those jobs stay pending with <code>no_capable_worker</code>. Pass <code>--extras apple,documents,diarize</code> to <code>resona-worker update</code> to keep it across updates.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>hf<span class="w"> </span>download<span class="w"> </span>nvidia/Nemotron-3-Diarization<span class="w"> </span>config.json<span class="w"> </span>processor_config.json<span class="w"> </span>model.safetensors
+</code></pre></div>
 <h2 id="2-enroll-on-the-hub">2. Enroll on the hub<a class="headerlink" href="#2-enroll-on-the-hub" title="Permanent link">&para;</a></h2>
 <p>On the hub host:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>enroll<span class="w"> </span>mac-studio<span class="w"> </span>--organization<span class="w"> </span>acme<span class="w">   </span><span class="c1"># prints worker_id and token once</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>enroll<span class="w"> </span>mac-studio<span class="w"> </span>--organization<span class="w"> </span>acme<span class="w">   </span><span class="c1"># prints worker_id and token once</span>
 </code></pre></div>
 <p>On the Mac, store the token in a file that only your user can read. <code>run</code> and <code>install</code> refuse token files with wider modes or symlinks:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span><span class="nb">printf</span><span class="w"> </span><span class="s1">&#39;%s\n&#39;</span><span class="w"> </span><span class="s1">&#39;&lt;token&gt;&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>~/.resona/worker.token<span class="o">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span><span class="nb">printf</span><span class="w"> </span><span class="s1">&#39;%s\n&#39;</span><span class="w"> </span><span class="s1">&#39;&lt;token&gt;&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>~/.resona/worker.token<span class="o">)</span>
 </code></pre></div>
 <p>Do not put the worker token into <code>~/.resona/config.json</code>, into environment variables or into command arguments.</p>
 <h2 id="3-prepare">3. Prepare<a class="headerlink" href="#3-prepare" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>.venv/bin/resona-worker<span class="w"> </span>prepare<span class="w"> </span>--profile<span class="w"> </span>mac-private<span class="w"> </span>--out<span class="w"> </span>~/.resona/worker-caps.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>.venv/bin/resona-worker<span class="w"> </span>prepare<span class="w"> </span>--profile<span class="w"> </span>mac-private<span class="w"> </span>--out<span class="w"> </span>~/.resona/worker-caps.json
 </code></pre></div>
 <p><code>resona worker prepare --profile mac-private …</code> (the unified <code>resona</code> CLI) runs the same command; every <code>resona-worker &lt;command&gt;</code> below is also available as <code>resona worker &lt;command&gt;</code>.</p>
 <p>The model revisions come from the release: by default the pins packaged with the installed <code>resona-worker</code> (<code>resona_worker/models.json</code>), or <code>--release-manifest release-manifest.json</code>. A model or Docling stage weight without a pin fails <code>prepare</code>; an unpinned <code>main</code> snapshot is never accepted. For each candidate of the profile, <code>prepare</code>:</p>
@@ -2675,20 +2708,20 @@
 </ol>
 <p>Use <code>--settings-file settings.json</code> to prepare the organization's current profiles (the body of <code>GET /v1/settings</code>) instead of the seeded defaults. If a step fails, <code>prepare</code> exits non-zero and does not change the existing manifest.</p>
 <p>Example output on an M5 Pro (64 GB):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ok audio: mlx-whisper mlx-community/whisper-large-v3-mlx [metal] 2.5s, peak RSS 3473 MiB, peak metal 3838 MiB; asr:mlx-whisper=metal; mlx-community/whisper-large-v3-mlx@49e6aa286ad6
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>ok document: docling docling-standard [metal] 7.4s, peak RSS 1129 MiB; layout:docling-layout=metal, layout:docling-tableformer=cpu, ocr:ocrmac=metal; docling-project/docling-layout-heron@8f39ad3c0b4c, docling-project/docling-models@fc0f2d45e221
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>ok audio: mlx-whisper mlx-community/whisper-large-v3-mlx [metal] 2.5s, peak RSS 3473 MiB, peak metal 3838 MiB; asr:mlx-whisper=metal; mlx-community/whisper-large-v3-mlx@49e6aa286ad6
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>ok document: docling docling-standard [metal] 7.4s, peak RSS 1129 MiB; layout:docling-layout=metal, layout:docling-tableformer=cpu, ocr:ocrmac=metal; docling-project/docling-layout-heron@8f39ad3c0b4c, docling-project/docling-models@fc0f2d45e221
 </code></pre></div>
 <h2 id="4-approve">4. Approve<a class="headerlink" href="#4-approve" title="Permanent link">&para;</a></h2>
 <p>Print the tested tuples and give them to the hub admin:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>.venv/bin/resona-worker<span class="w"> </span>capabilities<span class="w"> </span>~/.resona/worker-caps.json<span class="w"> </span>&gt;<span class="w"> </span>caps-approve.json
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>approve<span class="w"> </span>&lt;worker-id&gt;<span class="w"> </span>--private<span class="w"> </span>--capabilities-file<span class="w"> </span>caps-approve.json<span class="w">   </span><span class="c1"># on the hub</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>.venv/bin/resona-worker<span class="w"> </span>capabilities<span class="w"> </span>~/.resona/worker-caps.json<span class="w"> </span>&gt;<span class="w"> </span>caps-approve.json
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>resona-admin<span class="w"> </span>worker<span class="w"> </span>approve<span class="w"> </span>&lt;worker-id&gt;<span class="w"> </span>--private<span class="w"> </span>--capabilities-file<span class="w"> </span>caps-approve.json<span class="w">   </span><span class="c1"># on the hub</span>
 </code></pre></div>
 <p>The worker offers a tuple only if it is in <strong>both</strong> sets: its own tested manifest and the hub-approved list that it receives in every heartbeat reply. The hub also requires an exact tuple match on every claim. A heartbeat cannot widen the approval.</p>
 <h2 id="5-run-as-a-launchd-service">5. Run as a launchd service<a class="headerlink" href="#5-run-as-a-launchd-service" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>.venv/bin/resona-worker<span class="w"> </span>install<span class="w"> </span>--profile<span class="w"> </span>mac-private<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--hub<span class="w"> </span>https://resona.ecsplico.de<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--token-file<span class="w"> </span>~/.resona/worker.token<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>--capabilities-file<span class="w"> </span>~/.resona/worker-caps.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>.venv/bin/resona-worker<span class="w"> </span>install<span class="w"> </span>--profile<span class="w"> </span>mac-private<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--hub<span class="w"> </span>https://resona.ecsplico.de<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--token-file<span class="w"> </span>~/.resona/worker.token<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span>--capabilities-file<span class="w"> </span>~/.resona/worker-caps.json
 </code></pre></div>
 <p>This command:</p>
 <ul>
@@ -2698,17 +2731,17 @@
 <li>uses <code>~/Library/Caches/resona-worker/&lt;label&gt;</code> as the per-job scratch directory and writes the log to <code>~/Library/Logs/resona-worker/&lt;label&gt;.log</code>. The log never contains content, filenames or tokens.</li>
 </ul>
 <p>Check and remove:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>launchctl<span class="w"> </span>print<span class="w"> </span>gui/<span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span>/de.ecsplico.resona-worker<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;state|pid&#39;</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>.venv/bin/resona-worker<span class="w"> </span>uninstall<span class="w">            </span><span class="c1"># boots out the agent and deletes the plist</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>launchctl<span class="w"> </span>print<span class="w"> </span>gui/<span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span>/de.ecsplico.resona-worker<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;state|pid&#39;</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>.venv/bin/resona-worker<span class="w"> </span>uninstall<span class="w">            </span><span class="c1"># boots out the agent and deletes the plist</span>
 </code></pre></div>
 <p>To run the worker in the foreground instead of as a service:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>.venv/bin/resona-worker<span class="w"> </span>run<span class="w"> </span>--hub<span class="w"> </span>https://resona.ecsplico.de<span class="w"> </span>--token-file<span class="w"> </span>~/.resona/worker.token<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>--capabilities-file<span class="w"> </span>~/.resona/worker-caps.json<span class="w"> </span>--work-dir<span class="w"> </span>/tmp/resona-worker
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>.venv/bin/resona-worker<span class="w"> </span>run<span class="w"> </span>--hub<span class="w"> </span>https://resona.ecsplico.de<span class="w"> </span>--token-file<span class="w"> </span>~/.resona/worker.token<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span>--capabilities-file<span class="w"> </span>~/.resona/worker-caps.json<span class="w"> </span>--work-dir<span class="w"> </span>/tmp/resona-worker
 </code></pre></div>
 <h2 id="private-execution-environment">Private execution environment<a class="headerlink" href="#private-execution-environment" title="Permanent link">&para;</a></h2>
 <p>Each job runs in its own subprocess. For private jobs, the subprocess environment is an allowlist: system and locale variables, model-cache paths and engine tuning variables. Names that look like credentials (<code>*_API_KEY</code>, <code>*_TOKEN</code>, <code>*_SECRET</code>, …) are always removed, and so are <code>OPENAI*</code>, <code>DEEPGRAM*</code>, <code>ELEVENLABS*</code>, <code>AWS_*</code>, <code>AZURE_*</code>, <code>GOOGLE_*</code>, <code>ANTHROPIC*</code> and <code>RESONA_API_KEY</code>. The worker always sets:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>HF_HUB_OFFLINE=1  TRANSFORMERS_OFFLINE=1  HF_DATASETS_OFFLINE=1
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>HF_HUB_DISABLE_TELEMETRY=1  HF_HUB_DISABLE_IMPLICIT_TOKEN=1  DO_NOT_TRACK=1
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>HF_HUB_OFFLINE=1  TRANSFORMERS_OFFLINE=1  HF_DATASETS_OFFLINE=1
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>HF_HUB_DISABLE_TELEMETRY=1  HF_HUB_DISABLE_IMPLICIT_TOKEN=1  DO_NOT_TRACK=1
 </code></pre></div>
 <p>Docling runs in-process. Its remote services stay at the default (disabled), and it loads its layout and table models from the same offline HuggingFace cache.</p>
 <h2 id="out-of-memory">Out of memory<a class="headerlink" href="#out-of-memory" title="Permanent link">&para;</a></h2>
@@ -2720,15 +2753,15 @@
 <h2 id="apple-vision-returns-no-text">Apple Vision returns no text<a class="headerlink" href="#apple-vision-returns-no-text" title="Permanent link">&para;</a></h2>
 <p>macOS caches compiled Vision models per process name, under <code>~/Library/Caches/&lt;name&gt;/com.apple.e5rt.e5bundlecache</code>. The worker, the CLI and <code>resona-worker prepare</code> all run as <code>python3</code>. A damaged <code>python3</code> cache makes <code>accurate</code> recognition return no text on some pages without an error: the job completes with empty Markdown, while <code>fast</code> recognition and other process names still work. Seen on 2026-11-02 (macOS build 26B123): a scanned page came back empty and <code>prepare</code> still passed, because its synthetic scan was not affected.</p>
 <p>Fix: stop the worker, move the cache aside (macOS rebuilds it on the next run), then start the worker and run <code>prepare</code> again:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>mv<span class="w"> </span>~/Library/Caches/python3<span class="w"> </span>~/Library/Caches/python3.broken
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>mv<span class="w"> </span>~/Library/Caches/python3<span class="w"> </span>~/Library/Caches/python3.broken
 </code></pre></div>
 <p>Check: <code>resona eval --profile mac-private --output-dir /tmp/eval</code> must report CER 0.0 on the scanned fixtures.</p>
 <h2 id="result-provenance">Result provenance<a class="headerlink" href="#result-provenance" title="Permanent link">&para;</a></h2>
 <p>Every result records the real device of each stage, for example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>asr     mlx-whisper          mlx-community/whisper-large-v3-mlx@49e6aa28…  metal
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  metal
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cpu
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>ocr     ocrmac               apple-vision                                    metal
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>asr     mlx-whisper          mlx-community/whisper-large-v3-mlx@49e6aa28…  metal
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>layout  docling-layout       docling-project/docling-layout-heron@8f39ad3c…  metal
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>layout  docling-tableformer  docling-project/docling-models@fc0f2d45…        cpu
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>ocr     ocrmac               apple-vision                                    metal
 </code></pre></div>
 
 

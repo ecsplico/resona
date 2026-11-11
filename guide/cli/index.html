@@ -2545,6 +2545,8 @@
       
         
       
+        
+      
     
     
     
@@ -2605,6 +2607,34 @@
     
   
     YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
   
 
     
@@ -3111,6 +3141,11 @@ time.</p>
 <td>Request word timestamps</td>
 </tr>
 <tr>
+<td><code>--diarize</code></td>
+<td>off</td>
+<td>Label who spoke when; see <strong>Speaker diarization</strong> below</td>
+</tr>
+<tr>
 <td><code>--local</code></td>
 <td>off</td>
 <td>Process on this machine with cached hub settings instead of the hub</td>
@@ -3131,6 +3166,34 @@ stop the run with exit code 2 before any job is submitted.</p>
 <p>For every job one policy summary line goes to stderr, e.g.
 <code>job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed</code>.</p>
 <p><strong>Exit codes:</strong> <code>0</code> success, <code>1</code> error or timeout, <code>2</code> <code>policy_denied</code> or colliding output names.</p>
+<p><strong>Speaker diarization</strong></p>
+<p><code>--diarize</code> sets <code>options.diarize</code> on the job (hub and <code>--local</code> alike). The result's <code>segments</code>
+are then speaker sections, each with a 1-based <code>speaker</code> number in order of first appearance, and
+the Markdown has one paragraph per section starting with <code>**Sprecher N:**</code> (job language <code>de</code>) or
+<code>**Speaker N:**</code> (other languages); long sections continue in further paragraphs without a label.
+The provenance gains a <code>diarize</code> stage. Only a worker whose <code>prepare</code> verified the diarizer takes
+such a job; until one is online it stays <code>pending</code> with <code>queue_reason: no_capable_worker</code>. An LLM
+polish step with <code>preserve_markup</code> keeps the raw chunk when the model drops, merges or renames a
+speaker label.</p>
+<p>With <code>--local</code>, install the extra (<code>uv tool install --from ./apps/resona-cli 'resona-cli[diarize]'</code>)
+and have the release's pinned Nemotron-3-Diarization weights in the HuggingFace cache: run
+<code>resona worker prepare</code> once, or <code>hf download nvidia/Nemotron-3-Diarization --revision &lt;pin&gt;</code> with
+the pin from <code>resona_worker/models.json</code>. The execution subprocess runs offline and never
+downloads them; without them the run fails with <code>diarizer_unavailable</code>.</p>
+<p><a id="diarization-limits"></a>
+<strong>Limits</strong></p>
+<ul>
+<li>On short recordings with several voices, speakers can be merged. On the synthetic
+  <code>de-case-conference</code> fixture (4 voices, 81 s) the diarizer found 3 of 4 speakers, with 80.2 %
+  of the words attributed to the right speaker and a DER of 31.3 %; on two voices
+  (<code>de-two-speakers</code>) 98.3 % and 16.6 %.</li>
+<li>At most 8 speakers (a limit of Nemotron-3-Diarization).</li>
+<li>Engines without word timestamps (whisper.cpp, lightning-mlx) split speakers only at ASR
+  segment boundaries, so a change inside a segment is missed.</li>
+<li>A hub predating diarization ignores the <code>diarize</code> form field of <code>/v1/audio/transcriptions</code>:
+  the result comes back without speaker labels and without an error. Jobs submitted through
+  <code>POST /v1/jobs</code> (<code>resona transcribe --diarize</code>, MCP) fail there instead with <code>422 invalid_options</code>.</li>
+</ul>
 <p><strong>Examples</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Transcribe a single file as a private hub job</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3
@@ -3150,8 +3213,11 @@ stop the run with exit code 2 before any job is submitted.</p>
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># Allow cloud stages (organization must have cloud_enabled=true)</span>
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>interview.mp3<span class="w"> </span>--allow-cloud<span class="w"> </span>--language<span class="w"> </span>en
 <a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1"># Explicit local run with cached hub settings and an inline profile</span>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--local<span class="w"> </span>--profile<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[{&quot;type&quot;:&quot;replacements&quot;,&quot;rules&quot;:[{&quot;pattern&quot;:&quot;Komma&quot;,&quot;replacement&quot;:&quot;,&quot;}]}]}&#39;</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1"># Label speakers in a conversation</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>interview.m4a<span class="w"> </span>--diarize
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># Explicit local run with cached hub settings and an inline profile</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--local<span class="w"> </span>--profile<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[{&quot;type&quot;:&quot;replacements&quot;,&quot;rules&quot;:[{&quot;pattern&quot;:&quot;Komma&quot;,&quot;replacement&quot;:&quot;,&quot;}]}]}&#39;</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">No automatic fallback</p>
@@ -3454,6 +3520,11 @@ watching with exit code 2.</p>
 <td><code>--local</code></td>
 <td>off</td>
 <td>Process on this machine with cached hub settings</td>
+</tr>
+<tr>
+<td><code>--diarize</code></td>
+<td>off</td>
+<td>Label who spoke when, as <code>resona transcribe --diarize</code></td>
 </tr>
 </tbody>
 </table>

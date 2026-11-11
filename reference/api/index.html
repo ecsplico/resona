@@ -2613,6 +2613,8 @@
       
         
       
+        
+      
     
     
     
@@ -2673,6 +2675,34 @@
     
   
     YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
   
 
     
@@ -3228,7 +3258,7 @@
 <td><code>options</code></td>
 <td>object</td>
 <td>no</td>
-<td>Audio: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>. Document: see <a href="#document-options">Document options</a></td>
+<td>Audio: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>, <code>diarize</code> (label speakers; result segments carry <code>speaker</code>, only workers that diarize claim the job). Document: see <a href="#document-options">Document options</a></td>
 </tr>
 <tr>
 <td><code>private</code></td>
@@ -3366,7 +3396,7 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <tbody>
 <tr>
 <td><code>no_capable_worker</code></td>
-<td>No online worker of the job's privacy class (private jobs: <code>--private</code> workers; <code>private: false</code> jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs) with the job's worker-assigned endpoints</td>
+<td>No online worker of the job's privacy class (private jobs: <code>--private</code> workers; <code>private: false</code> jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs; <code>diarize</code> jobs: also reports <code>diarize</code>) with the job's worker-assigned endpoints</td>
 </tr>
 <tr>
 <td><code>release_not_approved</code></td>
@@ -3399,6 +3429,7 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 </code></pre></div>
 <p>A call with an expired or replaced lease, or on a cancelled or deleted job, returns <code>409 stale_lease</code>. An incompatible worker protocol returns <code>426</code>. <code>withdraw_capability</code> in a <code>fail</code> body is recorded in the job's error message only: the hub never changes a worker's approved capabilities; the worker itself stops offering the withdrawn tuple until it is prepared again.</p>
 <p>Heartbeat and claim bodies carry <code>text_jobs: true</code> from workers that run <a href="#text-jobs">text jobs</a> (every current <code>resona-worker</code>; no capability tuple is needed, so a worker whose tuples are all unusable still polls for them). A claim without it never receives a text job, so older workers keep working unchanged.</p>
+<p>Likewise <code>diarize: true</code> comes only from workers whose <code>prepare</code> verified the speaker diarizer. An audio job with <code>options.diarize</code> is offered only to a claim carrying it; other claims skip it without touching the job. The hub stores the flag per worker (<code>Worker.diarize</code>, schema migration 7) for <code>queue_reason</code>. A false <code>diarize</code> is left out of the execution snapshot, so workers predating the option still run every other audio job. The heartbeat reply carries <code>diarize: true</code> to say the hub accepts the field in claim bodies; a worker sends it in a claim only after such a reply, because hubs predating diarization reject unknown claim fields (<code>422</code>). A worker whose diarizer stage fails (<code>diarizer_unavailable</code>, or <code>out_of_memory</code> in that stage) fails the attempt retryably without withdrawing its ASR tuple and stops reporting and claiming <code>diarize</code> until it restarts. Diarization <a href="../../guide/cli/#diarization-limits">limits</a>.</p>
 <hr />
 <h3 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>GET /v1/settings      → {organization_id, revision, settings} + ETag
@@ -3587,6 +3618,12 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 <td>no</td>
 <td>Default <code>true</code>; <code>false</code> needs <code>cloud_enabled=true</code> for the organization</td>
 </tr>
+<tr>
+<td><code>diarize</code></td>
+<td>bool</td>
+<td>no</td>
+<td>Default <code>false</code>; <code>true</code> labels speakers (<code>AudioOptions.diarize</code>): <code>verbose_json</code> segments carry <code>speaker</code>, the text has <code>**Sprecher N:**</code>/<code>**Speaker N:**</code> paragraphs. Part of the request an <code>Idempotency-Key</code> is matched against. A hub predating diarization ignores the field (unlabelled result, no error). <a href="../../guide/cli/#diarization-limits">Limits</a></td>
+</tr>
 </tbody>
 </table>
 <p>Errors:</p>
@@ -3614,6 +3651,17 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 <a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span>
 <a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}]</span>
 <a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="p">}</span>
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>
+<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="c1">// verbose_json with diarize=true: each segment is one speaker section</span>
+<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="p">{</span>
+<a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;**Sprecher 1:** Guten Tag.\n\n**Sprecher 2:** Hallo.&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span>
+<a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Guten Tag.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hallo.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
+<a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-17-24" name="__codelineno-17-24" href="#__codelineno-17-24"></a><span class="p">}</span>
 </code></pre></div>
 <h4 id="synthesise-speech">Synthesise speech<a class="headerlink" href="#synthesise-speech" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>POST /v1/audio/speech

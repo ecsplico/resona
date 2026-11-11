@@ -2329,6 +2329,8 @@
       
         
       
+        
+      
     
     
     
@@ -2389,6 +2391,34 @@
     
   
     YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
   
 
     
@@ -2603,8 +2633,8 @@ Regenerate the inventory with <code>uv run python scripts/gen_tool_inventory.py<
 <li><code>GET /v1/version</code> (no auth) → <code>{release_id, hub_version, worker_protocol}</code>.</li>
 <li>Evaluation jobs: <code>POST /v1/jobs</code> with <code>purpose: "evaluation"</code> needs an org_admin credential and a <code>release_id</code> the hub knows (staged or bundled), else 403 / 422 <code>release_not_staged</code>.</li>
 <li><code>POST /v1/evaluations</code> (org_admin; metrics, corpus hash, gate only — no text) → <code>GET /v1/evaluations/{id}</code> → <code>POST /v1/evaluations/{id}/promote</code> with <code>expected_baseline_revision</code> (409 <code>baseline_revision_mismatch</code>, 422 <code>gate_failed</code>). <code>GET /v1/baselines?execution_profile=&amp;platform=</code> → current baseline or 404 <code>baseline_required</code>.</li>
-<li>Complete metrics: every recorded evaluation carries <code>fixture_checks</code> (<code>{fixture_id: {kind, checks}}</code>, as the corpus manifest declares them; <code>resona eval --remote</code> sends it) and every fixture must have exactly the metrics its checks produce (<code>wer</code>→<code>wer</code>, <code>cer</code>→<code>cer</code>, <code>silence</code>→<code>silence_insertions</code>, <code>table_cells</code>→<code>missing_cells</code>, <code>reading_order</code>→<code>order_failures</code>), else 422 <code>incomplete_metrics</code>. An empty metrics object can therefore never pass the absolute checks.</li>
-<li>Gate: the first baseline needs passing absolute checks (no missing cells, order failures or silence insertions); later ones also have every baseline fixture and metric and no WER/CER regression above 0.02.</li>
+<li>Complete metrics: every recorded evaluation carries <code>fixture_checks</code> (<code>{fixture_id: {kind, checks}}</code>, as the corpus manifest declares them; <code>resona eval --remote</code> sends it) and every fixture must have exactly the metrics its checks produce (<code>wer</code>→<code>wer</code>, <code>cer</code>→<code>cer</code>, <code>silence</code>→<code>silence_insertions</code>, <code>table_cells</code>→<code>missing_cells</code>, <code>reading_order</code>→<code>order_failures</code>; diarize audio fixtures: <code>speaker_attribution</code>→<code>speaker_attribution</code>, <code>der</code>→<code>der</code>, <code>speaker_count</code>→<code>speaker_count_error</code>), else 422 <code>incomplete_metrics</code>. An empty metrics object can therefore never pass the absolute checks.</li>
+<li>Gate: the first baseline needs passing absolute checks (no missing cells, order failures or silence insertions); later ones also have every baseline fixture and metric and no WER/CER/DER regression above 0.02 and no <code>speaker_attribution</code> (higher is better) more than 0.02 below the baseline. <code>speaker_count_error</code> is reported, not gated.</li>
 <li>Changed corpus: if the current baseline of the same (execution profile, platform) was measured on another <code>corpus_sha256</code>, promotion answers 409 <code>baseline_corpus_mismatch</code>, unless the admin sends <code>"rebaseline": true</code> (<code>resona eval promote &lt;id&gt; --rebaseline</code>). That promotion starts the new corpus's baseline on absolute checks only; later promotions compare against it.</li>
 <li>Promotion approves <code>(execution_profile, platform, release_id)</code> for the organization. Production audio and document jobs are claimed only by workers whose reported release is approved for that tuple; otherwise the job waits with <code>queue_reason: release_not_approved</code>.</li>
 <li>Text (postprocess-only) jobs run no engine, so no evaluation measures them: they need no promoted evaluation, but the worker's release must be one the hub knows (staged, or the bundled release). A worker on a never-staged release (dev build, unfinished update) claims no text jobs; they wait with <code>queue_reason: release_not_approved</code>.</li>
