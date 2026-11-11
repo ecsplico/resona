@@ -73,6 +73,7 @@ nav:
     - Privacy: guide/privacy.md
     - Evaluation & Baselines: guide/evaluation.md
     - Testbench: guide/testbench.md
+    - Resona App (Capacitor): guide/pwa-app.md
   - Server Setup:
     - Docker Deployment: server/docker.md
     - Full-Stack (uv): server/full-stack.md

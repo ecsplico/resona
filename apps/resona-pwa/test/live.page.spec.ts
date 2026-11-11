@@ -201,7 +201,7 @@ const status = {
 const recorderStart = vi.hoisted(() => vi.fn(async () => {}));
 const recorderStop = vi.hoisted(() => vi.fn(async () => new Blob(["x"], { type: "audio/webm" })));
 
-mockNuxtImport("useRecorder", () => () => ({
+mockNuxtImport("useWebRecorder", () => () => ({
 	recording: ref(false),
 	paused: ref(false),
 	elapsed: ref(7),

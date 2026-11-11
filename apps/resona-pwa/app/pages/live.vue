@@ -69,7 +69,9 @@ const startNotice = computed<{ kind: string; text: string } | null>(() => {
 	return issue ? { kind: issue.kind, text: HUB_ISSUES[issue.kind].text(issue.detail) } : null;
 });
 
-const recorder = useRecorder();
+// Live records the stream it already streams to the hub, so it stays on the web
+// recorder: live dictation runs in the web view and is foreground-only, in the app too.
+const recorder = useWebRecorder();
 const store = useDataStore();
 const { copy } = useExport();
 

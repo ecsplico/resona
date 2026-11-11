@@ -25,7 +25,35 @@ function getAudioContextCtor(): typeof AudioContext | undefined {
 	return (g.AudioContext ?? g.webkitAudioContext) as typeof AudioContext | undefined;
 }
 
-export function useRecorder() {
+/**
+ * One audio recording at a time: the surface every recording flow uses
+ * (new recording, push-to-talk, re-dictation, live audio, /debug).
+ */
+export interface Recorder {
+	recording: Ref<boolean>;
+	paused: Ref<boolean>;
+	/** Seconds recorded, pauses excluded. */
+	elapsed: Ref<number>;
+	/** Recent input levels (0–1), newest last, at most 100. */
+	levels: Ref<number[]>;
+	/** False when it did not start (already recording, or superseded while starting). */
+	start: (existing?: MediaStream) => Promise<boolean>;
+	pause: () => void;
+	resume: () => void;
+	/** Resolves the recorded audio; an empty Blob when nothing was recorded. */
+	stop: () => Promise<Blob>;
+}
+
+/**
+ * The native recorder inside the Capacitor app (keeps recording while the
+ * phone is locked), the browser's MediaRecorder everywhere else.
+ */
+export function useRecorder(): Recorder {
+	return hasNativeRecorder() ? useNativeRecorder() : useWebRecorder();
+}
+
+/** MediaRecorder in the web view; stops when the browser takes the microphone away (lock, background). */
+export function useWebRecorder(): Recorder {
 	const recording: Ref<boolean> = ref(false);
 	const paused: Ref<boolean> = ref(false);
 	const elapsed: Ref<number> = ref(0);

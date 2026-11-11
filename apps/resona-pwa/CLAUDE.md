@@ -301,6 +301,21 @@ submits pending rows to the hub and polls their jobs, the same state machine as
 `worker/`. Processing only happens while the app is open, and it needs a hub device
 token (no token → nothing is processed).
 
+### Capacitor app (prototype, Android first)
+
+`capacitor.config.ts` + committed native projects `android/`, `ios/` wrap the static SPA
+(`bun run cap:build` = `RESONA_CAPACITOR=1 nuxt generate && cap sync`; that flag disables
+`@vite-pwa/nuxt`, so no service worker). Debug APK: `bun run cap:apk`. Build, device test and
+findings: `docs/guide/pwa-app.md` (monorepo root). Recording goes through the `Recorder`
+interface: `useRecorder()` returns `useNativeRecorder()` inside the app
+(`hasNativeRecorder()`: `@capgo/capacitor-audio-recorder`, `audio/mp4`; on Android a
+`microphone` foreground service with a notification runs for the whole recording, refusing
+to record when it cannot start; elapsed is wall-clock based), `useWebRecorder()`
+(MediaRecorder) elsewhere. `live.vue` always uses `useWebRecorder()`: live dictation stays
+in the web view and is foreground-only. Not in the app: Nitro routes (calendar,
+debug-report, `/directus` proxy), the web share target, Directus cookie login/SSO (third-party
+refresh cookie, see the findings doc). The hub needs `https://localhost` in `CORS_ORIGINS`.
+
 ## Tech stack
 
 - **Nuxt 4** (`app/` dir layout, SPA `ssr: false`), **bun** (`bun@1.3.14`), TypeScript
@@ -329,9 +344,10 @@ app/
 │   ├── documents/[id].vue           # document detail: markdown, retry, copy/.md export, delete
 │   └── recording/[id].vue           # detail: player, transcript edit, export
 ├── composables/                     # useDirectus, useRecordings, useRecording,
-│   │                                #   useRecorder, useUpload, useProfiles, useLive,
-│   │                                #   useCalendar, useTranscriptEdit, useExport,
-│   │                                #   useOfflineQueue
+│   │                                #   useRecorder (Recorder interface, web/native pick),
+│   │                                #   useNativeRecorder (Capacitor app), useUpload,
+│   │                                #   useProfiles, useLive, useCalendar,
+│   │                                #   useTranscriptEdit, useExport, useOfflineQueue
 │   │                                # useShell: shell context (wide ≥ 960 px, paneInLayout) +
 │   │                                #   useSettingsDrawer (drawer state owned by the layout)
 │   │                                # useHub: the only hub HTTP client (token, engines, jobs)
@@ -491,6 +507,8 @@ Never commit `.env` (gitignored); only `.env.example` is tracked.
 | `bun run test` | Vitest once · `bun run test:watch` for watch mode |
 | `bun run lint` | ESLint · `bun run lint:fix` to auto-fix |
 | `bun run typecheck` | `nuxt typecheck` (vue-tsc) |
+| `bun run cap:build` | Static SPA for the Capacitor app + `cap sync` (`docs/guide/pwa-app.md`) |
+| `bun run cap:apk` | `cap:build` + Android debug APK (needs JDK 21 + Android SDK) |
 
 Gates before considering work done: **test, lint, typecheck** all green (plus `build`
 for PWA-manifest/service-worker changes).

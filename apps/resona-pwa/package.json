@@ -15,9 +15,17 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cap:build": "RESONA_CAPACITOR=1 nuxt generate && cap sync",
+    "cap:apk": "bun run cap:build && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/android": "^8",
+    "@capacitor/core": "^8",
+    "@capacitor/filesystem": "^8",
+    "@capacitor/ios": "^8",
+    "@capawesome-team/capacitor-android-foreground-service": "^8",
+    "@capgo/capacitor-audio-recorder": "^8",
     "@directus/sdk": "^22.0.0",
     "@nuxt/fonts": "^0.11.4",
     "@tailwindcss/vite": "^4.1.17",
@@ -33,6 +41,7 @@
     "vue": "^3.5.21"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8",
     "@nuxt/eslint": "^1.4.1",
     "@nuxt/test-utils": "^4.0.3",
     "@vue/test-utils": "^2.4.6",
