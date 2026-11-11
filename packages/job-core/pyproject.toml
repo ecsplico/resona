@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-job-core"
-version = "0.2.2"
+version = "0.2.3"
 description = "Resona job/result contracts and execution-policy enforcement. No ML dependencies."
 license = { text = "Apache-2.0" }
 authors = [
