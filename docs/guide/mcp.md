@@ -26,6 +26,8 @@ Two transports:
 
 There are no tools that change settings or profiles, issue or revoke credentials, or enroll workers. Use `resona settings` and `resona-admin` for those.
 
+Speaker diarization (`diarize=true`) has limits: speakers can be merged on short recordings with several voices, at most 8 speakers, and engines without word timestamps split speakers only at segment boundaries. See [CLI guide: Limits](cli.md#diarization-limits).
+
 Jobs are private by default. `private=false` only works when the organization has enabled cloud processing; otherwise the hub answers `policy_denied`. There is no fallback to another provider or to local processing.
 
 A typical agent flow:

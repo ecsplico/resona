@@ -748,6 +748,8 @@ class ResonaClient:
         ``model="whisper-1"`` means the execution profile's default; any other value
         is an override that must be an approved candidate. ``diarize=True`` labels
         speakers (only workers that diarize run the job); the field is sent only then.
+        A hub predating diarization ignores the field: the result comes back without
+        speaker labels and without an error (``submit_job`` gets a 422 there instead).
 
         Returns:
             Dict with key ``text`` (``json`` and ``text`` formats).

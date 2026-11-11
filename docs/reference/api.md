@@ -229,7 +229,7 @@ A call with an expired or replaced lease, or on a cancelled or deleted job, retu
 
 Heartbeat and claim bodies carry `text_jobs: true` from workers that run [text jobs](#text-jobs) (every current `resona-worker`; no capability tuple is needed, so a worker whose tuples are all unusable still polls for them). A claim without it never receives a text job, so older workers keep working unchanged.
 
-Likewise `diarize: true` comes only from workers whose `prepare` verified the speaker diarizer. An audio job with `options.diarize` is offered only to a claim carrying it; other claims skip it without touching the job. The hub stores the flag per worker (`Worker.diarize`, schema migration 7) for `queue_reason`. A false `diarize` is left out of the execution snapshot, so workers predating the option still run every other audio job.
+Likewise `diarize: true` comes only from workers whose `prepare` verified the speaker diarizer. An audio job with `options.diarize` is offered only to a claim carrying it; other claims skip it without touching the job. The hub stores the flag per worker (`Worker.diarize`, schema migration 7) for `queue_reason`. A false `diarize` is left out of the execution snapshot, so workers predating the option still run every other audio job. The heartbeat reply carries `diarize: true` to say the hub accepts the field in claim bodies; a worker sends it in a claim only after such a reply, because hubs predating diarization reject unknown claim fields (`422`). A worker whose diarizer stage fails (`diarizer_unavailable`, or `out_of_memory` in that stage) fails the attempt retryably without withdrawing its ASR tuple and stops reporting and claiming `diarize` until it restarts. Diarization [limits](../guide/cli.md#diarization-limits).
 
 ---
 
@@ -353,7 +353,7 @@ then waits up to `RESONA_SYNC_WAIT_SECONDS` (default `60`) for a worker to finis
 | `execution_profile` | string | no | Execution profile (default: the organization's default) |
 | `profile` | string | no | Stored organization profile name; omit to use the organization default |
 | `private` | bool | no | Default `true`; `false` needs `cloud_enabled=true` for the organization |
-| `diarize` | bool | no | Default `false`; `true` labels speakers (`AudioOptions.diarize`): `verbose_json` segments carry `speaker`, the text has `**Sprecher N:**`/`**Speaker N:**` paragraphs |
+| `diarize` | bool | no | Default `false`; `true` labels speakers (`AudioOptions.diarize`): `verbose_json` segments carry `speaker`, the text has `**Sprecher N:**`/`**Speaker N:**` paragraphs. Part of the request an `Idempotency-Key` is matched against. A hub predating diarization ignores the field (unlabelled result, no error). [Limits](../guide/cli.md#diarization-limits) |
 
 Errors:
 

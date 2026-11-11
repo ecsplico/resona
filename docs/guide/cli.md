@@ -79,6 +79,26 @@ such a job; until one is online it stays `pending` with `queue_reason: no_capabl
 polish step with `preserve_markup` keeps the raw chunk when the model drops, merges or renames a
 speaker label.
 
+With `--local`, install the extra (`uv tool install --from ./apps/resona-cli 'resona-cli[diarize]'`)
+and have the release's pinned Nemotron-3-Diarization weights in the HuggingFace cache: run
+`resona worker prepare` once, or `hf download nvidia/Nemotron-3-Diarization --revision <pin>` with
+the pin from `resona_worker/models.json`. The execution subprocess runs offline and never
+downloads them; without them the run fails with `diarizer_unavailable`.
+
+<a id="diarization-limits"></a>
+**Limits**
+
+- On short recordings with several voices, speakers can be merged. On the synthetic
+  `de-case-conference` fixture (4 voices, 81 s) the diarizer found 3 of 4 speakers, with 80.2 %
+  of the words attributed to the right speaker and a DER of 31.3 %; on two voices
+  (`de-two-speakers`) 98.3 % and 16.6 %.
+- At most 8 speakers (a limit of Nemotron-3-Diarization).
+- Engines without word timestamps (whisper.cpp, lightning-mlx) split speakers only at ASR
+  segment boundaries, so a change inside a segment is missed.
+- A hub predating diarization ignores the `diarize` form field of `/v1/audio/transcriptions`:
+  the result comes back without speaker labels and without an error. Jobs submitted through
+  `POST /v1/jobs` (`resona transcribe --diarize`, MCP) fail there instead with `422 invalid_options`.
+
 **Examples**
 
 ```bash
