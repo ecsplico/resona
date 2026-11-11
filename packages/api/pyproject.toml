@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-api"
-version = "0.2.1"
+version = "0.2.2"
 description = "Resona job queue + SQLite + postprocessing API on :7000, with OpenAI-compatible /v1/audio routes"
 readme = "README.md"
 license = { text = "Apache-2.0" }

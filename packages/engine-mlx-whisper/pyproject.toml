@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-mlx-whisper"
-version = "0.2.1"
+version = "0.2.2"
 description = "Apple MLX Whisper backend for Resona — GPU-accelerated transcription on Apple Silicon"
 readme = "README.md"
 license = { text = "Apache-2.0" }

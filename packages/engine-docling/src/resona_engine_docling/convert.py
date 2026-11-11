@@ -63,11 +63,6 @@ _TESSERACT_LANG = {"de": "deu", "en": "eng", "fr": "fra", "it": "ita", "es": "sp
 # Every Resona language that the shared rule (``document_options_conflict``) admits for RapidOCR is
 # served by the pinned wheel's bundled multilingual PP-OCRv6 recognizer, which this Docling code selects.
 _RAPIDOCR_LANG = "iso:de"
-# RapidOCR's default 1.6 dilates line boxes into the next line on dense German letters, and the
-# recognizer then emits garbage for whole lines. 1.2 read scanned clinic letters best in a sweep from
-# 1.0 to 1.4 but cost the Italian eval scan (CER 0 -> 0.23); 1.3 still reads those letter lines and
-# passes the eval gate. Docling merges ``rapidocr_params`` last into RapidOCR's params.
-_RAPIDOCR_PARAMS = {"Det.unclip_ratio": 1.3}
 # Docling renders OCR crops at ``OcrOptions.scale`` x 72 dpi (3.0 = 216 dpi); ``image_scale`` multiplies it.
 _OCR_BASE_SCALE = float(OcrOptions.model_fields["scale"].default)
 # RapidOCR's PP-OCR recognizer emits the CJK compatibility sign U+2103 for "°C", usually
@@ -169,9 +164,7 @@ def _ocr_options(options: DocumentOptions):  # type: ignore[no-untyped-def]
         return OcrMacOptions(lang=[_OCRMAC_LANG[lang] for lang in options.languages], mode=mode, scale=scale)
     if options.ocr_engine == "rapidocr":
         threshold = {} if options.ocr_min_confidence is None else {"text_score": options.ocr_min_confidence}
-        return RapidOcrOptions(
-            lang=[_RAPIDOCR_LANG], mode=mode, scale=scale, rapidocr_params=dict(_RAPIDOCR_PARAMS), **threshold
-        )
+        return RapidOcrOptions(lang=[_RAPIDOCR_LANG], mode=mode, scale=scale, **threshold)
     return TesseractCliOcrOptions(
         lang=[_TESSERACT_LANG[lang] for lang in options.languages], mode=mode, scale=scale
     )
