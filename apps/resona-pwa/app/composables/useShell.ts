@@ -59,3 +59,11 @@ export function useRecordingsRefresh(): { signal: Readonly<Ref<number>>; request
 		},
 	};
 }
+
+/**
+ * "Weiter diktieren" from a list row: the id of the recording whose detail page
+ * should start re-dictation as soon as it can; that page clears it when it starts.
+ */
+export function useRedictationRequest(): Ref<string | null> {
+	return useState<string | null>("redictation-request", () => null);
+}

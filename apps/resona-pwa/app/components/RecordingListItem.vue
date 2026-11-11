@@ -3,16 +3,18 @@ import type { Recording } from "~/types/directus";
 import type { HMenuItem } from "~/components/hearth/HMenu.vue";
 
 /** The ⋯ menu's actions, handed to the parent as one `action` event. */
-export type RowAction = "share" | "export" | "delete";
+export type RowAction = "share" | "export" | "redictate" | "delete";
 
 const props = defineProps<{ recording: Recording; selected?: boolean }>();
 
 const emit = defineEmits<{ "open": []; "copy": []; "menu-open": []; "action": [action: RowAction] }>();
 
-// Export only makes sense once there is a transcript to write.
+// Export only makes sense once there is a transcript to write; re-dictation needs a
+// finished (or failed) transcription, like the detail page's "Weiter aufnehmen".
 const menuItems = computed<HMenuItem<RowAction>[]>(() => [
 	{ id: "share", label: "Teilen" },
 	...(props.recording.status === "done" ? [{ id: "export" as const, label: "Als Markdown exportieren" }] : []),
+	...(props.recording.status === "done" || props.recording.status === "error" ? [{ id: "redictate" as const, label: "Weiter diktieren" }] : []),
 	{ id: "delete", label: "Löschen", danger: true },
 ]);
 

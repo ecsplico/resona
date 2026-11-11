@@ -2,7 +2,9 @@
 import { computed, onMounted, ref } from "vue";
 
 // `label` replaces the default heading, e.g. "Weiter aufnehmen" when continuing a recording.
-const props = defineProps<{ elapsed: number; levels: number[]; paused?: boolean; label?: string }>();
+// `interruption` (German reason) switches the sheet to "Aufnahme unterbrochen": nothing is
+// recorded, the center button continues with a new part, stop ends with what was recorded.
+const props = defineProps<{ elapsed: number; levels: number[]; paused?: boolean; label?: string; interruption?: string | null }>();
 
 // Only the newest bars that fit the sheet (7 px each incl. gap, 432 px dialog / phone width).
 const MAX_BARS = 44;
@@ -11,7 +13,9 @@ const LEVEL_GAIN = 3;
 
 const bars = computed(() => props.levels.slice(-MAX_BARS).map(level => Math.max(4, Math.round(Math.min(1, level * LEVEL_GAIN) * 100))));
 
-const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: [] }>();
+const emit = defineEmits<{ pause: []; resume: []; stop: []; cancel: []; continue: [] }>();
+
+const halted = computed(() => props.paused || Boolean(props.interruption));
 
 // Wide screens: a centered dialog instead of a bottom sheet.
 const { wide } = useShell();
@@ -36,7 +40,10 @@ function formatTime(seconds: number): string {
 }
 
 function togglePause(): void {
-	if (props.paused) {
+	if (props.interruption) {
+		emit("continue");
+	}
+	else if (props.paused) {
 		emit("resume");
 	}
 	else {
@@ -60,12 +67,12 @@ function togglePause(): void {
 				id="h-rec-title"
 				class="h-rec__eyebrow"
 			>
-				{{ paused ? "PAUSIERT" : label ?? "AUFNAHME LÄUFT" }}
+				{{ interruption ? "AUFNAHME UNTERBROCHEN" : paused ? "PAUSIERT" : label ?? "AUFNAHME LÄUFT" }}
 			</p>
 
 			<div
 				class="h-rec__wave"
-				:class="{ 'is-paused': paused }"
+				:class="{ 'is-paused': halted }"
 			>
 				<span
 					v-for="(height, i) in bars"
@@ -79,7 +86,7 @@ function togglePause(): void {
 			<div class="h-rec__timer">
 				<span
 					class="h-rec__pulse"
-					:class="{ 'is-paused': paused }"
+					:class="{ 'is-paused': halted }"
 					data-testid="pulse"
 				/>
 				<span
@@ -87,6 +94,15 @@ function togglePause(): void {
 					data-testid="timer"
 				>{{ formatTime(elapsed) }}</span>
 			</div>
+
+			<p
+				v-if="interruption"
+				class="h-rec__notice"
+				role="alert"
+				data-testid="interruption"
+			>
+				{{ interruption }}
+			</p>
 
 			<div class="h-rec__controls">
 				<button
@@ -114,13 +130,14 @@ function togglePause(): void {
 					ref="pauseButton"
 					type="button"
 					class="h-rec__btn h-rec__btn--pause"
-					:class="{ 'is-paused': paused }"
+					:class="{ 'is-paused': halted }"
 					data-testid="pause"
-					:aria-label="paused ? 'Fortsetzen' : 'Pausieren'"
+					:aria-label="halted ? 'Fortsetzen' : 'Pausieren'"
+					:title="halted ? 'Fortsetzen' : 'Pausieren'"
 					@click="togglePause"
 				>
 					<svg
-						v-if="paused"
+						v-if="halted"
 						width="32"
 						height="32"
 						viewBox="0 0 24 24"
@@ -158,7 +175,8 @@ function togglePause(): void {
 					type="button"
 					class="h-rec__btn h-rec__btn--stop"
 					data-testid="stop"
-					aria-label="Aufnahme beenden"
+					:aria-label="interruption ? 'Beenden' : 'Aufnahme beenden'"
+					:title="interruption ? 'Beenden' : 'Aufnahme beenden'"
 					@click="emit('stop')"
 				>
 					<span class="h-rec__square" />
@@ -186,6 +204,7 @@ function togglePause(): void {
 /* Paused: the dot holds still and dims, so the sheet no longer signals "recording". */
 .h-rec__pulse.is-paused { animation:none; opacity:.4; }
 @media (prefers-reduced-motion:reduce) { .h-rec__pulse { animation:none; } }
+.h-rec__notice { margin:-8px 0 0; max-width:360px; text-align:center; font-family:var(--font-body); font-size:var(--fs-sm); line-height:1.5; color:var(--on-night, var(--white)); }
 .h-rec__time { font-family:var(--font-mono); font-size:32px; font-weight:600; letter-spacing:0.04em; }
 .h-rec__controls { display:flex; align-items:center; justify-content:center; gap:28px; }
 .h-rec__btn { border:none; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--white); }

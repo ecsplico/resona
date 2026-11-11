@@ -1,10 +1,10 @@
-import { ref, onScopeDispose } from "vue";
+import { computed, ref, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorAudioRecorder } from "@capgo/capacitor-audio-recorder";
 import { ForegroundService, Importance, ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
 import { Filesystem } from "@capacitor/filesystem";
-import type { Recorder } from "./useRecorder";
+import type { InterruptReason, Recorder } from "./useRecorder";
 
 /** The plugin writes MPEG-4 AAC (`.m4a`) by default. */
 export const NATIVE_RECORDING_MIME = "audio/mp4";
@@ -72,12 +72,21 @@ function uriFromError(err: unknown): string {
  * Recording runs outside the web view, so it continues while the phone is
  * locked or the app is in the background; elapsed time is wall-clock based
  * for the same reason (web view timers stall while locked).
+ *
+ * Not supported here, by design: interruptions (the foreground service keeps the
+ * microphone, so `interrupted` stays null and `continueRecording()` is false) and
+ * IndexedDB chunk persistence (`sessionId` stays null: the audio is a native file
+ * until `stop()`, so a killed app offers nothing to recover). A screen wake lock is
+ * not needed either: the service holds a partial wake lock while recording.
  */
 export function useNativeRecorder(): Recorder {
 	const recording: Ref<boolean> = ref(false);
 	const paused: Ref<boolean> = ref(false);
 	const elapsed: Ref<number> = ref(0);
 	const levels: Ref<number[]> = ref([]);
+	const interrupted: Ref<InterruptReason | null> = ref(null);
+	const interruptError: Ref<string | null> = ref(null);
+	const sessionId: Ref<string | null> = ref(null);
 
 	// A native recording is running (set once startRecording resolved).
 	let active = false;
@@ -291,9 +300,14 @@ export function useNativeRecorder(): Recorder {
 		paused,
 		elapsed,
 		levels,
+		interrupted,
+		interruptError,
+		interruption: computed(() => null),
+		sessionId,
 		start,
 		pause,
 		resume,
+		continueRecording: async () => false,
 		stop,
 	};
 }
