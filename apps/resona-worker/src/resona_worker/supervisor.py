@@ -52,7 +52,7 @@ from .drain import (
     mark_running,
     take_superseded,
 )
-from .execute import ExitCode, mentions_out_of_memory, subprocess_env
+from .execute import DIARIZE_STAGE_MARKER, ExitCode, mentions_out_of_memory, subprocess_env
 from .hub import (
     MAX_RESULT_BYTES,
     ClaimedJob,
@@ -102,11 +102,14 @@ class JobFailure(Exception):
         retryable: bool,
         withdraw: Candidate | None = None,
         message: str | None = None,
+        disable_diarize: bool = False,
     ) -> None:
         super().__init__(code)
         self.code = code
         self.retryable = retryable
         self.withdraw = withdraw
+        # The diarizer stage failed: stop offering diarization here, keep the ASR tuple.
+        self.disable_diarize = disable_diarize
         self.message = (message or code.replace("_", " "))[:_FAIL_MESSAGE_MAX]
 
 
@@ -210,6 +213,10 @@ class Supervisor:
         self._probe = probe or self._probe_with_executor
         self._endpoint_transport = endpoint_transport
         self._withdrawn: set[Candidate] = set()
+        # Offered while the prepared diarizer keeps working; a failing diarizer stage turns it off until restart.
+        self._diarize = config.diarize
+        # Whether the hub's last heartbeat reply said it accepts `diarize` in claim bodies.
+        self._hub_diarize = False
         self._approved_private = False
         self._worker_id: str | None = None
         self._jobs_dir = config.work_dir / "jobs"
@@ -288,7 +295,7 @@ class Supervisor:
             claimable = [c for c in self._config.capabilities if c not in self._withdrawn]
             try:
                 reply = self._hub.heartbeat(
-                    claimable, ready=bool(claimable), runtime=runtime_version(), diarize=self._config.diarize
+                    claimable, ready=bool(claimable), runtime=runtime_version(), diarize=self._diarize
                 )
             except HubUnavailable:
                 if once:
@@ -299,6 +306,7 @@ class Supervisor:
             backoff = _BACKOFF_MIN
             self._worker_id = str(reply.worker_id)
             self._approved_private = reply.approved_private
+            self._hub_diarize = reply.diarize
             # Text (postprocess-only) jobs need no tuple, so an approved worker without
             # eligible tuples still claims them.
             eligible = [c for c in claimable if c in reply.approved_capabilities]
@@ -327,7 +335,11 @@ class Supervisor:
 
     def _claim(self, capabilities: list[Candidate]) -> tuple[ClaimedJob, float] | None:
         started_mono, started_wall = self._monotonic(), self._wall()
-        job = self._hub.claim(capabilities, wait=self._config.claim_wait_seconds, diarize=self._config.diarize)
+        # Hubs predating diarization reject an unknown `diarize` claim field (422), so it is
+        # sent only to a hub whose heartbeat reply advertised support.
+        job = self._hub.claim(
+            capabilities, wait=self._config.claim_wait_seconds, diarize=self._diarize and self._hub_diarize
+        )
         if job is None:
             return None
         return job, lease_deadline_mono(started_mono, started_wall, job.lease_until)
@@ -639,6 +651,10 @@ class Supervisor:
             log.info("job %s attempt %s: result rejected as stale; discarded", job.job_id, job.attempt)
 
     def _report_failure(self, job: ClaimedJob, keeper: LeaseKeeper, failure: JobFailure) -> None:
+        if failure.disable_diarize and self._diarize:
+            # Applies even when the lease is gone: the diarizer failed on this host either way.
+            self._diarize = False
+            log.warning("diarizer failed (%s); no longer offering diarization until the worker restarts", failure.code)
         try:
             keeper.check()
         except LeaseLost:
@@ -732,7 +748,16 @@ def _raise_for_exit(rc: int, candidate: Candidate, stderr_path: Path) -> None:
         raise JobFailure("unsupported_input", retryable=False, message="input could not be processed")
     if rc == ExitCode.UNSUPPORTED_CAPABILITY:
         raise JobFailure("unsupported_capability", retryable=True, withdraw=candidate, message="worker lacks this capability")
-    if rc in _OUT_OF_MEMORY_RC or (rc != ExitCode.INVALID_SNAPSHOT and _stderr_reports_oom(stderr_path)):
+    if rc == ExitCode.DIARIZER_UNAVAILABLE:
+        raise JobFailure(
+            "diarizer_unavailable", retryable=True, disable_diarize=True, message="diarizer not available on this worker"
+        )
+    oom = rc in _OUT_OF_MEMORY_RC or (rc != ExitCode.INVALID_SNAPSHOT and _stderr_reports_oom(stderr_path))
+    if rc == ExitCode.DIARIZER_OUT_OF_MEMORY or (oom and _stderr_reached_diarizer(stderr_path)):
+        # The diarizer runs after ASR in the same process: its memory failure says nothing
+        # about the ASR tuple. Requeue the job and stop offering diarization here.
+        raise JobFailure("out_of_memory", retryable=True, disable_diarize=True, message="diarizer out of memory")
+    if oom:
         # SIGKILL (jetsam/OOM killer), MemoryError, or a native abort such as MLX's
         # ``[metal::malloc]``: requeue for another worker, stop offering the tuple here.
         raise JobFailure("out_of_memory", retryable=True, withdraw=candidate, message="out of memory")
@@ -750,6 +775,16 @@ def _stderr_reports_oom(path: Path) -> bool:
     except OSError:
         return False
     return mentions_out_of_memory(tail.decode("utf-8", errors="replace"))
+
+
+def _stderr_reached_diarizer(path: Path) -> bool:
+    """Whether the execution process started the diarizer stage (its marker line is on stderr)."""
+    marker = DIARIZE_STAGE_MARKER.encode()
+    try:
+        with path.open("rb") as handle:
+            return any(line.rstrip(b"\r\n") == marker for line in handle)
+    except OSError:
+        return False
 
 
 def _kill_group(proc: subprocess.Popen[bytes]) -> None:

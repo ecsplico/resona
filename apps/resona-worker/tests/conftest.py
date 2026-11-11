@@ -59,6 +59,13 @@ if data == b"METALOOM":
     )
     sys.stderr.flush()
     sys.exit(1)  # a native abort exits non-zero; only the stderr marker identifies OOM
+if data == b"DIARIZER_MISSING":
+    sys.exit(7)
+if data == b"DIARIZER_OOM":
+    # ASR done, the diarizer stage starts and the OOM killer takes the process.
+    sys.stderr.write("resona-stage: diarize\n")
+    sys.stderr.flush()
+    os.kill(os.getpid(), signal.SIGKILL)
 if data == b"ENV":
     text = json.dumps(dict(os.environ))
 elif data.startswith((b"%PDF-", b"PK\x03\x04")):
@@ -142,6 +149,8 @@ class FakeHub:
         self.approved = True
         self.approved_private = True
         self.approved_capabilities = [candidate]
+        # The heartbeat reply advertises `diarize` claim support, as hubs since diarization do.
+        self.diarize_supported = True
         self.job_heartbeat_status = 200
         self.policy_status = 200
         self.policy_body: dict[str, Any] = {"allowed": True}
@@ -182,6 +191,7 @@ class FakeHub:
                     "approved_private": self.approved_private,
                     "approved_capabilities": [c.model_dump(mode="json") for c in self.approved_capabilities],
                     "server_time": _iso(timedelta(0)),
+                    **({"diarize": True} if self.diarize_supported else {}),
                 },
             )
         if path == "/v1/workers/claim":
@@ -236,12 +246,14 @@ def build_supervisor(tmp_path: Path, executor_script: Path):
         capabilities: tuple[Candidate, ...],
         lease_heartbeat_seconds: float = 30.0,
         endpoint_transport: httpx.BaseTransport | None = None,
+        diarize: bool = False,
     ) -> Supervisor:
         config = WorkerConfig(
             hub_url=HUB,
             token=TOKEN,
             work_dir=tmp_path / "work",
             capabilities=capabilities,
+            diarize=diarize,
             executor=(sys.executable, str(executor_script)),
             lease_heartbeat_seconds=lease_heartbeat_seconds,
             claim_wait_seconds=0,

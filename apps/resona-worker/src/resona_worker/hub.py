@@ -79,6 +79,8 @@ class HeartbeatReply(BaseModel):
     approved: bool
     approved_private: bool = False
     approved_capabilities: list[Candidate] = Field(default_factory=list)
+    # The hub accepts `diarize` in claim bodies; hubs predating diarization omit it.
+    diarize: bool = False
 
 
 class ClaimedJob(BaseModel):
@@ -201,7 +203,8 @@ class HubClient:
             "text_jobs": True,
         }
         if diarize:
-            # Sent only when true, so hubs predating diarization keep accepting the body.
+            # Sent only when true. Hubs predating diarization ignore unknown heartbeat fields;
+            # their claim body rejects them, so the supervisor gates the claim on the reply.
             body["diarize"] = True
 
         def op() -> HeartbeatReply:
@@ -228,6 +231,8 @@ class HubClient:
     def claim(self, capabilities: list[Candidate], *, wait: int, diarize: bool = False) -> ClaimedJob | None:
         body: dict[str, object] = {"capabilities": [c.model_dump(mode="json") for c in capabilities], "text_jobs": True}
         if diarize:
+            # Callers pass true only when the hub's heartbeat reply advertised `diarize`:
+            # older hubs answer an unknown claim field with 422.
             body["diarize"] = True
 
         def op() -> ClaimedJob | None:

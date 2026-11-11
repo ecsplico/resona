@@ -280,6 +280,8 @@ def record_heartbeat(
         "approved_private": worker.approved_private,
         "approved_capabilities": [c.model_dump(mode="json") for c in _candidates(worker.approved_capabilities)],
         "server_time": now.isoformat(),
+        # Tells the worker this hub accepts `diarize` in claim bodies; hubs predating it omit the key.
+        "diarize": True,
     }
 
 

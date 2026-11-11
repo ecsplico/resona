@@ -49,6 +49,15 @@ class ExitCode(IntEnum):
     UNSUPPORTED_CAPABILITY = 4
     OUT_OF_MEMORY = 5
     INVALID_SNAPSHOT = 6
+    # The diarizer stage failed (not installed, weights not prepared, out of memory).
+    # The supervisor stops offering diarization but keeps the ASR tuple.
+    DIARIZER_UNAVAILABLE = 7
+    DIARIZER_OUT_OF_MEMORY = 8
+
+
+# Written to stderr before the diarizer loads, so the supervisor can tell a native
+# out-of-memory abort (SIGKILL, ``[metal::malloc]``) in that stage from one in ASR.
+DIARIZE_STAGE_MARKER = "resona-stage: diarize"
 
 
 class ExecutionFailure(Exception):
@@ -346,35 +355,36 @@ def _diarizer_weights() -> tuple[str, str, Path]:
     try:
         from resona_diarize import ENGINE, MODEL, WEIGHT_PATTERNS
     except ImportError:
-        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "diarizer not installed") from None
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, "diarizer not installed") from None
     try:
         pin = release_model_pins().get(MODEL)
     except WeightsError:
         pin = None
     snapshot = local_snapshot(MODEL, pin, WEIGHT_PATTERNS) if pin else None
     if snapshot is None:
-        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "diarizer weights not prepared on this worker")
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, "diarizer weights not prepared on this worker")
     return ENGINE, MODEL, snapshot
 
 
 def _diarize(audio: Any, candidate: Candidate, snapshot: Path) -> tuple[list[Any], float]:
     """Speaker turns of the recording on the candidate's accelerator, and the seconds it took."""
+    print(DIARIZE_STAGE_MARKER, file=sys.stderr, flush=True)
     try:
         from resona_diarize.model import Diarizer
 
         diarizer = Diarizer(str(snapshot), _DEVICE[candidate.accelerator])
     except ImportError:
-        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "diarizer dependencies missing") from None
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, "diarizer dependencies missing") from None
     except Exception as exc:
         if _is_out_of_memory(exc):
-            raise ExecutionFailure(ExitCode.OUT_OF_MEMORY) from None
+            raise ExecutionFailure(ExitCode.DIARIZER_OUT_OF_MEMORY) from None
         raise ExecutionFailure(ExitCode.ENGINE_ERROR, "diarizer load failed") from None
     started = time.perf_counter()
     try:
         turns = diarizer(audio)
     except Exception as exc:
         if _is_out_of_memory(exc):
-            raise ExecutionFailure(ExitCode.OUT_OF_MEMORY) from None
+            raise ExecutionFailure(ExitCode.DIARIZER_OUT_OF_MEMORY) from None
         raise ExecutionFailure(ExitCode.ENGINE_ERROR, "diarization failed") from None
     return turns, time.perf_counter() - started
 
@@ -446,7 +456,9 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
         del transcriber
         gc.collect()
         turns, diarize_seconds = _diarize(audio, candidate, weights)
-        diarized = diarized_transcript(raw_segments, text, len(audio) / SAMPLE_RATE, turns, language)
+        # A translated transcript is English, whatever language was spoken.
+        label_language = "en" if options.get("translate") else language
+        diarized = diarized_transcript(raw_segments, text, len(audio) / SAMPLE_RATE, turns, label_language)
         if diarized is not None:
             segments, markdown = diarized
         stages.append(

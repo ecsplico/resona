@@ -235,6 +235,54 @@ def test_audio_markdown_without_segments_is_the_plain_transcript(tmp_path: Path,
     assert result.markdown == result.raw_text == "Guten Tag."
 
 
+def _diarized_run(tmp_path: Path, monkeypatch, options: dict, turns: list) -> tuple[int, Path]:
+    class Engine:
+        def __init__(self, device: str, modelname: str) -> None:
+            pass
+
+        def transcribe(self, audio, **kwargs):
+            words = [
+                {"start": 0.6, "end": 1.0, "word": " Good"},
+                {"start": 1.1, "end": 1.8, "word": " morning."},
+                {"start": 2.2, "end": 3.0, "word": " Hello."},
+            ]
+            return {"text": "Good morning. Hello.", "language": "de",
+                    "segments": [{"start": 0.6, "end": 3.0, "text": " Good morning. Hello.", "words": words}]}
+
+    monkeypatch.setattr(execute, "_load_engine", lambda name: Engine)
+    monkeypatch.setattr(execute, "_diarize", lambda audio, candidate, snapshot: (turns, 0.1))
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(json.dumps({"kind": "audio", "language": "de", "options": options,
+                                    "candidate": {"engine": "fake", "model": "tiny", "accelerator": "cpu"}}))
+    out = tmp_path / "out.json"
+    return main(["--snapshot", str(snapshot), "--input", str(DE_SHORT), "--out", str(out)]), out
+
+
+def test_diarized_translation_is_labelled_in_english_and_starts_at_speaker_one(tmp_path: Path, monkeypatch) -> None:
+    from resona_diarize import Turn
+
+    weights = tmp_path / "abc123"
+    monkeypatch.setattr(execute, "_diarizer_weights", lambda: ("nemotron-diarization", "nvidia/x", weights))
+    # Diarizer speaker 1 has no word: the transcript still starts at 1 and has no gap.
+    turns = [Turn(0.0, 0.4, 1), Turn(0.5, 2.0, 2), Turn(2.0, 4.0, 3)]
+
+    code, out = _diarized_run(tmp_path, monkeypatch, {"diarize": True, "translate": True}, turns)
+
+    assert code == ExitCode.OK
+    result = JobResult.model_validate_json(out.read_text())
+    assert result.markdown == "**Speaker 1:** Good morning.\n\n**Speaker 2:** Hello."
+    assert [s.speaker for s in result.segments] == [1, 2]
+
+
+def test_unprepared_diarizer_is_its_own_exit_code(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(execute, "release_model_pins", lambda: {})
+
+    code, out = _diarized_run(tmp_path, monkeypatch, {"diarize": True}, [])
+
+    assert code == ExitCode.DIARIZER_UNAVAILABLE
+    assert not out.exists()
+
+
 def test_cuda_candidate_on_a_host_without_cuda_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:
     # Provenance must never claim a device that did not run: no engine is constructed.
     constructed: list[str] = []
