@@ -263,6 +263,26 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   gespeichert" for `retryAudio` (appended at the end then); a throwing append never breaks the
   chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
   page adds a route-leave/update `confirm`.
+- **Recording resilience** (record sheet, live, re-dictation part; web recorder only, the
+  Capacitor app's native recorder has none of it): `useWebRecorder` holds a screen
+  wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
+  unsupported → nothing) and records with a 4 s timeslice (`RECORDER_TIMESLICE_MS`). With
+  `persist`, every chunk goes to IndexedDB (`data/unfinishedRecordings.ts`, databases
+  `resona-unfinished-recordings|chunks`, both data modes); a page owns its sessions via a Web Lock
+  `resona-unfinished:<id>`, so only sessions nobody holds are offered. The caller discards the
+  session (`sessionId`) once the audio is stored for good (saved recording, appended part,
+  cancel). `RecordingsPane` offers left-over sessions ("Nicht gespeichert …", Behalten → save
+  sheet / Verwerfen). On a microphone the recorder opened itself (record sheet, re-dictation),
+  track `mute`/`ended` or `pagehide`/hidden page while recording closes the part and sets
+  `interruption` ("Aufnahme unterbrochen": `HRecordingSheet`/`HRecordBar` show Fortsetzen →
+  `continueRecording()` new part, or Beenden); `stop()` merges several parts with `mergeToWav`
+  into one WAV. Live passes its shared stream plus `reopen` (fresh `getUserMedia`, also fed to
+  the capture), so it is interrupted the same way: transcription stops with the audio,
+  `live-interrupted` offers Fortsetzen, and the page holds its own wake lock for the session.
+- **"Weiter diktieren"** in the list row menu (done or failed recordings): `RecordingsPane` sets
+  `useRedictationRequest()` (useShell) to the id and opens the recording (a blocked navigation
+  clears it); the detail page answers it once the recording is loaded: it starts a part when
+  it can take one right then, otherwise drops the request.
 - **Dictation chips** (`utils/dictationPart.ts`, TipTap inline atom, attrs `partId` + `status`
   `recording|transcribing|error`): push-to-talk and every re-dictated part put a chip at the
   caret (or the end when not editing); it moves with edits and adds nothing to the plain text
@@ -301,6 +321,24 @@ submits pending rows to the hub and polls their jobs, the same state machine as
 `worker/`. Processing only happens while the app is open, and it needs a hub device
 token (no token → nothing is processed).
 
+### Capacitor app (prototype, Android first)
+
+`capacitor.config.ts` + committed native projects `android/`, `ios/` wrap the static SPA
+(`bun run cap:build` = `RESONA_CAPACITOR=1 nuxt generate && cap sync`; that flag disables
+`@vite-pwa/nuxt`, so no service worker). Debug APK: `bun run cap:apk`. Build, device test and
+findings: `docs/guide/pwa-app.md` (monorepo root). Recording goes through the `Recorder`
+interface: `useRecorder()` returns `useNativeRecorder()` inside the app
+(`hasNativeRecorder()`: `@capgo/capacitor-audio-recorder`, `audio/mp4`; on Android a
+`microphone` foreground service with a notification runs for the whole recording, refusing
+to record when it cannot start; elapsed is wall-clock based; no interruptions, no IndexedDB
+chunks: `interrupted`/`interruption`/`sessionId` stay null, `continueRecording()` is false,
+`persist`/`reopen` options are ignored), `useWebRecorder(options)` (MediaRecorder with the
+wake lock, chunks and interruptions above) elsewhere. `live.vue` always uses
+`useWebRecorder()`: live dictation stays in the web view and is foreground-only. Not in the
+app: Nitro routes (calendar,
+debug-report, `/directus` proxy), the web share target, Directus cookie login/SSO (`SameSite=Lax`
+refresh cookie, see the findings doc). The hub needs `https://localhost` in `CORS_ORIGINS`.
+
 ## Tech stack
 
 - **Nuxt 4** (`app/` dir layout, SPA `ssr: false`), **bun** (`bun@1.3.14`), TypeScript
@@ -308,6 +346,8 @@ token (no token → nothing is processed).
   `app/assets/css/tokens.css`. **No `tailwind.config.js`.**
 - **@directus/sdk v22** — `createDirectus<Schema>(url).with(authentication("json")).with(rest())`
 - **@vite-pwa/nuxt** — service worker + manifest (installable, offline)
+- **Capacitor 8** (app shell only) — `@capgo/capacitor-audio-recorder`,
+  `@capawesome-team/capacitor-android-foreground-service`, `@capacitor/filesystem`
 - **@vueuse/nuxt** (useWebSocket), **@nuxt/fonts** (Fraunces / Instrument Sans / JetBrains Mono)
 - **idb-keyval** — IndexedDB offline queue
 - **Vitest 4** + **@nuxt/test-utils** (environment `nuxt`, happy-dom); **fake-indexeddb**
@@ -329,9 +369,11 @@ app/
 │   ├── documents/[id].vue           # document detail: markdown, retry, copy/.md export, delete
 │   └── recording/[id].vue           # detail: player, transcript edit, export
 ├── composables/                     # useDirectus, useRecordings, useRecording,
-│   │                                #   useRecorder, useUpload, useProfiles, useLive,
-│   │                                #   useCalendar, useTranscriptEdit, useExport,
-│   │                                #   useOfflineQueue
+│   │                                #   useRecorder (Recorder interface, web/native pick),
+│   │                                #   useNativeRecorder (Capacitor app), useUpload,
+│   │                                #   useProfiles, useLive, useCalendar,
+│   │                                #   useTranscriptEdit, useExport, useOfflineQueue
+│   │                                # useWakeLock: screen wake lock, re-requested when visible again
 │   │                                # useShell: shell context (wide ≥ 960 px, paneInLayout) +
 │   │                                #   useSettingsDrawer (drawer state owned by the layout)
 │   │                                # useHub: the only hub HTTP client (token, engines, jobs)
@@ -347,13 +389,14 @@ app/
 │   ├── types.ts                     # DataStore interface shared by both backends
 │   ├── directusStore.ts             # DataStore over Directus (directus mode)
 │   ├── localStore.ts                # DataStore over IndexedDB (standalone mode)
-│   └── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
+│   ├── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
+│   └── unfinishedRecordings.ts      # IndexedDB chunks of recordings in progress (recovery after a kill)
 ├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
-│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids, `pending` live-region count), ... (design system)
+│   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden; "Unterbrochen" state emits `continue`), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids and interrupted state, `pending` live-region count), ... (design system)
 │   ├── AppHeader                    # wordmark, ServerStatus, section tabs, settings cog
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
-│   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Löschen)
+│   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Weiter diktieren (done or error) / Löschen)
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
@@ -379,7 +422,7 @@ Escape, Tab and choosing an item close it and return focus to the button, an out
 closes it without moving focus; it emits `open` when it opens; the menu is
 `position: fixed` because `.h-list` clips with `overflow: hidden`; clicks are stopped so
 the row never opens). `RecordingListItem` emits one `action` event with a typed
-`RowAction` (`share` | `export` | `delete`) plus `menu-open`; `RecordingsPane` maps each
+`RowAction` (`share` | `export` | `redictate` | `delete`) plus `menu-open`; `RecordingsPane` maps each
 action to its handler. Teilen = `navigator.share({title, text})`, called synchronously in
 the tap (iOS drops the user activation across an await): opening the menu of a done
 recording prefetches its share text into a per-id cache (pruned when the row leaves the
@@ -491,6 +534,8 @@ Never commit `.env` (gitignored); only `.env.example` is tracked.
 | `bun run test` | Vitest once · `bun run test:watch` for watch mode |
 | `bun run lint` | ESLint · `bun run lint:fix` to auto-fix |
 | `bun run typecheck` | `nuxt typecheck` (vue-tsc) |
+| `bun run cap:build` | Static SPA for the Capacitor app + `cap sync` (`docs/guide/pwa-app.md`) |
+| `bun run cap:apk` | `cap:build` + Android debug APK (needs JDK 21 + Android SDK) |
 
 Gates before considering work done: **test, lint, typecheck** all green (plus `build`
 for PWA-manifest/service-worker changes).
@@ -521,8 +566,9 @@ for PWA-manifest/service-worker changes).
   diagnostics route `server/api/debug-report.post.ts` (rate-limited, size-capped, logs a
   redacted report, stores nothing; to be removed) — it's otherwise a pure SPA: no page
   rendering (`ssr: false`), no business logic server-side.
-- Don't deploy via `nuxt generate` (static) now that Nitro routes exist — use the Nitro
-  Node/serverless server (`nuxt build` → `node .output/server`).
+- Don't deploy the web app via `nuxt generate` (static) now that Nitro routes exist — use the
+  Nitro Node/serverless server (`nuxt build` → `node .output/server`). The only static build
+  is the Capacitor app's web assets (`bun run cap:build`).
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.
 - Don't set `engine` on a `recordings` row — it belongs on `transcripts`.
 - Don't set live-WS auth via headers — browsers can't; use `?token=`.
