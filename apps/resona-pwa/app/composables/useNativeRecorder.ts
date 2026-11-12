@@ -6,8 +6,13 @@ import { ForegroundService, Importance, ServiceType } from "@capawesome-team/cap
 import { Filesystem } from "@capacitor/filesystem";
 import type { InterruptReason, Recorder } from "./useRecorder";
 
-/** The plugin writes MPEG-4 AAC (`.m4a`) by default. */
-export const NATIVE_RECORDING_MIME = "audio/mp4";
+/**
+ * The plugin records AAC as ADTS (`format: "aac"`, `.aac`): self-contained frames, so a
+ * file the app left behind when it was killed stays readable up to its last frame and is
+ * offered again (`data/nativeUnfinished.ts`). MPEG-4 writes its index only at stop.
+ */
+export const NATIVE_RECORDING_FORMAT = "aac";
+export const NATIVE_RECORDING_MIME = "audio/aac";
 
 const NOTIFICATION_ID = 3401;
 const NOTIFICATION_CHANNEL = "recording";
@@ -80,10 +85,11 @@ function uriFromError(err: unknown): string {
  * is false). Locking the phone does not interrupt (the foreground service keeps the
  * microphone), but a phone call does: Android then feeds silence without telling the
  * plugin, and the iOS interruption events of the plugin are not handled. Neither is
- * IndexedDB chunk persistence (`sessionId` stays null: the audio is a native file
- * until `stop()`, so a killed app offers nothing to recover), nor a caller's stream
- * (`start()` always records the microphone). A screen wake lock is not needed: the
- * service holds a partial wake lock while recording.
+ * IndexedDB chunk persistence (`sessionId` stays null): the audio is a native ADTS
+ * file until `stop()`, which a killed app leaves in the recorder's cache directory,
+ * where the recordings list offers it (Android, `data/nativeUnfinished.ts`). Nor a
+ * caller's stream (`start()` always records the microphone). A screen wake lock is not
+ * needed: the service holds a partial wake lock while recording.
  */
 export function useNativeRecorder(): Recorder {
 	const recording: Ref<boolean> = ref(false);
@@ -188,7 +194,7 @@ export function useNativeRecorder(): Recorder {
 				return false;
 			}
 			try {
-				await CapacitorAudioRecorder.startRecording();
+				await CapacitorAudioRecorder.startRecording({ format: NATIVE_RECORDING_FORMAT });
 			}
 			catch (err) {
 				await stopRecordingService();
