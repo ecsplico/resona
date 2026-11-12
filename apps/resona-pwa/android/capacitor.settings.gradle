@@ -10,3 +10,6 @@ project(':capawesome-team-capacitor-android-foreground-service').projectDir = ne
 
 include ':capgo-capacitor-audio-recorder'
 project(':capgo-capacitor-audio-recorder').projectDir = new File('../node_modules/@capgo/capacitor-audio-recorder/android')
+
+include ':capgo-capacitor-share-target'
+project(':capgo-capacitor-share-target').projectDir = new File('../node_modules/@capgo/capacitor-share-target/android')

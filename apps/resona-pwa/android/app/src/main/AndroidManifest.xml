@@ -22,6 +22,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Share target: files shared from other apps (Files, recorder,
+                 messengers) open Resona; @capgo/capacitor-share-target hands
+                 them to app/utils/nativeShare.ts. Audio becomes a recording,
+                 PDF / PNG / JPEG / TIFF / DOCX a document. One file per share. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/png" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/tiff" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            </intent-filter>
+
         </activity>
 
         <provider

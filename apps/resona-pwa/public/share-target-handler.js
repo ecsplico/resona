@@ -16,6 +16,8 @@
 // the top of the SW), so it calls event.respondWith() first and wins for the
 // share POST. Every other request falls through untouched to Workbox.
 
+// Cache name and audio key must match app/utils/shareStash.ts (the Capacitor
+// app writes the same stash from app/utils/nativeShare.ts).
 const SHARE_PATH = "/share-target";
 const SHARE_CACHE = "resona-share-target-v1";
 const SHARE_BLOB_KEY = "/share-target/audio";

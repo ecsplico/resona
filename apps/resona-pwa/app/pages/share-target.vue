@@ -2,26 +2,33 @@
 import { onMounted, ref, watch } from "vue";
 import type { SaveRequest } from "~/data/types";
 import { resolveAudioMime } from "~/utils/audioFile";
+import { documentMime, SHARE_CACHE, SHARE_STASH_KEYS, type ShareKind } from "~/utils/shareStash";
+import { humanizeError } from "#shared/errors";
 
-// Landing page for the Web Share Target. The service worker
-// (public/share-target-handler.js) has already handled the POST: audio shares
-// are stashed in the Cache API and redirected here as ?kind=audio; text shares
-// are sent straight to /live and never reach this page. We read the stashed
-// blob back and hand it to the same SaveSheet → transcribe flow as a normal
-// upload.
+// Landing page for shared files (`utils/shareStash.ts`). Web Share Target: the
+// service worker (public/share-target-handler.js) has already handled the POST:
+// audio shares are stashed in the Cache API and redirected here as ?kind=audio;
+// text shares are sent straight to /live and never reach this page. Capacitor
+// app: `utils/nativeShare.ts` stashes the shared file the same way and opens
+// ?kind=audio|document. Audio goes through the same SaveSheet → transcribe flow
+// as a normal upload; a document is uploaded right away, as on the documents page.
 
-const SHARE_CACHE = "resona-share-target-v1";
-const SHARE_BLOB_KEY = "/share-target/audio";
+// A second share (new `n`) while this page is open remounts it.
+definePageMeta({ key: route => route.fullPath });
 
 const { saveRecording } = useUpload();
+const store = useDataStore();
 const hubSettings = useHubSettings();
 const settingsDrawer = useSettingsDrawer();
 const gate = useHubTokenGate();
 
 const status = ref<"loading" | "blocked" | "ready" | "empty" | "error">("loading");
+const errorMessage = ref("");
 const pendingBlob = ref<Blob | null>(null);
 const pendingTitle = ref("");
 const pendingName = ref("");
+
+const kind: ShareKind = useRoute().query.kind === "document" ? "document" : "audio";
 
 async function loadStash(): Promise<void> {
 	if (!("caches" in window)) {
@@ -30,17 +37,22 @@ async function loadStash(): Promise<void> {
 	}
 	try {
 		const cache = await caches.open(SHARE_CACHE);
-		const res = await cache.match(SHARE_BLOB_KEY);
+		const key = SHARE_STASH_KEYS[kind];
+		const res = await cache.match(key);
 		if (!res) {
 			status.value = "empty";
 			return;
 		}
 		// One-shot: drop the stash so a refresh doesn't re-import the same file.
-		await cache.delete(SHARE_BLOB_KEY);
+		await cache.delete(key);
 
 		const raw = await res.blob();
 		const filename = decodeURIComponent(res.headers.get("x-share-filename") || "");
 		const sharedTitle = decodeURIComponent(res.headers.get("x-share-title") || "");
+		if (kind === "document") {
+			await saveDocument(raw, filename, sharedTitle);
+			return;
+		}
 		// The share POST often carries no or a generic type: derive it from the
 		// filename and keep the name on the blob so the stored file stays playable.
 		const type = resolveAudioMime(raw.type, filename);
@@ -56,6 +68,20 @@ async function loadStash(): Promise<void> {
 		status.value = "ready";
 	}
 	catch {
+		status.value = "error";
+	}
+}
+
+async function saveDocument(raw: Blob, filename: string, sharedTitle: string): Promise<void> {
+	const name = filename || "Dokument";
+	const type = documentMime(raw.type, filename) ?? raw.type;
+	const file = new File([raw], name, { type });
+	try {
+		const created = await store.createDocument({ title: (sharedTitle || name.replace(/\.[^.]+$/, "")).trim() }, file, name);
+		await navigateTo(`/documents/${created.id}`, { replace: true });
+	}
+	catch (err) {
+		errorMessage.value = humanizeError(err, "Dokument konnte nicht hochgeladen werden.");
 		status.value = "error";
 	}
 }
@@ -138,7 +164,7 @@ function onDiscard(): void {
 			v-else-if="status === 'empty' || status === 'error'"
 			class="share-target__note"
 		>
-			<p>{{ status === "error" ? "Die geteilte Datei konnte nicht gelesen werden." : "Keine geteilte Aufnahme gefunden." }}</p>
+			<p>{{ status === "error" ? errorMessage || "Die geteilte Datei konnte nicht gelesen werden." : "Keine geteilte Datei gefunden." }}</p>
 			<HButton
 				variant="primary"
 				@click="navigateTo('/', { replace: true })"

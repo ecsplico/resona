@@ -13,7 +13,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.6.0"),
         .package(name: "CapacitorFilesystem", path: "../../../node_modules/@capacitor/filesystem"),
-        .package(name: "CapgoCapacitorAudioRecorder", path: "../../../node_modules/@capgo/capacitor-audio-recorder")
+        .package(name: "CapgoCapacitorAudioRecorder", path: "../../../node_modules/@capgo/capacitor-audio-recorder"),
+        .package(name: "CapgoCapacitorShareTarget", path: "../../../node_modules/@capgo/capacitor-share-target")
     ],
     targets: [
         .target(
@@ -22,7 +23,8 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "CapacitorFilesystem", package: "CapacitorFilesystem"),
-                .product(name: "CapgoCapacitorAudioRecorder", package: "CapgoCapacitorAudioRecorder")
+                .product(name: "CapgoCapacitorAudioRecorder", package: "CapgoCapacitorAudioRecorder"),
+                .product(name: "CapgoCapacitorShareTarget", package: "CapgoCapacitorShareTarget")
             ]
         )
     ]

@@ -12,6 +12,7 @@ dependencies {
     implementation project(':capacitor-filesystem')
     implementation project(':capawesome-team-capacitor-android-foreground-service')
     implementation project(':capgo-capacitor-audio-recorder')
+    implementation project(':capgo-capacitor-share-target')
 
 }
 

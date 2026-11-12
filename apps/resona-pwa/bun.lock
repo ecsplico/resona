@@ -11,6 +11,7 @@
         "@capacitor/ios": "^8",
         "@capawesome-team/capacitor-android-foreground-service": "^8",
         "@capgo/capacitor-audio-recorder": "^8",
+        "@capgo/capacitor-share-target": "^8.0.67",
         "@directus/sdk": "^22.0.0",
         "@nuxt/fonts": "^0.11.4",
         "@tailwindcss/vite": "^4.1.17",
@@ -252,6 +253,8 @@
     "@capawesome-team/capacitor-android-foreground-service": ["@capawesome-team/capacitor-android-foreground-service@8.1.0", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-q1LaZQ5K2cu2IXjbabwssF+RpUBikLxkOHYS69ahXz6a1kIsr2jC4RU1bwAEBTopRz0ccgfai0dSSTdqbtEwhw=="],
 
     "@capgo/capacitor-audio-recorder": ["@capgo/capacitor-audio-recorder@8.3.6", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-wrZdrfaz2euHf9aRcQPYCalaan1aEIEtKIbrP/xT3l0DohZifMnuGwBdIbhOJ51nUko0XS2dp5Bj7j1aRh9cgg=="],
+
+    "@capgo/capacitor-share-target": ["@capgo/capacitor-share-target@8.0.67", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-dS8gr9xaMt1HDWZug1z8hHAAoy0Kq5DN48CkDpdx7/jkD0zkhdzhY5QysXsGqGI2jvOAYVQHPIzbX7M01YT/rA=="],
 
     "@capsizecss/metrics": ["@capsizecss/metrics@3.7.0", "", {}, "sha512-NHdEMrl/zd2XgiSv2xHRF/FxGc2OTBKjhPzr9SgbHzqmoTVn8BbRK88Dtq0m65idX/RMD7ptyVdbGHFcvlErSw=="],
 

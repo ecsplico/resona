@@ -9,6 +9,10 @@ import { useSettingsDrawer } from "~/composables/useShell";
 const saveRecording = vi.hoisted(() => vi.fn());
 mockNuxtImport("useUpload", () => () => ({ uploading: ref(false), error: ref(null), saveRecording }));
 mockNuxtImport("useProfiles", () => () => ({ list: vi.fn(async () => ["default"]) }));
+const createDocument = vi.hoisted(() => vi.fn());
+mockNuxtImport("useDataStore", () => () => ({ createDocument }));
+const route = vi.hoisted(() => ({ query: {} as Record<string, string>, fullPath: "/share-target" }));
+mockNuxtImport("useRoute", () => () => route);
 const navigateTo = vi.hoisted(() => vi.fn());
 mockNuxtImport("navigateTo", () => navigateTo);
 
@@ -18,10 +22,10 @@ const cache = vi.hoisted(() => ({
 }));
 const realCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
 
-function stash(type: string, filename: string): void {
+function stash(type: string, filename: string, title = ""): void {
 	cache.match.mockResolvedValue(new Response(new Blob(["audio"], { type }), {
 		// The service worker stores `file.type || "application/octet-stream"`.
-		headers: { "content-type": type || "application/octet-stream", "x-share-filename": encodeURIComponent(filename), "x-share-title": "" },
+		headers: { "content-type": type || "application/octet-stream", "x-share-filename": encodeURIComponent(filename), "x-share-title": encodeURIComponent(title) },
 	}));
 }
 
@@ -31,6 +35,8 @@ describe("share-target page", () => {
 		Object.defineProperty(globalThis, "caches", { value: { open: async () => cache }, configurable: true });
 		useHubSettings().token = "tok";
 		saveRecording.mockResolvedValue({ id: "rec-1" });
+		createDocument.mockResolvedValue({ id: "doc-1" });
+		route.query = { kind: "audio" };
 	});
 
 	afterEach(() => {
@@ -88,5 +94,37 @@ describe("share-target page", () => {
 		expect(arg.sourceName).toBe("WhatsApp Audio.m4a");
 		expect(arg.duration_seconds).toBe(0);
 		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-1", { replace: true });
+	});
+
+	it("uploads a shared document from the app right away under its shared title, typed from its extension", async () => {
+		route.query = { kind: "document", n: "1" };
+		stash("application/octet-stream", "Brief.docx", "Arztbrief");
+		const w = await mountSuspended(SharePage);
+		await flushPromises();
+
+		expect(cache.match).toHaveBeenCalledWith("/share-target/document");
+		expect(cache.delete).toHaveBeenCalledWith("/share-target/document");
+		expect(w.findComponent({ name: "SaveSheet" }).exists()).toBe(false);
+		expect(saveRecording).not.toHaveBeenCalled();
+		const [input, file, name] = createDocument.mock.calls[0]! as [{ title: string }, File, string];
+		expect(input).toEqual({ title: "Arztbrief" });
+		expect(name).toBe("Brief.docx");
+		expect(file.type).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+		expect(navigateTo).toHaveBeenCalledWith("/documents/doc-1", { replace: true });
+	});
+
+	it("keeps a shared document until the token is entered", async () => {
+		useHubSettings().token = "";
+		route.query = { kind: "document" };
+		stash("application/pdf", "Befund.pdf");
+		const w = await mountSuspended(SharePage);
+		await flushPromises();
+		expect(cache.match).not.toHaveBeenCalled();
+		expect(createDocument).not.toHaveBeenCalled();
+
+		useHubSettings().token = "tok";
+		await flushPromises();
+		expect(createDocument.mock.calls[0]![0]).toEqual({ title: "Befund" });
+		w.unmount();
 	});
 });
