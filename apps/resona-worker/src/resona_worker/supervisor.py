@@ -752,6 +752,9 @@ def _raise_for_exit(rc: int, candidate: Candidate, stderr_path: Path) -> None:
         raise JobFailure(
             "diarizer_unavailable", retryable=True, disable_diarize=True, message="diarizer not available on this worker"
         )
+    if rc == ExitCode.UNKNOWN_OPTIONS:
+        # A newer worker can run it; this one keeps its tuples.
+        raise JobFailure("unsupported_options", retryable=True, message="options unknown to this worker release")
     oom = rc in _OUT_OF_MEMORY_RC or (rc != ExitCode.INVALID_SNAPSHOT and _stderr_reports_oom(stderr_path))
     if rc == ExitCode.DIARIZER_OUT_OF_MEMORY or (oom and _stderr_reached_diarizer(stderr_path)):
         # The diarizer runs after ASR in the same process: its memory failure says nothing

@@ -14,7 +14,7 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Annotated, Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi import Path as FastAPIPath
@@ -74,6 +74,11 @@ class HeartbeatRequest(BaseModel):
     reported_capabilities: list[Candidate] = Field(default_factory=list)
     text_jobs: bool = False
     diarize: bool = False
+    # Job features the worker's release knows (resona_job_core.features); omitted by
+    # older workers, whose release then decides.
+    features: Optional[list[Annotated[str, Field(min_length=1, max_length=128)]]] = Field(
+        default=None, max_length=1024,
+    )
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -144,6 +149,7 @@ async def heartbeat(request: Request, principal: Principal = Depends(worker_prin
         reported=body.reported_capabilities,
         text_jobs=body.text_jobs,
         diarize=body.diarize,
+        features=body.features,
     )
 
 

@@ -61,6 +61,8 @@ if data == b"METALOOM":
     sys.exit(1)  # a native abort exits non-zero; only the stderr marker identifies OOM
 if data == b"DIARIZER_MISSING":
     sys.exit(7)
+if data == b"UNKNOWN_OPTIONS":
+    sys.exit(9)
 if data == b"DIARIZER_OOM":
     # ASR done, the diarizer stage starts and the OOM killer takes the process.
     sys.stderr.write("resona-stage: diarize\n")

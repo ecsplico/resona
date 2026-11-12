@@ -90,6 +90,24 @@ def test_executor_rejects_unknown_job_kind_with_invalid_snapshot_exit(tmp_path: 
     assert not (tmp_path / "out.json").exists()
 
 
+@pytest.mark.parametrize(
+    "kind, options",
+    [("document", {"ocr": "auto", "future_option": True}), ("audio", {"translate": False, "future_option": 1})],
+)
+def test_executor_exits_unknown_options_before_loading_anything(tmp_path: Path, kind, options) -> None:
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(json.dumps({
+        "kind": kind, "options": options,
+        "candidate": {"engine": "not-installed", "model": "y", "accelerator": "cpu"},
+    }), encoding="utf-8")
+    source = tmp_path / "input.bin"
+    source.write_bytes(b"anything")
+
+    code = main(["--snapshot", str(snapshot), "--input", str(source), "--out", str(tmp_path / "out.json")])
+
+    assert code == ExitCode.UNKNOWN_OPTIONS
+
+
 def _audio_snapshot(tmp_path: Path, model: str = "tiny", *, engine: str = "fake", accelerator: str = "cpu") -> Path:
     snapshot = tmp_path / "snapshot.json"
     snapshot.write_text(

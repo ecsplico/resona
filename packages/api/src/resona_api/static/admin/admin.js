@@ -37,6 +37,7 @@ const ROLE_LABELS = {
 const QUEUE_REASONS = {
   no_capable_worker: "No capable worker online",
   release_not_approved: "Release not approved",
+  worker_outdated: "Worker release does not know a job option",
   waiting_capacity: "Waiting for capacity",
 };
 const ITEM_STATUSES = {

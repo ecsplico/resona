@@ -18,6 +18,7 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from resona_job_core import Candidate, PolicyDenied
+from resona_job_core.features import known_features
 
 from . import WORKER_PROTOCOL
 
@@ -201,6 +202,9 @@ class HubClient:
             "ready": ready,
             # Every worker runs text (postprocess-only) jobs: they need no ML dependencies.
             "text_jobs": True,
+            # Job features this release knows; the hub claims it no job using others.
+            # Hubs predating the field ignore it.
+            "features": sorted(known_features()),
         }
         if diarize:
             # Sent only when true. Hubs predating diarization ignore unknown heartbeat fields;

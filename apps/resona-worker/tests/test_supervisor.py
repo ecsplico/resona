@@ -96,6 +96,21 @@ def test_plain_engine_failure_is_retryable_without_withdrawal(build_supervisor, 
     assert (failure["code"], failure["retryable"], failure["withdraw_capability"]) == ("engine_error", True, None)
 
 
+def test_unknown_options_requeue_the_job_and_keep_the_tuple(build_supervisor, fakes) -> None:
+    # A hub predating the claim-time feature check may hand out an option this release
+    # does not know: a newer worker can run it, so the job is not failed for good.
+    hub = fakes.FakeHub(CAND, job_input=b"UNKNOWN_OPTIONS")
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert (failure["code"], failure["retryable"], failure["withdraw_capability"]) == ("unsupported_options", True, None)
+    supervisor.run(once=True)
+    assert hub.heartbeat_bodies[-1]["reported_capabilities"] == [CAND.model_dump(mode="json")]
+
+
 def test_diarize_is_claimed_only_from_a_hub_that_advertises_it(build_supervisor, fakes) -> None:
     # A hub predating diarization omits `diarize` in its heartbeat reply and rejects the
     # field in claim bodies (422); the heartbeat body may keep it (unknown fields ignored).
@@ -332,6 +347,7 @@ def test_text_job_runs_only_the_profile_without_the_execution_subprocess(build_s
     ((_, _, _, claim_body),) = hub.paths("/claim")
     assert json.loads(claim_body) == {"capabilities": [], "text_jobs": True}
     assert hub.heartbeat_bodies[0]["text_jobs"] is True
+    assert "document.remove_repeated_headers" in hub.heartbeat_bodies[0]["features"]
     ((_, _, _, body),) = hub.paths("/result")
     result = JobResult.model_validate_json(body)
     assert (result.kind, result.language) == ("text", "de")

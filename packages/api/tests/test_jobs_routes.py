@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from resona_job_core import Candidate, Endpoint, default_settings
-from resona_api import clock, jobs_routes, storage
+from resona_job_core.features import known_features
+from resona_api import clock, jobs_routes, releases, storage
 from resona_api.admin import approve_worker, enroll_worker, revoke_credential, revoke_worker
 from resona_api.releases import hub_release_id
 from release_approval import approve_release
@@ -227,6 +228,88 @@ def test_result_carries_speaker_only_when_the_worker_sent_one(http, fresh_org, c
                 {"start": 1.0, "end": 2.0, "text": "Welt", "speaker": 2}]
     assert _post_segments(http, diarized, worker, lease, sections).status_code == 200
     assert http.get(f"/v1/jobs/{diarized}/result", headers=headers).json()["segments"] == sections
+
+
+# ── Release-dependent options ────────────────────────────────────────────────
+
+CUDA_DOC = Candidate(engine="docling", model="docling-standard", accelerator="cuda", ocr_engine="rapidocr")
+
+
+def _doc_beat(http, worker, *, release, features):
+    body = {"worker_protocol": 1, "runtime_version": release, "ready": True,
+            "reported_capabilities": [CUDA_DOC.model_dump(mode="json")]}
+    if features is not None:
+        body["features"] = sorted(features)
+    resp = http.post("/v1/workers/heartbeat", headers=worker, json=body)
+    assert resp.status_code == 200, resp.text
+
+
+def _old_release_worker(http, org_id) -> dict:
+    """An approved worker on a staged, promoted 0.1.0 release that reports no features."""
+    release_id = f"0.1.0+t{uuid.uuid4().hex[:10]}"
+    manifest = {
+        "release_id": release_id, "created_at": "2026-11-01T10:00:00Z",
+        "wheels": [{"name": "resona-worker", "version": release_id, "sha256": "b" * 64}],
+        "images": [{"name": "ghcr.io/ecsplico/resona-hub", "digest": "sha256:" + "a" * 64}],
+        "models": [], "worker_protocol": 1,
+    }
+    with Session(engine) as session:
+        releases.stage_release(session, json.dumps(manifest).encode())
+    approve_release(org_id, release_id=release_id)
+    _, headers = make_worker(org_id, capabilities=(CUDA_DOC,))
+    _doc_beat(http, headers, release=release_id, features=None)
+    return headers
+
+
+def _doc_job(http, headers, options=None) -> int:
+    resp = _submit_document(http, headers, execution_profile="linux-cuda",
+                            **({"options": options} if options is not None else {}))
+    assert resp.status_code == 202, resp.text
+    return resp.json()["job_id"]
+
+
+def _doc_claim(http, worker):
+    resp = http.post("/v1/workers/claim?wait=0", headers=worker,
+                     json={"capabilities": [CUDA_DOC.model_dump(mode="json")]})
+    return resp.json()["job_id"] if resp.status_code == 200 else None
+
+
+def test_job_with_an_option_unknown_to_a_worker_release_waits_for_one_that_knows_it(
+    http, fresh_org, client_headers
+):
+    headers = client_headers(fresh_org)
+    newer = _doc_job(http, headers, {"remove_repeated_headers": True})  # option added in 0.2.1
+    plain = _doc_job(http, headers, {"ocr": "auto"})
+
+    old = _old_release_worker(http, fresh_org)
+    view = http.get(f"/v1/jobs/{newer}", headers=headers).json()
+    assert (view["status"], view["queue_reason"]) == ("pending", "worker_outdated")
+    assert http.get(f"/v1/jobs/{plain}", headers=headers).json()["queue_reason"] == "waiting_capacity"
+
+    assert _doc_claim(http, old) == plain  # the older job is skipped, never touched
+    assert _doc_claim(http, old) is None
+    row = job_row(newer)
+    assert (row.status, row.attempt, row.worker_id) == (JobStatus.PENDING, 0, None)
+    assert http.get(f"/v1/jobs/{newer}", headers=headers).json()["queue_reason"] == "worker_outdated"
+
+    _, new = make_worker(fresh_org, capabilities=(CUDA_DOC,))
+    _doc_beat(http, new, release=hub_release_id(), features=known_features())
+    assert http.get(f"/v1/jobs/{newer}", headers=headers).json()["queue_reason"] == "waiting_capacity"
+    assert _doc_claim(http, new) == newer
+    later_plain = _doc_job(http, headers)
+    assert _doc_claim(http, new) == later_plain
+
+
+def test_reported_features_decide_over_the_release(http, fresh_org, client_headers):
+    # A worker that reports features is judged by them, not by its version.
+    headers = client_headers(fresh_org)
+    job_id = _doc_job(http, headers, {"remove_repeated_headers": True})
+    _, worker = make_worker(fresh_org, capabilities=(CUDA_DOC,))
+    _doc_beat(http, worker, release=hub_release_id(), features=known_features() - {"document.remove_repeated_headers"})
+    assert http.get(f"/v1/jobs/{job_id}", headers=headers).json()["queue_reason"] == "worker_outdated"
+    assert _doc_claim(http, worker) is None
+    _doc_beat(http, worker, release=hub_release_id(), features=known_features())
+    assert _doc_claim(http, worker) == job_id
 
 
 
@@ -601,6 +684,8 @@ def test_job_instructions_live_in_leased_artifact_not_snapshot(http, fresh_org, 
     document = storage.postprocess_path(storage_id(fresh_org), job_id).read_bytes()
     assert json.loads(document)["instructions"] == secret  # the job's replace the profile's
     assert hashlib.sha256(document).hexdigest() == json.loads(stored)["postprocess"]["sha256"]
+    # Workers predating instructions would drop them: the snapshot marks the job for claim-time checks.
+    assert json.loads(stored)["postprocess"]["instructions"] is True
 
 
 @pytest.mark.parametrize("profile", [None, "rules"])

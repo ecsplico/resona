@@ -269,6 +269,31 @@ def test_v6_database_gains_worker_diarize_flag_off_for_existing_workers(legacy_d
     assert row == (1, 0) and jobs == 2
 
 
+def test_v7_database_gains_unreported_worker_features(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:7])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 7)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    raw = sqlite3.connect(legacy_db)  # a v7 hub's models had no worker.features
+    raw.execute("ALTER TABLE worker DROP COLUMN features")
+    raw.execute(
+        "INSERT INTO worker (id, organization_id, name, approved, approved_private, approved_capabilities, "
+        "reported_capabilities, runtime_version) VALUES ('w1', 'bootstrap-org', 'gpu-box', 1, 1, '[]', '[]', '0.1.0')"
+    )
+    raw.commit()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    version = raw.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    row = raw.execute("SELECT runtime_version, features FROM worker WHERE id = 'w1'").fetchone()
+    raw.close()
+    assert version == schema.TARGET_VERSION >= 8
+    assert row == ("0.1.0", None)  # judged by its release until it reports
+
+
 
 def test_v3_database_never_reissues_a_deleted_job_id(legacy_db, monkeypatch):
     from resona_api.db.models import Job

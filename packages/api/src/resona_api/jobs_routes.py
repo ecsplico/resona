@@ -64,6 +64,8 @@ from .broker import (
     _immediate,
     _remove_input,
     endpoints_assigned,
+    job_features,
+    known_features,
     purge_job,
     wants_diarize,
 )
@@ -184,6 +186,7 @@ class OnlineWorker:
     runtime_version: str | None
     text_jobs: bool = False
     diarize: bool = False
+    features: frozenset[str] = frozenset()
 
 
 def _online_workers(session: Session, organization_id: str, now: datetime) -> list[OnlineWorker]:
@@ -211,6 +214,7 @@ def _online_workers(session: Session, organization_id: str, now: datetime) -> li
             runtime_version=worker.runtime_version,
             text_jobs=worker.text_jobs,
             diarize=worker.diarize,
+            features=known_features(worker),
         ))
     return online
 
@@ -246,7 +250,8 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
     reports that it runs text jobs with those endpoints; for a diarize job, none of
     those workers reports ``diarize``. ``release_not_approved``:
     such workers exist, but none runs a release approved for the job (for a text
-    job: a release the hub knows, staged or bundled).
+    job: a release the hub knows, staged or bundled). ``worker_outdated``: such a
+    worker runs an approved release, but none knows every option the job sets.
     ``waiting_capacity``: an eligible worker is online and busy.
     """
     if job.status != JobStatus.PENDING:
@@ -267,8 +272,10 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
     ]
     if not capable:
         return "no_capable_worker"
-    runnable = any(
-        releases.may_run(
+    runnable = [
+        (worker, candidate)
+        for worker, candidate in capable
+        if releases.may_run(
             worker_release=worker.runtime_version,
             purpose=job.purpose,
             snapshot_release=snapshot.get("release_id"),
@@ -277,9 +284,11 @@ def _queue_reason(job: Job, ctx: QueueContext) -> str | None:
             approved=ctx.approved_releases,
             known=ctx.known_releases,
         )
-        for worker, candidate in capable
-    )
-    return "waiting_capacity" if runnable else "release_not_approved"
+    ]
+    if not runnable:
+        return "release_not_approved"
+    required = job_features(snapshot, job.kind)
+    return "waiting_capacity" if any(required <= worker.features for worker, _ in runnable) else "worker_outdated"
 
 
 CONTENT_UNAVAILABLE = "content_unavailable"
@@ -781,6 +790,9 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     revision = row.revision if row is not None and not row.deleted else 0
     document = json.dumps(profile.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
     meta = {"name": name, "revision": revision, "sha256": hashlib.sha256(document).hexdigest()}
+    if profile.instructions is not None:
+        # Content-free marker: only workers whose release reads instructions claim the job.
+        meta["instructions"] = True
     return meta, document, endpoint_ids(profile)
 
 
