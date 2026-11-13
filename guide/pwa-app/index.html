@@ -2595,6 +2595,9 @@ native recorder, so a recording keeps going while the screen is locked.</p>
   a failure inside the service itself (<code>startForeground</code>) is only logged natively.</li>
 <li>Elapsed time is computed from the wall clock, so the recording sheet shows the
   right length after unlocking (web view timers stall while locked).</li>
+<li>Sharing a file from another app (Android share sheet → Resona) goes through a
+  <code>SEND</code> / <code>SEND_MULTIPLE</code> intent filter and <code>@capgo/capacitor-share-target</code> into the same share page as
+  the web share target (<code>/share-target</code>); see the Findings row "Share target".</li>
 <li>On stop the app reads the recorded file back into the web view
   (<code>Capacitor.convertFileSrc</code> + <code>fetch</code>) and deletes it from the app cache; a
   file it cannot read stays in the cache.</li>
@@ -2686,7 +2689,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 </tr>
 <tr>
 <td>Share target</td>
-<td>The web manifest share target does not apply; the app would need an Android <code>SEND</code> intent filter</td>
+<td>Android <code>SEND</code> intent filter on <code>MainActivity</code> for <code>audio/*</code>, PDF, PNG, JPEG, TIFF and DOCX, <code>SEND_MULTIPLE</code> for <code>audio/*</code>, <code>application/*</code> and <code>image/*</code> (Android gives several files their common type, <code>*/*</code> when audio and documents are mixed, which matches too); <code>@capgo/capacitor-share-target</code> copies the files into the app cache and <code>app/utils/nativeShare.ts</code> stashes every usable one and opens <code>/share-target</code>: documents → uploaded at once, then audio → one save sheet (several recordings keep their file names as titles) → recordings; all wait for the hub token and become hub jobs. One file opens its page, several the list. Files of other types in a multi-share (GIF, XLSX, …) are skipped and reported; a single file of another type does not offer Resona. Tested on a Pixel 9a (Android 17) from the Files app: one memo (cold start), one PDF, one DOCX, two memos + a PDF in one share. DOCX needs a hub that accepts Word uploads (after 0.2.2). iOS would need a Share Extension + App Group (not set up)</td>
 </tr>
 <tr>
 <td>iOS</td>
