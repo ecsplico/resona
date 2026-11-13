@@ -439,8 +439,9 @@ async function stopLive(): Promise<void> {
 	stoppedTitleSuggestion.value = ruleTitleSuggestion.value;
 	sessionActive.value = false;
 	capturedDuration.value = recorder.elapsed.value;
-	capturedSession = recorder.sessionId.value;
 	capturedBlob.value = await recorder.stop();
+	// After stop(): the native recorder names its session (its file) only then.
+	capturedSession = recorder.sessionId.value;
 	// Snapshot AFTER the recorder.stop() await: yielding to the microtask queue
 	// lets Vue flush any pending reactive updates from WebSocket messages (e.g.
 	// the last partial that arrived just before the user pressed stop).

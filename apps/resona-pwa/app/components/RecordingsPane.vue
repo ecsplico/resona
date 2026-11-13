@@ -312,8 +312,9 @@ async function startRecording(): Promise<void> {
 
 async function stopRecording(): Promise<void> {
 	pendingDuration.value = recorder.elapsed.value;
-	const session = recorder.sessionId.value;
+	// After stop(): the native recorder names its session (its file) only then.
 	const blob = await recorder.stop();
+	const session = recorder.sessionId.value;
 	pendingBlob.value = blob;
 	pendingSession.value = session;
 	pendingTitle.value = "";
@@ -352,8 +353,8 @@ function onUpload(event: Event): void {
 }
 
 async function cancelRecording(): Promise<void> {
-	const session = recorder.sessionId.value;
 	await recorder.stop();
+	const session = recorder.sessionId.value;
 	if (session) void discardUnfinished(session);
 	pendingBlob.value = null;
 	showRecorder.value = false;

@@ -8,9 +8,11 @@ import type { RecoveredAudio, UnfinishedRecording } from "./unfinishedRecordings
 /**
  * Recordings the native recorder (Android app) left in its cache directory: the
  * plugin writes `<cache>/capacitor-audio-recorder/recording-<yyyyMMdd-HHmmss>-<uuid>.aac`
- * and `useNativeRecorder().stop()` deletes the file once it has read it, so a file
- * there that this web view did not write belongs to a recording whose app was
- * killed. ADTS stays readable up to its last whole frame, so it can be offered like
+ * and `useNativeRecorder().stop()` hands it to its caller as the session
+ * (`nativeSessionId`), which deletes it once the audio is saved or discarded. So a
+ * file there that this web view did not write belongs to a recording whose app was
+ * killed (while recording, or before the save sheet saved it). ADTS stays readable
+ * up to its last whole frame, so it can be offered like
  * an IndexedDB session (`unfinishedRecordings.ts` merges both).
  *
  * Not offered: files written since this web view started (`performance.timeOrigin`;
@@ -41,6 +43,12 @@ function available(): boolean {
 function fileName(id: string): string | null {
 	const name = id.slice(NATIVE_UNFINISHED_PREFIX.length);
 	return isNativeUnfinished(id) && NAME.test(name) ? name : null;
+}
+
+/** The session id of a recorder file (`stopRecording().uri`), or null for any other path. */
+export function nativeSessionId(uri: string): string | null {
+	const match = /\/capacitor-audio-recorder\/([^/]+)$/.exec(uri);
+	return match && NAME.test(match[1]!) ? NATIVE_UNFINISHED_PREFIX + match[1] : null;
 }
 
 function filePath(name: string): string {

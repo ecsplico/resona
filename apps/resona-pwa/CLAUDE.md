@@ -340,7 +340,10 @@ than the web view (`performance.timeOrigin`; none while the plugin reports a rec
 files deleted, `.m4a` ignored) as `UnfinishedRecording`s with id `native:<file>`;
 `listUnfinished`/`loadUnfinished`/`discardUnfinished` merge them, so `RecordingsPane` offers
 them like web sessions; load keeps only whole ADTS frames (`utils/adts.ts` `scanAdts`, also
-the length), save or Verwerfen deletes the file. The hub admits ADTS (sniffed as MPEG audio). `live.vue` always uses
+the length), save or Verwerfen deletes the file. `stop()` does not delete a recorder file: it
+sets `sessionId = native:<file>` (`nativeSessionId`), and callers read `sessionId` after
+`stop()` and discard it once the audio is saved, so an app killed while the save sheet is open
+still finds it. The hub admits ADTS (sniffed as MPEG audio). `live.vue` always uses
 `useWebRecorder()`: live dictation stays in the web view and is foreground-only. Not in the
 app: Nitro routes (calendar,
 debug-report, `/directus` proxy), the service-worker share target (the app has its own, below), Directus cookie login/SSO (`SameSite=Lax`

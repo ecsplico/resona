@@ -85,8 +85,25 @@ describe("useNativeRecorder", () => {
 		expect(blob.type).toBe("audio/aac");
 		expect(recorder.startRecording).toHaveBeenCalledWith({ format: "aac" });
 		expect(await blob.text()).toBe("aac-bytes");
+		// Not a recorder file the recordings list would offer: deleted at once, no session.
 		expect(filesystem.deleteFile).toHaveBeenCalledWith({ path: "file:///cache/rec.aac" });
+		expect(r.sessionId.value).toBeNull();
 		expect(r.recording.value).toBe(false);
+	});
+
+	it("keeps the recorder's file as the session until the caller saves or discards it (an app killed meanwhile finds it)", async () => {
+		const name = "recording-20261113-235935-79f42f22-a966-46ec-8f15-29e750b85c48.aac";
+		recorder.stopRecording.mockResolvedValueOnce({ uri: `file:///data/cache/capacitor-audio-recorder/${name}`, duration: 0 });
+		const r = useNativeRecorder();
+		await r.start();
+
+		expect(await (await r.stop()).text()).toBe("aac-bytes");
+		expect(filesystem.deleteFile).not.toHaveBeenCalled();
+		expect(r.sessionId.value).toBe(`native:${name}`);
+
+		await r.start();
+		expect(r.sessionId.value).toBeNull();
+		await r.stop();
 	});
 
 	it("elapsed follows the wall clock, without pauses, even when timers stalled (locked phone)", async () => {

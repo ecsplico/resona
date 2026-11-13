@@ -5,6 +5,7 @@ import { CapacitorAudioRecorder } from "@capgo/capacitor-audio-recorder";
 import { ForegroundService, Importance, ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
 import { Filesystem } from "@capacitor/filesystem";
 import type { InterruptReason, Recorder } from "./useRecorder";
+import { nativeSessionId } from "~/data/nativeUnfinished";
 
 /**
  * The plugin records AAC as ADTS (`format: "aac"`, `.aac`): self-contained frames, so a
@@ -85,9 +86,11 @@ function uriFromError(err: unknown): string {
  * is false). Locking the phone does not interrupt (the foreground service keeps the
  * microphone), but a phone call does: Android then feeds silence without telling the
  * plugin, and the iOS interruption events of the plugin are not handled. Neither is
- * IndexedDB chunk persistence (`sessionId` stays null): the audio is a native ADTS
- * file until `stop()`, which a killed app leaves in the recorder's cache directory,
- * where the recordings list offers it (Android, `data/nativeUnfinished.ts`). Nor a
+ * IndexedDB chunk persistence: the audio is a native ADTS file, which a killed app
+ * leaves in the recorder's cache directory, where the recordings list offers it
+ * (Android, `data/nativeUnfinished.ts`). `stop()` keeps that file and sets
+ * `sessionId` to it, so the caller deletes it (`discardUnfinished`) once the audio
+ * is saved or thrown away, as with a web session. Nor a
  * caller's stream (`start()` always records the microphone). A screen wake lock is not
  * needed: the service holds a partial wake lock while recording.
  */
@@ -159,6 +162,7 @@ export function useNativeRecorder(): Recorder {
 		}
 		startGen += 1;
 		const gen = startGen;
+		sessionId.value = null;
 
 		let permission: string;
 		try {
@@ -295,8 +299,11 @@ export function useNativeRecorder(): Recorder {
 			// Unreadable: the file stays in the app cache rather than being deleted unread.
 			return empty;
 		}
-		// The bytes are in memory now; the caller's upload flow owns them.
-		void Filesystem.deleteFile({ path: uri }).catch(() => undefined);
+		// The caller deletes the file once the audio is saved or discarded; until then
+		// a killed app finds it again. A file the list would not offer goes now.
+		const session = nativeSessionId(uri);
+		if (session) sessionId.value = session;
+		else void Filesystem.deleteFile({ path: uri }).catch(() => undefined);
 		return audio;
 	}
 
