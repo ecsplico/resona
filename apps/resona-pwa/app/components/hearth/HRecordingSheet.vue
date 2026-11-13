@@ -189,7 +189,7 @@ function togglePause(): void {
 <style scoped>
 .h-rec { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; justify-content:flex-end; }
 .h-rec__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); }
-.h-rec__sheet { position:relative; background:var(--night); color:var(--white); border-radius:var(--r-lg) var(--r-lg) 0 0; padding:28px 24px 36px; display:flex; flex-direction:column; align-items:center; gap:24px; }
+.h-rec__sheet { position:relative; background:var(--night); color:var(--white); border-radius:var(--r-lg) var(--r-lg) 0 0; padding:28px 24px calc(36px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; align-items:center; gap:24px; }
 /* Wide: centered dialog, max 480 px, rises in on open. */
 .h-rec--dialog { justify-content:center; align-items:center; padding:24px; }
 .h-rec--dialog .h-rec__sheet { width:100%; max-width:480px; border-radius:var(--r-lg); box-shadow:var(--shadow-deep); animation:h-rec-in var(--motion-base) var(--motion-ease); }

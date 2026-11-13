@@ -26,6 +26,7 @@
     "@capacitor/ios": "^8",
     "@capawesome-team/capacitor-android-foreground-service": "^8",
     "@capgo/capacitor-audio-recorder": "^8",
+    "@capgo/capacitor-share-target": "^8.0.67",
     "@directus/sdk": "^22.0.0",
     "@nuxt/fonts": "^0.11.4",
     "@tailwindcss/vite": "^4.1.17",

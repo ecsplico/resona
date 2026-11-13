@@ -1483,7 +1483,7 @@ onUnmounted(() => {
    the page fills the scrolling right pane (a flex column); the dock is sticky to it. */
 .detail { min-height:100dvh; display:flex; flex-direction:column; background:var(--bg); }
 .detail--pane { min-height:0; flex:1 0 auto; }
-.detail__bar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:10px 12px 10px 16px; background:var(--bg); border-bottom:1px solid var(--border); }
+.detail__bar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:10px 12px 10px 16px; padding-top:calc(10px + env(safe-area-inset-top)); background:var(--bg); border-bottom:1px solid var(--border); }
 .detail__bar-title--btn { background:none; border:0; padding:4px 6px; margin:-4px -6px; text-align:left; cursor:text; border-radius:6px; }
 .detail__bar-title--btn:hover:not(:disabled) { background:var(--crust-soft); }
 .detail__title-input { flex:1; min-width:0; font:inherit; font-family:var(--font-body); font-size:var(--fs-md); font-weight:600; padding:4px 8px; border:1.5px solid var(--accent); border-radius:8px; background:var(--white); color:var(--fg1); }
@@ -1528,7 +1528,7 @@ onUnmounted(() => {
 .detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
 .detail__ptt--busy { opacity:0.65; cursor:default; }
 .detail__ptt:disabled:not(.detail__ptt--busy) { opacity:0.5; cursor:default; }
-.detail__foot { position:sticky; bottom:0; z-index:5; background:var(--white); }
+.detail__foot { position:sticky; bottom:0; z-index:5; background:var(--white); padding-bottom:env(safe-area-inset-bottom); }
 .detail__foot .detail__tools { padding:10px 16px 0; justify-content:center; border-top:1px solid var(--border); }
 .detail__foot .h-dock { border-top:0; padding-top:10px; }
 .detail__statusrow { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }

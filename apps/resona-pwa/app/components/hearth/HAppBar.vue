@@ -20,7 +20,7 @@ defineProps<{ tone?: "dark" | "light"; title?: string }>();
 </template>
 
 <style scoped>
-.h-appbar { display:flex; align-items:center; gap:12px; padding:16px 20px; }
+.h-appbar { display:flex; align-items:center; gap:12px; padding:16px 20px; padding-top:calc(16px + env(safe-area-inset-top)); }
 .h-appbar--dark { background:var(--accent); color:var(--white); }
 .h-appbar--light { background:var(--cream); color:var(--fg1); }
 .h-appbar__title { font-family:var(--font-display); font-weight:600; font-size:20px; }

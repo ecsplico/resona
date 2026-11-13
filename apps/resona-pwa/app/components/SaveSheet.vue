@@ -4,9 +4,11 @@ import type { Ref } from "vue";
 import type { SaveRequest } from "~/data/types";
 import { placeholderTitle } from "~/utils/titleSuggestion";
 
+// `count` > 1: one sheet for several shared recordings; each keeps its file name
+// as title, so there is no title field.
 const props = withDefaults(
-	defineProps<{ initialTitle?: string }>(),
-	{ initialTitle: "" },
+	defineProps<{ initialTitle?: string; count?: number }>(),
+	{ initialTitle: "", count: 1 },
 );
 
 const emit = defineEmits<{
@@ -78,10 +80,11 @@ function submit(): void {
 				id="save-sheet-title"
 				class="save-sheet__eyebrow"
 			>
-				AUFNAHME SPEICHERN
+				{{ count > 1 ? `${count} AUFNAHMEN SPEICHERN` : "AUFNAHME SPEICHERN" }}
 			</p>
 
 			<HField
+				v-if="count <= 1"
 				v-model="title"
 				:placeholder="transcribe ? 'Automatisch aus dem Inhalt' : 'Datum und Uhrzeit'"
 				class="save-sheet__title"
@@ -156,7 +159,7 @@ function submit(): void {
 <style scoped>
 .save-sheet { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; justify-content:flex-end; }
 .save-sheet__scrim { position:absolute; inset:0; background:rgba(35,25,17,0.72); }
-.save-sheet__sheet { position:relative; background:var(--white); border-radius:var(--r-lg) var(--r-lg) 0 0; padding:28px 24px 36px; display:flex; flex-direction:column; gap:18px; }
+.save-sheet__sheet { position:relative; background:var(--white); border-radius:var(--r-lg) var(--r-lg) 0 0; padding:28px 24px calc(36px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:18px; }
 /* Wide: centered dialog, max 480 px, rises in on open. */
 .save-sheet--dialog { justify-content:center; align-items:center; padding:24px; }
 .save-sheet--dialog .save-sheet__sheet { width:100%; max-width:480px; border-radius:var(--r-lg); box-shadow:var(--shadow-deep); animation:save-sheet-in var(--motion-base) var(--motion-ease); }
