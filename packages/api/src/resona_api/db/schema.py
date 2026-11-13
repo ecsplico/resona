@@ -455,6 +455,22 @@ def _v7_worker_diarize(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 8: workers report the job features they know ─────────────
+#
+# A worker on an older release fails a job that sets an option it does not know.
+# The heartbeat reports the release's job features (``resona_job_core.features``)
+# so ``try_claim`` skips such jobs. NULL = not reported (judged by release).
+# On a fresh database migration 1 already created the column from the ORM metadata.
+
+def _v8_worker_features(conn: sqlite3.Connection) -> AfterCommit | None:
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(worker)")}
+    if "features" not in columns:
+        conn.execute("ALTER TABLE worker ADD COLUMN features VARCHAR")
+    if "features" not in {r[1] for r in conn.execute("PRAGMA table_info(worker)")}:
+        raise SchemaError("migration 8 did not add worker.features")
+    return None
+
+
 
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
@@ -465,6 +481,7 @@ MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (5, _v5_testbench),
     (6, _v6_worker_text_jobs),
     (7, _v7_worker_diarize),
+    (8, _v8_worker_features),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]

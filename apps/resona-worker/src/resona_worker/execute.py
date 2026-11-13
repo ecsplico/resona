@@ -29,6 +29,7 @@ from typing import Any, get_args
 
 from pydantic import ValidationError
 from resona_job_core import Candidate, JobResult, Provenance, Segment, StageProvenance
+from resona_job_core.features import known_features, required_features
 from resona_job_core.options import Language
 
 from .weights import (
@@ -53,6 +54,9 @@ class ExitCode(IntEnum):
     # The supervisor stops offering diarization but keeps the ASR tuple.
     DIARIZER_UNAVAILABLE = 7
     DIARIZER_OUT_OF_MEMORY = 8
+    # The snapshot sets an option this release does not know (a hub predating the
+    # claim-time feature check handed it out). Retryable: a newer worker can run it.
+    UNKNOWN_OPTIONS = 9
 
 
 # Written to stderr before the diarizer loads, so the supervisor can tell a native
@@ -579,6 +583,9 @@ def _with_stage_peaks(result: JobResult, peak: int | None) -> JobResult:
 def run(snapshot_path: Path, input_path: Path, out_path: Path, metrics_path: Path | None = None) -> ExitCode:
     snapshot, candidate = _load_snapshot(snapshot_path)
     kind = snapshot["kind"]
+    options = snapshot.get("options")
+    if kind in ("audio", "document") and isinstance(options, dict) and required_features(kind, options) - known_features():
+        raise ExecutionFailure(ExitCode.UNKNOWN_OPTIONS, "options unknown to this release")
     if kind == "audio":
         result = _run_audio(snapshot, candidate, input_path)
     elif kind == "document":

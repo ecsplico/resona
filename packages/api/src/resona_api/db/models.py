@@ -51,6 +51,9 @@ class Worker(SQLModel, table=True):
     text_jobs: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
     # Reported in the heartbeat/claim: the worker's prepare verified the speaker diarizer.
     diarize: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    # Reported in the heartbeat: JSON list of job features the worker's release knows
+    # (``resona_job_core.features``); NULL = not reported, judged by ``runtime_version``.
+    features: Optional[str] = Field(default=None)
     revoked_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime, nullable=True)
     )

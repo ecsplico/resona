@@ -33,6 +33,7 @@ from resona_job_core import (
     Stage,
     check_policy,
 )
+from resona_job_core.features import required_features, worker_features
 
 from . import clock, releases, storage
 from .auth import hash_token
@@ -261,8 +262,10 @@ def record_heartbeat(
     reported: list[Candidate],
     text_jobs: bool = False,
     diarize: bool = False,
+    features: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Record readiness, version and whether the worker runs text jobs and diarizes. Approval fields are never touched here."""
+    """Record readiness, version, whether the worker runs text jobs and diarizes, and the job
+    features its release knows (``None``: not reported). Approval fields are never touched here."""
     now = _now()
     worker = session.get(Worker, worker_id)
     if worker is None or worker.organization_id != organization_id or worker.revoked_at is not None:
@@ -271,6 +274,7 @@ def record_heartbeat(
     worker.reported_capabilities = _dump_candidates(reported)
     worker.text_jobs = text_jobs
     worker.diarize = diarize
+    worker.features = json.dumps(sorted(set(features))) if features is not None else None
     worker.last_seen = now
     session.add(worker)
     session.commit()
@@ -339,6 +343,23 @@ def wants_diarize(snapshot: dict[str, Any], kind: str) -> bool:
     return kind == "audio" and bool((snapshot.get("options") or {}).get("diarize"))
 
 
+def job_features(snapshot: dict[str, Any], kind: str) -> frozenset[str]:
+    """The release-dependent features a job uses: its option keys and profile instructions."""
+    options = snapshot.get("options")
+    postprocess = snapshot.get("postprocess")
+    return required_features(
+        kind,
+        options if isinstance(options, dict) else None,
+        instructions=isinstance(postprocess, dict) and bool(postprocess.get("instructions")),
+    )
+
+
+def known_features(worker: Worker) -> frozenset[str]:
+    """The features a worker's release knows: reported in its heartbeat, else recorded for its release."""
+    reported = json.loads(worker.features) if worker.features is not None else None
+    return worker_features(reported, worker.runtime_version)
+
+
 def try_claim(
     session: Session,
     *,
@@ -354,8 +375,9 @@ def try_claim(
     private-approved workers, cloud opt-in jobs only on non-private ones), a
     snapshot candidate both offered and hub-approved (for a text job: the worker
     asked for text jobs; for a diarize job: the worker claims with ``diarize``),
-    a worker release approved for it, and every worker-assigned endpoint of the
-    job assigned to this worker.
+    a worker release approved for it and knowing every feature the job uses
+    (:func:`job_features`; an older release would fail it as ``invalid_snapshot``),
+    and every worker-assigned endpoint of the job assigned to this worker.
     Ineligible jobs are skipped, never modified: non-private jobs whose
     organization disabled cloud processing are failed by :func:`sweep_leases`.
     """
@@ -374,6 +396,7 @@ def try_claim(
         approved_releases = releases.approved_tuples(session, organization_id)
         release = worker.runtime_version
         known_releases = {release} if release and releases.is_known(session, release) else set()
+        known = known_features(worker)
 
         pending = session.exec(
             select(Job)
@@ -394,6 +417,8 @@ def try_claim(
                 continue
             snapshot = _snapshot(job)
             if wants_diarize(snapshot, job.kind) and not diarize:
+                continue
+            if not job_features(snapshot, job.kind) <= known:
                 continue
             offered: list[Candidate | None] = (
                 [None] if job.kind == "text" else [c for c in _snapshot_candidates(job) if c in allowed]
