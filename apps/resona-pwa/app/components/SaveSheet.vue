@@ -4,9 +4,11 @@ import type { Ref } from "vue";
 import type { SaveRequest } from "~/data/types";
 import { placeholderTitle } from "~/utils/titleSuggestion";
 
+// `count` > 1: one sheet for several shared recordings; each keeps its file name
+// as title, so there is no title field.
 const props = withDefaults(
-	defineProps<{ initialTitle?: string }>(),
-	{ initialTitle: "" },
+	defineProps<{ initialTitle?: string; count?: number }>(),
+	{ initialTitle: "", count: 1 },
 );
 
 const emit = defineEmits<{
@@ -78,10 +80,11 @@ function submit(): void {
 				id="save-sheet-title"
 				class="save-sheet__eyebrow"
 			>
-				AUFNAHME SPEICHERN
+				{{ count > 1 ? `${count} AUFNAHMEN SPEICHERN` : "AUFNAHME SPEICHERN" }}
 			</p>
 
 			<HField
+				v-if="count <= 1"
 				v-model="title"
 				:placeholder="transcribe ? 'Automatisch aus dem Inhalt' : 'Datum und Uhrzeit'"
 				class="save-sheet__title"

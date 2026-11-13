@@ -1,16 +1,16 @@
 import { Capacitor } from "@capacitor/core";
 import { Filesystem } from "@capacitor/filesystem";
 import { CapacitorShareTarget, type ShareReceivedEvent } from "@capgo/capacitor-share-target";
-import { shareKind, stashShare } from "~/utils/shareStash";
+import { shareKind, stashShares, type SharedFile } from "~/utils/shareStash";
 
 /**
- * Android share sheet → Resona app. The `SEND` intent filters in
- * `android/app/src/main/AndroidManifest.xml` route a shared file to the app;
- * `@capgo/capacitor-share-target` copies it into the app cache and emits
+ * Android share sheet → Resona app. The `SEND` / `SEND_MULTIPLE` intent filters in
+ * `android/app/src/main/AndroidManifest.xml` route shared files to the app;
+ * `@capgo/capacitor-share-target` copies them into the app cache and emits
  * `shareReceived` (kept until a listener exists, so a cold start gets it too).
- * Here the file is read into the web view, stashed like a web share
- * (`utils/shareStash.ts`) and `pages/share-target.vue` takes over: token gate,
- * then recording (audio) or document upload → hub job.
+ * Here the files are read into the web view, stashed (`utils/shareStash.ts`) and
+ * `pages/share-target.vue` takes over: token gate, then recordings (audio) and
+ * document uploads → hub jobs.
  */
 
 /** True inside the Capacitor app, where the share plugin is compiled in. */
@@ -19,10 +19,11 @@ export function hasNativeShareTarget(): boolean {
 }
 
 /**
- * Stashes the first shared file Resona takes and returns the route that handles it:
- * `/share-target?kind=…&n=…` (`n` makes a second share a new navigation), `/live?title=…`
- * for a share without files (as the web share target does), `/share-target?error=1`
- * when no file is usable or reading it failed. Every plugin copy is deleted afterwards.
+ * Stashes every shared file Resona takes and returns the route that handles them:
+ * `/share-target?count=…&n=…` (`n` makes a second share a new navigation; `skipped=…`
+ * counts files of other types or that could not be read), `/live?title=…` for a share
+ * without files (as the web share target does), `/share-target?error=1` when no file
+ * is usable. Every plugin copy is deleted afterwards.
  */
 export async function receiveNativeShare(event: ShareReceivedEvent, nonce: number = Date.now()): Promise<string> {
 	const files = event.files ?? [];
@@ -31,20 +32,23 @@ export async function receiveNativeShare(event: ShareReceivedEvent, nonce: numbe
 		return title ? `/live?title=${encodeURIComponent(title)}` : "/live";
 	}
 	try {
-		const file = files.find(f => shareKind(f.mimeType, f.name) !== null);
-		if (!file) {
+		const taken: Omit<SharedFile, "title">[] = [];
+		for (const file of files) {
+			const kind = shareKind(file.mimeType, file.name);
+			if (!kind) continue;
+			const res = await fetch(Capacitor.convertFileSrc(file.uri)).catch(() => null);
+			if (!res?.ok) continue;
+			const name = file.name && file.name !== "unknown" ? file.name : "";
+			const bytes = await res.arrayBuffer();
+			const blob = name ? new File([bytes], name, { type: file.mimeType }) : new Blob([bytes], { type: file.mimeType });
+			taken.push({ kind, blob, filename: name });
+		}
+		if (taken.length === 0) {
 			return "/share-target?error=1";
 		}
-		const kind = shareKind(file.mimeType, file.name)!;
-		const res = await fetch(Capacitor.convertFileSrc(file.uri));
-		if (!res.ok) {
-			return "/share-target?error=1";
-		}
-		const name = file.name && file.name !== "unknown" ? file.name : "";
-		const bytes = await res.arrayBuffer();
-		const blob = name ? new File([bytes], name, { type: file.mimeType }) : new Blob([bytes], { type: file.mimeType });
-		await stashShare(kind, blob, name, title);
-		return `/share-target?kind=${kind}&n=${nonce}`;
+		await stashShares(taken, title);
+		const skipped = files.length - taken.length;
+		return `/share-target?count=${taken.length}&n=${nonce}${skipped ? `&skipped=${skipped}` : ""}`;
 	}
 	catch {
 		return "/share-target?error=1";

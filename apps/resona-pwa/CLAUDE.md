@@ -338,14 +338,18 @@ wake lock, chunks and interruptions above) elsewhere. `live.vue` always uses
 app: Nitro routes (calendar,
 debug-report, `/directus` proxy), the service-worker share target (the app has its own, below), Directus cookie login/SSO (`SameSite=Lax`
 refresh cookie, see the findings doc). The hub needs `https://localhost` in `CORS_ORIGINS`.
-Share target in the app (Android): `SEND` intent filter (`audio/*`, PDF, PNG, JPEG, TIFF, DOCX;
-one file) → `@capgo/capacitor-share-target` (`shareReceived`, retained for cold starts) →
-`plugins/native-share.client.ts` → `utils/nativeShare.ts` `receiveNativeShare` reads the cached
-copy (`convertFileSrc` + `fetch`, copies deleted), stashes it via `utils/shareStash.ts` (Cache API
-`resona-share-target-v1`, keys `/share-target/audio|document`, the same the service worker writes
-for audio) and opens `/share-target?kind=audio|document&n=<nonce>` (page keyed by `fullPath`).
-`share-target.vue`: audio → SaveSheet → recording; document → `createDocument` at once →
-`/documents/<id>`; both behind the hub token gate.
+Share target in the app (Android): `SEND` intent filter (`audio/*`, PDF, PNG, JPEG, TIFF, DOCX)
+and `SEND_MULTIPLE` (`audio/*`, `application/*`, `image/*`: the common type of several files) →
+`@capgo/capacitor-share-target` (`shareReceived`, retained for cold starts) →
+`plugins/native-share.client.ts` → `utils/nativeShare.ts` `receiveNativeShare` reads every usable
+cached copy (`convertFileSrc` + `fetch`, copies deleted), stashes them via `utils/shareStash.ts`
+`stashShares` (Cache API `resona-share-target-v1`, keys `/share-target/item/<i>`; the service
+worker writes its one audio file to `/share-target/audio`) and opens
+`/share-target?count=<n>&n=<nonce>[&skipped=<m>]` (page keyed by `fullPath`). `share-target.vue`
+(`takeShares`): documents → `createDocument` at once, then audio → one SaveSheet (`count` > 1: no
+title field, each recording keeps its file name) → recordings; one file opens its page, several
+open `/` (or `/documents` when only documents), failures and skipped files are listed; all behind
+the hub token gate.
 
 ## Tech stack
 

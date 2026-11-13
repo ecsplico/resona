@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ShareReceivedEvent } from "@capgo/capacitor-share-target";
 import { listenForNativeShares, receiveNativeShare } from "~/utils/nativeShare";
-import { SHARE_CACHE } from "~/utils/shareStash";
+import { SHARE_CACHE, takeShares } from "~/utils/shareStash";
 
-const { filesystem, shareTarget, cache, opened } = vi.hoisted(() => ({
+const { filesystem, shareTarget, opened } = vi.hoisted(() => ({
 	filesystem: { deleteFile: vi.fn(async () => undefined) },
 	shareTarget: { addListener: vi.fn() },
-	cache: { put: vi.fn(async () => undefined) },
 	opened: vi.fn(),
 }));
 
@@ -21,26 +20,36 @@ vi.mock("@capacitor/filesystem", () => ({ Filesystem: filesystem }));
 vi.mock("@capgo/capacitor-share-target", () => ({ CapacitorShareTarget: shareTarget }));
 
 const fetchMock = vi.fn(async () => new Response("bytes"));
+
+/** Cache API stand-in: entries by path, as `caches.open(...)` gives them. */
+function memoryCache() {
+	const entries = new Map<string, Response>();
+	const path = (key: string | Request) => new URL(typeof key === "string" ? key : key.url, "https://localhost").pathname;
+	return {
+		entries,
+		put: vi.fn(async (key: string, res: Response) => void entries.set(path(key), res)),
+		match: vi.fn(async (key: string) => entries.get(path(key))?.clone()),
+		delete: vi.fn(async (key: string | Request) => entries.delete(path(key))),
+		keys: vi.fn(async () => [...entries.keys()].map(p => new Request(`https://localhost${p}`))),
+	};
+}
+
+let cache = memoryCache();
 const openCache = vi.fn(async () => cache);
 
 function share(files: ShareReceivedEvent["files"], title = "", texts: string[] = []): ShareReceivedEvent {
 	return { title, texts, files };
 }
 
-/** The stash `put` of the last call: key, the stored file and its headers. */
-async function stashed(): Promise<{ key: string; body: Blob; filename: string; title: string }> {
-	const [key, res] = cache.put.mock.calls.at(-1) as unknown as [string, Response];
-	return {
-		key,
-		body: await res.blob(),
-		filename: decodeURIComponent(res.headers.get("x-share-filename")!),
-		title: decodeURIComponent(res.headers.get("x-share-title")!),
-	};
+/** The `count` of a share-page URL. */
+function count(url: string): number {
+	return Number(new URL(url, "https://localhost").searchParams.get("count"));
 }
 
 describe("native share hand-over", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		cache = memoryCache();
 		vi.stubGlobal("fetch", fetchMock);
 		vi.stubGlobal("caches", { open: openCache });
 	});
@@ -49,51 +58,60 @@ describe("native share hand-over", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("stashes a shared voice memo as audio, opens the share page and deletes the plugin copy", async () => {
-		const url = await receiveNativeShare(share([{ uri: "/data/cache/shared_files/share-1.tmp", name: "Memo.m4a", mimeType: "audio/mp4" }]), 7);
+	it("hands a shared voice memo to the share page as audio and deletes the plugin copy", async () => {
+		const url = await receiveNativeShare(share([{ uri: "/data/cache/shared_files/share-1.tmp", name: "Memo.m4a", mimeType: "audio/mp4" }], "Visite"), 7);
 
-		expect(url).toBe("/share-target?kind=audio&n=7");
+		expect(url).toBe("/share-target?count=1&n=7");
 		expect(fetchMock).toHaveBeenCalledWith("https://localhost/_capacitor_file_/data/cache/shared_files/share-1.tmp");
 		expect(openCache).toHaveBeenCalledWith(SHARE_CACHE);
-		const s = await stashed();
-		expect(s.key).toBe("/share-target/audio");
-		expect(s.filename).toBe("Memo.m4a");
-		expect(s.body.type).toBe("audio/mp4");
+		const [file] = await takeShares(count(url));
+		expect(file).toMatchObject({ kind: "audio", filename: "Memo.m4a", title: "Visite" });
+		expect(file!.blob.type).toBe("audio/mp4");
 		expect(filesystem.deleteFile).toHaveBeenCalledWith({ path: "/data/cache/shared_files/share-1.tmp" });
+		// One-shot: a reload of the share page finds nothing.
+		expect(await takeShares(count(url))).toEqual([]);
 	});
 
-	it("stashes a PDF and a DOCX as documents, also when the sender gives no type", async () => {
-		expect(await receiveNativeShare(share([{ uri: "/c/a.tmp", name: "Befund.pdf", mimeType: "application/pdf" }], "Befund Mai"), 1))
-			.toBe("/share-target?kind=document&n=1");
-		let s = await stashed();
-		expect(s.key).toBe("/share-target/document");
-		expect(s.title).toBe("Befund Mai");
-
-		expect(await receiveNativeShare(share([{ uri: "/c/b.tmp", name: "Brief.docx", mimeType: "application/octet-stream" }]), 2))
-			.toBe("/share-target?kind=document&n=2");
-		s = await stashed();
-		expect(s.filename).toBe("Brief.docx");
-		expect(s.key).toBe("/share-target/document");
-	});
-
-	it("takes the first usable file and still deletes every copy", async () => {
+	it("hands over every usable file of a share in order, a DOCX without type as document, and reports the rest as skipped", async () => {
 		const url = await receiveNativeShare(share([
-			{ uri: "/c/1.tmp", name: "clip.gif", mimeType: "image/gif" },
-			{ uri: "/c/2.tmp", name: "Diktat.ogg", mimeType: "audio/ogg" },
+			{ uri: "/c/1.tmp", name: "Befund.pdf", mimeType: "application/pdf" },
+			{ uri: "/c/2.tmp", name: "clip.gif", mimeType: "image/gif" },
+			{ uri: "/c/3.tmp", name: "Brief.docx", mimeType: "application/octet-stream" },
+			{ uri: "/c/4.tmp", name: "Diktat.ogg", mimeType: "audio/ogg" },
 		]), 3);
 
-		expect(url).toBe("/share-target?kind=audio&n=3");
-		expect((await stashed()).filename).toBe("Diktat.ogg");
-		expect(filesystem.deleteFile).toHaveBeenCalledTimes(2);
+		expect(url).toBe("/share-target?count=3&n=3&skipped=1");
+		const files = await takeShares(count(url));
+		expect(files.map(f => [f.kind, f.filename])).toEqual([
+			["document", "Befund.pdf"],
+			["document", "Brief.docx"],
+			["audio", "Diktat.ogg"],
+		]);
+		expect(filesystem.deleteFile).toHaveBeenCalledTimes(4);
 	});
 
-	it("reports an unusable or unreadable share on the share page and never deletes a content URI", async () => {
-		expect(await receiveNativeShare(share([{ uri: "/c/x.tmp", name: "clip.gif", mimeType: "image/gif" }]))).toBe("/share-target?error=1");
+	it("replaces the files of an older share that was never opened", async () => {
+		await receiveNativeShare(share([
+			{ uri: "/c/1.tmp", name: "a.m4a", mimeType: "audio/mp4" },
+			{ uri: "/c/2.tmp", name: "b.m4a", mimeType: "audio/mp4" },
+		]));
+		const url = await receiveNativeShare(share([{ uri: "/c/3.tmp", name: "c.pdf", mimeType: "application/pdf" }]));
 
+		expect(cache.entries.size).toBe(1);
+		expect((await takeShares(count(url))).map(f => f.filename)).toEqual(["c.pdf"]);
+	});
+
+	it("counts an unreadable file as skipped and reports a share with no usable file, never deleting a content URI", async () => {
+		fetchMock.mockResolvedValueOnce(new Response("", { status: 404 }));
+		expect(await receiveNativeShare(share([
+			{ uri: "/c/1.tmp", name: "a.m4a", mimeType: "audio/mp4" },
+			{ uri: "/c/2.tmp", name: "b.m4a", mimeType: "audio/mp4" },
+		]), 5)).toBe("/share-target?count=1&n=5&skipped=1");
+
+		expect(await receiveNativeShare(share([{ uri: "/c/x.tmp", name: "clip.gif", mimeType: "image/gif" }]))).toBe("/share-target?error=1");
 		fetchMock.mockResolvedValueOnce(new Response("", { status: 404 }));
 		expect(await receiveNativeShare(share([{ uri: "content://media/1", name: "a.m4a", mimeType: "audio/mp4" }]))).toBe("/share-target?error=1");
-		expect(cache.put).not.toHaveBeenCalled();
-		expect(filesystem.deleteFile).toHaveBeenCalledTimes(1);
+		expect(filesystem.deleteFile).not.toHaveBeenCalledWith({ path: "content://media/1" });
 	});
 
 	it("sends a share without files to live dictation with its text as title, like the web share target", async () => {
@@ -111,9 +129,9 @@ describe("native share hand-over", () => {
 		expect(shareTarget.addListener).toHaveBeenCalledWith("shareReceived", expect.any(Function));
 
 		handler(share([{ uri: "/c/1.tmp", name: "a.m4a", mimeType: "audio/mp4" }]));
-		handler(share([{ uri: "/c/2.tmp", name: "b.pdf", mimeType: "application/pdf" }]));
+		handler(share([{ uri: "/c/2.tmp", name: "b.pdf", mimeType: "application/pdf" }, { uri: "/c/3.tmp", name: "c.pdf", mimeType: "application/pdf" }]));
 		await vi.waitFor(() => expect(opened).toHaveBeenCalledTimes(2));
-		expect(opened.mock.calls[0]![0]).toMatch(/^\/share-target\?kind=audio&n=/);
-		expect(opened.mock.calls[1]![0]).toMatch(/^\/share-target\?kind=document&n=/);
+		expect(opened.mock.calls[0]![0]).toMatch(/^\/share-target\?count=1&n=/);
+		expect(opened.mock.calls[1]![0]).toMatch(/^\/share-target\?count=2&n=/);
 	});
 });
