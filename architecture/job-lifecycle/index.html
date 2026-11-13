@@ -2581,7 +2581,7 @@
 <tbody>
 <tr>
 <td><code>pending</code></td>
-<td>Waiting for a capable worker; <code>queue_reason</code> says why: <code>waiting_capacity</code> (an eligible worker is online and busy), <code>release_not_approved</code> (a worker offers one of the job's tuples, but its release has no promoted evaluation for the job's execution profile and platform) or <code>no_capable_worker</code> (no online worker of the job's privacy class offers one, e.g. the only CUDA worker runs without a usable GPU, or a <code>diarize</code> job and no such worker reports a verified diarizer)</td>
+<td>Waiting for a capable worker; <code>queue_reason</code> says why: <code>waiting_capacity</code> (an eligible worker is online and busy), <code>release_not_approved</code> (a worker offers one of the job's tuples, but its release has no promoted evaluation for the job's execution profile and platform), <code>worker_outdated</code> (such a worker's release is approved but does not know an option the job sets, e.g. a 0.1.0 worker and <code>remove_repeated_headers</code>) or <code>no_capable_worker</code> (no online worker of the job's privacy class offers one, e.g. the only CUDA worker runs without a usable GPU, or a <code>diarize</code> job and no such worker reports a verified diarizer)</td>
 </tr>
 <tr>
 <td><code>processing</code></td>
