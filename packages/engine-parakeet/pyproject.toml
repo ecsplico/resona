@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-parakeet"
-version = "0.2.3"
+version = "0.2.4"
 description = "NVIDIA Parakeet (NeMo FastConformer) backend for Resona — fast multilingual CUDA/CPU transcription"
 readme = "README.md"
 license = { text = "Apache-2.0" }
