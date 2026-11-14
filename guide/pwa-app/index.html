@@ -2582,7 +2582,7 @@ native recorder, so a recording keeps going while the screen is locked.</p>
   web assets. Without a service worker: <code>RESONA_CAPACITOR=1</code> disables <code>@vite-pwa/nuxt</code>.</li>
 <li>Every recording flow asks <code>useRecorder()</code> (<code>app/composables/useRecorder.ts</code>) for a
   <code>Recorder</code>. Inside the app that is <code>useNativeRecorder()</code>
-  (<code>@capgo/capacitor-audio-recorder</code>, MPEG-4 AAC, <code>audio/mp4</code>); in the browser it is
+  (<code>@capgo/capacitor-audio-recorder</code> ≥ 8.4, <code>format: "aac"</code>: ADTS AAC, <code>audio/aac</code>); in the browser it is
   <code>useWebRecorder()</code> (MediaRecorder). The upload → hub job flow behind it is the same:
   new recordings, push-to-talk on a recording, re-dictation and the <code>/debug</code> test dictation.</li>
 <li>Android: on record, the app starts a foreground service of type <code>microphone</code>
@@ -2601,6 +2601,17 @@ native recorder, so a recording keeps going while the screen is locked.</p>
 <li>On stop the app reads the recorded file back into the web view
   (<code>Capacitor.convertFileSrc</code> + <code>fetch</code>) and deletes it from the app cache; a
   file it cannot read stays in the cache.</li>
+<li>Recovery after a kill (Android): ADTS is a stream of self-contained frames, so a
+  recording the app never stopped stays readable up to its last whole frame
+  (MPEG-4 writes its index only at stop). The recordings list scans
+  <code>cache/capacitor-audio-recorder/</code> for <code>recording-*.aac</code> files older than the running
+  web view (<code>app/data/nativeUnfinished.ts</code>) and offers each like a web recording left in
+  IndexedDB: "Nicht gespeichert …", Behalten → save sheet (upload → hub job) or Verwerfen.
+  The file is deleted once saved or discarded; only its whole frames are uploaded. Nothing
+  is offered while the plugin records; empty files are deleted; <code>.m4a</code> files of older
+  app versions are left alone (unreadable without their index).</li>
+<li>The hub sniffs ADTS by its frame sync (<code>sniff_media</code>, the MPEG audio branch) and
+  admits it as an audio job; ffmpeg decodes it, a cut-off last frame included.</li>
 </ul>
 <h2 id="build-the-debug-apk">Build the debug APK<a class="headerlink" href="#build-the-debug-apk" title="Permanent link">&para;</a></h2>
 <p>Prerequisites: bun, JDK 21, Android SDK with platform 36 and build-tools.
@@ -2644,6 +2655,16 @@ organization's default execution profile (otherwise the job waits in the queue,
 <li>Expected: the player's duration matches the elapsed time noted in step 5
    (about 10 minutes), and the transcript covers what was said while locked.</li>
 </ol>
+<p>Recovery after a kill:</p>
+<ol>
+<li>Start a recording, speak for about a minute.</li>
+<li><code>adb shell am force-stop de.ecsplico.resona</code> (or swipe the app away / <code>adb shell am kill</code>
+   after sending it to the background).</li>
+<li>Open Resona: the list shows "Nicht gespeichert: Aufnahme vom … (m:ss min)". Behalten →
+   save; the transcript covers that minute. Afterwards
+   <code>adb shell run-as de.ecsplico.resona ls cache/capacitor-audio-recorder</code> lists no file.</li>
+<li>A normal record → stop → save leaves no file there either.</li>
+</ol>
 <p>Battery savers of some vendors (Samsung, Xiaomi, Huawei) kill foreground services
 anyway; if the recording ends early, set Resona to "unrestricted" battery use.</p>
 <h2 id="findings">Findings<a class="headerlink" href="#findings" title="Permanent link">&para;</a></h2>
@@ -2664,8 +2685,12 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 <td>Native recorder too; same upload → hub job flow</td>
 </tr>
 <tr>
-<td>Interruptions, recovery after a kill (#33)</td>
-<td>Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits <code>recordingInterruptionBegan</code>/<code>Ended</code>, which the app does not handle yet, so the clock keeps running. It keeps no IndexedDB chunks: if Android kills the app mid-recording, the <code>.m4a</code> stays in the app cache but the app does not offer it again. Recovery would need the plugin's crash-safe <code>aac</code> format plus a scan of that cache on start</td>
+<td>Interruptions (#33)</td>
+<td>Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits <code>recordingInterruptionBegan</code>/<code>Ended</code>, which the app does not handle yet, so the clock keeps running</td>
+</tr>
+<tr>
+<td>Recovery after a kill (#33, #40)</td>
+<td>Web recorder: IndexedDB chunks (<code>resona-unfinished-recordings</code>). Native recorder (Android): records ADTS (<code>format: "aac"</code>, plugin ≥ 8.4), which stays readable up to its last frame; on the next open the recordings list offers <code>recording-*.aac</code> files left in <code>cache/capacitor-audio-recorder/</code> (Behalten → save → hub job, or Verwerfen; the file is deleted either way). Unit-tested with plugin and Filesystem mocked, and ffmpeg decodes a cut-off ADTS file; the kill on a real phone (device test above) is still open. iOS: not offered (the plugin writes to the app's <code>tmp/</code>, which the scan does not read)</td>
 </tr>
 <tr>
 <td>Live dictation</td>
