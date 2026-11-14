@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-diarize"
-version = "0.2.4"
+version = "0.2.5"
 description = "Speaker diarization for Resona workers: Nemotron-3-Diarization turns and word-level speaker assignment"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
