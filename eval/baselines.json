@@ -4,13 +4,13 @@
     "cpu-private/cpu": {
       "execution_profile": "cpu-private",
       "platform": "cpu",
-      "revision": 2,
-      "evaluation_id": 13,
-      "promoted_at": "2026-11-04T01:32:12+00:00",
-      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
-      "release_id": "0.1.0",
+      "revision": 3,
+      "evaluation_id": 23,
+      "promoted_at": "2026-11-14T10:50:25+00:00",
+      "corpus_sha256": "2b297b84966a72d9a945297bb8bafc08b6182d77aebb9be4d1de84a2359585a3",
+      "release_id": "0.2.4",
       "runtime_versions": [
-        "0.1.0"
+        "0.2.4"
       ],
       "normalization": {
         "audio": "text-v1",
@@ -22,6 +22,13 @@
           "engine": "faster-whisper",
           "model": "Systran/faster-whisper-large-v3",
           "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "accelerator": "cpu"
+        },
+        {
+          "stage": "diarize",
+          "engine": "nemotron-diarization",
+          "model": "nvidia/Nemotron-3-Diarization",
+          "revision": "52a432672732425e4c19765b9fec9b5810e6f4ba",
           "accelerator": "cpu"
         },
         {
@@ -94,6 +101,20 @@
         },
         "es-scan-pdf": {
           "cer": 0.0
+        },
+        "de-two-speakers": {
+          "wer": 0.0301,
+          "cer": 0.043,
+          "speaker_attribution": 0.9699,
+          "der": 0.1283,
+          "speaker_count_error": 0
+        },
+        "de-case-conference": {
+          "wer": 0.2582,
+          "cer": 0.2239,
+          "speaker_attribution": 0.8077,
+          "der": 0.2738,
+          "speaker_count_error": 0
         }
       }
     },
@@ -196,13 +217,13 @@
     "mac-private/mac-metal": {
       "execution_profile": "mac-private",
       "platform": "mac-metal",
-      "revision": 5,
-      "evaluation_id": 18,
-      "promoted_at": "2026-11-11T02:16:27+00:00",
-      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
-      "release_id": "0.2.2",
+      "revision": 6,
+      "evaluation_id": 22,
+      "promoted_at": "2026-11-14T10:43:38+00:00",
+      "corpus_sha256": "2b297b84966a72d9a945297bb8bafc08b6182d77aebb9be4d1de84a2359585a3",
+      "release_id": "0.2.4",
       "runtime_versions": [
-        "0.2.2"
+        "0.2.4"
       ],
       "normalization": {
         "audio": "text-v1",
@@ -214,6 +235,13 @@
           "engine": "mlx-whisper",
           "model": "mlx-community/whisper-large-v3-mlx",
           "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+          "accelerator": "metal"
+        },
+        {
+          "stage": "diarize",
+          "engine": "nemotron-diarization",
+          "model": "nvidia/Nemotron-3-Diarization",
+          "revision": "52a432672732425e4c19765b9fec9b5810e6f4ba",
           "accelerator": "metal"
         },
         {
@@ -286,6 +314,20 @@
         },
         "es-scan-pdf": {
           "cer": 0.0
+        },
+        "de-two-speakers": {
+          "wer": 0.0422,
+          "cer": 0.0535,
+          "speaker_attribution": 0.9759,
+          "der": 0.1267,
+          "speaker_count_error": 0
+        },
+        "de-case-conference": {
+          "wer": 0.1044,
+          "cer": 0.0667,
+          "speaker_attribution": 0.9451,
+          "der": 0.144,
+          "speaker_count_error": 0
         }
       }
     },
@@ -388,13 +430,13 @@
     "private-auto/mac-metal": {
       "execution_profile": "private-auto",
       "platform": "mac-metal",
-      "revision": 5,
-      "evaluation_id": 19,
-      "promoted_at": "2026-11-11T02:16:27+00:00",
-      "corpus_sha256": "026c7f30ad571643a958bb3a5a547aa8bdc9fdea775f21b2ceb3d85728b6bd06",
-      "release_id": "0.2.2",
+      "revision": 6,
+      "evaluation_id": 24,
+      "promoted_at": "2026-11-14T10:52:07+00:00",
+      "corpus_sha256": "2b297b84966a72d9a945297bb8bafc08b6182d77aebb9be4d1de84a2359585a3",
+      "release_id": "0.2.4",
       "runtime_versions": [
-        "0.2.2"
+        "0.2.4"
       ],
       "normalization": {
         "audio": "text-v1",
@@ -406,6 +448,13 @@
           "engine": "mlx-whisper",
           "model": "mlx-community/whisper-large-v3-mlx",
           "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+          "accelerator": "metal"
+        },
+        {
+          "stage": "diarize",
+          "engine": "nemotron-diarization",
+          "model": "nvidia/Nemotron-3-Diarization",
+          "revision": "52a432672732425e4c19765b9fec9b5810e6f4ba",
           "accelerator": "metal"
         },
         {
@@ -478,6 +527,20 @@
         },
         "es-scan-pdf": {
           "cer": 0.0
+        },
+        "de-two-speakers": {
+          "wer": 0.0422,
+          "cer": 0.0535,
+          "speaker_attribution": 0.9759,
+          "der": 0.1267,
+          "speaker_count_error": 0
+        },
+        "de-case-conference": {
+          "wer": 0.1044,
+          "cer": 0.0667,
+          "speaker_attribution": 0.9451,
+          "der": 0.144,
+          "speaker_count_error": 0
         }
       }
     }
