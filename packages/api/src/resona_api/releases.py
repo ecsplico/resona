@@ -17,22 +17,17 @@ from __future__ import annotations
 import hashlib
 import json
 from importlib import metadata
-from typing import Literal
 
 from decouple import config
 from pydantic import ValidationError
 from sqlmodel import Session, select
 
-from resona_job_core import Candidate
+from resona_job_core import PLATFORM_OF_ACCELERATOR, PLATFORMS, Candidate, Platform
 from resona_job_core.release import ReleaseManifest
 
 from . import clock
 from .db.models import ApprovedReleaseTuple, Release
 from .errors import validation_message
-
-Platform = Literal["mac-metal", "linux-cuda", "cpu"]
-PLATFORMS: tuple[str, ...] = ("mac-metal", "linux-cuda", "cpu")
-_PLATFORM_OF_ACCELERATOR = {"metal": "mac-metal", "cuda": "linux-cuda", "cpu": "cpu"}
 
 STATUS_STAGED = "staged"
 STATUS_BUNDLED = "bundled"
@@ -55,7 +50,7 @@ def hub_release_id() -> str:
 
 
 def platform_of(candidate: Candidate) -> str:
-    return _PLATFORM_OF_ACCELERATOR[candidate.accelerator]
+    return PLATFORM_OF_ACCELERATOR[candidate.accelerator]
 
 
 def parse_manifest(raw: bytes) -> ReleaseManifest:

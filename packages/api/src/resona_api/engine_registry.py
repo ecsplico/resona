@@ -23,11 +23,6 @@ CLOUD_STT_MODELS = {
 }
 
 
-def cloud_asr_endpoint_id(engine: str) -> str | None:
-    """Registry endpoint ID a cloud ASR provider must be approved under, or None for local engines."""
-    return f"cloud-asr:{engine}" if engine in CLOUD_PROVIDERS else None
-
-
 _CACHE_TTL = 5.0
 
 

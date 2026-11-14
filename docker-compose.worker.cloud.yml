@@ -1,0 +1,60 @@
+# Resona cloud ASR worker (execution profile `cloud-deepgram`): runs non-private audio
+# jobs on Deepgram nova-3, with or without speaker diarization (Deepgram diarizes in the
+# same call). No ML stack, no GPU, no published port, no Docker socket; outbound HTTPS to
+# the hub and to api.deepgram.com only. Small enough to sit next to the hub on the Coolify
+# host. Setup and proof: docs/server/coolify.md#cloud-asr-worker-deepgram.
+#
+# Required environment (e.g. in a `.env` next to this file, or Coolify environment):
+#   RESONA_WORKER_IMAGE       CPU worker image *by digest* of a release whose worker ships the
+#                             `cloud` extra, e.g. ghcr.io/ecsplico/resona-worker@sha256:...
+#   RESONA_HUB_URL            hub base URL, https
+#   RESONA_WORKER_TOKEN_FILE  host path of the worker token file, mode 0600, owned by UID 1000
+#   DEEPGRAM_API_KEY          Deepgram key; only the non-private jobs this worker is approved for see it
+#
+# One-off preparation (one real Deepgram call on the packaged German fixtures, writes the
+# tested tuples to the `state` volume; the settings file is the hub's `GET /v1/settings`
+# body `settings`, which must contain the `cloud-deepgram` execution profile):
+#   docker compose -f docker-compose.worker.cloud.yml run --rm \
+#     -v ./settings.json:/run/settings.json:ro worker \
+#     prepare --profile cloud-deepgram --settings-file /run/settings.json --out /state/capabilities.json
+# Then:
+#   docker compose -f docker-compose.worker.cloud.yml up -d
+
+name: resona-worker-cloud
+
+services:
+  worker:
+    image: ${RESONA_WORKER_IMAGE:?set RESONA_WORKER_IMAGE to the released image digest}
+    command:
+      - run
+      - --hub
+      - ${RESONA_HUB_URL:?set RESONA_HUB_URL}
+      - --token-file
+      - /run/secrets/resona-worker-token
+      - --capabilities-file
+      - /state/capabilities.json
+      - --work-dir
+      - /work
+    restart: unless-stopped
+    environment:
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:?set DEEPGRAM_API_KEY}
+    volumes:
+      # Capabilities manifest written by `prepare`.
+      - state:/state
+      - type: bind
+        source: ${RESONA_WORKER_TOKEN_FILE:?set RESONA_WORKER_TOKEN_FILE}
+        target: /run/secrets/resona-worker-token
+        read_only: true
+    # Disposable per-job directory: RAM-backed, empty on every container start.
+    tmpfs:
+      - /work:size=1g,mode=0700,uid=1000,gid=1000
+    cpus: 1
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+
+volumes:
+  state:

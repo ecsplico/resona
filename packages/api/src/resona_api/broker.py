@@ -32,12 +32,12 @@ from resona_job_core import (
     PolicyDenied,
     Stage,
     check_policy,
+    cloud_asr_endpoint_id,
 )
 from resona_job_core.features import required_features, worker_features
 
 from . import clock, releases, storage
 from .auth import hash_token
-from .engine_registry import cloud_asr_endpoint_id
 from .db.models import Job, JobStatus, Organization, Worker
 from .settings_store import current_settings
 

@@ -339,13 +339,16 @@ if "garbage" in cand["model"]:
 segments = []
 if (snapshot.get("options") or {}).get("diarize"):
     # Two-speaker fixture: speaker change in the pause; "monologue" models hear one speaker.
-    diarizer = "nvidia/Nemotron-3-Diarization"
+    # A cloud (external) candidate diarizes in the provider call: the stage names its model.
+    cloud = cand["accelerator"] == "external"
+    diarizer = cand["model"] if cloud else "nvidia/Nemotron-3-Diarization"
     second = 1 if "monologue" in cand["model"] else 2
     segments = [{"start": 0.0, "end": 2.04, "text": "Guten Morgen.", "speaker": 1},
                 {"start": 3.12, "end": 7.04, "text": "Der Befund ist unauffällig.", "speaker": second}]
     text = "Guten Morgen. Der Befund ist unauffällig."
-    stages.append({"stage": "diarize", "engine": "nemotron-diarization", "model": diarizer,
-                   "model_revision": loaded(diarizer, "main"), "accelerator": device, "seconds": 0.1})
+    stages.append({"stage": "diarize", "engine": cand["engine"] if cloud else "nemotron-diarization",
+                   "model": diarizer, "model_revision": None if cloud else loaded(diarizer, "main"),
+                   "accelerator": device, "seconds": 0.1})
 structured = {"env": sorted(os.environ), "input_suffix": Path(args.input).suffix}
 result = {"kind": snapshot["kind"], "raw_text": text, "markdown": text, "provenance": {"stages": stages},
           "structured": structured, "language": snapshot["language"], "segments": segments}

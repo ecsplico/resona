@@ -25,6 +25,15 @@ class EndpointKind(StrEnum):
 
 CLOUD_KINDS = frozenset({EndpointKind.CLOUD_ASR, EndpointKind.CLOUD_LLM})
 
+# Cloud speech-to-text providers a job candidate may name as its engine. A worker
+# runs them by calling the provider; the hub approves each under one endpoint ID.
+CLOUD_ASR_ENGINES = frozenset({"deepgram", "openai", "elevenlabs"})
+
+
+def cloud_asr_endpoint_id(engine: str) -> str | None:
+    """Registry endpoint ID a cloud ASR provider must be approved under, or None for local engines."""
+    return f"cloud-asr:{engine}" if engine in CLOUD_ASR_ENGINES else None
+
 
 class Endpoint(BaseModel):
     """An admin-registered processing destination outside the in-process engine.

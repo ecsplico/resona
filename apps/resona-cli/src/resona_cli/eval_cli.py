@@ -17,6 +17,9 @@ with that hub postprocess profile; such a run is measurement-only: it is never
 compared with a baseline, not recorded on the hub and cannot be promoted, because
 baselines measure the plain engines.
 
+``--kind audio|document`` evaluates only that kind's fixtures, for execution profiles
+with candidates of one kind (cloud ASR: ``--kind audio --allow-cloud``).
+
 Exit codes: 0 gate passed, 1 error, 2 policy denied, 3 gate failed,
 4 ``baseline_required`` (no comparable baseline; promotable when absolute checks pass).
 """
@@ -53,13 +56,12 @@ from resona_eval import (
     upsert_baseline,
 )
 from resona_eval.corpus import Corpus, Fixture
-from resona_job_core import PolicyDenied
+from resona_job_core import PLATFORMS, PolicyDenied
 
 from .hub import connect_hub, exit_policy_denied, fail
 
 EXIT_GATE_FAILED = 3
 EXIT_BASELINE_REQUIRED = 4
-PLATFORMS = ("mac-metal", "linux-cuda", "cpu")
 
 eval_app = typer.Typer(help="Evaluate an execution profile against the corpus and baselines.")
 
@@ -97,7 +99,8 @@ def _run_local(corpus: Corpus, profile: str) -> list[FixtureRun]:
 
 
 def _run_remote(client: ResonaClient, corpus: Corpus, profile: str, release_id: str,
-                timeout: float, postprocess_profile: Optional[str] = None) -> list[FixtureRun]:
+                timeout: float, postprocess_profile: Optional[str] = None,
+                private: bool = True) -> list[FixtureRun]:
     submitted = []
     for fixture in corpus.fixtures:
         options = _fixture_options(fixture)
@@ -107,7 +110,7 @@ def _run_remote(client: ResonaClient, corpus: Corpus, profile: str, release_id: 
             del options["diarize"]
         ref = client.submit_job(
             corpus.path(fixture), kind=fixture.kind, execution_profile=profile,
-            language=fixture.language, options=options, private=True,
+            language=fixture.language, options=options, private=private,
             profile=postprocess_profile if fixture.kind == "document" else None,
             purpose="evaluation", release_id=release_id,
             provenance={"source": f"resona-eval:{corpus.sha256[:12]}:{fixture.id}"},
@@ -161,8 +164,15 @@ def evaluate(
     profile: Optional[str] = typer.Option(None, "--profile", help="Execution profile to evaluate (e.g. cpu-private)."),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Directory for report.json."),
     remote: bool = typer.Option(False, "--remote", help="Run fixtures as hub evaluation jobs (org-admin key)."),
-    platform: Optional[str] = typer.Option(None, "--platform", help="Expected platform: mac-metal, linux-cuda or cpu "
+    platform: Optional[str] = typer.Option(None, "--platform", help=f"Expected platform: {', '.join(PLATFORMS)} "
                                            "(default: detected from the stage provenance)."),
+    allow_cloud: bool = typer.Option(
+        False, "--allow-cloud",
+        help="Submit the fixtures as non-private jobs (--remote): needed for cloud ASR profiles (platform cloud).",
+    ),
+    kind: Optional[str] = typer.Option(
+        None, "--kind", help="Only the fixtures of this kind (audio or document), for one-kind execution profiles.",
+    ),
     release_id: Optional[str] = typer.Option(None, "--release-id", help="Staged release to evaluate "
                                              "(--remote; default: the hub's /v1/version release)."),
     corpus_dir: Path = typer.Option(Path("eval/corpus"), "--corpus", help="Corpus directory with MANIFEST.json."),
@@ -182,10 +192,16 @@ def evaluate(
         fail(f"--platform must be one of {', '.join(PLATFORMS)}")
     if postprocess_profile is not None and not remote:
         fail("--postprocess-profile needs --remote: local mode cannot resolve hub postprocess profiles")
+    if allow_cloud and not remote:
+        fail("--allow-cloud needs --remote: local mode never calls cloud providers")
+    if kind is not None and kind not in ("audio", "document"):
+        fail("--kind must be audio or document")
     try:
         corpus = load_corpus(corpus_dir)
     except CorpusError as e:
         fail(f"corpus: {e}")
+    if kind is not None:
+        corpus = dataclasses.replace(corpus, fixtures=tuple(f for f in corpus.fixtures if f.kind == kind))
 
     client = None
     hub_baseline_revision = None
@@ -193,7 +209,8 @@ def evaluate(
         if remote:
             client = connect_hub()
             release_id = release_id or str(client.get_version()["release_id"])
-            runs = _run_remote(client, corpus, profile, release_id, timeout, postprocess_profile)
+            runs = _run_remote(client, corpus, profile, release_id, timeout, postprocess_profile,
+                               private=not allow_cloud)
         else:
             if release_id is not None:
                 fail("--release-id needs --remote")

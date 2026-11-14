@@ -5264,7 +5264,9 @@ requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
 name = "resona-diarize"
 version = "0.2.5"
 source = { editable = "packages/diarize" }
-dependencies = [
+
+[package.optional-dependencies]
+model = [
     { name = "librosa" },
     { name = "numpy" },
     { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
@@ -5274,12 +5276,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "librosa", specifier = ">=0.10.1" },
-    { name = "numpy", specifier = ">=2.1.3" },
-    { name = "torch", marker = "sys_platform != 'linux'", specifier = ">=2.6.0" },
-    { name = "torch", marker = "sys_platform == 'linux'", specifier = ">=2.6.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "transformers", specifier = ">=5.22.2" },
+    { name = "librosa", marker = "extra == 'model'", specifier = ">=0.10.1" },
+    { name = "numpy", marker = "extra == 'model'", specifier = ">=2.1.3" },
+    { name = "torch", marker = "sys_platform == 'linux' and extra == 'model'", specifier = ">=2.6.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torch", marker = "sys_platform != 'linux' and extra == 'model'", specifier = ">=2.6.0" },
+    { name = "transformers", marker = "extra == 'model'", specifier = ">=5.22.2" },
 ]
+provides-extras = ["model"]
 
 [[package]]
 name = "resona-engine-docling"
@@ -5582,6 +5585,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "resona-asr-core" },
+    { name = "resona-diarize" },
     { name = "resona-job-core" },
     { name = "resona-postprocess" },
     { name = "typer" },
@@ -5594,11 +5598,14 @@ apple = [
 audio-cpu = [
     { name = "resona-engine-faster-whisper" },
 ]
+cloud = [
+    { name = "resona-cloud-stt" },
+]
 cuda = [
     { name = "resona-engine-whisper" },
 ]
 diarize = [
-    { name = "resona-diarize" },
+    { name = "resona-diarize", extra = ["model"] },
 ]
 documents = [
     { name = "resona-engine-docling" },
@@ -5609,7 +5616,9 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "resona-asr-core", editable = "packages/asr-core" },
-    { name = "resona-diarize", marker = "extra == 'diarize'", editable = "packages/diarize" },
+    { name = "resona-cloud-stt", marker = "extra == 'cloud'", editable = "packages/cloud-stt" },
+    { name = "resona-diarize", editable = "packages/diarize" },
+    { name = "resona-diarize", extras = ["model"], marker = "extra == 'diarize'", editable = "packages/diarize" },
     { name = "resona-engine-docling", marker = "extra == 'documents'", editable = "packages/engine-docling" },
     { name = "resona-engine-faster-whisper", marker = "extra == 'audio-cpu'", editable = "packages/engine-faster-whisper" },
     { name = "resona-engine-mlx-whisper", marker = "extra == 'apple'", editable = "packages/engine-mlx-whisper" },
@@ -5618,7 +5627,7 @@ requires-dist = [
     { name = "resona-postprocess", editable = "packages/postprocess" },
     { name = "typer", specifier = ">=0.15.3" },
 ]
-provides-extras = ["audio-cpu", "apple", "documents", "cuda", "diarize"]
+provides-extras = ["audio-cpu", "apple", "documents", "cuda", "diarize", "cloud"]
 
 [[package]]
 name = "resona-workspace"

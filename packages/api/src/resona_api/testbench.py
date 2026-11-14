@@ -17,12 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from resona_eval import metrics
-from resona_job_core import Candidate, JobResult, OrganizationSettings
+from resona_job_core import Candidate, JobResult, OrganizationSettings, cloud_asr_endpoint_id
 from sqlalchemy import exists, func
 from sqlmodel import Session, select
 
 from . import broker, clock, jobs_routes, storage
-from . import engine_registry as reg
 from .db.models import Job, JobStatus, Organization, TestbenchItem, TestbenchRun, Worker
 from .errors import api_error
 from .jobs_routes import CONTENT_UNAVAILABLE
@@ -63,7 +62,7 @@ def testbench_enabled(session: Session, organization_id: str) -> bool:
 
 
 def _is_cloud(candidate: Candidate) -> bool:
-    return reg.cloud_asr_endpoint_id(candidate.engine) is not None
+    return cloud_asr_endpoint_id(candidate.engine) is not None
 
 
 # -- candidates -----------------------------------------------------------

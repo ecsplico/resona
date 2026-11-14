@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import importlib.util
 import json
 import platform
 import re
@@ -214,7 +215,8 @@ def _resolve_weights(candidate: Candidate) -> tuple[str, str | None]:
 
 
 def accelerator_available(accelerator: str) -> bool:
-    """True when this host can run ``accelerator`` now (cuda: PyTorch sees a CUDA device)."""
+    """True when this host can run ``accelerator`` now (cuda: PyTorch sees a CUDA device;
+    external: the cloud ASR client is installed, the provider key is checked per job)."""
     if accelerator == "cuda":
         try:
             import torch
@@ -226,6 +228,8 @@ def accelerator_available(accelerator: str) -> bool:
             return False
     if accelerator == "metal":
         return sys.platform == "darwin" and platform.machine() == "arm64"
+    if accelerator == "external":
+        return importlib.util.find_spec("resona_cloud_stt") is not None
     return accelerator == "cpu"
 
 
@@ -485,6 +489,116 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
     )
 
 
+# Provider request options per cloud engine: ``utterances`` gives Deepgram's own
+# segmentation (paragraph breaks at pauses), ``smart_format`` its punctuation.
+_CLOUD_OPTIONS: dict[str, dict[str, Any]] = {
+    "deepgram": {"smart_format": True, "punctuate": True, "utterances": True},
+}
+# Cloud engines whose provider diarizes in the same call (per-word ``speaker``).
+CLOUD_DIARIZERS = frozenset({"deepgram"})
+
+
+def _provider_turns(raw_segments: list[Any]) -> list[Any]:
+    """Speaker turns from the provider's per-word speakers (0-based), consecutive words merged."""
+    from resona_diarize import Turn
+
+    turns: list[Turn] = []
+    for seg in raw_segments:
+        for word in seg.get("words") or []:
+            if word.get("speaker") is None:
+                continue
+            speaker = int(word["speaker"]) + 1
+            if turns and turns[-1].speaker == speaker:
+                turns[-1] = Turn(turns[-1].start, float(word["end"]), speaker)
+            else:
+                turns.append(Turn(float(word["start"]), float(word["end"]), speaker))
+    return turns
+
+
+def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
+    """A cloud ASR candidate: the input goes to the provider with the worker's key.
+
+    Only non-private jobs reach this worker (the hub matches privacy class, and private
+    jobs get an environment without credentials). A provider that diarizes (Deepgram)
+    does so in the same call; its word speakers go through the same speaker sections and
+    Markdown as the on-device diarizer.
+    """
+    from decouple import config
+
+    try:
+        from resona_cloud_stt import PROVIDER_ENV_KEYS, get_provider
+        from resona_cloud_stt.errors import ProviderHTTPError
+    except ImportError:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "cloud ASR client not installed") from None
+    options = snapshot.get("options") or {}
+    if not isinstance(options, dict):
+        raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "options must be an object")
+    if options.get("translate"):
+        raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "cloud ASR does not translate")
+    diarize = bool(options.get("diarize", False))
+    if diarize and candidate.engine not in CLOUD_DIARIZERS:
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, f"{candidate.engine} does not diarize")
+    try:
+        provider = get_provider(candidate.engine)
+    except ValueError:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "unknown cloud ASR provider") from None
+    api_key = str(config(PROVIDER_ENV_KEYS[candidate.engine], default="")).strip()
+    if not api_key:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "provider key not configured on this worker")
+    request = dict(_CLOUD_OPTIONS.get(candidate.engine, {}))
+    if diarize:
+        request["diarize"] = True
+
+    started = time.perf_counter()
+    try:
+        out = provider.transcribe(
+            input_path,
+            api_key=api_key,
+            model=candidate.model,
+            language=snapshot.get("language"),
+            options=request or None,
+        )
+    except ProviderHTTPError as exc:
+        if exc.status_code in (401, 403):
+            raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "provider rejected the key") from None
+        if exc.status_code in (400, 413, 415, 422):
+            raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "provider rejected the input") from None
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "provider error") from None
+    except Exception:  # noqa: BLE001 - transport errors and timeouts: retry elsewhere/later
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "provider request failed") from None
+    seconds = time.perf_counter() - started
+
+    text = str(out.get("text", "")).strip()
+    language = out.get("language") or snapshot.get("language")
+    raw_segments = list(out.get("segments", []) or [])
+    segments = [_segment(seg) for seg in raw_segments]
+    markdown = audio_markdown(segments, text)
+    stages = [
+        StageProvenance(
+            stage="asr", engine=candidate.engine, model=candidate.model, accelerator="external", seconds=seconds
+        )
+    ]
+    if diarize:
+        duration = max((seg.end for seg in segments), default=0.0)
+        diarized = diarized_transcript(raw_segments, text, duration, _provider_turns(raw_segments), language)
+        if diarized is not None:
+            segments, markdown = diarized
+        # Same provider call: the ASR seconds cover it.
+        stages.append(
+            StageProvenance(
+                stage="diarize", engine=candidate.engine, model=candidate.model, accelerator="external", seconds=0.0
+            )
+        )
+    return JobResult(
+        kind="audio",
+        raw_text=text,
+        markdown=markdown,
+        language=language,
+        segments=segments,
+        provenance=Provenance(stages=stages),
+    )
+
+
 def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
     try:
         from resona_engine_docling import (
@@ -587,7 +701,8 @@ def run(snapshot_path: Path, input_path: Path, out_path: Path, metrics_path: Pat
     if kind in ("audio", "document") and isinstance(options, dict) and required_features(kind, options) - known_features():
         raise ExecutionFailure(ExitCode.UNKNOWN_OPTIONS, "options unknown to this release")
     if kind == "audio":
-        result = _run_audio(snapshot, candidate, input_path)
+        runner = _run_cloud_audio if candidate.accelerator == "external" else _run_audio
+        result = runner(snapshot, candidate, input_path)
     elif kind == "document":
         result = _run_document(snapshot, candidate, input_path)
     else:

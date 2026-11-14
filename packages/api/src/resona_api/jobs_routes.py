@@ -51,13 +51,13 @@ from resona_job_core import (
     TEXT_EXECUTION_PROFILE,
     TextOptions,
     check_policy,
+    cloud_asr_endpoint_id,
     document_options_conflict,
 )
 from resona_postprocess.pipeline import build_pipeline, endpoint_ids
 from resona_postprocess.profile import ProfileError
 
 from . import clock, releases, storage
-from . import engine_registry as reg
 from .auth import ROLE_ORG_ADMIN, Principal, client_principal, hash_token
 from .broker import (
     JOB_DELETED,
@@ -692,8 +692,8 @@ async def upload_with_link(
 
 def _candidate_stage(candidate: Candidate, kind: str, settings: OrganizationSettings) -> Stage:
     """The processing stage a candidate implies. Cloud providers are egress endpoints."""
-    if kind == "audio" and candidate.engine in reg.CLOUD_PROVIDERS:
-        endpoint_id = reg.cloud_asr_endpoint_id(candidate.engine)
+    endpoint_id = cloud_asr_endpoint_id(candidate.engine) if kind == "audio" else None
+    if endpoint_id is not None:
         registered = next((ep for ep in settings.endpoints if ep.id == endpoint_id), None)
         endpoint = registered or Endpoint(id=endpoint_id, kind=EndpointKind.CLOUD_ASR, model=candidate.model)
         return Stage(name="asr", kind="asr", endpoint=endpoint)

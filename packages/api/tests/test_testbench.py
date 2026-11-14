@@ -26,7 +26,7 @@ MAC_AUDIO = Candidate(engine="mlx-whisper", model="mlx-community/whisper-large-v
 CUDA_AUDIO = Candidate(engine="whisper", model="large-v3", accelerator="cuda")
 CPU_DOC = Candidate(engine="docling", model="docling-standard", accelerator="cpu", ocr_engine="rapidocr")
 MAC_DOC = Candidate(engine="docling", model="docling-standard", accelerator="metal", ocr_engine="ocrmac")
-CLOUD = Candidate(engine="deepgram", model="nova-3", accelerator="cpu")
+CLOUD = Candidate(engine="deepgram", model="nova-3", accelerator="external")
 PDF = b"%PDF-1.4\n% synthetic scan\n"
 T0 = datetime(2031, 3, 1, 8, 0, tzinfo=UTC)
 BASE = "/v1/testbench"

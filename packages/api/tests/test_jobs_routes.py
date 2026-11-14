@@ -599,7 +599,7 @@ def test_other_zip_containers_stay_unsupported(http, fresh_org, client_headers, 
 
 def _cloud_profile_settings():
     profiles = {name: p.model_dump(mode="json") for name, p in default_settings().execution_profiles.items()}
-    profiles["cloud"] = {"audio": [{"engine": "deepgram", "model": "nova-3", "accelerator": "cpu"}],
+    profiles["cloud"] = {"audio": [{"engine": "deepgram", "model": "nova-3", "accelerator": "external"}],
                          "document": []}
     return profiles
 

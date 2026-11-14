@@ -50,7 +50,8 @@ class PreparedDiarizer(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    weights: WeightRecord
+    # None: a cloud provider diarizes in its ASR call (no local weights).
+    weights: WeightRecord | None
     # The audio candidate the check ran with; the diarizer runs on its accelerator.
     candidate: Candidate
     seconds: float
