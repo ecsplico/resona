@@ -3141,8 +3141,8 @@ time.</p>
 <td>Request word timestamps</td>
 </tr>
 <tr>
-<td><code>--diarize</code></td>
-<td>off</td>
+<td><code>--diarize/--no-diarize</code></td>
+<td>profile default</td>
 <td>Label who spoke when; see <strong>Speaker diarization</strong> below</td>
 </tr>
 <tr>
@@ -3167,7 +3167,10 @@ stop the run with exit code 2 before any job is submitted.</p>
 <code>job 12: private=true execution_profile=cpu-private candidate=faster-whisper/large-v3@cpu status=completed</code>.</p>
 <p><strong>Exit codes:</strong> <code>0</code> success, <code>1</code> error or timeout, <code>2</code> <code>policy_denied</code> or colliding output names.</p>
 <p><strong>Speaker diarization</strong></p>
-<p><code>--diarize</code> sets <code>options.diarize</code> on the job (hub and <code>--local</code> alike). The result's <code>segments</code>
+<p><code>--diarize</code> sets <code>options.diarize</code> on the job (hub and <code>--local</code> alike); <code>--no-diarize</code> turns it
+off explicitly. Without either flag the execution profile's <code>diarize</code> setting applies (off unless
+the organization set <code>"diarize": true</code> on that profile, e.g. for a conversation-recording profile).
+Only production audio jobs take the profile default; evaluation and testbench jobs never do. The result's <code>segments</code>
 are then speaker sections, each with a 1-based <code>speaker</code> number in order of first appearance, and
 the Markdown has one paragraph per section starting with <code>**Sprecher N:**</code> (job language <code>de</code>) or
 <code>**Speaker N:**</code> (other languages); long sections continue in further paragraphs without a label.
@@ -3522,8 +3525,8 @@ watching with exit code 2.</p>
 <td>Process on this machine with cached hub settings</td>
 </tr>
 <tr>
-<td><code>--diarize</code></td>
-<td>off</td>
+<td><code>--diarize/--no-diarize</code></td>
+<td>profile default</td>
 <td>Label who spoke when, as <code>resona transcribe --diarize</code></td>
 </tr>
 </tbody>

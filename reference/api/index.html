@@ -3258,7 +3258,7 @@
 <td><code>options</code></td>
 <td>object</td>
 <td>no</td>
-<td>Audio: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>, <code>diarize</code> (label speakers; result segments carry <code>speaker</code>, only workers that diarize claim the job). Document: see <a href="#document-options">Document options</a></td>
+<td>Audio: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>, <code>diarize</code> (label speakers; result segments carry <code>speaker</code>, only workers that diarize claim the job; left out, a production job takes the execution profile's <code>diarize</code> setting, default off). Document: see <a href="#document-options">Document options</a></td>
 </tr>
 <tr>
 <td><code>private</code></td>
@@ -3627,7 +3627,7 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 <td><code>diarize</code></td>
 <td>bool</td>
 <td>no</td>
-<td>Default <code>false</code>; <code>true</code> labels speakers (<code>AudioOptions.diarize</code>): <code>verbose_json</code> segments carry <code>speaker</code>, the text has <code>**Sprecher N:**</code>/<code>**Speaker N:**</code> paragraphs. Part of the request an <code>Idempotency-Key</code> is matched against. A hub predating diarization ignores the field (unlabelled result, no error). <a href="../../guide/cli/#diarization-limits">Limits</a></td>
+<td>Default: the execution profile's <code>diarize</code> setting (off unless the organization turned it on); <code>true</code> labels speakers (<code>AudioOptions.diarize</code>), <code>false</code> turns it off: <code>verbose_json</code> segments carry <code>speaker</code>, the text has <code>**Sprecher N:**</code>/<code>**Speaker N:**</code> paragraphs. Part of the request an <code>Idempotency-Key</code> is matched against. A hub predating diarization ignores the field (unlabelled result, no error). <a href="../../guide/cli/#diarization-limits">Limits</a></td>
 </tr>
 </tbody>
 </table>
