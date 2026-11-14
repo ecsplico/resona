@@ -2820,12 +2820,12 @@
 </tr>
 <tr>
 <td><code>de-two-speakers</code></td>
-<td>German doctor/patient consultation, 2 <code>say</code> voices (Anna, Sandy), ~47 s, two short backchannels; job option <code>diarize: true</code></td>
+<td>German doctor/patient consultation, 2 <code>say</code> voices (Anna, Flo) at their own rate and level, ~68 s, 18 turns, backchannels and early starts overlapping the previous turn; job option <code>diarize: true</code></td>
 <td>WER, CER, speaker attribution, DER, speaker count</td>
 </tr>
 <tr>
 <td><code>de-case-conference</code></td>
-<td>German case conference, 4 <code>say</code> voices (Anna, Flo, Sandy, Reed), ~81 s, four short backchannels; job option <code>diarize: true</code></td>
+<td>German case conference, 3 <code>say</code> voices (Anna, Flo, Sandy) at their own rate and level, ~77 s, 19 turns, backchannels and early starts overlapping the previous turn; job option <code>diarize: true</code></td>
 <td>WER, CER, speaker attribution, DER, speaker count</td>
 </tr>
 </tbody>
@@ -2845,7 +2845,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-project<span class="w"> </span>--with<span class="w"> </span><span class="nv">reportlab</span><span class="o">==</span><span class="m">5</span>.1.0<span class="w"> </span>--with<span class="w"> </span><span class="nv">pillow</span><span class="o">==</span><span class="m">12</span>.2.0<span class="w"> </span>--with<span class="w"> </span><span class="nv">numpy</span><span class="o">==</span><span class="m">2</span>.2.5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>python<span class="w"> </span>eval/corpus/make_corpus.py<span class="w"> </span>--only<span class="w"> </span>hard
 </code></pre></div>
-<p><code>--only hard</code> regenerates the hard document fixtures and is byte-reproducible with the pinned versions above. <code>--only conversations</code> regenerates the two diarization conversations (macOS German voices Anna, Flo, Sandy and Reed; seeded pauses and noise, so it is reproducible on the same macOS version). <code>--only base</code> (or the default <code>all</code>) also regenerates the original fixtures and needs macOS with the German voice Anna and the system Arial; their bytes may differ on another macOS version, so leave them untouched unless they must change. <code>MANIFEST.json</code> is always rewritten from the files on disk; conversations that are not regenerated keep their reference turns from the current manifest.</p>
+<p><code>--only hard</code> regenerates the hard document fixtures and is byte-reproducible with the pinned versions above. <code>--only conversations</code> regenerates the two diarization conversations (macOS German voices Anna, Flo and Sandy, each with its own speaking rate and level; seeded short gaps, long pauses, early starts, backchannel overlaps and noise, so it is reproducible on the same macOS version). <code>--only base</code> (or the default <code>all</code>) also regenerates the original fixtures and needs macOS with the German voice Anna and the system Arial; their bytes may differ on another macOS version, so leave them untouched unless they must change. <code>MANIFEST.json</code> is always rewritten from the files on disk; conversations that are not regenerated keep their reference turns from the current manifest.</p>
 <p>Any change to the manifest changes the corpus hash. Every baseline must then be measured and promoted again (<code>resona eval promote --rebaseline</code>). Baselines promoted on an earlier corpus are no longer comparable and report <code>baseline_required</code> until they are promoted again. This happened when the hard fixtures were added, again when the French, Italian and Spanish scans replaced the duplicate <code>bad-text-layer-force</code> fixture, and again when the diarization conversations were added.</p>
 <div class="admonition warning">
 <p class="admonition-title">No private material</p>
