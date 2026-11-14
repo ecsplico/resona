@@ -510,12 +510,22 @@ def build(spec: dict, dataset: Path, interview: Path | None, only: set[str] | No
     metas = json.loads(meta_path.read_text()) if meta_path.exists() else {}
     length = float(spec["clip_seconds"])
 
+    def drop(clip_id: str) -> None:
+        metas.pop(clip_id, None)
+        fixtures.pop(clip_id, None)
+        (corpus / f"{clip_id}.wav").unlink(missing_ok=True)
+        (corpus / "rttm" / f"{clip_id}.rttm").unlink(missing_ok=True)
+
+    known = {ep["id"] for ep in spec["episodes"]}
+    for gone in [k for k, m in metas.items() if m["episode"] not in known]:
+        print(f"drop {gone}: episode not in sources", file=sys.stderr)
+        drop(gone)
+
     for ep in spec["episodes"]:
         if only and ep["id"] not in only:
             continue
         for stale in [k for k, m in metas.items() if m["episode"] == ep["id"]]:
-            metas.pop(stale)
-            fixtures.pop(stale, None)
+            drop(stale)
         audio = audio_path(dataset, interview, ep)
         toks, cues = episode_tokens(dataset, interview, ep)
         need_match = ep["labels"]["format"] != "deepgram" and ep["timing"] != "whisper"
