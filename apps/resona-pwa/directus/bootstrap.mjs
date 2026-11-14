@@ -2,8 +2,9 @@
 // Idempotent first-start bootstrap for the Resona data layer.
 //
 // Brings a blank Directus instance up to the state described in
-// directus/bootstrap.md: the `recordings` + `transcripts` + `documents`
-// collections (missing fields are added to existing installs), a non-admin
+// directus/bootstrap.md: the `recordings` + `transcripts` + `transcript_corrections`
+// + `recording_parts` + `documents` collections (missing fields are added to existing
+// installs), a non-admin
 // `user` role/policy/permissions (after checking that the owner-guard extension is
 // loaded), and the `transcribe-worker` admin user whose static token is pinned to
 // DIRECTUS_TOKEN (so the worker just works — no copy-paste). Safe to run
@@ -159,6 +160,39 @@ const COLLECTIONS = {
 		// recovery so a lost create response never yields a second hub job
 		plain("hub_job_key", "string"),
 	],
+	// A re-dictated part of a recording (#48): its own audio, transcribed by the
+	// project-worker as a hub job, then landed in the transcript by the PWA.
+	// status: pending → transcribing → done → applied; error; discarded.
+	recording_parts: [
+		uuidPk,
+		sysField("user_created", ["user-created"]),
+		sysField("date_created", ["date-created"]),
+		sysField("date_updated", ["date-updated"]),
+		// recording M2O → recordings; relation added separately
+		{ field: "recording", type: "uuid", schema: {}, meta: { interface: "select-dropdown-m2o", special: ["m2o"] } },
+		// order within the recording, 1..n
+		plain("seq", "integer"),
+		plain("status", "string", { default_value: "pending" }),
+		// the part's own audio (M2O → directus_files, relation added separately); the
+		// worker deletes the file and clears this once the audio sits in the recording
+		{ field: "audio", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
+		// copied from the recording at creation; the worker's hub job uses them
+		plain("language", "string"),
+		plain("profile", "string"),
+		// time range of the part in the recording's merged audio; null until appended
+		plain("offset_seconds", "float"),
+		plain("duration_seconds", "float"),
+		// insertion point in the saved transcript (null = end) and the SHA-256 of the
+		// transcript text that offset refers to
+		plain("anchor_offset", "integer"),
+		plain("anchor_text_sha", "string"),
+		// hub result (Markdown), written by the worker only
+		plain("text", "text"),
+		plain("error_message", "text"),
+		plain("hub_job_id", "integer"),
+		// hub Idempotency-Key of the current submission attempt (see recordings)
+		plain("hub_job_key", "string"),
+	],
 };
 
 // Custom fields on Directus system collections (added next to the app collections).
@@ -183,6 +217,8 @@ const RELATIONS = [
 	["transcript_corrections", "transcript", "transcripts"],
 	["transcript_corrections", "recording", "recordings"],
 	["documents", "file", "directus_files"],
+	["recording_parts", "recording", "recordings"],
+	["recording_parts", "audio", "directus_files"],
 ];
 
 async function ensureCollections() {
@@ -280,6 +316,24 @@ const PERMISSIONS = [
 	{ collection: "documents", action: "create", permissions: {}, fields: ["title", "file", "status"] },
 	{ collection: "documents", action: "update", permissions: { user_created: OWNER }, fields: ["status", "error_message"] },
 	{ collection: "documents", action: "delete", permissions: { user_created: OWNER } },
+	// recording parts: scoped to the parent recording's owner. Create: see transcripts
+	// (the owner guard also checks the part's audio is the user's own file). Users
+	// only ever request (`pending`), land (`applied`) or give up (`discarded`) a
+	// part; `transcribing`/`done`/`error`, the text and the job fields are the
+	// project-worker's.
+	{ collection: "recording_parts", action: "read", permissions: { recording: { user_created: OWNER } } },
+	{
+		collection: "recording_parts", action: "create",
+		validation: { status: { _eq: "pending" } },
+		// `id`: the PWA picks the part's uuid before recording (the editor chip refers to it)
+		fields: ["id", "recording", "seq", "status", "audio", "language", "profile", "anchor_offset", "anchor_text_sha"],
+	},
+	{
+		collection: "recording_parts", action: "update", permissions: { recording: { user_created: OWNER } },
+		validation: { status: { _in: ["pending", "applied", "discarded"] } },
+		fields: ["status", "anchor_offset", "anchor_text_sha", "offset_seconds", "duration_seconds"],
+	},
+	{ collection: "recording_parts", action: "delete", permissions: { recording: { user_created: OWNER } } },
 	// files: upload + read own (needed for audio/document upload + playback)
 	{ collection: "directus_files", action: "create", permissions: {} },
 	{ collection: "directus_files", action: "read", permissions: { uploaded_by: OWNER } },
@@ -362,19 +416,35 @@ function stableJson(value) {
 }
 
 // ── ownership guard on create ──────────────────────────────────────────────
-// The users' transcript/correction creates carry no item rule (see PERMISSIONS); the
-// hook extension in directus/extensions/ checks that the parent recording is the
-// user's own. It ships in the Directus image (directus/Dockerfile.directus). Runs
-// before ensureUserRole: without the guard the bootstrap stops, so an older install
-// keeps its old create rules (which reject every user create) instead of losing them.
+// The users' transcript/correction/part creates carry no item rule (see PERMISSIONS);
+// the hook extension in directus/extensions/ checks that the parent recording is the
+// user's own (and a part's audio the user's own file). It ships in the Directus image
+// (directus/Dockerfile.directus). Runs before ensureUserRole: without the guard the
+// bootstrap stops, so an older install keeps its old create rules (which reject every
+// user create) instead of losing them. A guard older than OWNER_GUARD_MIN_VERSION does
+// not know `recording_parts`, so it would let a user point the worker at someone
+// else's file: the bootstrap stops then too.
 const OWNER_GUARD_EXTENSION = "directus-extension-resona-owner-guard";
+const OWNER_GUARD_MIN_VERSION = [1, 1, 0];
+
+function versionAtLeast(version, min) {
+	const parts = String(version).split(".").map(n => Number.parseInt(n, 10) || 0);
+	for (let i = 0; i < min.length; i++) {
+		if ((parts[i] ?? 0) !== min[i]) return (parts[i] ?? 0) > min[i];
+	}
+	return true;
+}
 
 async function ensureOwnerGuard() {
 	const extensions = await api("GET", "/extensions");
 	const guard = extensions.find(e => e.schema?.name === OWNER_GUARD_EXTENSION);
 	if (!guard) die(`extension ${OWNER_GUARD_EXTENSION} is not loaded — run Directus from directus/Dockerfile.directus`);
 	if (guard.meta?.enabled === false) die(`extension ${OWNER_GUARD_EXTENSION} is disabled — enable it (Settings → Extensions)`);
-	console.log(`= extension ${OWNER_GUARD_EXTENSION} loaded`);
+	const version = guard.schema?.version;
+	if (version && !versionAtLeast(version, OWNER_GUARD_MIN_VERSION)) {
+		die(`extension ${OWNER_GUARD_EXTENSION} ${version} predates recording_parts — rebuild Directus from directus/Dockerfile.directus`);
+	}
+	console.log(`= extension ${OWNER_GUARD_EXTENSION} loaded${version ? ` (${version})` : ""}`);
 }
 
 // ── worker user + pinned static token ──────────────────────────────────────

@@ -1,4 +1,4 @@
-import type { CorrectionEdit, Recording, ResonaDocument, Transcript } from "~/types/directus";
+import type { CorrectionEdit, Recording, RecordingPart, ResonaDocument, Transcript } from "~/types/directus";
 
 /** `title_auto`: the title is a date placeholder the processor replaces with one derived from the transcript. */
 export interface NewRecording { title: string; title_auto?: boolean; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
@@ -13,6 +13,15 @@ export interface SaveRequest { title: string; titleAuto: boolean; language: stri
 export type TranscriptPatch = Partial<Pick<Transcript,
 	"text" | "raw_text" | "applied_profile" | "processed_text" | "postprocess_status" | "postprocess_profile">>;
 export interface RecordingPatch { title?: string; title_auto?: boolean; status?: Recording["status"]; error_message?: string | null; review_status?: "editing" | "ready" }
+/** A new re-dictation part; it starts `pending`, the processor runs its job. `id` is the editor chip's `partId`. */
+export type NewRecordingPart = Pick<RecordingPart, "id" | "recording" | "seq" | "language" | "profile" | "anchor_offset" | "anchor_text_sha">;
+/**
+ * Part fields the page writes: retry (`pending`), landed (`applied`), given up
+ * (`discarded`), the anchor and the time range once its audio was appended. Text,
+ * job and error fields belong to the processor (the Directus `user` policy refuses them).
+ */
+export type RecordingPartPatch = Partial<Pick<RecordingPart, "anchor_offset" | "anchor_text_sha" | "offset_seconds" | "duration_seconds">>
+	& { status?: "pending" | "applied" | "discarded" };
 export interface DataStore {
 	readonly mode: "directus" | "standalone";
 	listRecordings(opts: { search?: string; since?: string }): Promise<Recording[]>;
@@ -33,4 +42,11 @@ export interface DataStore {
 	createDocument(input: { title: string }, file: Blob, filename: string): Promise<ResonaDocument>;
 	updateDocument(id: string, patch: { status?: ResonaDocument["status"]; error_message?: string | null }): Promise<void>;
 	deleteDocument(id: string): Promise<void>;
+	/** Re-dictation parts of a recording, in recording order (`seq`). */
+	listParts(recordingId: string): Promise<RecordingPart[]>;
+	/** Stores a stopped part with its audio as `pending`. */
+	createPart(input: NewRecordingPart, audio: Blob, filename: string): Promise<RecordingPart>;
+	updatePart(id: string, patch: RecordingPartPatch): Promise<void>;
+	/** The part's own audio, or null once it was cleaned up. */
+	partAudio(part: RecordingPart): Promise<Blob | null>;
 }

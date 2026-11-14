@@ -1,5 +1,10 @@
 """Worker state machine: submit pending CMS rows as hub jobs, poll, write back.
 
+Sources: `recordings` (audio → a `transcripts` row), `documents` (document →
+`markdown`) and `recording_parts` (re-dictated audio → the part's own `text`; the PWA
+lands it in the transcript). Plus transcript re-processing (text jobs) and the
+cleanup of part audio the PWA already appended to its recording.
+
 Mirrors the PWA's in-browser processor (`app/data/localProcessor.ts`): same
 transitions, same German error messages.
 """
@@ -23,12 +28,21 @@ class Source:
     file_field: str
     kind: str
     active_status: str
+    # where a completed job's result goes: "transcript" (a `transcripts` row of the
+    # recording), "document" (the row's `markdown`) or "part" (the row's `text`)
+    target: str
 
 
 SOURCES = (
-    Source("recordings", "audio_file", "audio", "transcribing"),
-    Source("documents", "file", "document", "processing"),
+    Source("recordings", "audio_file", "audio", "transcribing", "transcript"),
+    Source("documents", "file", "document", "processing", "document"),
+    Source("recording_parts", "audio", "audio", "transcribing", "part"),
 )
+
+# Re-dictated parts whose audio may be deleted: the result is in (or given up) and
+# `offset_seconds` says the PWA appended the audio to the recording's own file.
+PARTS_COLLECTION = "recording_parts"
+PART_CLEANUP_STATUSES = ("done", "applied", "discarded")
 
 # Hub statuses that mean "try again later": unreachable/timed out (0), rate
 # limited, or a hub restarting behind its proxy. Rows are left untouched.
@@ -86,7 +100,7 @@ async def _submit(
     path: Path | None = None
     try:
         path = await directus.download_file(file_id, tmp_dir)
-        upload_id = await hub.upload(path, row.get("title") or file_id)
+        upload_id = await hub.upload(path, _upload_name(src, row, file_id))
         extra = {
             "language": row.get("language") or "de",
             "profile": row.get("profile") or None,
@@ -103,6 +117,13 @@ async def _submit(
         if path is not None and path.exists():
             path.unlink()
     return True
+
+
+def _upload_name(src: Source, row: dict, file_id: str) -> str:
+    """Name of the hub upload: the row's title, `part-<id>` for a part (no title)."""
+    if src.target == "part":
+        return f"part-{row['id']}"
+    return row.get("title") or file_id
 
 
 async def _read_job(hub: HubClient, job_id: int, *, text_job: bool = False) -> tuple[dict, dict | None]:
@@ -143,7 +164,16 @@ async def _poll(
     job, result = await _read_job(hub, job_id)
     if result is None:
         return False
-    if src.kind == "audio":
+    if src.target == "part":
+        # Text only: the PWA places it in the transcript (anchor, conflict handling),
+        # so no transcript row and no title here. One patch sets status `done` too.
+        if await directus.write_part(row_id, text=result.get("markdown") or ""):
+            log.info("completed %s %s (hub job %s)", src.collection, row_id, job_id)
+        else:
+            log.info("%s %s left its job meanwhile (hub job %s)", src.collection, row_id, job_id)
+        await _delete_job(hub, job_id)
+        return True
+    if src.target == "transcript":
         superseded = await directus.write_transcript(
             recording_id=row_id,
             text=result.get("markdown") or "",
@@ -310,12 +340,37 @@ async def _run_postprocess(
     return changed
 
 
+async def _cleanup_parts(directus: DirectusClient, *, batch: int) -> int:
+    """Deletes the audio of parts the PWA already appended to their recording.
+
+    Only parts with `offset_seconds` set: before that the page still has to append
+    the audio. A file that is already gone (404) counts as deleted. Failures are
+    logged and retried next cycle; they never stop the loop. Returns parts cleaned.
+    """
+    try:
+        rows = await directus.list_part_audio_to_clean(PART_CLEANUP_STATUSES, limit=batch)
+    except Exception:  # noqa: BLE001 — cleanup must never crash the worker
+        log.exception("could not list recording parts for audio cleanup")
+        return 0
+    cleaned = 0
+    for row in rows:
+        try:
+            await directus.delete_file(row["audio"])
+            await directus.patch(PARTS_COLLECTION, row["id"], {"audio": None})
+        except Exception:  # noqa: BLE001
+            log.exception("could not clean up audio of recording part %s", row["id"])
+            continue
+        cleaned += 1
+        log.info("deleted audio of recording part %s", row["id"])
+    return cleaned
+
+
 async def run_once(
     directus: DirectusClient, hub: HubClient, *,
     tmp_dir: Path, batch: int = 5, stale_minutes: int = 15, engine: str = "",
 ) -> int:
-    """One cycle over all sources and pending transcript re-processing.
-    Returns the number of rows that changed state."""
+    """One cycle over all sources, pending transcript re-processing and the cleanup
+    of appended part audio. Returns the number of rows that changed state."""
     changed = 0
     for src in SOURCES:
         changed += await directus.reclaim_stale(
@@ -338,4 +393,5 @@ async def run_once(
     changed += await _run_postprocess(
         directus, hub, batch=batch, stale_minutes=stale_minutes,
     )
+    changed += await _cleanup_parts(directus, batch=batch)
     return changed

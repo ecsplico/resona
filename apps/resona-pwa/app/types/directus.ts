@@ -97,6 +97,36 @@ export interface ResonaDocument {
 	hub_job_id?: number | null;
 	hub_job_key?: string | null;
 }
+/**
+ * A re-dictation part (`recording_parts`): its own audio, hub job and text until
+ * the page landed the text in the transcript (`applied`). The transcript stays one
+ * text; the part keeps where it goes (`anchor_*`) and where its audio sits in the
+ * recording's file (`offset_seconds`, `duration_seconds`, null until appended).
+ */
+export interface RecordingPart {
+	id: string;
+	recording: string;
+	/** Recording order, 1..n per recording. */
+	seq: number;
+	status: "pending" | "transcribing" | "done" | "applied" | "error" | "discarded";
+	/** The part's own audio; cleared once it was transcribed and appended. */
+	audio?: string | null;
+	language: string;
+	profile: string;
+	offset_seconds?: number | null;
+	duration_seconds?: number | null;
+	/** Offset in the saved transcript text (null: at the end) and the SHA-256 of that text. */
+	anchor_offset?: number | null;
+	anchor_text_sha?: string | null;
+	/** Hub result, written by the processor. */
+	text?: string | null;
+	error_message?: string | null;
+	hub_job_id?: number | null;
+	hub_job_key?: string | null;
+	user_created?: string;
+	date_created?: string;
+	date_updated?: string;
+}
 /** Custom fields on the core `directus_users` collection. */
 export interface DirectusUserFields {
 	hub_token?: string | null;
@@ -106,6 +136,7 @@ export interface Schema {
 	transcripts: Transcript[];
 	documents: ResonaDocument[];
 	transcript_corrections: TranscriptCorrection[];
+	recording_parts: RecordingPart[];
 	// Singular: extends the core collection instead of declaring a new one.
 	directus_users: DirectusUserFields;
 }

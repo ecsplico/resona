@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { watch } from "vue";
-import { EditorContent, getTextBetween, getTextSerializersFromSchema, useEditor } from "@tiptap/vue-3";
+import { ref, watch } from "vue";
+import { EditorContent, Extension, getTextBetween, getTextSerializersFromSchema, useEditor } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { JSONContent } from "@tiptap/vue-3";
@@ -23,9 +23,12 @@ import {
 const BLOCK = "\n";
 
 // `editable: false` locks the text (e.g. while a postprocess profile rewrites it).
-const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; editable?: boolean }>(), {
+// `movable`: paragraphs can be moved up/down (Alt+↑/↓ and a control at the caret's
+// paragraph); meant for desktop, phones leave it off.
+const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; editable?: boolean; movable?: boolean }>(), {
 	placeholder: "",
 	editable: true,
+	movable: false,
 });
 
 // `typed`: the user changed the text (keyboard, paste, cut, undo); not emitted for
@@ -56,6 +59,29 @@ function toContent(text: string): JSONContent {
 	};
 }
 
+// Checked on every key press, so toggling `movable` needs no editor rebuild. With
+// it on, the keys are taken even at the first/last block, where they do nothing.
+const MoveBlocks = Extension.create({
+	name: "moveBlocks",
+	priority: 1000,
+	addKeyboardShortcuts() {
+		const move = (dir: -1 | 1): boolean => {
+			if (!props.movable) return false;
+			moveBlock(dir);
+			return true;
+		};
+		return {
+			"Alt-ArrowUp": () => move(-1),
+			"Alt-ArrowDown": () => move(1),
+		};
+	},
+});
+
+// Whether the editor has focus, and where the move control stands: the top of the
+// caret's top-level block inside `.tt-editor`, and whether that block is the first/last.
+const focused = ref(false);
+const moveAt = ref<{ top: number; first: boolean; last: boolean } | null>(null);
+
 const editor = useEditor({
 	content: toContent(props.modelValue),
 	editable: props.editable,
@@ -63,6 +89,7 @@ const editor = useEditor({
 		StarterKit,
 		Placeholder.configure({ placeholder: props.placeholder }),
 		DictationPart,
+		MoveBlocks,
 	],
 	onUpdate: ({ editor }) => {
 		const text = editor.getText({ blockSeparator: BLOCK });
@@ -70,6 +97,15 @@ const editor = useEditor({
 		if (text !== props.modelValue) {
 			emit("update:modelValue", text);
 		}
+	},
+	onCreate: ({ editor }) => placeMoveControl(editor),
+	onTransaction: ({ editor }) => placeMoveControl(editor),
+	onFocus: ({ editor }) => {
+		focused.value = true;
+		placeMoveControl(editor);
+	},
+	onBlur: () => {
+		focused.value = false;
 	},
 });
 
@@ -116,13 +152,70 @@ function hasFocus(): boolean {
 	return editor.value?.isFocused ?? false;
 }
 
-/** Shows a chip for `partId` at the caret, or at the end of the text. */
-function insertDictationPart(partId: string, at: "caret" | "end"): void {
+type Editor = NonNullable<typeof editor.value>;
+
+/** Plain-text offset of document position `pos` (chips count for nothing). */
+function textOffset(e: Editor, pos: number): number {
+	return getTextBetween(e.state.doc, { from: 0, to: pos }, {
+		blockSeparator: BLOCK,
+		textSerializers: getTextSerializersFromSchema(e.schema),
+	}).length;
+}
+
+/**
+ * Document position at plain-text offset `offset`: inside the text block that
+ * holds it, after any chip already standing there. Null past the end.
+ */
+function posAtOffset(e: Editor, offset: number): number | null {
+	let found: number | null = null;
+	e.state.doc.descendants((node, pos) => {
+		if (found !== null) return false;
+		if (!node.isTextblock) return true;
+		const start = textOffset(e, pos + 1);
+		if (offset < start || offset > start + node.textContent.length) return false;
+		let cur = pos + 1;
+		let left = offset - start;
+		node.forEach((child) => {
+			if (found !== null) return;
+			if (child.isText && left < child.nodeSize) {
+				found = cur + left;
+				return;
+			}
+			if (child.isText) left -= child.nodeSize;
+			cur += child.nodeSize;
+		});
+		if (found === null) found = cur;
+		return false;
+	});
+	return found;
+}
+
+/**
+ * Shows a chip for `partId` at the caret, at the end of the text, or at a
+ * plain-text offset (a stored anchor; past the end means the end).
+ */
+function insertDictationPart(partId: string, at: "caret" | "end" | number, status: DictationPartStatus = "recording"): void {
 	const e = editor.value;
 	if (!e || findDictationPart(e.state.doc, partId) !== null) return;
-	const node = e.schema.nodes[DICTATION_PART]!.create({ partId, status: "recording" });
-	const tr = insertDictationNode(e.state.tr, node, at === "caret" ? e.state.selection.from : null);
+	const node = e.schema.nodes[DICTATION_PART]!.create({ partId, status });
+	const pos = at === "caret" ? e.state.selection.from : at === "end" ? null : posAtOffset(e, at);
+	const tr = insertDictationNode(e.state.tr, node, pos);
 	viaApi(() => e.view.dispatch(tr.setMeta(DICTATION_PART_ADD, partId).setMeta("addToHistory", false)));
+}
+
+/** Where each chip stands in the emitted plain text `base`: at offset `at`. */
+function dictationPartOffsets(): { partId: string; base: string; at: number }[] {
+	const e = editor.value;
+	if (!e) return [];
+	const base = e.getText({ blockSeparator: BLOCK });
+	const out: { partId: string; base: string; at: number }[] = [];
+	e.state.doc.descendants((node, pos) => {
+		if (node.type.name === DICTATION_PART && typeof node.attrs.partId === "string") {
+			out.push({ partId: node.attrs.partId, base, at: textOffset(e, pos) });
+		}
+		return true;
+	});
+	return out;
 }
 
 function setDictationPartStatus(partId: string, status: DictationPartStatus): void {
@@ -169,10 +262,7 @@ function resolveDictationPart(
 	const pos = removeDictationPart(partId)!;
 	if (!text) return null;
 	const { doc } = e.state;
-	const at = getTextBetween(doc, { from: 0, to: pos }, {
-		blockSeparator: BLOCK,
-		textSerializers: getTextSerializersFromSchema(e.schema),
-	}).length;
+	const at = textOffset(e, pos);
 	const $pos = doc.resolve(pos);
 	const before = doc.textBetween($pos.start(), pos, BLOCK, "");
 	const after = doc.textBetween(pos, $pos.end(), BLOCK, "");
@@ -228,12 +318,58 @@ function appendParagraph(text: string): void {
 	viaApi(() => e.commands.insertContentAt({ from, to: end }, toContent(text).content ?? [], { updateSelection: false }));
 }
 
+// ── Moving paragraphs ──────────────────────────────────────────────────────
+
+/** What the move helpers read from an editor (the hooks hand over the core type). */
+type EditorView = Pick<Editor, "state" | "view">;
+
+/** The top-level block holding the caret: its index and start position. */
+function caretBlock(e: EditorView): { index: number; start: number } | null {
+	const { $head } = e.state.selection;
+	return $head.depth < 1 ? null : { index: $head.index(0), start: $head.before(1) };
+}
+
+function placeMoveControl(e: EditorView): void {
+	const block = caretBlock(e);
+	const dom = block ? e.view.nodeDOM(block.start) : null;
+	moveAt.value = block && dom instanceof HTMLElement
+		? { top: dom.offsetTop, first: block.index === 0, last: block.index === e.state.doc.childCount - 1 }
+		: null;
+}
+
+/**
+ * Moves the caret's top-level block one block up (-1) or down (1), keeping the
+ * caret at its place inside it; nothing at the first/last block. A user edit:
+ * it reaches onUpdate as typing does (`typed`) and is one undo step of its own.
+ */
+function moveBlock(dir: -1 | 1): void {
+	const e = editor.value;
+	const block = e?.isEditable ? caretBlock(e) : null;
+	const other = block ? e!.state.doc.maybeChild(block.index + dir) : null;
+	if (!e || !block || !other) return;
+	const { doc, selection } = e.state;
+	const node = doc.child(block.index);
+	// The block and its neighbour swap in one replace step, so a chip inside either
+	// is in the document exactly once before and after: the keeper plugin leaves it be.
+	const from = dir < 0 ? block.start - other.nodeSize : block.start;
+	const tr = e.state.tr.replaceWith(from, from + node.nodeSize + other.nodeSize, dir < 0 ? [node, other] : [other, node]);
+	const shift = block.start - (dir < 0 ? from : from + other.nodeSize);
+	const end = block.start + node.nodeSize;
+	const head = selection.head - shift;
+	const anchor = selection.anchor >= block.start && selection.anchor <= end ? selection.anchor - shift : head;
+	tr.setSelection(TextSelection.between(tr.doc.resolve(anchor), tr.doc.resolve(head))).scrollIntoView();
+	e.view.dispatch(closeHistory(tr));
+	// Close the group after the move as well, so typing right after it is not undone with it.
+	e.view.dispatch(closeHistory(e.state.tr).setMeta("addToHistory", false));
+}
+
 defineExpose({
 	insertText,
 	appendParagraph,
 	focus,
 	hasFocus,
 	insertDictationPart,
+	dictationPartOffsets,
 	setDictationPartStatus,
 	resolveDictationPart,
 	removeDictationPart,
@@ -241,8 +377,51 @@ defineExpose({
 </script>
 
 <template>
-	<div class="tt-editor">
+	<div
+		class="tt-editor"
+		:class="{ 'tt-editor--movable': movable }"
+	>
 		<EditorContent :editor="editor" />
+		<!-- A span, not a div: `.tt-editor > div` is the editor's own flex column. -->
+		<span
+			v-if="movable && editable"
+			v-show="focused && moveAt"
+			class="tt-move"
+			:style="{ top: `${moveAt?.top ?? 0}px` }"
+		>
+			<!-- mousedown.prevent keeps the focus (and the caret) in the editor; the -->
+			<!-- keyboard path is Alt+↑/↓, so the buttons stay out of the tab order. -->
+			<button
+				type="button"
+				class="tt-move__btn"
+				aria-label="Absatz nach oben"
+				title="Absatz nach oben (Alt+↑)"
+				tabindex="-1"
+				:disabled="!moveAt || moveAt.first"
+				@mousedown.prevent
+				@click="moveBlock(-1)"
+			>
+				<svg
+					viewBox="0 0 12 12"
+					aria-hidden="true"
+				><path d="M2.5 7.5 6 4l3.5 3.5" /></svg>
+			</button>
+			<button
+				type="button"
+				class="tt-move__btn"
+				aria-label="Absatz nach unten"
+				title="Absatz nach unten (Alt+↓)"
+				tabindex="-1"
+				:disabled="!moveAt || moveAt.last"
+				@mousedown.prevent
+				@click="moveBlock(1)"
+			>
+				<svg
+					viewBox="0 0 12 12"
+					aria-hidden="true"
+				><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+			</button>
+		</span>
 	</div>
 </template>
 
@@ -263,4 +442,13 @@ defineExpose({
 .tt-editor :deep(.dictation-part--error::after) { content:attr(data-label); }
 @keyframes dictation-pulse { from { opacity:1; } to { opacity:0.3; } }
 @media (prefers-reduced-motion:reduce) { .tt-editor :deep(.dictation-part::before) { animation:none; } }
+/* Move control: in a left gutter, at the top of the caret's paragraph. */
+.tt-editor--movable { position:relative; }
+.tt-editor--movable :deep(.ProseMirror) { padding-left:40px; }
+.tt-move { position:absolute; left:8px; display:flex; flex-direction:column; gap:2px; transition:top var(--motion-fast) var(--motion-ease); }
+.tt-move__btn { width:22px; height:20px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border-strong); border-radius:6px; background:var(--white); color:var(--fg2); cursor:pointer; transition:color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
+.tt-move__btn:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); }
+.tt-move__btn:disabled { opacity:0.35; cursor:default; }
+.tt-move__btn svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+@media (prefers-reduced-motion:reduce) { .tt-move, .tt-move__btn { transition:none; } }
 </style>

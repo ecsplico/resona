@@ -35,10 +35,12 @@ mockComponent("TranscriptEditor", () => ({
 			},
 			focus: () => {},
 			hasFocus: () => editorCaret.value !== null,
-			insertDictationPart: (partId: string, at: "caret" | "end") => {
+			insertDictationPart: (partId: string, at: "caret" | "end" | number, status = "recording") => {
 				const cur = props.modelValue ?? "";
-				parts.value.push({ partId, status: "recording", at: at === "caret" && editorCaret.value !== null ? editorCaret.value : cur.length });
+				const offset = typeof at === "number" ? at : at === "caret" && editorCaret.value !== null ? editorCaret.value : cur.length;
+				parts.value.push({ partId, status, at: offset });
 			},
+			dictationPartOffsets: () => parts.value.map(p => ({ partId: p.partId, base: props.modelValue ?? "", at: p.at })),
 			setDictationPartStatus: (partId: string, status: string) => {
 				const part = parts.value.find(p => p.partId === partId);
 				if (part) part.status = status;
@@ -193,6 +195,8 @@ const redict = vi.hoisted(() => ({
 	discard: vi.fn((_partId: string) => {}),
 	interruption: null as Ref<string | null> | null,
 	continueRecording: vi.fn(async () => true),
+	saved: vi.fn(),
+	reanchor: vi.fn((_anchors: Map<string, unknown>) => {}),
 }));
 
 mockNuxtImport("useRedictation", () => (hooks: RedictationHooks) => {
@@ -218,8 +222,10 @@ mockNuxtImport("useRedictation", () => (hooks: RedictationHooks) => {
 		parts,
 		transcribing,
 		merging: computed(() => merging.value),
-		busy: computed(() => recordingRef.value || transcribing.value > 0 || merging.value),
-		failed: computed(() => parts.value.filter(p => p.status === "error" || p.audio === "failed").length),
+		// Like the engine: stored parts transcribe without the page, so only the
+		// microphone, the audio append and parts that could not be stored hold it.
+		busy: computed(() => recordingRef.value || merging.value),
+		failed: computed(() => parts.value.filter(p => p.stored === "failed").length),
 		start: async (partId: string) => {
 			startError.value = null;
 			const ok = await redict.start(partId);
@@ -239,7 +245,7 @@ mockNuxtImport("useRedictation", () => (hooks: RedictationHooks) => {
 			micPart = null;
 			recordingRef.value = false;
 			const ok = await redict.finish();
-			if (ok && id) parts.value = [...parts.value, { id, status: "transcribing", error: null, audio: "saved", audioError: null }];
+			if (ok && id) parts.value = [...parts.value, { id, stored: "saved", status: "transcribing", error: null, audio: "saved", audioError: null }];
 			return ok;
 		},
 		retry: (partId: string) => {
@@ -254,6 +260,8 @@ mockNuxtImport("useRedictation", () => (hooks: RedictationHooks) => {
 			redict.discard(partId);
 			parts.value = parts.value.filter(p => p.id !== partId);
 		},
+		saved: redict.saved,
+		reanchor: redict.reanchor,
 	};
 });
 
@@ -311,6 +319,9 @@ describe("recording detail page", () => {
 		loading.value = false;
 		error.value = null;
 		editorCaret.value = null;
+		// Part ids are row uuids; numbered here so specs can name them.
+		let uuids = 0;
+		vi.spyOn(crypto, "randomUUID").mockImplementation(() => `part-${++uuids}` as `${string}-${string}-${string}-${string}-${string}`);
 	});
 
 	it("renders the transcript text when done", async () => {
@@ -1224,22 +1235,22 @@ describe("recording detail page", () => {
 			expect(w.findComponent({ name: "HPlayerDock" }).props("src")).toBe(src);
 		});
 
-		it("a part whose audio was not saved offers to append it again and guards leaving", async () => {
+		it("a part whose audio was not saved offers to append it again; stored, leaving asks nothing", async () => {
 			const confirm = vi.fn((_message?: string) => false);
 			vi.stubGlobal("confirm", confirm);
 			const w = await mountSuspended(RecordingPage);
 			const part = await recordPart(w);
 			await landPart(part, "Neuer Teil");
-			// The engine keeps the part (and its blob) while its audio is not saved.
-			redict.parts!.value = [{ id: part, status: "done", error: null, audio: "failed", audioError: "Decoder kaputt" }];
+			// The part keeps its own audio in its row; a reopen appends it again.
+			redict.parts!.value = [{ id: part, stored: "saved", status: "done", error: null, audio: "failed", audioError: "Decoder kaputt" }];
 			await nextTick();
 			const banner = w.find("[data-testid=\"continue-audio-failed\"]");
 			expect(banner.text()).toContain("Audio nicht gespeichert – Erneut anhängen");
 			expect(banner.text()).toContain("Decoder kaputt");
 
 			const here = { params: { id: "rec-1" } };
-			expect(guards.leave!({ params: { id: "rec-2" } }, here)).toBe(false);
-			expect(confirm).toHaveBeenCalledWith("Ein Nachdiktat ist fehlgeschlagen und geht beim Verlassen verloren. Trotzdem verlassen?");
+			expect(guards.leave!({ params: { id: "rec-2" } }, here)).toBe(true);
+			expect(confirm).not.toHaveBeenCalled();
 
 			await w.find("[data-testid=\"continue-audio-retry\"]").trigger("click");
 			await nextTick();
@@ -1248,13 +1259,20 @@ describe("recording detail page", () => {
 			vi.unstubAllGlobals();
 		});
 
-		it("asks before leaving when a part's transcription failed", async () => {
+		it("a stored part whose transcription failed lets the page go; one that could not be stored asks", async () => {
 			const confirm = vi.fn((_message?: string) => false);
 			vi.stubGlobal("confirm", confirm);
 			const w = await mountSuspended(RecordingPage);
-			await failPart(await recordPart(w), "Hub weg");
-			expect(guards.leave!({ params: { id: "rec-2" } }, { params: { id: "rec-1" } })).toBe(false);
-			expect(confirm).toHaveBeenCalledWith("Ein Nachdiktat ist fehlgeschlagen und geht beim Verlassen verloren. Trotzdem verlassen?");
+			const part = await recordPart(w);
+			await failPart(part, "Hub weg");
+			const away = () => guards.leave!({ params: { id: "rec-2" } }, { params: { id: "rec-1" } });
+			expect(away()).toBe(true);
+			expect(confirm).not.toHaveBeenCalled();
+
+			redict.parts!.value = redict.parts!.value.map(p => ({ ...p, stored: "failed" as const }));
+			await nextTick();
+			expect(away()).toBe(false);
+			expect(confirm).toHaveBeenCalledWith("Ein Nachdiktat konnte nicht gespeichert werden und geht beim Verlassen verloren. Trotzdem verlassen?");
 			vi.unstubAllGlobals();
 		});
 
@@ -1267,9 +1285,9 @@ describe("recording detail page", () => {
 			const region = live().element;
 			await recordPart(w);
 			expect(live().element).toBe(region);
-			expect(live().text()).toBe("1 Teil wird transkribiert – Seite bitte geöffnet lassen.");
+			expect(live().text()).toBe("1 Teil wird transkribiert.");
 			await recordPart(w);
-			expect(live().text()).toBe("2 Teile werden transkribiert – Seite bitte geöffnet lassen.");
+			expect(live().text()).toBe("2 Teile werden transkribiert.");
 
 			redict.parts!.value = [];
 			redict.merging!.value = true;
@@ -1310,7 +1328,7 @@ describe("recording detail page", () => {
 			expect(restart().attributes("disabled")).toBeDefined();
 		});
 
-		it("asks before leaving while a part would be lost", async () => {
+		it("asks before leaving while a part is still recording, not once it is stored", async () => {
 			const confirm = vi.fn((_message?: string) => true);
 			vi.stubGlobal("confirm", confirm);
 			const w = await mountSuspended(RecordingPage);
@@ -1320,7 +1338,8 @@ describe("recording detail page", () => {
 			expect(guards.leave!(other, here)).toBe(true);
 			expect(confirm).not.toHaveBeenCalled();
 
-			await recordPart(w);
+			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+			await flushPromises();
 			confirm.mockReturnValueOnce(false);
 			expect(guards.leave!(other, here)).toBe(false);
 			expect(confirm).toHaveBeenCalledWith("Das laufende Nachdiktat geht verloren. Trotzdem verlassen?");
@@ -1331,6 +1350,13 @@ describe("recording detail page", () => {
 			confirm.mockReturnValueOnce(false);
 			expect(guards.update!(other, here)).toBe(false);
 			expect(guards.update!(here, here)).toBe(true);
+			expect(confirm).toHaveBeenCalledTimes(3);
+
+			// Stopped and stored: it transcribes without the page.
+			await w.find("[data-testid=\"stop\"]").trigger("click");
+			await flushPromises();
+			expect(redict.parts!.value).toHaveLength(1);
+			expect(guards.leave!(other, here)).toBe(true);
 			expect(confirm).toHaveBeenCalledTimes(3);
 			vi.unstubAllGlobals();
 		});

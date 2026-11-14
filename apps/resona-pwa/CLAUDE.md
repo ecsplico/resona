@@ -249,20 +249,32 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   0 is replaced by the real length (`probeDuration`: `<audio>` metadata, fallback
   `decodeAudioData`; recorder callers pass their own elapsed time).
 - **Re-dictation** (`useRedictation`, own `useRecorder`, record bar `HRecordBar` in place of the
-  player dock): parts are recorded one at a time, but a stopped part never blocks. Its audio
-  is appended to the stored audio strictly in stop order (`utils/audioMerge.ts` `mergeToWav`:
-  OfflineAudioContext decode, mono, 16 kHz, PCM16 WAV, ~2 MB/min; saved via
-  `DataStore.replaceAudio`, Directus keeps the old file, the local store deletes the old blob),
-  and its text comes from its own hub job
-  (upload → `createJob` with a per-attempt `redictation:recordings:<id>:<uuid>` key → `getJob`
-  every 2 s, no timeout → `getResult` → `deleteJob`, `localProcessor.ts` helpers; the job is
-  deleted however the attempt ends) in the
-  background, while the next part, typing and saving stay free. A part keeps its audio blob
-  until its text landed and its audio is saved: a failed job keeps the part for
-  `retry`/`discard`, a failed append lands the text but keeps the part as "Audio nicht
-  gespeichert" for `retryAudio` (appended at the end then); a throwing append never breaks the
-  chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
-  page adds a route-leave/update `confirm`.
+  player dock): parts are recorded one at a time, but a stopped part never blocks. Each part
+  is a durable `recording_parts` row (Directus; `resona-local-parts` in standalone) whose id
+  is the chip's `partId` (`crypto.randomUUID()` at record start). On stop the page stores it
+  (`DataStore.createPart`: own audio file, `seq`, language/profile, anchor = offset of the chip
+  in the *saved* text via `rebaseOffset` + `sha256Hex` of that text; null offset = append),
+  then discards the recorder's IndexedDB session. The processor transcribes it like a
+  recording (project worker / `localProcessor.ts`, upload `part-<id>`; the result goes to the
+  part's `text`, status `done`, no transcript row). The page polls `listParts` every 2 s and
+  lands `done` parts at their chip (status → `applied`); after every write it re-anchors the
+  chips still waiting (`reanchor`). Opened again, unfinished parts come back as chips at their
+  anchor while the saved text's SHA matches, else at the end with a notice; `done` ones land at
+  once. Audio is appended to the recording strictly in stop order (`utils/audioMerge.ts`
+  `mergeToWav`: OfflineAudioContext decode, mono, 16 kHz, PCM16 WAV, ~2 MB/min; saved via
+  `DataStore.replaceAudio`) and the part gets `offset_seconds`/`duration_seconds`; a part with
+  null `offset_seconds` is appended again on the next open (`retryAudio` on the page). Part
+  audio is deleted once the part is finished and appended (worker cleanup /
+  `releasePartAudio`). A failed job keeps the part for `retry` (back to `pending`) /
+  `discard` (`discarded`). Leaving is only guarded while recording, storing or appending
+  (`busy`) or for a part that could not be stored (`failed`, lives only in memory, `retry`
+  stores it); stored parts keep transcribing without the page. "Neu transkribieren" and
+  "Nachbearbeiten" wait until no part is unsettled.
+- **Moving paragraphs** (desktop only, `TranscriptEditor` prop `movable` = `useShell().wide`):
+  Alt+↑/↓ or the up/down control in the left gutter swaps the caret's paragraph with its
+  neighbour (one undo step, `typed`; chips move along). The audio keeps recording order.
+  `diffEdits` puts moved paragraphs back first (same trimmed text, or ≥ half the words shared),
+  so a move is no engine correction.
 - **Recording resilience** (record sheet, live, re-dictation part; web recorder only, the
   Capacitor app's native recorder has only the recovery, see **Capacitor app**): `useWebRecorder` holds a screen
   wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
@@ -313,7 +325,7 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
 
 No CMS: recordings, transcripts, documents and files live in IndexedDB
 (`app/data/localStore.ts`; one idb-keyval database per collection,
-`resona-local-recordings|transcripts|documents|files`, store `items`, files as
+`resona-local-recordings|transcripts|documents|files|corrections|parts`, store `items`, files as
 `{bytes, type, name}`), there is no login (`auth.global.ts` sends `/login` to `/`),
 and the health indicator skips the Directus ping. `app/plugins/local-processor.client.ts`
 runs `runLocalCycle()` (`app/data/localProcessor.ts`) every 5 s and on `online`: it
@@ -407,7 +419,7 @@ app/
 │   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
 │   │                                # useDeviceSpeech: on-device Web Speech live source
 │   │                                # useLiveCorrection: re-transcribes live blocks via the hub
-│   │                                # useRedictation: record more parts onto a recording (background hub jobs)
+│   │                                # useRedictation: record more parts onto a recording (durable recording_parts, landed at their chip)
 ├── data/
 │   ├── types.ts                     # DataStore interface shared by both backends
 │   ├── directusStore.ts             # DataStore over Directus (directus mode)
@@ -505,6 +517,13 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
 - **documents**: `id, user_created, date_created, date_updated, title, file (→
   directus_files), status (pending|processing|done|error), error_message, markdown,
   pages (json), hub_job_id, hub_job_key`.
+- **recording_parts** (re-dictation): `id` (client-chosen uuid = chip id), `recording` (→
+  recordings, CASCADE), `seq`, `audio` (→ directus_files, SET NULL), `language`, `profile`,
+  `status (pending|transcribing|done|applied|error|discarded)`, `anchor_offset`,
+  `anchor_text_sha`, `offset_seconds`, `duration_seconds`, `text`, `error_message`,
+  `hub_job_id`, `hub_job_key`. Users create `pending` parts on their own recording with their
+  own file and may set only `applied|discarded|pending` plus anchors/offsets; `text`, errors
+  and job fields are the worker's. The owner guard checks `recording` and `audio`.
 - **Create ownership** of `transcripts` / `transcript_corrections` (parent recording,
   and transcript, must be the user's) is enforced by the hook extension
   `directus/extensions/directus-extension-resona-owner-guard`, not by the permission:
