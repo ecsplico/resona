@@ -285,8 +285,8 @@
       "kind": "audio",
       "file": "de_two_speakers.wav",
       "language": "de",
-      "source": "synthetic German doctor/patient consultation, 2 speakers (text invented for testing), macOS `say` voices Anna, Sandy (Deutsch (Deutschland)), each turn trimmed to its voiced span, pauses 0.25-0.8 s (seed 21), backchannels overlap the previous turn by 0.35 s, noise sigma 0.002",
-      "reference": "Guten Tag, Frau Berger. Was führt Sie heute zu mir? Seit etwa zwei Wochen habe ich Kopfschmerzen, vor allem morgens nach dem Aufstehen. Mhm. Manchmal ist mir dabei auch schwindelig, und die Tabletten aus der Apotheke helfen kaum. Welche Tabletten nehmen Sie, und wie oft am Tag? Ibuprofen vierhundert Milligramm, meistens zweimal täglich. Haben Sie Ihren Blutdruck in letzter Zeit gemessen? Nein, das habe ich schon lange nicht mehr gemacht. Dann messen wir ihn gleich. Bitte machen Sie den linken Arm frei. Okay. Der Wert liegt bei hundertsechzig zu hundert. Das ist deutlich zu hoch. Kommen die Kopfschmerzen davon? Gut möglich. Wir messen eine Woche lang zu Hause und sehen uns am Montag wieder.",
+      "source": "synthetic German doctor/patient consultation, 2 speakers (text invented for testing), macOS `say` voices Anna, Flo (Deutsch (Deutschland)) at their own rate and level, each turn trimmed to its voiced span (seed 21); gaps 0.12-0.5 s, 25% long pauses 0.7-1.4 s, 15% early starts overlapping 0.1-0.25 s, backchannels overlapping 0.2-0.45 s, noise sigma 0.002",
+      "reference": "Guten Tag, Herr Berger, nehmen Sie bitte Platz. Was führt Sie heute zu mir? Ja, also, seit ungefähr zwei Wochen habe ich Kopfschmerzen. Vor allem morgens, direkt nach dem Aufstehen, und manchmal ziehen sie bis in den Nacken. Mhm. Und ab und zu ist mir dabei auch schwindelig. Die Tabletten aus der Apotheke helfen kaum. Welche Tabletten nehmen Sie, und wie oft? Ibuprofen, vierhundert Milligramm. Meistens zweimal am Tag. Seit den zwei Wochen jeden Tag? Fast jeden Tag, ja. Haben Sie Ihren Blutdruck in letzter Zeit einmal gemessen? Nein, ehrlich gesagt schon lange nicht mehr. Dann machen wir das gleich. Bitte den linken Arm frei machen und ganz ruhig sitzen bleiben. Okay. Hundertsechzig zu hundert. Das ist deutlich zu hoch. Kommen die Kopfschmerzen davon? Gut möglich. Ich gebe Ihnen ein Messgerät mit. Sie messen eine Woche lang morgens und abends und schreiben die Werte auf. Und die Tabletten? Die lassen Sie bitte weg, so gut es geht. Wir sehen uns am Montag wieder. Gut, danke Ihnen.",
       "checks": [
         "wer",
         "cer",
@@ -300,84 +300,114 @@
       "speakers": [
         {
           "speaker": "Anna",
-          "start": 0.6796,
-          "end": 4.0956,
-          "text": "Guten Tag, Frau Berger. Was führt Sie heute zu mir?"
+          "start": 0.3502,
+          "end": 4.9021,
+          "text": "Guten Tag, Herr Berger, nehmen Sie bitte Platz. Was führt Sie heute zu mir?"
         },
         {
-          "speaker": "Sandy",
-          "start": 4.6787,
-          "end": 9.7543,
-          "text": "Seit etwa zwei Wochen habe ich Kopfschmerzen, vor allem morgens nach dem Aufstehen."
+          "speaker": "Flo",
+          "start": 5.0559,
+          "end": 15.1859,
+          "text": "Ja, also, seit ungefähr zwei Wochen habe ich Kopfschmerzen. Vor allem morgens, direkt nach dem Aufstehen, und manchmal ziehen sie bis in den Nacken."
         },
         {
           "speaker": "Anna",
-          "start": 9.4043,
-          "end": 9.6591,
+          "start": 14.8283,
+          "end": 15.0745,
           "text": "Mhm."
         },
         {
-          "speaker": "Sandy",
-          "start": 10.3947,
-          "end": 15.8528,
-          "text": "Manchmal ist mir dabei auch schwindelig, und die Tabletten aus der Apotheke helfen kaum."
+          "speaker": "Flo",
+          "start": 15.4667,
+          "end": 21.5037,
+          "text": "Und ab und zu ist mir dabei auch schwindelig. Die Tabletten aus der Apotheke helfen kaum."
         },
         {
           "speaker": "Anna",
-          "start": 16.1517,
-          "end": 18.9934,
-          "text": "Welche Tabletten nehmen Sie, und wie oft am Tag?"
+          "start": 21.26,
+          "end": 23.559,
+          "text": "Welche Tabletten nehmen Sie, und wie oft?"
         },
         {
-          "speaker": "Sandy",
-          "start": 19.5903,
-          "end": 23.7706,
-          "text": "Ibuprofen vierhundert Milligramm, meistens zweimal täglich."
-        },
-        {
-          "speaker": "Anna",
-          "start": 24.5601,
-          "end": 27.4237,
-          "text": "Haben Sie Ihren Blutdruck in letzter Zeit gemessen?"
-        },
-        {
-          "speaker": "Sandy",
-          "start": 27.9066,
-          "end": 30.5646,
-          "text": "Nein, das habe ich schon lange nicht mehr gemacht."
+          "speaker": "Flo",
+          "start": 23.7539,
+          "end": 28.5511,
+          "text": "Ibuprofen, vierhundert Milligramm. Meistens zweimal am Tag."
         },
         {
           "speaker": "Anna",
-          "start": 30.8764,
-          "end": 34.5138,
-          "text": "Dann messen wir ihn gleich. Bitte machen Sie den linken Arm frei."
+          "start": 29.0483,
+          "end": 30.7707,
+          "text": "Seit den zwei Wochen jeden Tag?"
         },
         {
-          "speaker": "Sandy",
-          "start": 34.1638,
-          "end": 34.6623,
+          "speaker": "Flo",
+          "start": 32.0684,
+          "end": 33.5474,
+          "text": "Fast jeden Tag, ja."
+        },
+        {
+          "speaker": "Anna",
+          "start": 33.7516,
+          "end": 36.9205,
+          "text": "Haben Sie Ihren Blutdruck in letzter Zeit einmal gemessen?"
+        },
+        {
+          "speaker": "Flo",
+          "start": 38.2884,
+          "end": 40.9866,
+          "text": "Nein, ehrlich gesagt schon lange nicht mehr."
+        },
+        {
+          "speaker": "Anna",
+          "start": 41.9956,
+          "end": 47.0413,
+          "text": "Dann machen wir das gleich. Bitte den linken Arm frei machen und ganz ruhig sitzen bleiben."
+        },
+        {
+          "speaker": "Flo",
+          "start": 46.6773,
+          "end": 47.1949,
           "text": "Okay."
         },
         {
           "speaker": "Anna",
-          "start": 35.4393,
-          "end": 39.8088,
-          "text": "Der Wert liegt bei hundertsechzig zu hundert. Das ist deutlich zu hoch."
+          "start": 47.3149,
+          "end": 50.5905,
+          "text": "Hundertsechzig zu hundert. Das ist deutlich zu hoch."
         },
         {
-          "speaker": "Sandy",
-          "start": 40.4305,
-          "end": 42.2684,
+          "speaker": "Flo",
+          "start": 51.6211,
+          "end": 53.5358,
           "text": "Kommen die Kopfschmerzen davon?"
         },
         {
           "speaker": "Anna",
-          "start": 42.6269,
-          "end": 47.3156,
-          "text": "Gut möglich. Wir messen eine Woche lang zu Hause und sehen uns am Montag wieder."
+          "start": 53.8862,
+          "end": 60.7638,
+          "text": "Gut möglich. Ich gebe Ihnen ein Messgerät mit. Sie messen eine Woche lang morgens und abends und schreiben die Werte auf."
+        },
+        {
+          "speaker": "Flo",
+          "start": 60.9564,
+          "end": 61.9304,
+          "text": "Und die Tabletten?"
+        },
+        {
+          "speaker": "Anna",
+          "start": 62.1215,
+          "end": 66.4379,
+          "text": "Die lassen Sie bitte weg, so gut es geht. Wir sehen uns am Montag wieder."
+        },
+        {
+          "speaker": "Flo",
+          "start": 66.7469,
+          "end": 68.1437,
+          "text": "Gut, danke Ihnen."
         }
       ],
-      "sha256": "a299e6165d92fd1e698584c685c265283f83b2a26694b654abd6cb412b79e7d0",
+      "sha256": "f04f2fe925c082a259129cc39ae142829ca3391de6569a708921e1330d5a92b9",
       "license": "CC0-1.0, generated by eval/corpus/make_corpus.py"
     },
     {
@@ -385,8 +415,8 @@
       "kind": "audio",
       "file": "de_case_conference.wav",
       "language": "de",
-      "source": "synthetic German case conference, 4 speakers (text invented for testing), macOS `say` voices Anna, Flo, Sandy, Reed (Deutsch (Deutschland)), each turn trimmed to its voiced span, pauses 0.25-0.8 s (seed 7), backchannels overlap the previous turn by 0.35 s, noise sigma 0.002",
-      "reference": "Guten Morgen zusammen. Wir beginnen mit der Fallbesprechung von Herrn Weber, Zimmer zwölf. Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und Schlafstörungen. Mhm. Die Medikation mit Sertralin fünfzig Milligramm haben wir gestern auf hundert Milligramm erhöht. Wie verträgt er die Erhöhung? Gab es Übelkeit oder Unruhe? Bisher keine Nebenwirkungen. Er schläft allerdings weiterhin schlecht, meistens nur vier Stunden. Ja, genau. Das kann ich aus der Pflege bestätigen. Nachts klingelt er häufig und wirkt dann sehr angespannt. Dann sollten wir über eine Bedarfsmedikation für die Nacht sprechen. Ich würde Mirtazapin fünfzehn Milligramm zur Nacht vorschlagen, das hilft auch beim Appetit. Einverstanden. Gut. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin fünfzehn Milligramm zur Nacht. Soll ich den Schlaf weiter protokollieren? Ja, bitte jede Nacht. Wir besprechen den Verlauf am Freitag erneut. Und die Ergotherapie? Er hat die ersten beiden Termine abgesagt. Ich spreche heute Nachmittag mit ihm darüber. Vielleicht ist die Gruppe am Anfang zu groß für ihn. Okay. Dann kommen wir zur nächsten Patientin, Frau Schulz in Zimmer acht.",
+      "source": "synthetic German case conference, 3 speakers (text invented for testing), macOS `say` voices Anna, Flo, Sandy (Deutsch (Deutschland)) at their own rate and level, each turn trimmed to its voiced span (seed 7); gaps 0.12-0.5 s, 25% long pauses 0.7-1.4 s, 15% early starts overlapping 0.1-0.25 s, backchannels overlapping 0.2-0.45 s, noise sigma 0.002",
+      "reference": "Guten Morgen zusammen. Wir beginnen mit Herrn Weber, Zimmer zwölf. Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und deutlichen Schlafstörungen. Mhm. Sertralin haben wir gestern von fünfzig auf hundert Milligramm erhöht. Wie verträgt er die Erhöhung? Gab es Übelkeit oder innere Unruhe? Bisher keine Nebenwirkungen. Er schläft aber weiterhin schlecht, meistens nur vier Stunden. Ja, genau. Das sehen wir in der Pflege auch. Nachts klingelt er oft und wirkt dann sehr angespannt. Dann sollten wir über eine Bedarfsmedikation für die Nacht sprechen. Ich würde Mirtazapin fünfzehn Milligramm zur Nacht vorschlagen, das hilft auch beim Appetit. Einverstanden. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin fünfzehn Milligramm zur Nacht. Ich setze das heute noch an. Gibt es sonst noch etwas zu Herrn Weber? Die Ergotherapie. Die ersten beiden Termine hat er abgesagt. Ich spreche heute Nachmittag mit ihm, vielleicht ist ihm die Gruppe am Anfang zu groß. Gut. Soll ich den Schlaf weiter protokollieren? Ja, bitte jede Nacht. Den Verlauf besprechen wir am Freitag erneut. Okay. Dann kommen wir zu Frau Schulz in Zimmer acht.",
       "checks": [
         "wer",
         "cer",
@@ -400,114 +430,120 @@
       "speakers": [
         {
           "speaker": "Anna",
-          "start": 0.5938,
-          "end": 6.1086,
-          "text": "Guten Morgen zusammen. Wir beginnen mit der Fallbesprechung von Herrn Weber, Zimmer zwölf."
+          "start": 0.4609,
+          "end": 4.4879,
+          "text": "Guten Morgen zusammen. Wir beginnen mit Herrn Weber, Zimmer zwölf."
         },
         {
           "speaker": "Flo",
-          "start": 6.852,
-          "end": 13.2587,
-          "text": "Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und Schlafstörungen."
+          "start": 4.6935,
+          "end": 12.0314,
+          "text": "Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und deutlichen Schlafstörungen."
         },
         {
           "speaker": "Anna",
-          "start": 12.9087,
-          "end": 13.1635,
+          "start": 11.7564,
+          "end": 12.0027,
           "text": "Mhm."
         },
         {
           "speaker": "Flo",
-          "start": 13.9354,
-          "end": 19.9413,
-          "text": "Die Medikation mit Sertralin fünfzig Milligramm haben wir gestern auf hundert Milligramm erhöht."
+          "start": 12.1534,
+          "end": 16.7523,
+          "text": "Sertralin haben wir gestern von fünfzig auf hundert Milligramm erhöht."
         },
         {
-          "speaker": "Sandy",
-          "start": 20.3151,
-          "end": 24.4558,
-          "text": "Wie verträgt er die Erhöhung? Gab es Übelkeit oder Unruhe?"
+          "speaker": "Anna",
+          "start": 17.1751,
+          "end": 21.2106,
+          "text": "Wie verträgt er die Erhöhung? Gab es Übelkeit oder innere Unruhe?"
         },
         {
           "speaker": "Flo",
-          "start": 24.8709,
-          "end": 30.9815,
-          "text": "Bisher keine Nebenwirkungen. Er schläft allerdings weiterhin schlecht, meistens nur vier Stunden."
+          "start": 21.4457,
+          "end": 27.4743,
+          "text": "Bisher keine Nebenwirkungen. Er schläft aber weiterhin schlecht, meistens nur vier Stunden."
         },
         {
-          "speaker": "Reed",
-          "start": 30.6315,
-          "end": 31.5353,
+          "speaker": "Sandy",
+          "start": 27.2047,
+          "end": 28.0354,
           "text": "Ja, genau."
         },
         {
-          "speaker": "Reed",
-          "start": 32.2657,
-          "end": 38.2316,
-          "text": "Das kann ich aus der Pflege bestätigen. Nachts klingelt er häufig und wirkt dann sehr angespannt."
+          "speaker": "Sandy",
+          "start": 29.0469,
+          "end": 33.979,
+          "text": "Das sehen wir in der Pflege auch. Nachts klingelt er oft und wirkt dann sehr angespannt."
         },
         {
           "speaker": "Anna",
-          "start": 38.4845,
-          "end": 42.2617,
+          "start": 34.3093,
+          "end": 37.9482,
           "text": "Dann sollten wir über eine Bedarfsmedikation für die Nacht sprechen."
         },
         {
-          "speaker": "Sandy",
-          "start": 42.9634,
-          "end": 48.8117,
+          "speaker": "Flo",
+          "start": 38.3694,
+          "end": 44.6101,
           "text": "Ich würde Mirtazapin fünfzehn Milligramm zur Nacht vorschlagen, das hilft auch beim Appetit."
         },
         {
+          "speaker": "Anna",
+          "start": 45.1058,
+          "end": 52.3316,
+          "text": "Einverstanden. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin fünfzehn Milligramm zur Nacht."
+        },
+        {
           "speaker": "Flo",
-          "start": 48.4617,
-          "end": 49.4198,
-          "text": "Einverstanden."
+          "start": 53.1437,
+          "end": 54.7157,
+          "text": "Ich setze das heute noch an."
         },
         {
           "speaker": "Anna",
-          "start": 50.1082,
-          "end": 57.0629,
-          "text": "Gut. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin fünfzehn Milligramm zur Nacht."
+          "start": 54.8524,
+          "end": 57.1211,
+          "text": "Gibt es sonst noch etwas zu Herrn Weber?"
         },
         {
-          "speaker": "Reed",
-          "start": 57.5703,
-          "end": 59.9998,
+          "speaker": "Flo",
+          "start": 56.9439,
+          "end": 67.1653,
+          "text": "Die Ergotherapie. Die ersten beiden Termine hat er abgesagt. Ich spreche heute Nachmittag mit ihm, vielleicht ist ihm die Gruppe am Anfang zu groß."
+        },
+        {
+          "speaker": "Anna",
+          "start": 66.8488,
+          "end": 67.1847,
+          "text": "Gut."
+        },
+        {
+          "speaker": "Sandy",
+          "start": 67.5438,
+          "end": 69.7768,
           "text": "Soll ich den Schlaf weiter protokollieren?"
         },
         {
           "speaker": "Anna",
-          "start": 60.4164,
-          "end": 64.8729,
-          "text": "Ja, bitte jede Nacht. Wir besprechen den Verlauf am Freitag erneut."
+          "start": 70.0855,
+          "end": 74.4176,
+          "text": "Ja, bitte jede Nacht. Den Verlauf besprechen wir am Freitag erneut."
         },
         {
           "speaker": "Sandy",
-          "start": 65.276,
-          "end": 69.3732,
-          "text": "Und die Ergotherapie? Er hat die ersten beiden Termine abgesagt."
-        },
-        {
-          "speaker": "Flo",
-          "start": 69.7634,
-          "end": 75.8961,
-          "text": "Ich spreche heute Nachmittag mit ihm darüber. Vielleicht ist die Gruppe am Anfang zu groß für ihn."
-        },
-        {
-          "speaker": "Sandy",
-          "start": 75.5461,
-          "end": 76.0446,
+          "start": 74.1557,
+          "end": 74.6137,
           "text": "Okay."
         },
         {
           "speaker": "Anna",
-          "start": 76.5394,
-          "end": 80.6213,
-          "text": "Dann kommen wir zur nächsten Patientin, Frau Schulz in Zimmer acht."
+          "start": 74.4849,
+          "end": 76.9984,
+          "text": "Dann kommen wir zu Frau Schulz in Zimmer acht."
         }
       ],
-      "sha256": "295dbfe40c031d61a52358014d0c5668e891dc5296adf1e4924d36da1e6f3176",
+      "sha256": "8c5565267ad76d39ab8263a25ae7e73548fec81b59c90381c4cbed6c99d6a855",
       "license": "CC0-1.0, generated by eval/corpus/make_corpus.py"
     }
   ]

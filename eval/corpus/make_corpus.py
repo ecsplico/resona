@@ -10,7 +10,7 @@ Anna and the system Arial are required); ``--only hard`` regenerates only the ha
 document fixtures, which use Bitstream Vera Sans bundled with reportlab (no system
 font, so the pinned versions above reproduce them byte for byte); ``--only conversations``
 regenerates the multi-speaker conversations (macOS ``say`` with the German voices Anna,
-Flo, Sandy and Reed). Fixture files that are not regenerated are kept untouched (the
+Flo and Sandy). Fixture files that are not regenerated are kept untouched (the
 conversations' reference turns are then kept from the current MANIFEST.json);
 MANIFEST.json is always rewritten from the files on disk.
 
@@ -42,9 +42,9 @@ Hard document fixtures (single A4 page, raster pages at 150 dpi, seeded noise):
 
 Diarization fixtures (``options: {"diarize": true}``, reference ``speakers`` = the exact
 sample span of every turn's voiced clip, rounded to 0.1 ms):
-  de_two_speakers.wav     doctor/patient consultation, 2 voices, ~40 s.
-  de_case_conference.wav  case conference, 4 voices, ~80 s, with short backchannels
-                          ("Mhm.", "Okay.") overlapping the previous turn by 0.35 s.
+  de_two_speakers.wav     doctor/patient consultation, 2 voices (Anna, Flo).
+  de_case_conference.wav  case conference, 3 voices (Anna, Flo, Sandy) with backchannels
+                          spoken over the end of the previous turn and occasional early starts.
 """
 
 from __future__ import annotations
@@ -106,49 +106,72 @@ NUMBERS = (
     "Die Zimmernummer lautet 108."
 )
 
-# Multi-speaker conversations for diarization: (voice, text) turns. A backchannel starts
-# BACKCHANNEL_OVERLAP_S before the previous turn ends; every other turn follows a seeded pause.
-BACKCHANNEL_OVERLAP_S = 0.35
+# Multi-speaker conversations for diarization: (voice, text) turns. Each voice keeps its own
+# speaking rate and level (VOICE_STYLE), like people in one room. Turn-taking follows a seeded
+# mix that real conversations show: mostly short gaps, some longer pauses, now and then a
+# speaker who starts just before the other has finished, and backchannels spoken over the
+# end of the previous turn.
+BACKCHANNEL_OVERLAP_S = (0.2, 0.45)
+SHORT_GAP_S = (0.12, 0.5)
+LONG_GAP_S = (0.7, 1.4)
+LONG_GAP_SHARE = 0.25
+EARLY_START_S = (0.1, 0.25)
+EARLY_START_SHARE = 0.15
+VOICE_STYLE = {  # voice → (say rate in words per minute, level in dB)
+    "Anna": (185, 0.0),
+    "Flo": (168, -1.5),
+    "Sandy": (200, -5.0),
+}
 DOCTOR_PATIENT = (
-    ("Anna", "Guten Tag, Frau Berger. Was führt Sie heute zu mir?"),
-    ("Sandy", "Seit etwa zwei Wochen habe ich Kopfschmerzen, vor allem morgens nach dem Aufstehen."),
+    ("Anna", "Guten Tag, Herr Berger, nehmen Sie bitte Platz. Was führt Sie heute zu mir?"),
+    ("Flo", "Ja, also, seit ungefähr zwei Wochen habe ich Kopfschmerzen. Vor allem morgens, direkt nach "
+            "dem Aufstehen, und manchmal ziehen sie bis in den Nacken."),
     ("Anna", "Mhm."),
-    ("Sandy", "Manchmal ist mir dabei auch schwindelig, und die Tabletten aus der Apotheke helfen kaum."),
-    ("Anna", "Welche Tabletten nehmen Sie, und wie oft am Tag?"),
-    ("Sandy", "Ibuprofen vierhundert Milligramm, meistens zweimal täglich."),
-    ("Anna", "Haben Sie Ihren Blutdruck in letzter Zeit gemessen?"),
-    ("Sandy", "Nein, das habe ich schon lange nicht mehr gemacht."),
-    ("Anna", "Dann messen wir ihn gleich. Bitte machen Sie den linken Arm frei."),
-    ("Sandy", "Okay."),
-    ("Anna", "Der Wert liegt bei hundertsechzig zu hundert. Das ist deutlich zu hoch."),
-    ("Sandy", "Kommen die Kopfschmerzen davon?"),
-    ("Anna", "Gut möglich. Wir messen eine Woche lang zu Hause und sehen uns am Montag wieder."),
+    ("Flo", "Und ab und zu ist mir dabei auch schwindelig. Die Tabletten aus der Apotheke helfen kaum."),
+    ("Anna", "Welche Tabletten nehmen Sie, und wie oft?"),
+    ("Flo", "Ibuprofen, vierhundert Milligramm. Meistens zweimal am Tag."),
+    ("Anna", "Seit den zwei Wochen jeden Tag?"),
+    ("Flo", "Fast jeden Tag, ja."),
+    ("Anna", "Haben Sie Ihren Blutdruck in letzter Zeit einmal gemessen?"),
+    ("Flo", "Nein, ehrlich gesagt schon lange nicht mehr."),
+    ("Anna", "Dann machen wir das gleich. Bitte den linken Arm frei machen und ganz ruhig sitzen bleiben."),
+    ("Flo", "Okay."),
+    ("Anna", "Hundertsechzig zu hundert. Das ist deutlich zu hoch."),
+    ("Flo", "Kommen die Kopfschmerzen davon?"),
+    ("Anna", "Gut möglich. Ich gebe Ihnen ein Messgerät mit. Sie messen eine Woche lang morgens und abends "
+             "und schreiben die Werte auf."),
+    ("Flo", "Und die Tabletten?"),
+    ("Anna", "Die lassen Sie bitte weg, so gut es geht. Wir sehen uns am Montag wieder."),
+    ("Flo", "Gut, danke Ihnen."),
 )
 CASE_CONFERENCE = (
-    ("Anna", "Guten Morgen zusammen. Wir beginnen mit der Fallbesprechung von Herrn Weber, Zimmer zwölf."),
-    ("Flo", "Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und Schlafstörungen."),
+    ("Anna", "Guten Morgen zusammen. Wir beginnen mit Herrn Weber, Zimmer zwölf."),
+    ("Flo", "Herr Weber ist seit drei Tagen bei uns. Er kam mit einer depressiven Episode und "
+            "deutlichen Schlafstörungen."),
     ("Anna", "Mhm."),
-    ("Flo", "Die Medikation mit Sertralin fünfzig Milligramm haben wir gestern auf hundert Milligramm erhöht."),
-    ("Sandy", "Wie verträgt er die Erhöhung? Gab es Übelkeit oder Unruhe?"),
-    ("Flo", "Bisher keine Nebenwirkungen. Er schläft allerdings weiterhin schlecht, meistens nur vier Stunden."),
-    ("Reed", "Ja, genau."),
-    ("Reed", "Das kann ich aus der Pflege bestätigen. Nachts klingelt er häufig und wirkt dann sehr angespannt."),
+    ("Flo", "Sertralin haben wir gestern von fünfzig auf hundert Milligramm erhöht."),
+    ("Anna", "Wie verträgt er die Erhöhung? Gab es Übelkeit oder innere Unruhe?"),
+    ("Flo", "Bisher keine Nebenwirkungen. Er schläft aber weiterhin schlecht, meistens nur vier Stunden."),
+    ("Sandy", "Ja, genau."),
+    ("Sandy", "Das sehen wir in der Pflege auch. Nachts klingelt er oft und wirkt dann sehr angespannt."),
     ("Anna", "Dann sollten wir über eine Bedarfsmedikation für die Nacht sprechen."),
-    ("Sandy", "Ich würde Mirtazapin fünfzehn Milligramm zur Nacht vorschlagen, das hilft auch beim Appetit."),
-    ("Flo", "Einverstanden."),
-    ("Anna", "Gut. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin fünfzehn Milligramm "
-             "zur Nacht."),
-    ("Reed", "Soll ich den Schlaf weiter protokollieren?"),
-    ("Anna", "Ja, bitte jede Nacht. Wir besprechen den Verlauf am Freitag erneut."),
-    ("Sandy", "Und die Ergotherapie? Er hat die ersten beiden Termine abgesagt."),
-    ("Flo", "Ich spreche heute Nachmittag mit ihm darüber. Vielleicht ist die Gruppe am Anfang zu groß für ihn."),
+    ("Flo", "Ich würde Mirtazapin fünfzehn Milligramm zur Nacht vorschlagen, das hilft auch beim Appetit."),
+    ("Anna", "Einverstanden. Dann halten wir fest: Sertralin hundert Milligramm morgens, Mirtazapin "
+             "fünfzehn Milligramm zur Nacht."),
+    ("Flo", "Ich setze das heute noch an."),
+    ("Anna", "Gibt es sonst noch etwas zu Herrn Weber?"),
+    ("Flo", "Die Ergotherapie. Die ersten beiden Termine hat er abgesagt. Ich spreche heute Nachmittag "
+            "mit ihm, vielleicht ist ihm die Gruppe am Anfang zu groß."),
+    ("Anna", "Gut."),
+    ("Sandy", "Soll ich den Schlaf weiter protokollieren?"),
+    ("Anna", "Ja, bitte jede Nacht. Den Verlauf besprechen wir am Freitag erneut."),
     ("Sandy", "Okay."),
-    ("Anna", "Dann kommen wir zur nächsten Patientin, Frau Schulz in Zimmer acht."),
+    ("Anna", "Dann kommen wir zu Frau Schulz in Zimmer acht."),
 )
-BACKCHANNELS = frozenset({"Mhm.", "Ja, genau.", "Einverstanden.", "Okay."})
+BACKCHANNELS = frozenset({"Mhm.", "Ja, genau.", "Okay.", "Gut."})
 CONVERSATIONS = {  # fixture id → (file, turns, seed, description)
     "de-two-speakers": ("de_two_speakers.wav", DOCTOR_PATIENT, 21, "doctor/patient consultation, 2 speakers"),
-    "de-case-conference": ("de_case_conference.wav", CASE_CONFERENCE, 7, "case conference, 4 speakers"),
+    "de-case-conference": ("de_case_conference.wav", CASE_CONFERENCE, 7, "case conference, 3 speakers"),
 }
 
 PAGE_TEXT: list[list[str]] = [
@@ -285,16 +308,30 @@ def _read_pcm(path: Path) -> np.ndarray:
 
 
 def _voiced(voice: str, text: str, tmp: Path) -> np.ndarray:
-    """``say`` clip of one turn, trimmed to its voiced span so the reference turn is exact."""
+    """``say`` clip of one turn at the voice's rate and level, trimmed to its voiced span so the
+    reference turn is exact."""
+    rate, level_db = VOICE_STYLE[voice]
     path = tmp / "clip.wav"
     subprocess.run(
-        ["say", "-v", f"{voice} (Deutsch (Deutschland))", f"--data-format=LEI16@{SAMPLE_RATE}",
+        ["say", "-v", f"{voice} (Deutsch (Deutschland))", "-r", str(rate), f"--data-format=LEI16@{SAMPLE_RATE}",
          "--file-format=WAVE", "-o", str(path), text],
         check=True,
     )
     audio = _read_pcm(path)
     active = np.flatnonzero(np.abs(audio) > 0.01)
-    return audio[active[0]:active[-1] + 1]
+    return audio[active[0]:active[-1] + 1] * np.float32(10 ** (level_db / 20))
+
+
+def _turn_offset(rng: np.random.Generator, text: str, previous_speaker: str | None, voice: str) -> float:
+    """Seconds from the end of the previous turn to the start of this one (negative = overlap)."""
+    if text in BACKCHANNELS and previous_speaker not in (None, voice):
+        return -rng.uniform(*BACKCHANNEL_OVERLAP_S)
+    draw = rng.uniform()
+    if previous_speaker not in (None, voice) and draw < EARLY_START_SHARE:
+        return -rng.uniform(*EARLY_START_S)
+    if draw < EARLY_START_SHARE + LONG_GAP_SHARE:
+        return rng.uniform(*LONG_GAP_S)
+    return rng.uniform(*SHORT_GAP_S)
 
 
 def make_conversation(path: Path, turns: tuple[tuple[str, str], ...], seed: int) -> list[dict]:
@@ -303,13 +340,11 @@ def make_conversation(path: Path, turns: tuple[tuple[str, str], ...], seed: int)
     track = np.zeros(0, dtype=np.float32)
     reference: list[dict] = []
     cursor = 0
+    previous: str | None = None
     with tempfile.TemporaryDirectory() as tmp:
         for voice, text in turns:
             clip = _voiced(voice, text, Path(tmp))
-            if text in BACKCHANNELS and reference:
-                start = max(0, cursor - int(BACKCHANNEL_OVERLAP_S * SAMPLE_RATE))
-            else:
-                start = cursor + int(rng.uniform(0.25, 0.8) * SAMPLE_RATE)
+            start = max(0, cursor + int(_turn_offset(rng, text, previous, voice) * SAMPLE_RATE))
             end = start + len(clip)
             if end > len(track):
                 track = np.concatenate([track, np.zeros(end - len(track), dtype=np.float32)])
@@ -317,6 +352,7 @@ def make_conversation(path: Path, turns: tuple[tuple[str, str], ...], seed: int)
             reference.append({"speaker": voice, "start": round(start / SAMPLE_RATE, 4),
                               "end": round(end / SAMPLE_RATE, 4), "text": text})
             cursor = max(cursor, end)
+            previous = voice
     track = np.concatenate([track, np.zeros(int(0.5 * SAMPLE_RATE), dtype=np.float32)])
     track += rng.normal(0.0, 0.002, len(track)).astype(np.float32)  # not digitally silent between turns
     pcm = np.clip(np.round(track * 32767), -32768, 32767).astype("<i2")
@@ -671,9 +707,12 @@ def main() -> None:
         fixtures.append({
             "id": fixture_id, "kind": "audio", "file": file, "language": "de",
             "source": f"synthetic German {description} (text invented for testing), macOS `say` voices "
-                      f"{', '.join(dict.fromkeys(v for v, _ in turns))} (Deutsch (Deutschland)), each turn "
-                      f"trimmed to its voiced span, pauses 0.25-0.8 s (seed {seed}), backchannels overlap "
-                      f"the previous turn by {BACKCHANNEL_OVERLAP_S} s, noise sigma 0.002",
+                      f"{', '.join(dict.fromkeys(v for v, _ in turns))} (Deutsch (Deutschland)) at their own "
+                      f"rate and level, each turn trimmed to its voiced span (seed {seed}); gaps "
+                      f"{SHORT_GAP_S[0]}-{SHORT_GAP_S[1]} s, {LONG_GAP_SHARE:.0%} long pauses "
+                      f"{LONG_GAP_S[0]}-{LONG_GAP_S[1]} s, {EARLY_START_SHARE:.0%} early starts overlapping "
+                      f"{EARLY_START_S[0]}-{EARLY_START_S[1]} s, backchannels overlapping "
+                      f"{BACKCHANNEL_OVERLAP_S[0]}-{BACKCHANNEL_OVERLAP_S[1]} s, noise sigma 0.002",
             "reference": " ".join(text for _, text in turns),
             "checks": ["wer", "cer", "speaker_attribution", "der", "speaker_count"],
             "options": {"diarize": True},
