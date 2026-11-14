@@ -20,6 +20,19 @@ transcript URLs.
 - **silver**: Deepgram nova-3 diarization of the other interview episodes, and Oxide and
   Friends' published transcripts (Transistor machine diarization, curation unknown). These
   are model output, not ground truth: a disagreement can be either model's error.
+- **platinum**: the interview data dir's corpus v4 (`data/published.yaml`, turns parsed
+  into `diarized/<id>.json`): transcripts the show publishes itself (feed, website, PDF)
+  with speaker names, one episode per show (16 shows not in gold, plus new episodes of
+  Logbuch:Netzpolitik and Lage der Nation). Most have no timestamps;
+  their words are aligned to whisper-large-v3-turbo over the whole episode
+  (`timing: whisper-episode`). Curation is unknown per show: some publishers edit
+  machine diarization, so treat it as near-gold.
+- **platinum-anon**: corpus v4 shows whose transcripts carry anonymous labels
+  (`Speaker 1`, `SPEAKER_00`). These come from the hosting platform's own diarization
+  (Podigee, iHeart, Spotify): model output, scored like silver.
+
+`build` freezes each interview episode's turns into `sources/<episode>/labels.turns.json`,
+so a later rebuild does not change while the interview data dir does.
 
 Windows where under 80 % of the published words align to timed words are skipped
 (Ready for Review was dropped for this reason).

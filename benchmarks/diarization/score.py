@@ -289,7 +289,7 @@ def score(dataset: Path, name: str) -> dict:
     for key, label in (("label_source", "labels"), ("language", "lang"), ("window", "window")):
         for value in sorted({r[key] for r in rows}):
             groups[f"{label}={value}"] = aggregate([r for r in rows if r[key] == value])
-    for source in ("gold", "silver"):
+    for source in sorted({r["label_source"] for r in rows}):
         for bucket in ("2", "3", "4+"):
             sel = [r for r in rows if r["label_source"] == source and _bucket(r["speakers"]) == bucket]
             if sel:

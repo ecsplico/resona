@@ -10,12 +10,17 @@ podcast audio and transcripts are copyrighted and must never be committed.
 ``fetch`` downloads every ``labels.url`` and ``audio.url`` into ``<dataset>/sources/<episode>/``.
 ``build`` turns each episode into reference speaker turns and cuts evaluation clips:
 
-1. Speaker labels: a published transcript (gold, or a publisher's machine labels: silver) or
-   Deepgram's own word speakers (silver).
+1. Speaker labels: a published transcript (gold, or a publisher's machine labels: silver),
+   the interview data dir's parsed publisher transcripts (``interview-turns``:
+   ``<interview>/diarized/<id>.json``, the "platinum" corpus v4) or Deepgram's own word
+   speakers (silver).
 2. Times: published words are aligned (``resona_eval.metrics.word_alignment``) to timed
-   words, Deepgram's (``timing: deepgram``) or whisper-large-v3-turbo's on the clip
-   (``timing: whisper``). Every aligned word carries a speaker and a time; consecutive words
-   of one speaker form a turn, split at pauses over ``PAUSE_SPLIT`` seconds.
+   words, Deepgram's (``timing: deepgram``), whisper-large-v3-turbo's on the clip
+   (``timing: whisper``, for transcripts with turn times) or on the whole episode
+   (``timing: whisper-episode``, for transcripts without times; cached in
+   ``<dataset>/sources/<episode>/whisper-words.json``). Every aligned word carries a speaker
+   and a time; consecutive words of one speaker form a turn, split at pauses over
+   ``PAUSE_SPLIT`` seconds.
 3. Windows of ``clip_seconds`` with interesting speaker structure (``multi``: most speakers,
    then most changes; ``short``: most short turns; ``typical``: median changes), cut at pauses,
    16 kHz mono WAV. ``full: true`` adds the whole episode.
@@ -388,21 +393,69 @@ def published_turns(dataset: Path, ep: dict) -> list[tuple[str, str]]:
     raise SystemExit(f"{ep['id']}: no turn parser for {fmt}")
 
 
-def episode_tokens(dataset: Path, interview: Path | None, ep: dict) -> tuple[list[Tok], list | None]:
-    """Episode-wide tokens for window selection (and, for Deepgram timing, the reference).
+def interview_turns(dataset: Path, interview: Path | None, ep: dict) -> list[dict]:
+    """Parsed publisher turns ``{speaker, start, end, text}``, frozen into
+    ``<dataset>/sources/<episode>/labels.turns.json`` on first use (the interview data dir keeps changing)."""
+    frozen = dataset / "sources" / ep["id"] / "labels.turns.json"
+    if not frozen.exists():
+        if interview is None:
+            raise SystemExit(f"{ep['id']}: needs --interview for its labels")
+        frozen.parent.mkdir(parents=True, exist_ok=True)
+        frozen.write_text((interview / "diarized" / f"{ep['labels']['interview']}.json").read_text())
+    return json.loads(frozen.read_text())
 
-    VTT episodes get provisional times spread evenly over each cue; their reference times
-    come from whisper per clip (:func:`whisper_reference`)."""
+
+def turn_cues(turns: list[dict]) -> list[tuple[float, float, str, str]] | None:
+    """Timed turns as cues; a missing end becomes the next turn's start. None when a turn has no start."""
+    if any(t.get("start") is None for t in turns):
+        return None
+    cues = []
+    for k, t in enumerate(turns):
+        start = float(t["start"])
+        end = t.get("end")
+        if end is None:
+            end = turns[k + 1]["start"] if k + 1 < len(turns) else start + 0.4 * len(t["text"].split())
+        cues.append((start, max(float(end), start), str(t["speaker"]), t["text"]))
+    return cues
+
+
+def cue_tokens(cues: list[tuple[float, float, str, str]]) -> list[Tok]:
+    """Provisional times spread evenly over each cue (window selection only)."""
+    toks = []
+    for start, end, speaker, said in cues:
+        words = normalize(said).split()
+        step = (end - start) / max(len(words), 1)
+        toks += [Tok(w, speaker, start + k * step, start + (k + 1) * step, True) for k, w in enumerate(words)]
+    toks.sort(key=lambda t: t.start)
+    return toks
+
+
+def episode_whisper(dataset: Path, audio: Path, ep: dict) -> list[tuple[str, float, float]]:
+    """whisper-large-v3-turbo word times over the whole episode, cached next to its sources."""
+    cache = dataset / "sources" / ep["id"] / "whisper-words.json"
+    if not cache.exists():
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(whisper_words(audio, ep["language"])))
+    return [tuple(w) for w in json.loads(cache.read_text())]
+
+
+def episode_tokens(dataset: Path, interview: Path | None, ep: dict) -> tuple[list[Tok], list | None]:
+    """Episode-wide tokens for window selection (and, for Deepgram or episode-wide whisper
+    timing, the reference). Cue episodes (VTT, timed publisher turns) get provisional times;
+    their reference times come from whisper per clip (:func:`whisper_reference`)."""
     fmt = ep["labels"]["format"]
     if fmt == "vtt":
         cues = parse_vtt(label_path(dataset, ep).read_text(encoding="utf-8"))
-        toks = []
-        for start, end, speaker, said in cues:
-            words = normalize(said).split()
-            step = (end - start) / max(len(words), 1)
-            toks += [Tok(w, speaker, start + k * step, start + (k + 1) * step, True) for k, w in enumerate(words)]
-        toks.sort(key=lambda t: t.start)
-        return toks, cues
+        return cue_tokens(cues), cues
+    if fmt == "interview-turns":
+        turns = interview_turns(dataset, interview, ep)
+        if ep["timing"] == "whisper":
+            cues = turn_cues(turns)
+            if cues is None:
+                raise SystemExit(f"{ep['id']}: timing 'whisper' needs timed turns; use 'whisper-episode'")
+            return cue_tokens(cues), cues
+        published = _tokens([(str(t["speaker"]), t["text"]) for t in turns])
+        return align(published, episode_whisper(dataset, audio_path(dataset, interview, ep), ep)), None
     dg = deepgram_words(interview / "raw" / ep["audio"]["interview"] / "deepgram.json")
     if fmt == "deepgram":
         return [Tok(t, f"S{s}", a, b, True) for t, a, b, s in dg], None
@@ -465,7 +518,7 @@ def build(spec: dict, dataset: Path, interview: Path | None, only: set[str] | No
             fixtures.pop(stale, None)
         audio = audio_path(dataset, interview, ep)
         toks, cues = episode_tokens(dataset, interview, ep)
-        need_match = ep["labels"]["format"] not in ("deepgram", "vtt")
+        need_match = ep["labels"]["format"] != "deepgram" and ep["timing"] != "whisper"
         windows = choose_windows(toks, ep["windows"], length, need_match)
         if ep.get("full"):
             windows.append(("full", 0.0, duration(audio)))
@@ -530,7 +583,7 @@ def main() -> None:
     parser.add_argument("--dataset", type=Path, default=os.environ.get("RESONA_DIAR_DATASET"),
                         help="dataset directory outside the repository (env RESONA_DIAR_DATASET)")
     parser.add_argument("--interview", type=Path, default=None,
-                        help="data dir with raw/<youtube-id>/{audio.m4a,deepgram.json}")
+                        help="data dir with raw/<youtube-id>/{audio.m4a,deepgram.json} and diarized/<id>.json")
     parser.add_argument("--sources", type=Path, default=HERE / "sources.json")
     parser.add_argument("--only", default=None, help="comma-separated episode ids")
     args = parser.parse_args()
