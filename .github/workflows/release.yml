@@ -126,7 +126,7 @@ jobs:
             dockerfile: apps/resona-worker/Dockerfile
             build_args: |
               BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04
-              WORKER_EXTRAS=--extra cuda --extra documents
+              WORKER_EXTRAS=--extra cuda --extra documents --extra diarize
           - { name: resona-engine-faster-whisper, dockerfile: packages/engine-faster-whisper/Dockerfile, build_args: "" }
           - { name: resona-engine-whisper,        dockerfile: packages/engine-whisper/Dockerfile,        build_args: "" }
           - { name: resona-engine-voxtral,        dockerfile: packages/engine-voxtral/Dockerfile,        build_args: "" }

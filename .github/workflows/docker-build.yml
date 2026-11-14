@@ -39,7 +39,7 @@ jobs:
             dockerfile: apps/resona-worker/Dockerfile
             build_args: |
               BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04
-              WORKER_EXTRAS=--extra cuda --extra documents
+              WORKER_EXTRAS=--extra cuda --extra documents --extra diarize
     steps:
       - uses: actions/checkout@v5
 
