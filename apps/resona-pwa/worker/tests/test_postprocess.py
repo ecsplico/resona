@@ -19,13 +19,14 @@ MARKDOWN = "## Befund\n\nunauffällig."
 
 
 class FakeDirectus:
-    """In-memory `transcripts` (recordings/documents empty) with Directus list filters."""
+    """In-memory `transcripts` (recordings/documents/parts empty) with Directus list filters."""
 
     def __init__(self, *rows):
         self.rows = {row["id"]: dict(row) for row in rows}
         self.patches: list[dict] = []
         respx.get(
-            host="directus.test", path__regex=r"^/items/(?P<collection>recordings|documents)$",
+            host="directus.test",
+            path__regex=r"^/items/(?P<collection>recordings|documents|recording_parts)$",
         ).mock(return_value=httpx.Response(200, json={"data": []}))
         respx.get(f"{DIRECTUS}/items/transcripts").mock(side_effect=self._list)
         respx.patch(host="directus.test", path__regex=r"^/items/transcripts/(?P<tid>[^/]+)$").mock(

@@ -12,6 +12,7 @@ const db = vi.hoisted(() => ({
 	transcripts: new Map<string, Record<string, unknown>>(),
 	// Transcript rows by id, for re-processing ("Nachbearbeiten") as hub text jobs.
 	texts: new Map<string, Record<string, unknown>>(),
+	parts: new Map<string, Record<string, unknown>>(),
 }));
 
 vi.mock("~/data/localStore", () => ({
@@ -41,6 +42,20 @@ vi.mock("~/data/localStore", () => ({
 		[...db.texts.values()].filter(t => t.postprocess_status === status).map(t => ({ ...t }))),
 	patchTranscriptInternal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
 		db.texts.set(id, { ...db.texts.get(id), ...patch });
+	}),
+	listPartsByStatus: vi.fn(async (status: string) =>
+		[...db.parts.values()].filter(p => p.status === status).map(p => ({ ...p }))),
+	// Like the real one: finished parts whose audio is already in the recording's file.
+	listReleasableParts: vi.fn(async () =>
+		[...db.parts.values()].filter(p => p.audio != null && p.offset_seconds != null
+			&& ["done", "applied", "discarded"].includes(p.status as string)).map(p => ({ ...p }))),
+	patchPartInternal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+		if (db.parts.has(id)) db.parts.set(id, { ...db.parts.get(id), ...patch });
+	}),
+	releasePartAudio: vi.fn(async (id: string) => {
+		const row = db.parts.get(id)!;
+		db.files.delete(row.audio as string);
+		db.parts.set(id, { ...row, audio: null });
 	}),
 }));
 
@@ -109,10 +124,34 @@ describe("runLocalCycle", () => {
 		db.documents.clear();
 		db.files.clear();
 		db.transcripts.clear();
+		db.parts.clear();
 		hub.hasToken.mockReturnValue(true);
 		hub.upload.mockResolvedValue("up-1");
 		hub.createJob.mockResolvedValue(42);
 		hub.deleteJob.mockResolvedValue(undefined);
+	});
+
+	it("transcribes a re-dictation part: the text stays on the part, no transcript, audio released once appended", async () => {
+		db.parts.set("p1", { id: "p1", recording: "rec-1", seq: 1, status: "pending", audio: "f-p1", language: "de", profile: "medical", offset_seconds: null, hub_job_id: null, hub_job_key: null });
+		db.files.set("f-p1", new Blob(["a"], { type: "audio/webm" }));
+		await runLocalCycle();
+		expect(hub.upload).toHaveBeenCalledWith(expect.any(Blob), "part-p1.webm");
+		expect(hub.createJob).toHaveBeenCalledWith({ kind: "audio", upload_id: "up-1", language: "de", profile: "medical" }, expect.stringMatching(/^local:recording_parts:p1:/));
+		expect(db.parts.get("p1")).toMatchObject({ status: "transcribing", hub_job_id: 42 });
+
+		hub.getJob.mockResolvedValueOnce(job("completed"));
+		hub.getResult.mockResolvedValueOnce(RESULT);
+		await runLocalCycle();
+		expect(db.parts.get("p1")).toMatchObject({ status: "done", text: "# Hallo", hub_job_id: null, hub_job_key: null, error_message: null });
+		expect(db.transcripts.size).toBe(0);
+		expect(hub.deleteJob).toHaveBeenCalledWith(42);
+		// Not appended to the recording's file yet: the part's audio stays.
+		expect(db.files.has("f-p1")).toBe(true);
+
+		db.parts.set("p1", { ...db.parts.get("p1"), status: "applied", offset_seconds: 10 });
+		await runLocalCycle();
+		expect(db.files.has("f-p1")).toBe(false);
+		expect(db.parts.get("p1")!.audio).toBeNull();
 	});
 
 	it("does nothing without a hub token", async () => {

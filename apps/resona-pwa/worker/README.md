@@ -1,11 +1,12 @@
 # resona-project-worker
 
 Background worker that runs next to a CMS (Directus) and sends saved
-**recordings** and uploaded **documents** through the Resona hub as durable jobs,
-then writes the results back into Directus.
+**recordings**, uploaded **documents** and re-dictated **recording parts** through
+the Resona hub as durable jobs, then writes the results back into Directus.
 
-Per cycle, for `recordings` (hub job kind `audio`, active status `transcribing`)
-and `documents` (kind `document`, active status `processing`):
+Per cycle, for `recordings` (hub job kind `audio`, active status `transcribing`),
+`documents` (kind `document`, active status `processing`) and `recording_parts`
+(kind `audio`, active status `transcribing`):
 
 1. **Reclaim:** active rows *without* `hub_job_id` older than
    `WORKER_STALE_MINUTES` go back to `pending` (a crash between claim and submit),
@@ -20,7 +21,9 @@ and `documents` (kind `document`, active status `processing`):
    submitting twice.
 3. **Poll:** active rows with `hub_job_id` are checked via `GET /v1/jobs/{id}`.
    `completed` → the result is written back (recordings: a `transcripts` row from
-   the result `markdown`; documents: `markdown` + `pages`), the row goes `done`,
+   the result `markdown`; documents: `markdown` + `pages`; parts: the part's own
+   `text`, set together with `done` in one write that only applies while the part is
+   still `transcribing`, so a part the user discarded meanwhile stays discarded), the row goes `done`,
    and the hub job is deleted. `failed`/`cancelled` → `error` with
    `Verarbeitung fehlgeschlagen: …`; a missing job → `Hub-Job nicht gefunden`;
    an expired result → `Ergebnis auf dem Hub abgelaufen`.
@@ -49,6 +52,21 @@ untouched on failure. A `pending` row that still has a `postprocess_job_id` was
 re-requested while that job ran: the old job is deleted on the hub and the new one
 gets a fresh key. A new audio transcript (`write_transcript`) clears every
 `postprocess_*` field and deletes a text job still running on the old one.
+
+### Recording parts (re-dictation)
+
+A `recording_parts` row is a piece of audio the PWA recorded into an existing
+recording. It is submitted like a recording, with the part's own `audio` file,
+`language` and `profile` (hub upload name `part-<id>`); the result lands only in the
+part's `text` (no `transcripts` row, no title): the PWA inserts it into the transcript
+and appends the audio to the recording's file, recording where in `offset_seconds` /
+`duration_seconds`.
+
+**Audio cleanup:** at the end of every cycle up to `WORKER_BATCH` parts whose `audio`
+is still set, whose `offset_seconds` is set (the audio is in the recording) and whose
+status is `done`, `applied` or `discarded` get their file deleted (`DELETE /files/{id}`,
+a missing file counts as deleted) and `audio` cleared. Parts with `offset_seconds`
+null keep their audio. A failure is logged and retried next cycle.
 
 ## Configuration
 

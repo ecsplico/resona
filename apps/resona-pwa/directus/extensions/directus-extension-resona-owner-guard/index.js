@@ -9,6 +9,11 @@
 // Someone else's or a missing parent → 403, no parent id → 400; a batch fails as a
 // whole. Admins (the project-worker's static token) and internal calls pass.
 //
+// `recording_parts` also names its audio file, which the project-worker (an admin)
+// downloads and transcribes: that file must be readable by the caller too (the `user`
+// policy reads only files the user uploaded), else a user could have someone else's
+// audio transcribed into their own recording.
+//
 // Plain ESM, no build step: Directus loads `index.js` from /directus/extensions
 // (copied in by directus/Dockerfile.directus). Bootstrap refuses to drop the old
 // create rules unless this extension is loaded.
@@ -20,6 +25,10 @@ const GUARDS = {
 		{ field: "recording", collection: "recordings" },
 		// the corrected transcript belongs to that recording
 		{ field: "transcript", collection: "transcripts", filter: payload => ({ recording: { _eq: parentId(payload.recording) } }) },
+	],
+	recording_parts: [
+		{ field: "recording", collection: "recordings" },
+		{ field: "audio", collection: "directus_files" },
 	],
 };
 

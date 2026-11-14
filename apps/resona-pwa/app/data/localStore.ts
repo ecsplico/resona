@@ -1,6 +1,6 @@
 import { createStore, del, get, promisifyRequest, set, values } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import type { Provenance, Recording, ResonaDocument, Transcript } from "~/types/directus";
+import type { Provenance, Recording, RecordingPart, ResonaDocument, Transcript } from "~/types/directus";
 import type { DataStore } from "~/data/types";
 
 // Browser-local backend for NUXT_PUBLIC_DATA_MODE=standalone. idb-keyval can
@@ -24,6 +24,7 @@ interface Stores {
 	documents: UseStore;
 	files: UseStore;
 	corrections: UseStore;
+	parts: UseStore;
 }
 
 let stores: Stores | null = null;
@@ -36,6 +37,7 @@ function db(): Stores {
 			documents: createStore("resona-local-documents", "items"),
 			files: createStore("resona-local-files", "items"),
 			corrections: createStore("resona-local-corrections", "items"),
+			parts: createStore("resona-local-parts", "items"),
 		};
 	}
 	return stores;
@@ -110,6 +112,11 @@ async function transcriptsOf(recordingId: string): Promise<Transcript[]> {
 	return all.filter(t => t.recording === recordingId).sort(byCreatedAsc);
 }
 
+async function partsOf(recordingId: string): Promise<RecordingPart[]> {
+	const all = await values<RecordingPart>(db().parts);
+	return all.filter(p => p.recording === recordingId).sort((a, b) => a.seq - b.seq);
+}
+
 /** Rows of a collection with the given status, oldest first (processor queue order). */
 export function listByStatus(collection: "recordings", status: Recording["status"]): Promise<Recording[]>;
 export function listByStatus(collection: "documents", status: ResonaDocument["status"]): Promise<ResonaDocument[]>;
@@ -153,6 +160,39 @@ export async function listTranscriptsByPostprocess(status: "pending" | "processi
 /** Processor-side patch of any transcript field; a no-op when the transcript was deleted meanwhile. */
 export async function patchTranscriptInternal(id: string, patch: Partial<Transcript>): Promise<void> {
 	await patchRow<Transcript>(db().transcripts, id, patch, null);
+}
+
+/** Re-dictation parts in `status`, oldest first (processor queue order). */
+export async function listPartsByStatus(status: RecordingPart["status"]): Promise<RecordingPart[]> {
+	const rows = await values<RecordingPart>(db().parts);
+	return rows.filter(p => p.status === status).sort(byCreatedAsc);
+}
+
+/** Processor-side patch of any part field; a no-op when the part was deleted meanwhile. */
+export async function patchPartInternal(id: string, patch: Partial<RecordingPart>): Promise<void> {
+	await patchRow<RecordingPart>(db().parts, id, patch, null);
+}
+
+/** A part's audio may go once it is in the recording's file and needs no transcription any more. */
+export function partAudioReleasable(p: RecordingPart): boolean {
+	return Boolean(p.audio) && p.offset_seconds != null && (p.status === "done" || p.status === "applied" || p.status === "discarded");
+}
+
+/** Parts whose audio can be deleted (see `partAudioReleasable`). */
+export async function listReleasableParts(): Promise<RecordingPart[]> {
+	return (await values<RecordingPart>(db().parts)).filter(partAudioReleasable);
+}
+
+/** Drops a part's own audio, re-checked inside the write so a retry meanwhile keeps it. */
+export async function releasePartAudio(id: string): Promise<void> {
+	const row = await get<RecordingPart>(id, db().parts);
+	if (!row?.audio) return;
+	let released = false;
+	await patchRow<RecordingPart>(db().parts, id, { audio: null }, null, (p) => {
+		released = partAudioReleasable(p) && p.audio === row.audio;
+		return released;
+	});
+	if (released) await deleteFile(row.audio);
 }
 
 /**
@@ -255,6 +295,10 @@ export function createLocalStore(): DataStore {
 			for (const t of await transcriptsOf(id)) {
 				await del(t.id, db().transcripts);
 			}
+			for (const p of await partsOf(id)) {
+				await deleteFile(p.audio ?? undefined);
+				await del(p.id, db().parts);
+			}
 			await deleteFile(row?.audio_file);
 			await del(id, db().recordings);
 		},
@@ -329,6 +373,38 @@ export function createLocalStore(): DataStore {
 			const row = await get<ResonaDocument>(id, db().documents);
 			await deleteFile(row?.file);
 			await del(id, db().documents);
+		},
+
+		async listParts(recordingId) {
+			return await partsOf(recordingId);
+		},
+
+		async createPart(input, audio, filename) {
+			if (!await get<LocalRecording>(input.recording, db().recordings)) throw new Error("Aufnahme nicht gefunden");
+			const ts = now();
+			const row: RecordingPart = {
+				...input,
+				status: "pending",
+				audio: await storeFile(audio, filename),
+				offset_seconds: null,
+				duration_seconds: null,
+				text: null,
+				error_message: null,
+				hub_job_id: null,
+				hub_job_key: null,
+				date_created: ts,
+				date_updated: ts,
+			};
+			await set(row.id, row, db().parts);
+			return row;
+		},
+
+		async updatePart(id, patch) {
+			await patchRow<RecordingPart>(db().parts, id, patch, "Diktatteil nicht gefunden");
+		},
+
+		async partAudio(part) {
+			return part.audio ? await readFile(part.audio) : null;
 		},
 	};
 }

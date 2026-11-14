@@ -1,12 +1,16 @@
-import type { Recording, ResonaDocument, Transcript } from "~/types/directus";
+import type { Recording, RecordingPart, ResonaDocument, Transcript } from "~/types/directus";
 import { HubError, type HubJob } from "~/composables/useHub";
 import {
 	listByStatus,
+	listPartsByStatus,
+	listReleasableParts,
 	listTranscriptsByPostprocess,
 	patchDocumentInternal,
+	patchPartInternal,
 	patchRecordingInternal,
 	patchTranscriptInternal,
 	readFile,
+	releasePartAudio,
 	replaceAutoTitle,
 	upsertTranscript,
 } from "~/data/localStore";
@@ -24,16 +28,17 @@ import {
  * resona-project-worker. Runs only while the app is open.
  */
 
-type Collection = "recordings" | "documents";
-type Row = Recording | ResonaDocument;
+type Collection = "recordings" | "documents" | "recording_parts";
+type Row = Recording | ResonaDocument | RecordingPart;
 
 const MAX_SUBMIT_PER_CYCLE = 5;
 
 interface Spec {
 	collection: Collection;
 	kind: "audio" | "document";
-	active: Recording["status"] | ResonaDocument["status"];
-	fileOf: (row: Row) => string | undefined;
+	active: Row["status"];
+	list: (status: Row["status"]) => Promise<Row[]>;
+	fileOf: (row: Row) => string | null | undefined;
 	fallbackName: (id: string) => string;
 	patch: (id: string, patch: Record<string, unknown>) => Promise<unknown>;
 }
@@ -43,6 +48,7 @@ const SPECS: Spec[] = [
 		collection: "recordings",
 		kind: "audio",
 		active: "transcribing",
+		list: status => listByStatus("recordings", status as Recording["status"]),
 		fileOf: row => (row as Recording).audio_file,
 		fallbackName: id => `${id}.webm`,
 		patch: (id, p) => patchRecordingInternal(id, p as Partial<Recording>),
@@ -51,9 +57,20 @@ const SPECS: Spec[] = [
 		collection: "documents",
 		kind: "document",
 		active: "processing",
+		list: status => listByStatus("documents", status as ResonaDocument["status"]),
 		fileOf: row => (row as ResonaDocument).file,
 		fallbackName: id => `${id}.bin`,
 		patch: (id, p) => patchDocumentInternal(id, p as Partial<ResonaDocument>),
+	},
+	// Re-dictation parts: the text stays on the part until the recording's page lands it.
+	{
+		collection: "recording_parts",
+		kind: "audio",
+		active: "transcribing",
+		list: status => listPartsByStatus(status as RecordingPart["status"]),
+		fileOf: row => (row as RecordingPart).audio,
+		fallbackName: id => `part-${id}.webm`,
+		patch: (id, p) => patchPartInternal(id, p as Partial<RecordingPart>),
 	},
 ];
 
@@ -112,7 +129,7 @@ async function submit(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Pro
 		if (row.hub_job_key == null) await spec.patch(row.id, { hub_job_key: key });
 		const uploadId = await hub.upload(blob, name);
 		const body = spec.kind === "audio"
-			? { kind: spec.kind, upload_id: uploadId, language: (row as Recording).language, profile: (row as Recording).profile }
+			? { kind: spec.kind, upload_id: uploadId, language: (row as Recording | RecordingPart).language, profile: (row as Recording | RecordingPart).profile }
 			: { kind: spec.kind, upload_id: uploadId };
 		const jobId = await hub.createJob(body, key);
 		await spec.patch(row.id, { status: spec.active, hub_job_id: jobId, error_message: null });
@@ -153,7 +170,10 @@ async function poll(spec: Spec, row: Row, hub: ReturnType<typeof useHub>): Promi
 		await fail(spec, row.id, message);
 		return;
 	}
-	if (spec.kind === "audio") {
+	if (spec.collection === "recording_parts") {
+		await spec.patch(row.id, { text: result.markdown, status: "done", hub_job_id: null, hub_job_key: null, error_message: null });
+	}
+	else if (spec.kind === "audio") {
 		const { supersededJob } = await upsertTranscript(row.id, {
 			text: result.markdown,
 			segments: result.segments,
@@ -279,18 +299,22 @@ async function runTextJobs(hub: ReturnType<typeof useHub>): Promise<void> {
 }
 
 export async function runLocalCycle(): Promise<void> {
+	// Local only, no hub: a part's audio goes once it is transcribed and in the recording's file.
+	for (const part of await listReleasableParts()) {
+		await isolated(() => releasePartAudio(part.id));
+	}
 	if (typeof navigator !== "undefined" && navigator.onLine === false) return;
 	const hub = useHub();
 	if (!hub.hasToken()) return;
 
 	for (const spec of SPECS) {
-		const active = (await listByStatus(spec.collection, spec.active)) as Row[];
+		const active = await spec.list(spec.active);
 		for (const row of active) {
 			if (row.hub_job_id == null) {
 				await isolated(() => spec.patch(row.id, { status: "pending" }).then(() => undefined));
 			}
 		}
-		const pending = ((await listByStatus(spec.collection, "pending")) as Row[]).slice(0, MAX_SUBMIT_PER_CYCLE);
+		const pending = (await spec.list("pending")).slice(0, MAX_SUBMIT_PER_CYCLE);
 		for (const row of pending) {
 			await isolated(() => submit(spec, row, hub));
 		}

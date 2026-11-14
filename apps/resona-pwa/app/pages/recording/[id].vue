@@ -2,10 +2,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
-import type { RedictationAudio } from "~/composables/useRedictation";
-import type { Recording, Transcript } from "~/types/directus";
+import type { RedictationAnchor, RedictationAudio } from "~/composables/useRedictation";
+import type { Recording, RecordingPart, Transcript } from "~/types/directus";
 import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
-import { rebaseInsertion } from "~/utils/correction";
+import { rebaseInsertion, rebaseOffset, sha256Hex } from "~/utils/correction";
 
 const route = useRoute();
 const id = String(route.params.id);
@@ -13,7 +13,8 @@ const cfg = useRuntimeConfig().public;
 
 const { recording, transcript, loading, error, refresh, startPolling, stopPolling } = useRecording(id);
 const store = useDataStore();
-const { paneInLayout } = useShell();
+// `wide`: paragraphs can be moved (desktop only; phones keep the plain editor).
+const { paneInLayout, wide } = useShell();
 // The desktop list stays mounted beside this page: ask it to reload after a change it shows.
 const recordingsList = useRecordingsRefresh();
 
@@ -175,7 +176,26 @@ async function writeText(next: string, parts: string[], rawOnly: boolean, correc
 	t.text = next;
 	if (raw !== null) t.raw_text = raw;
 	if (keepsOutput) t.processed_text = next;
+	void reanchorParts();
 	return true;
+}
+
+/**
+ * After a write the saved text changed: every chip still waiting gets its place
+ * in the new saved text stored, so a reopen puts the part there. A chip inside
+ * unsaved typing keeps its old anchor.
+ */
+async function reanchorParts(): Promise<void> {
+	const offsets = editorRef.value?.dictationPartOffsets() ?? [];
+	if (offsets.length === 0) return;
+	const saved = edit.committed.value;
+	const sha = await sha256Hex(saved);
+	const anchors = new Map<string, RedictationAnchor>();
+	for (const { partId, base, at } of offsets) {
+		const offset = rebaseOffset(saved, base, at);
+		if (offset !== null) anchors.set(partId, { anchor_offset: offset, anchor_text_sha: sha });
+	}
+	redict.reanchor(anchors);
 }
 
 // One manual save at a time: clicks while it is queued or running join it.
@@ -199,6 +219,7 @@ function saveTranscript(): Promise<boolean> {
 		}
 		savedTypedEdits.value = typedUpTo;
 		unsavedPart.value = false;
+		redict.saved();
 		return true;
 	}).finally(() => {
 		manualSave = null;
@@ -325,7 +346,8 @@ type PttEditorRef = {
 	appendParagraph: (text: string) => void;
 	focus: () => void;
 	hasFocus: () => boolean;
-	insertDictationPart: (partId: string, at: "caret" | "end") => void;
+	insertDictationPart: (partId: string, at: "caret" | "end" | number, status?: "recording" | "transcribing" | "error") => void;
+	dictationPartOffsets: () => { partId: string; base: string; at: number }[];
 	setDictationPartStatus: (partId: string, status: "recording" | "transcribing" | "error") => void;
 	resolveDictationPart: (partId: string, text: string, options?: { paragraph?: boolean }) => { base: string; at: number; inserted: string } | null;
 	removeDictationPart: (partId: string) => void;
@@ -506,11 +528,15 @@ function onKeyUp(e: KeyboardEvent): void {
 }
 
 // ── Re-dictation (record more parts; each lands where its chip stands) ─────
-// The bar records one part at a time; a stopped part's audio is appended to the
-// recording and its hub job runs in the background, so the next part, typing and
-// saving never wait. Each part is a chip in the editor until its text arrives.
+// The bar records one part at a time; a stopped part is stored with its audio
+// and transcribed by the processor (project worker / in-browser processor), so
+// the next part, typing, saving and even closing the page never wait. Each part
+// is a chip in the editor until its text arrives; opened again, the recording's
+// unfinished parts come back as chips at their stored place.
 const redict = useRedictation({
 	recording: () => recording.value,
+	anchor: anchorOf,
+	onRestore: restoreRedictation,
 	onText: landRedictation,
 	onError: partId => editorRef.value?.setDictationPartStatus(partId, "error"),
 	onAudio: applyRedictationAudio,
@@ -522,19 +548,23 @@ const redictAudioFailed = computed(() => redict.parts.value.filter(p => p.audio 
 const redictNotice = ref<string | null>(null);
 const redictProgress = computed(() => {
 	const n = redict.transcribing.value;
-	if (n > 0) return `${n === 1 ? "1 Teil wird" : `${n} Teile werden`} transkribiert – Seite bitte geöffnet lassen.`;
+	if (n > 0) return `${n === 1 ? "1 Teil wird" : `${n} Teile werden`} transkribiert.`;
 	return redict.merging.value ? "Audio wird angehängt…" : null;
 });
+// A part not landed yet (recording, storing, transcribing, failed): its anchor
+// points into the current text, so nothing may rewrite that text meanwhile.
+const redictUnsettled = computed(() => redict.busy.value || redict.parts.value.length > 0);
 // Why "Nachbearbeiten" cannot start now: it runs on the stored text, so unsaved
 // edits, writes still running and dictation/re-dictation in progress must settle first.
 const postprocessBlocked = computed(() => {
 	if (dirty.value) return "Erst speichern oder verwerfen, dann nachbearbeiten.";
 	if (edit.saving.value) return "Der Text wird noch gespeichert.";
-	if (pttState.value !== "idle" || redict.busy.value || redict.failed.value > 0) return "Erst die laufende Aufnahme abschließen.";
+	if (pttState.value !== "idle" || redictUnsettled.value) return "Erst die laufende Aufnahme abschließen.";
 	return null;
 });
 
-let redictSeq = 0;
+// Moved-to-end notice for parts restored away from their anchor.
+const MOVED_TO_END = "Ein Nachdiktat wurde ans Ende gesetzt, weil sich der Text geändert hat.";
 // The part the record bar is recording (null: bar closed).
 let redictMicPart: string | null = null;
 // Pressing the button moves the focus out of the text, so whether the user was
@@ -548,7 +578,8 @@ function noteRedictPress(): void {
 async function startRedictation(): Promise<void> {
 	if (redict.recording.value || pttState.value !== "idle") return;
 	redictNotice.value = null;
-	const partId = `part-${++redictSeq}`;
+	// Also the part's row id, so the chip and the stored part are one.
+	const partId = crypto.randomUUID();
 	// Editing (caret in the text): the part splits the paragraph at the caret;
 	// otherwise it is appended at the end. The rendered profile output has no
 	// editor: the text is appended when it arrives.
@@ -604,6 +635,32 @@ function discardRedictation(partId: string): void {
 	editorRef.value?.removeDictationPart(partId);
 }
 
+/** Where the chip of `partId` stands in the saved text (null offset: at the end). */
+async function anchorOf(partId: string): Promise<RedictationAnchor> {
+	const saved = edit.committed.value;
+	const chip = editorRef.value?.dictationPartOffsets().find(o => o.partId === partId);
+	return {
+		anchor_offset: chip ? rebaseOffset(saved, chip.base, chip.at) : null,
+		anchor_text_sha: await sha256Hex(saved),
+	};
+}
+
+/**
+ * A stored part this page did not record (the recording was opened again): its
+ * chip goes back at its anchor while the saved text is the one it refers to, else
+ * at the end with a notice. Waits one tick so a just-seeded editor is mounted.
+ */
+async function restoreRedictation(part: RecordingPart): Promise<void> {
+	await nextTick();
+	const ed = showRendered.value ? null : editorRef.value;
+	if (!ed) return;
+	const status = part.status === "error" ? "error" : "transcribing";
+	const sameText = part.anchor_text_sha != null && part.anchor_text_sha === await sha256Hex(edit.committed.value);
+	const atAnchor = sameText && part.anchor_offset != null;
+	if (!atAnchor && part.anchor_offset != null) redictNotice.value = MOVED_TO_END;
+	ed.insertDictationPart(part.id, atAnchor ? part.anchor_offset! : "end", status);
+}
+
 // One `\n` is one paragraph, so a single newline starts a new one (none when the
 // text is empty or already ends in one).
 function joinParagraph(current: string, text: string): string {
@@ -627,11 +684,11 @@ function appendParagraph(text: string): void {
  * written along (a part inside unsaved typing stays unsaved). Without the chip
  * (no editor meanwhile) it is appended at the end.
  */
-async function landRedictation(partId: string, text: string): Promise<void> {
+async function landRedictation(partId: string, text: string): Promise<boolean> {
 	const placed = editorRef.value?.resolveDictationPart(partId, text, { paragraph: true }) ?? null;
 	if (!text) {
 		redictNotice.value = "Im neuen Teil wurde kein Text erkannt.";
-		return;
+		return true;
 	}
 	let saved: boolean;
 	if (placed) {
@@ -644,6 +701,7 @@ async function landRedictation(partId: string, text: string): Promise<void> {
 	}
 	if (saved) recordingsList.request();
 	else redictNotice.value = "Text eingefügt, aber nicht gespeichert – bitte Speichern.";
+	return saved;
 }
 
 function applyRedictationAudio(result: RedictationAudio): void {
@@ -659,14 +717,15 @@ function applyRedictationAudio(result: RedictationAudio): void {
 	recordingsList.request();
 }
 
-// A part still recording, transcribing or being appended, or one that failed (its
-// audio blob lives only in memory), lives only in this page: leaving drops it, so ask first. Nuxt keys the page by id, so switching to
+// A part still recording, being stored or appended, or one that could not be
+// stored (it lives only in memory), is lost by leaving, so ask first. Stored parts
+// keep transcribing without the page. Nuxt keys the page by id, so switching to
 // another recording (desktop list) is a route update on this same record. The
 // same for a dictation still recording or transcribing (chips add nothing to the
 // text, so the save dialog would not ask).
 const REDICTATION_LEAVE = "Das laufende Nachdiktat geht verloren. Trotzdem verlassen?";
 const DICTATION_LEAVE = "Das laufende Diktat geht verloren. Trotzdem verlassen?";
-const FAILED_LEAVE = "Ein Nachdiktat ist fehlgeschlagen und geht beim Verlassen verloren. Trotzdem verlassen?";
+const FAILED_LEAVE = "Ein Nachdiktat konnte nicht gespeichert werden und geht beim Verlassen verloren. Trotzdem verlassen?";
 
 function confirmLeave(): boolean {
 	if (redict.busy.value) return window.confirm(REDICTATION_LEAVE);
@@ -1162,7 +1221,7 @@ onUnmounted(() => {
 					</div>
 					<HButton
 						variant="secondary"
-						:disabled="restarting || redict.busy.value || redict.failed.value > 0"
+						:disabled="restarting || redictUnsettled"
 						data-testid="restart-transcription"
 						@click="restartTranscription"
 					>
@@ -1320,6 +1379,7 @@ onUnmounted(() => {
 							ref="editorRef"
 							v-model="edit.text.value"
 							:editable="!postprocessing"
+							:movable="wide"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
 							@typed="typedEdits += 1"

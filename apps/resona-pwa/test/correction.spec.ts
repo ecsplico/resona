@@ -19,6 +19,24 @@ describe("diffEdits", () => {
 		const b = Array.from({ length: 2100 }, (_, i) => `b${i}`).join(" ");
 		expect(diffEdits(`Anfang ${a} Ende`, `Anfang ${b} Ende`)).toEqual([{ before: a, after: b }]);
 	});
+
+	it("reports nothing for a paragraph that was only moved", () => {
+		expect(diffEdits("erster Absatz\nzweiter Absatz\ndritter Absatz", "zweiter Absatz\ndritter Absatz\nerster Absatz"))
+			.toEqual([]);
+		expect(diffEdits("A eins\nB zwei\nC drei", "B zwei\nA eins\nC drei")).toEqual([]);
+	});
+
+	it("reports only the words changed inside a moved paragraph", () => {
+		expect(diffEdits(
+			"der Patient hat Fieber seit gestern\nzweiter Absatz\ndritter Absatz",
+			"zweiter Absatz\ndritter Absatz\nder Patient hat Fieber seit heute",
+		)).toEqual([{ before: "gestern", after: "heute" }]);
+	});
+
+	it("still reports a paragraph replaced by different text in its place", () => {
+		expect(diffEdits("eins\nalt und falsch\ndrei", "eins\nganz neu geschrieben\ndrei"))
+			.toEqual([{ before: "alt und falsch", after: "ganz neu geschrieben" }]);
+	});
 });
 
 describe("textSplice", () => {

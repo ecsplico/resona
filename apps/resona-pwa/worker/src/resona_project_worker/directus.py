@@ -213,6 +213,46 @@ class DirectusClient:
             {"markdown": markdown, "pages": pages, "provenance": provenance},
         )
 
+    async def write_part(self, part_id: str, *, text: str) -> bool:
+        """Stores a re-dictated part's transcript and marks it `done`, in one write.
+
+        Filtered on `status = transcribing`, like `set_auto_title`: a part the user
+        discarded while its job ran stays discarded. Returns whether it was written.
+        """
+        resp = await self._client.patch(
+            f"{self.base_url}/items/recording_parts",
+            json={
+                "query": {"filter": {"id": {"_eq": part_id}, "status": {"_eq": "transcribing"}}},
+                "data": {"text": text, "status": "done", **ROW_JOB.cleared()},
+            },
+        )
+        resp.raise_for_status()
+        return bool(resp.json()["data"])
+
+    async def list_part_audio_to_clean(self, statuses: tuple[str, ...], *, limit: int) -> list[dict]:
+        """Parts in `statuses` that still hold their audio although the PWA already
+        appended it to the recording (`offset_seconds` set), oldest first."""
+        resp = await self._client.get(
+            f"{self.base_url}/items/recording_parts",
+            params={
+                "filter[audio][_nnull]": "true",
+                "filter[offset_seconds][_nnull]": "true",
+                "filter[status][_in]": ",".join(statuses),
+                "fields": "id,audio",
+                "sort": "date_created",
+                "limit": limit,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["data"]
+
+    async def delete_file(self, file_id: str) -> None:
+        """Deletes a Directus file; one that is already gone (404) counts as deleted."""
+        resp = await self._client.delete(f"{self.base_url}/files/{file_id}")
+        if resp.status_code == 404:
+            return
+        resp.raise_for_status()
+
     async def mark_done(self, collection: str, item_id: str) -> None:
         await self.patch(
             collection, item_id, {"status": "done", "hub_job_id": None, "hub_job_key": None},

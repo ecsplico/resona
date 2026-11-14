@@ -2,7 +2,8 @@
 // Checks the `user` policy + owner-guard extension against a bootstrapped Directus
 // (CI job `directus` in .github/workflows/pwa.yml; also runnable against a local
 // stack). Creates two throwaway users with recordings, asserts who may create
-// transcripts and corrections on which recording, then deletes what it created.
+// transcripts, corrections and recording parts on which recording (parts also with
+// whose audio file), then deletes what it created.
 //
 // Env: DIRECTUS_URL, ADMIN_EMAIL, ADMIN_PASSWORD, DIRECTUS_TOKEN (the worker token
 // pinned by bootstrap.mjs). Exit 1 on any failed check.
@@ -48,6 +49,7 @@ if (!role) throw new Error("no `user` role — run bootstrap.mjs first");
 const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const userIds = [];
 const recordingIds = [];
+const fileIds = [];
 async function user(name) {
 	const email = `verify-${name}-${stamp}@example.com`;
 	userIds.push((await data(admin, "POST", "/users", { email, password: "verify-password-1", role: role.id })).id);
@@ -57,6 +59,16 @@ async function recording(token, title) {
 	const row = await data(token, "POST", "/items/recordings", { title, source: "live", status: "done" });
 	recordingIds.push(row.id);
 	return row.id;
+}
+/** Uploads a tiny file as `token`'s user (uploaded_by = that user). */
+async function upload(token, name) {
+	const form = new FormData();
+	form.append("file", new Blob([new Uint8Array(44)], { type: "audio/wav" }), `${name}.wav`);
+	const res = await fetch(`${URL}/files`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+	const body = await res.json();
+	if (res.status >= 300) throw new Error(`POST /files → ${res.status}: ${JSON.stringify(body)}`);
+	fileIds.push(body.data.id);
+	return body.data.id;
 }
 
 try {
@@ -93,10 +105,39 @@ try {
 	const stored = await data(admin, "GET", `/items/transcripts?filter[recording][_in]=${a1},${a2},${b1}&fields=text&limit=-1`);
 	const leaked = stored.filter(row => row.text === "x");
 	check("no rejected transcript stored", { status: leaked.length ? 500 : 200, body: {} }, 200);
+
+	// recording parts (re-dictation)
+	const fa = await upload(a, "verify-part-a");
+	const fb = await upload(b, "verify-part-b");
+	const part = (recording, audio, extra = {}) => ({ recording, audio, seq: 1, status: "pending", language: "de", profile: "default", ...extra });
+	// the PWA picks the part id itself (its editor chip refers to it before the row exists)
+	const partId = crypto.randomUUID();
+	const p1 = check("part on own recording with own file, client id", await call(a, "POST", "/items/recording_parts", part(a1, fa, { id: partId, anchor_offset: 3, anchor_text_sha: "0".repeat(64) })), 200);
+	check("part keeps the client id", { status: p1?.id === partId ? 200 : 500, body: {} }, 200);
+	check("part on someone else's recording", await call(b, "POST", "/items/recording_parts", part(a1, fb)), 403);
+	check("part with someone else's file", await call(b, "POST", "/items/recording_parts", part(b1, fa)), 403);
+	check("part without audio", await call(a, "POST", "/items/recording_parts", part(a1, null)), 400);
+	check("part created as done", await call(a, "POST", "/items/recording_parts", part(a1, fa, { status: "done" })), 400);
+	check("part created with text", await call(a, "POST", "/items/recording_parts", part(a1, fa, { text: "x" })), 403);
+	check("read own part", await call(a, "GET", `/items/recording_parts/${p1?.id}`), 200);
+	check("read someone else's part", await call(b, "GET", `/items/recording_parts/${p1?.id}`), 403);
+	const listed = await data(b, "GET", `/items/recording_parts?filter[recording][_eq]=${a1}&limit=-1`);
+	check("someone else's parts hidden in lists", { status: listed.length ? 500 : 200, body: {} }, 200);
+	check("update own part: appended + applied", await call(a, "PATCH", `/items/recording_parts/${p1?.id}`, { status: "applied", offset_seconds: 12.5, duration_seconds: 4 }), 200);
+	check("update own part: text", await call(a, "PATCH", `/items/recording_parts/${p1?.id}`, { text: "x" }), 403);
+	check("update own part: hub_job_id", await call(a, "PATCH", `/items/recording_parts/${p1?.id}`, { hub_job_id: 1 }), 403);
+	check("update own part: status done", await call(a, "PATCH", `/items/recording_parts/${p1?.id}`, { status: "done" }), 400);
+	check("update someone else's part", await call(b, "PATCH", `/items/recording_parts/${p1?.id}`, { status: "discarded" }), 403);
+	check("delete someone else's part", await call(b, "DELETE", `/items/recording_parts/${p1?.id}`), 403);
+	check("worker writes part text", await call(DIRECTUS_TOKEN, "PATCH", `/items/recording_parts/${p1?.id}`, { text: "worker", status: "done" }), 200);
+	const storedParts = await data(admin, "GET", `/items/recording_parts?filter[recording][_in]=${a1},${a2},${b1}&fields=id,text&limit=-1`);
+	check("no rejected part stored", { status: storedParts.length === 1 && storedParts[0].id === p1?.id ? 200 : 500, body: {} }, 200);
+	check("delete own part", await call(a, "DELETE", `/items/recording_parts/${p1?.id}`), 204);
 }
 finally {
-	// recordings cascade to their transcripts and corrections
+	// recordings cascade to their transcripts, corrections and parts
 	if (recordingIds.length) await call(admin, "DELETE", "/items/recordings", recordingIds);
+	if (fileIds.length) await call(admin, "DELETE", "/files", fileIds);
 	if (userIds.length) await call(admin, "DELETE", "/users", userIds);
 }
 

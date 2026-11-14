@@ -12,15 +12,24 @@ from resona_project_worker.worker import run_once
 HUB = "http://hub.test"
 
 
-def mock_lists(*, pending=None, active=None, stale=None):
+def mock_lists(*, pending=None, active=None, stale=None, cleanup=None):
     """Directus list endpoints for all polled collections, keyed by collection name
-    (transcripts filter on `postprocess_status`)."""
+    (transcripts filter on `postprocess_status`). `cleanup`: `recording_parts` rows the
+    audio-cleanup query sees, filtered here like Directus would (audio and
+    `offset_seconds` set, `status` in the requested list)."""
     pending, active, stale = pending or {}, active or {}, stale or {}
 
     def handler(request, collection):
         params = request.url.params
         status = params.get("filter[status][_eq]") or params.get("filter[postprocess_status][_eq]")
-        if "filter[date_updated][_lt]" in params:
+        if "filter[offset_seconds][_nnull]" in params:
+            statuses = params["filter[status][_in]"].split(",")
+            data = [
+                {"id": r["id"], "audio": r["audio"]} for r in cleanup or []
+                if r.get("audio") is not None and r.get("offset_seconds") is not None
+                and r.get("status") in statuses
+            ]
+        elif "filter[date_updated][_lt]" in params:
             data = stale.get(collection, [])
         elif status == "pending":
             data = pending.get(collection, [])
@@ -29,7 +38,8 @@ def mock_lists(*, pending=None, active=None, stale=None):
         return httpx.Response(200, json={"data": data})
 
     return respx.get(
-        host="directus.test", path__regex=r"^/items/(?P<collection>recordings|documents|transcripts)$",
+        host="directus.test",
+        path__regex=r"^/items/(?P<collection>recordings|documents|transcripts|recording_parts)$",
     ).mock(side_effect=handler)
 
 
@@ -539,3 +549,207 @@ async def test_job_key_is_persisted_before_create(base_url, tmp_path, recording)
     await cycle(base_url, tmp_path)
 
     assert claimed_before_create == [True]
+
+
+# ── recording_parts (re-dictation) ──────────────────────────────────────────
+
+PART = {
+    "id": "part-1", "recording": "rec-1", "seq": 2, "status": "pending",
+    "audio": "file-9", "language": "en", "profile": "dictation",
+}
+
+
+def mock_part_batch_patch(base_url, *, updated=True):
+    """The filtered batch PATCH of `write_part`; returns the updated rows (or none)."""
+    return respx.patch(f"{base_url}/items/recording_parts").mock(
+        side_effect=lambda request: httpx.Response(
+            200, json={"data": [{"id": "part-1"}] if updated else []},
+        )
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_pending_part_is_claimed_and_submitted_with_its_language_and_profile(
+    base_url, tmp_path,
+):
+    mock_lists(pending={"recording_parts": [PART]})
+    respx.get(f"{base_url}/assets/file-9").mock(return_value=httpx.Response(200, content=b"RIFF"))
+    upload = respx.post(f"{HUB}/v1/uploads").mock(
+        return_value=httpx.Response(201, json={"upload_id": "up-9", "sha256": "x", "size": 4})
+    )
+    job = respx.post(f"{HUB}/v1/jobs").mock(
+        return_value=httpx.Response(202, json={"job_id": 11, "status": "pending"})
+    )
+    patch = mock_patch(base_url, "recording_parts", "part-1")
+
+    assert await cycle(base_url, tmp_path, engine="whisper") == 1
+
+    assert b'filename="part-part-1"' in upload.calls.last.request.content
+    req = job.calls.last.request
+    key = req.headers["Idempotency-Key"]
+    assert key.startswith("recording_parts:part-1:")
+    assert json.loads(req.content) == {
+        "kind": "audio", "upload_id": "up-9", "private": True,
+        "language": "en", "profile": "dictation", "engine": "whisper",
+    }
+    assert bodies(patch) == [
+        {"status": "transcribing", "hub_job_id": None, "hub_job_key": key, "error_message": None},
+        {"hub_job_id": 11, "error_message": None},
+    ]
+    assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_completed_part_writes_its_text_and_no_transcript(base_url, tmp_path):
+    row = {**PART, "status": "transcribing", "hub_job_id": 11, "hub_job_key": "k"}
+    mock_lists(active={"recording_parts": [row]})
+    respx.get(f"{HUB}/v1/jobs/11").mock(return_value=httpx.Response(200, json={
+        "status": "completed", "error": None, "candidate": {"engine": "faster-whisper"},
+    }))
+    respx.get(f"{HUB}/v1/jobs/11/result").mock(return_value=httpx.Response(200, json={
+        "markdown": "Neuer Absatz.", "language": "en", "segments": [], "provenance": PROV,
+    }))
+    delete = respx.delete(f"{HUB}/v1/jobs/11").mock(return_value=httpx.Response(204))
+    write = mock_part_batch_patch(base_url)
+    single = mock_patch(base_url, "recording_parts", "part-1")
+    transcripts = respx.route(host="directus.test", path__startswith="/items/transcripts/")
+
+    assert await cycle(base_url, tmp_path) == 1
+
+    assert bodies(write) == [{
+        "query": {"filter": {"id": {"_eq": "part-1"}, "status": {"_eq": "transcribing"}}},
+        "data": {
+            "text": "Neuer Absatz.", "status": "done",
+            "hub_job_id": None, "hub_job_key": None, "error_message": None,
+        },
+    }]
+    assert not single.called  # no separate mark_done, no title
+    assert not transcripts.called
+    assert delete.called
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_part_discarded_while_its_job_ran_stays_discarded(base_url, tmp_path):
+    row = {**PART, "status": "transcribing", "hub_job_id": 11}
+    mock_lists(active={"recording_parts": [row]})
+    respx.get(f"{HUB}/v1/jobs/11").mock(
+        return_value=httpx.Response(200, json={"status": "completed", "error": None})
+    )
+    respx.get(f"{HUB}/v1/jobs/11/result").mock(
+        return_value=httpx.Response(200, json={"markdown": "x"})
+    )
+    delete = respx.delete(f"{HUB}/v1/jobs/11").mock(return_value=httpx.Response(204))
+    mock_part_batch_patch(base_url, updated=False)
+    single = mock_patch(base_url, "recording_parts", "part-1")
+
+    await cycle(base_url, tmp_path)
+
+    assert not single.called
+    assert delete.called
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_failed_part_job_marks_error(base_url, tmp_path):
+    row = {**PART, "status": "transcribing", "hub_job_id": 11}
+    mock_lists(active={"recording_parts": [row]})
+    respx.get(f"{HUB}/v1/jobs/11").mock(return_value=httpx.Response(200, json={
+        "status": "failed", "error": {"code": "engine_error", "message": "kaputt"},
+    }))
+    patch = mock_patch(base_url, "recording_parts", "part-1")
+
+    assert await cycle(base_url, tmp_path) == 1
+
+    assert bodies(patch) == [{
+        "status": "error", "error_message": "Verarbeitung fehlgeschlagen: kaputt",
+        "hub_job_id": None, "hub_job_key": None,
+    }]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_part_without_audio_marks_error(base_url, tmp_path):
+    mock_lists(pending={"recording_parts": [{**PART, "audio": None}]})
+    patch = mock_patch(base_url, "recording_parts", "part-1")
+
+    await cycle(base_url, tmp_path)
+
+    assert bodies(patch)[0]["status"] == "error"
+    assert bodies(patch)[0]["error_message"] == "Datei fehlt"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_stale_part_without_job_goes_back_to_pending(base_url, tmp_path):
+    lists = mock_lists(stale={"recording_parts": [{"id": "part-old"}]})
+    patch = mock_patch(base_url, "recording_parts", "part-old")
+
+    assert await cycle(base_url, tmp_path) == 1
+
+    assert bodies(patch) == [{"status": "pending"}]
+    stale = [
+        c.request for c in lists.calls
+        if c.request.url.path.endswith("/recording_parts")
+        and "filter[date_updated][_lt]" in c.request.url.params
+    ]
+    assert stale[0].url.params["filter[status][_eq]"] == "transcribing"
+    assert stale[0].url.params["filter[hub_job_id][_null]"] == "true"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_cleanup_deletes_part_audio_only_once_appended_and_settled(base_url, tmp_path):
+    parts = [
+        {"id": "p-done", "audio": "f-done", "offset_seconds": 0.0, "status": "done"},
+        {"id": "p-applied", "audio": "f-applied", "offset_seconds": 12.5, "status": "applied"},
+        {"id": "p-discarded", "audio": "f-discarded", "offset_seconds": 3.0, "status": "discarded"},
+        # the page has not appended this audio yet
+        {"id": "p-unappended", "audio": "f-unappended", "offset_seconds": None, "status": "applied"},
+        # still being transcribed / failed: the audio may be needed again
+        {"id": "p-active", "audio": "f-active", "offset_seconds": 1.0, "status": "transcribing"},
+        {"id": "p-error", "audio": "f-error", "offset_seconds": 1.0, "status": "error"},
+        {"id": "p-clean", "audio": None, "offset_seconds": 1.0, "status": "applied"},
+    ]
+    lists = mock_lists(cleanup=parts)
+    deleted = respx.delete(host="directus.test", path__regex=r"^/files/(?P<fid>[^/]+)$").mock(
+        side_effect=lambda request, fid: httpx.Response(404 if fid == "f-applied" else 204)
+    )
+    patches = {p["id"]: mock_patch(base_url, "recording_parts", p["id"]) for p in parts}
+
+    assert await cycle(base_url, tmp_path) == 3
+
+    assert sorted(c.request.url.path for c in deleted.calls) == [
+        "/files/f-applied", "/files/f-discarded", "/files/f-done",
+    ]
+    for pid in ("p-done", "p-applied", "p-discarded"):
+        assert bodies(patches[pid]) == [{"audio": None}]
+    for pid in ("p-unappended", "p-active", "p-error", "p-clean"):
+        assert not patches[pid].called
+    query = [c.request for c in lists.calls if "filter[offset_seconds][_nnull]" in c.request.url.params][0]
+    assert query.url.params["limit"] == "5"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_failed_audio_cleanup_keeps_the_part_and_never_stops_the_cycle(
+    base_url, tmp_path, caplog,
+):
+    parts = [
+        {"id": "p-1", "audio": "f-1", "offset_seconds": 1.0, "status": "applied"},
+        {"id": "p-2", "audio": "f-2", "offset_seconds": 2.0, "status": "applied"},
+    ]
+    mock_lists(cleanup=parts)
+    respx.delete(f"{base_url}/files/f-1").mock(return_value=httpx.Response(500))
+    respx.delete(f"{base_url}/files/f-2").mock(return_value=httpx.Response(204))
+    p1 = mock_patch(base_url, "recording_parts", "p-1")
+    p2 = mock_patch(base_url, "recording_parts", "p-2")
+
+    with caplog.at_level(logging.ERROR):
+        assert await cycle(base_url, tmp_path) == 1
+
+    assert not p1.called
+    assert bodies(p2) == [{"audio": None}]
+    assert "p-1" in caplog.text

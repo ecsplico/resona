@@ -1,7 +1,7 @@
 {
 	"name": "directus-extension-resona-owner-guard",
-	"description": "Resona: a user may only create transcripts and corrections on their own recording",
-	"version": "1.0.0",
+	"description": "Resona: a user may only create transcripts, corrections and recording parts on their own recording (and parts only with their own audio file)",
+	"version": "1.1.0",
 	"private": true,
 	"type": "module",
 	"directus:extension": {

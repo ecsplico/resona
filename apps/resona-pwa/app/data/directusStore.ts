@@ -1,6 +1,6 @@
 import { createItem, deleteItem, readItem, readItems, updateItem, uploadFiles } from "@directus/sdk";
 import type { Query } from "@directus/sdk";
-import type { Recording, ResonaDocument, Schema, Transcript } from "~/types/directus";
+import type { Recording, RecordingPart, ResonaDocument, Schema, Transcript } from "~/types/directus";
 import type { DataStore } from "~/data/types";
 
 async function uploadFile(file: Blob, filename: string): Promise<string> {
@@ -140,6 +140,34 @@ export function createDirectusStore(): DataStore {
 		async deleteDocument(id) {
 			const { client } = useDirectus();
 			await client.request(deleteItem("documents", id));
+		},
+
+		async listParts(recordingId) {
+			const { client } = useDirectus();
+			return await client.request(readItems("recording_parts", {
+				filter: { recording: { _eq: recordingId } },
+				sort: ["seq"],
+				limit: -1,
+			})) as RecordingPart[];
+		},
+
+		// `status` is sent although it is the default: the `user` policy validates it on create.
+		async createPart(input, audio, filename) {
+			const fileId = await uploadFile(audio, filename);
+			const { client } = useDirectus();
+			return await client.request(createItem("recording_parts", { ...input, audio: fileId, status: "pending" })) as RecordingPart;
+		},
+
+		async updatePart(id, patch) {
+			const { client } = useDirectus();
+			await client.request(updateItem("recording_parts", id, patch));
+		},
+
+		async partAudio(part) {
+			if (!part.audio) return null;
+			const resp = await fetch(useDirectus().assetUrl(part.audio));
+			if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+			return await resp.blob();
 		},
 	};
 }
