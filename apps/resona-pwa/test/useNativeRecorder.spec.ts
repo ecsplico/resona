@@ -16,7 +16,7 @@ const { calls, recorder, service, filesystem } = vi.hoisted(() => {
 			startRecording: log("startRecording"),
 			pauseRecording: log("pauseRecording"),
 			resumeRecording: log("resumeRecording"),
-			stopRecording: log("stopRecording", { uri: "file:///cache/rec.m4a", duration: 0 }),
+			stopRecording: log("stopRecording", { uri: "file:///cache/rec.aac", duration: 0 }),
 			cancelRecording: log("cancelRecording"),
 			getCurrentAmplitude: vi.fn(async () => ({ value: 0.5 })),
 		},
@@ -46,7 +46,7 @@ vi.mock("@capawesome-team/capacitor-android-foreground-service", () => ({
 }));
 vi.mock("@capacitor/filesystem", () => ({ Filesystem: filesystem }));
 
-const fetchMock = vi.fn(async () => new Response("m4a-bytes"));
+const fetchMock = vi.fn(async () => new Response("aac-bytes"));
 
 describe("useNativeRecorder", () => {
 	beforeEach(() => {
@@ -71,7 +71,7 @@ describe("useNativeRecorder", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("records inside the microphone service and returns the file as audio/mp4", async () => {
+	it("records inside the microphone service and returns the ADTS file as audio/aac", async () => {
 		const r = useNativeRecorder();
 		expect(await r.start()).toBe(true);
 		expect(r.recording.value).toBe(true);
@@ -81,11 +81,29 @@ describe("useNativeRecorder", () => {
 		expect(calls.indexOf("startService")).toBeLessThan(calls.indexOf("startRecording"));
 		expect(calls.indexOf("stopRecording")).toBeLessThan(calls.indexOf("stopService"));
 		expect(service.startForegroundService).toHaveBeenCalledWith(expect.objectContaining({ serviceType: 128 }));
-		expect(fetchMock).toHaveBeenCalledWith("https://localhost/_capacitor_file_/cache/rec.m4a");
-		expect(blob.type).toBe("audio/mp4");
-		expect(await blob.text()).toBe("m4a-bytes");
-		expect(filesystem.deleteFile).toHaveBeenCalledWith({ path: "file:///cache/rec.m4a" });
+		expect(fetchMock).toHaveBeenCalledWith("https://localhost/_capacitor_file_/cache/rec.aac");
+		expect(blob.type).toBe("audio/aac");
+		expect(recorder.startRecording).toHaveBeenCalledWith({ format: "aac" });
+		expect(await blob.text()).toBe("aac-bytes");
+		// Not a recorder file the recordings list would offer: deleted at once, no session.
+		expect(filesystem.deleteFile).toHaveBeenCalledWith({ path: "file:///cache/rec.aac" });
+		expect(r.sessionId.value).toBeNull();
 		expect(r.recording.value).toBe(false);
+	});
+
+	it("keeps the recorder's file as the session until the caller saves or discards it (an app killed meanwhile finds it)", async () => {
+		const name = "recording-20261113-235935-79f42f22-a966-46ec-8f15-29e750b85c48.aac";
+		recorder.stopRecording.mockResolvedValueOnce({ uri: `file:///data/cache/capacitor-audio-recorder/${name}`, duration: 0 });
+		const r = useNativeRecorder();
+		await r.start();
+
+		expect(await (await r.stop()).text()).toBe("aac-bytes");
+		expect(filesystem.deleteFile).not.toHaveBeenCalled();
+		expect(r.sessionId.value).toBe(`native:${name}`);
+
+		await r.start();
+		expect(r.sessionId.value).toBeNull();
+		await r.stop();
 	});
 
 	it("elapsed follows the wall clock, without pauses, even when timers stalled (locked phone)", async () => {

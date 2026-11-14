@@ -375,8 +375,8 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		// The recorder runs for this start (nothing came in between), so stopping it
 		// here can only close this attempt's microphone.
 		if (current !== micAttempt) {
-			const session = recorder.sessionId.value;
 			await recorder.stop();
+			const session = recorder.sessionId.value;
 			if (session) void discardUnfinished(session);
 			return false;
 		}
@@ -394,8 +394,8 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		micAttempt += 1;
 		recording.value = false;
 		micPart = null;
-		const session = recorder.sessionId.value;
 		await recorder.stop();
+		const session = recorder.sessionId.value;
 		if (session) void discardUnfinished(session);
 	}
 
@@ -404,8 +404,9 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 		if (!recording.value || id === null) return false;
 		micAttempt += 1;
 		micPart = null;
-		const session = recorder.sessionId.value;
+		// After stop(): the native recorder names its session (its file) only then.
 		const blob = await recorder.stop();
+		const session = recorder.sessionId.value;
 		recording.value = false;
 		if (blob.size === 0) {
 			if (session) void discardUnfinished(session);

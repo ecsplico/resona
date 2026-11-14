@@ -264,7 +264,7 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   chain. Needs the page open: `beforeunload` while `busy` or a part `failed`; the detail
   page adds a route-leave/update `confirm`.
 - **Recording resilience** (record sheet, live, re-dictation part; web recorder only, the
-  Capacitor app's native recorder has none of it): `useWebRecorder` holds a screen
+  Capacitor app's native recorder has only the recovery, see **Capacitor app**): `useWebRecorder` holds a screen
   wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
   unsupported → nothing) and records with a 4 s timeslice (`RECORDER_TIMESLICE_MS`). With
   `persist`, every chunk goes to IndexedDB (`data/unfinishedRecordings.ts`, databases
@@ -328,12 +328,22 @@ token (no token → nothing is processed).
 `@vite-pwa/nuxt`, so no service worker). Debug APK: `bun run cap:apk`. Build, device test and
 findings: `docs/guide/pwa-app.md` (monorepo root). Recording goes through the `Recorder`
 interface: `useRecorder()` returns `useNativeRecorder()` inside the app
-(`hasNativeRecorder()`: `@capgo/capacitor-audio-recorder`, `audio/mp4`; on Android a
+(`hasNativeRecorder()`: `@capgo/capacitor-audio-recorder` ≥ 8.4 with `format: "aac"` = ADTS,
+`audio/aac`; on Android a
 `microphone` foreground service with a notification runs for the whole recording, refusing
 to record when it cannot start; elapsed is wall-clock based; no interruptions, no IndexedDB
 chunks: `interrupted`/`interruption`/`sessionId` stay null, `continueRecording()` is false,
 `persist`/`reopen` options are ignored), `useWebRecorder(options)` (MediaRecorder with the
-wake lock, chunks and interruptions above) elsewhere. `live.vue` always uses
+wake lock, chunks and interruptions above) elsewhere. Recovery after a kill (Android only):
+`data/nativeUnfinished.ts` lists `cache/capacitor-audio-recorder/recording-*.aac` files older
+than the web view (`performance.timeOrigin`; none while the plugin reports a recording; empty
+files deleted, `.m4a` ignored) as `UnfinishedRecording`s with id `native:<file>`;
+`listUnfinished`/`loadUnfinished`/`discardUnfinished` merge them, so `RecordingsPane` offers
+them like web sessions; load keeps only whole ADTS frames (`utils/adts.ts` `scanAdts`, also
+the length), save or Verwerfen deletes the file. `stop()` does not delete a recorder file: it
+sets `sessionId = native:<file>` (`nativeSessionId`), and callers read `sessionId` after
+`stop()` and discard it once the audio is saved, so an app killed while the save sheet is open
+still finds it. The hub admits ADTS (sniffed as MPEG audio). `live.vue` always uses
 `useWebRecorder()`: live dictation stays in the web view and is foreground-only. Not in the
 app: Nitro routes (calendar,
 debug-report, `/directus` proxy), the service-worker share target (the app has its own, below), Directus cookie login/SSO (`SameSite=Lax`
@@ -403,7 +413,8 @@ app/
 │   ├── directusStore.ts             # DataStore over Directus (directus mode)
 │   ├── localStore.ts                # DataStore over IndexedDB (standalone mode)
 │   ├── localProcessor.ts            # runLocalCycle(): standalone hub job state machine
-│   └── unfinishedRecordings.ts      # IndexedDB chunks of recordings in progress (recovery after a kill)
+│   ├── unfinishedRecordings.ts      # IndexedDB chunks of recordings in progress (recovery after a kill)
+│   └── nativeUnfinished.ts          # Android app: recorder .aac files a killed app left in the cache
 ├── plugins/local-processor.client.ts # standalone: runs runLocalCycle() every 5 s + on online
 ├── components/
 │   ├── hearth/                      # HButton, HCard, HChip, HField, HMenu (⋯ overflow menu), HRecordingSheet (Verwerfen · big Pausieren/Fortsetzen · Aufnahme beenden; "Unterbrochen" state emits `continue`), HRecordBar (docked one-row record bar for re-dictation, same buttons/test-ids and interrupted state, `pending` live-region count), ... (design system)
@@ -411,6 +422,7 @@ app/
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Weiter diktieren (done or error) / Löschen)
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
+├── utils/adts.ts                    # scanAdts(): whole ADTS frames + seconds of a cut-off .aac
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
 ├── utils/hubTokenSync.ts            # pure per-user hub token sync (pull/push over a remote interface)

@@ -74,7 +74,11 @@ export interface Recorder {
 	interruptError: Ref<string | null>;
 	/** German notice for an interruption, null when there is none. */
 	interruption: ComputedRef<string | null>;
-	/** Persisted IndexedDB session of the current (or last) recording; null when not persisted. */
+	/**
+	 * Persisted session of the current (or last) recording, null when not persisted:
+	 * IndexedDB chunks (web), or the native recorder's file, named only once `stop()`
+	 * resolved. Read it after `stop()`; the caller discards it once the audio is kept.
+	 */
 	sessionId: Ref<string | null>;
 	/**
 	 * False when it did not start (already recording, or superseded while starting).

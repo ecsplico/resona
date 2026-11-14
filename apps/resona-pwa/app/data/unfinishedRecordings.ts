@@ -1,6 +1,7 @@
 import { createStore, del, delMany, get, getMany, keys, promisifyRequest, set, values } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { mergeToWav } from "~/utils/audioMerge";
+import { discardNativeUnfinished, isNativeUnfinished, listNativeUnfinished, loadNativeUnfinished } from "./nativeUnfinished";
 
 /**
  * Audio of recordings in progress, kept in this browser's IndexedDB (both data
@@ -8,7 +9,9 @@ import { mergeToWav } from "~/utils/audioMerge";
  * so a killed or crashed page loses at most the last timeslice. A session stays
  * until its owner discards it (after the audio reached its real home: saved
  * recording, appended part, explicit Verwerfen); one left behind is offered on
- * the next open of the recordings list.
+ * the next open of the recordings list. In the Android app the native recorder's
+ * files a killed app left behind are offered the same way (`nativeUnfinished.ts`,
+ * ids `native:<file name>`).
  *
  * A session "owned" by a live page is never offered: same tab via `owned`,
  * other tabs via a Web Lock named after the session (released by the browser
@@ -118,7 +121,7 @@ export async function listUnfinished(): Promise<UnfinishedRecording[]> {
 		all = await values<UnfinishedRecording>(db().meta);
 	}
 	catch {
-		return [];
+		all = [];
 	}
 	let held = new Set<string>();
 	try {
@@ -128,7 +131,7 @@ export async function listUnfinished(): Promise<UnfinishedRecording[]> {
 	catch {
 		// No lock information: only this tab's sessions are known to be in use.
 	}
-	return all
+	return [...all, ...await listNativeUnfinished()]
 		.filter(meta => !owned.has(meta.id) && !held.has(LOCK_PREFIX + meta.id))
 		.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
@@ -138,6 +141,7 @@ export async function listUnfinished(): Promise<UnfinishedRecording[]> {
  * (resumed after an interruption) merged to one WAV. Null when no chunk was written.
  */
 export async function loadUnfinished(id: string): Promise<RecoveredAudio | null> {
+	if (isNativeUnfinished(id)) return loadNativeUnfinished(id);
 	const meta = await get<UnfinishedRecording>(id, db().meta);
 	if (!meta) return null;
 	const chunkKeys = await chunkKeysOf(id);
@@ -167,6 +171,10 @@ export async function loadUnfinished(id: string): Promise<RecoveredAudio | null>
 /** Deletes the session and its audio for good. */
 export async function discardUnfinished(id: string): Promise<void> {
 	releaseUnfinished(id);
+	if (isNativeUnfinished(id)) {
+		await discardNativeUnfinished(id);
+		return;
+	}
 	try {
 		await delMany(await chunkKeysOf(id), db().chunks);
 		await del(id, db().meta);

@@ -14,7 +14,7 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
   web assets. Without a service worker: `RESONA_CAPACITOR=1` disables `@vite-pwa/nuxt`.
 - Every recording flow asks `useRecorder()` (`app/composables/useRecorder.ts`) for a
   `Recorder`. Inside the app that is `useNativeRecorder()`
-  (`@capgo/capacitor-audio-recorder`, MPEG-4 AAC, `audio/mp4`); in the browser it is
+  (`@capgo/capacitor-audio-recorder` ≥ 8.4, `format: "aac"`: ADTS AAC, `audio/aac`); in the browser it is
   `useWebRecorder()` (MediaRecorder). The upload → hub job flow behind it is the same:
   new recordings, push-to-talk on a recording, re-dictation and the `/debug` test dictation.
 - Android: on record, the app starts a foreground service of type `microphone`
@@ -33,6 +33,17 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
 - On stop the app reads the recorded file back into the web view
   (`Capacitor.convertFileSrc` + `fetch`) and deletes it from the app cache; a
   file it cannot read stays in the cache.
+- Recovery after a kill (Android): ADTS is a stream of self-contained frames, so a
+  recording the app never stopped stays readable up to its last whole frame
+  (MPEG-4 writes its index only at stop). The recordings list scans
+  `cache/capacitor-audio-recorder/` for `recording-*.aac` files older than the running
+  web view (`app/data/nativeUnfinished.ts`) and offers each like a web recording left in
+  IndexedDB: "Nicht gespeichert …", Behalten → save sheet (upload → hub job) or Verwerfen.
+  The file is deleted once saved or discarded; only its whole frames are uploaded. Nothing
+  is offered while the plugin records; empty files are deleted; `.m4a` files of older
+  app versions are left alone (unreadable without their index).
+- The hub sniffs ADTS by its frame sync (`sniff_media`, the MPEG audio branch) and
+  admits it as an audio job; ffmpeg decodes it, a cut-off last frame included.
 
 ## Build the debug APK
 
@@ -86,6 +97,16 @@ organization's default execution profile (otherwise the job waits in the queue,
 7. Expected: the player's duration matches the elapsed time noted in step 5
    (about 10 minutes), and the transcript covers what was said while locked.
 
+Recovery after a kill:
+
+1. Start a recording, speak for about a minute.
+2. `adb shell am force-stop de.ecsplico.resona` (or swipe the app away / `adb shell am kill`
+   after sending it to the background).
+3. Open Resona: the list shows "Nicht gespeichert: Aufnahme vom … (m:ss min)". Behalten →
+   save; the transcript covers that minute. Afterwards
+   `adb shell run-as de.ecsplico.resona ls cache/capacitor-audio-recorder` lists no file.
+4. A normal record → stop → save leaves no file there either.
+
 Battery savers of some vendors (Samsung, Xiaomi, Huawei) kill foreground services
 anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 
@@ -95,7 +116,8 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 | --- | --- |
 | Batch recording while locked (Android) | Native recorder + `microphone` foreground service. Checked on an Android 15 emulator (debug APK, standalone mode): 180 s with the screen off, the service stayed in the foreground (type `0x80`, wake lock held), the saved `.m4a` was 197 s long for 196 s shown on the recording sheet. Long recordings on a real phone (vendor battery savers, real mic) still need the device test above |
 | Push-to-talk, re-dictation | Native recorder too; same upload → hub job flow |
-| Interruptions, recovery after a kill (#33) | Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits `recordingInterruptionBegan`/`Ended`, which the app does not handle yet, so the clock keeps running. It keeps no IndexedDB chunks: if Android kills the app mid-recording, the `.m4a` stays in the app cache but the app does not offer it again. Recovery would need the plugin's crash-safe `aac` format plus a scan of that cache on start |
+| Interruptions (#33) | Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits `recordingInterruptionBegan`/`Ended`, which the app does not handle yet, so the clock keeps running |
+| Recovery after a kill (#33, #40) | Web recorder: IndexedDB chunks (`resona-unfinished-recordings`). Native recorder (Android): records ADTS (`format: "aac"`, plugin ≥ 8.4), which stays readable up to its last frame; on the next open the recordings list offers `recording-*.aac` files left in `cache/capacitor-audio-recorder/` (Behalten → save → hub job, or Verwerfen; the file is deleted either way). Unit-tested with plugin and Filesystem mocked, and ffmpeg decodes a cut-off ADTS file; the kill on a real phone (device test above) is still open. iOS: not offered (the plugin writes to the app's `tmp/`, which the scan does not read) |
 | Live dictation | **Foreground only**, as in the browser. It streams PCM from `getUserMedia` over the `/v1/listen` WebSocket in the web view, and `live.vue` keeps `useWebRecorder()` for the audio of that same stream. Background live would need native PCM capture and a native WebSocket client |
 | Standalone data mode | Works without login: IndexedDB + hub token; processing runs while the app is open |
 | Directus login | Blocked as is. The SDK runs in cookie mode: the refresh token is an httpOnly cookie of the Directus host, and from the app origin `https://localhost` that is a cross-site cookie. The WebView accepts third-party cookies (Capacitor enables them), but Directus sets the refresh cookie `SameSite=Lax` (`REFRESH_TOKEN_COOKIE_SAME_SITE` in `docker-compose.coolify.yml`), so it is not sent on the app's cross-site refresh. Password login gets an access token, but the session ends at the first refresh (~15 min). Fix options: JSON auth mode in the app (refresh token in app storage), or `SameSite=None` refresh cookies on Directus. Either way Directus `CORS_ORIGIN` must also list `https://localhost` |

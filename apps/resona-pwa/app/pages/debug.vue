@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { buildDebugPayload, describeError, runDiagnose } from "~/utils/debugProbe";
 import { RECORDER_MIME_CANDIDATES } from "~/composables/useRecorder";
+import { discardUnfinished } from "~/data/unfinishedRecordings";
 import type { DebugReport, ProbeCheck, ProbeState } from "~/utils/debugProbe";
 
 // Diagnostics screen. "Mobil-Diagnose" checks everything live dictation and
@@ -155,6 +156,9 @@ async function finishTestDictation(): Promise<void> {
 	testTimer = null;
 	testState.value = "sending";
 	const blob = await testRecorder.stop();
+	// A test dictation is never offered again: drop the native recorder's file.
+	const session = testRecorder.sessionId.value;
+	if (session) void discardUnfinished(session);
 	if (!blob || blob.size === 0) {
 		testResult.value = { state: "fail", detail: "Leere Aufnahme (0 Bytes) — MediaRecorder hat keine Daten geliefert." };
 		testState.value = "idle";

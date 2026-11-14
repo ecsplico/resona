@@ -431,6 +431,15 @@ def test_upload_kind_must_match_job_kind(http, fresh_org, client_headers, wav_by
     assert resp.status_code == 422
 
 
+def test_adts_aac_upload_is_admitted_as_audio_job(http, fresh_org, client_headers):
+    # The Android app records ADTS (a killed recording stays readable): frame sync 0xFFF1.
+    headers = client_headers(fresh_org)
+    frame = bytes([0xFF, 0xF1, 0x50, 0x40, 0x0C, 0x9F, 0xFC]) + b"\x00" * 93
+    up = upload(http, headers, frame * 20, name="recording.aac", ctype="audio/aac")
+    assert up.status_code == 201
+    assert submit(http, headers, {"kind": "audio", "upload_id": up.json()["upload_id"]}).status_code == 202
+
+
 def test_document_upload_is_admitted_as_document_job(http, fresh_org, client_headers):
     headers = client_headers(fresh_org)
     up = upload(http, headers, PDF, name="scan.pdf", ctype="application/pdf")
