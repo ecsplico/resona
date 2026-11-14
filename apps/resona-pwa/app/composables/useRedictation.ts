@@ -458,6 +458,9 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 			return;
 		}
 		if (disposed) return;
+		// Every chip goes back before any text lands: an anchor refers to the saved text
+		// as it is now, and a landing part changes it.
+		const landed: RecordingPart[] = [];
 		for (const row of rows) {
 			maxSeq = Math.max(maxSeq, row.seq);
 			anchors.set(row.id, { anchor_offset: row.anchor_offset ?? null, anchor_text_sha: row.anchor_text_sha ?? null });
@@ -477,9 +480,10 @@ export function useRedictation(hooks: RedictationHooks): Redictation {
 				// Without its chip the text still lands, at the end.
 			}
 			if (disposed) return;
-			if (row.status === "done") void deliver(row.id, (row.text ?? "").trim(), true);
+			if (row.status === "done") landed.push(row);
 			else if (row.status === "error") hooks.onError(row.id, row.error_message || TRANSCRIBE_FAILED);
 		}
+		for (const row of landed) void deliver(row.id, (row.text ?? "").trim(), true);
 		for (const row of rows) {
 			if (!row.audio || row.offset_seconds != null) continue;
 			if (!find(row.id)) {

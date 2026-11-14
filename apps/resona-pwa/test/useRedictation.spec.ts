@@ -313,6 +313,23 @@ describe("useRedictation", () => {
 		expect(texts).toContainEqual(["a", "A"]);
 	});
 
+	it("opened again: every chip is back before a finished part's text lands", async () => {
+		stored("done-first", { status: "done", seq: 1, text: "Fertig" });
+		stored("waiting", { status: "pending", seq: 2 });
+		const order: string[] = [];
+		setup({
+			onRestore: (part) => {
+				order.push(`restore:${part.id}`);
+			},
+			onText: (id) => {
+				order.push(`text:${id}`);
+				return true;
+			},
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		expect(order).toEqual(["restore:done-first", "restore:waiting", "text:done-first"]);
+	});
+
 	it("a part landed or removed elsewhere only drops its chip", async () => {
 		stored("a", { status: "transcribing" });
 		stored("b", { status: "transcribing" });
