@@ -125,11 +125,12 @@ RequiredProfile = Annotated[
     Field(default=None, max_length=64, description="Required. Name of a stored postprocess profile on the hub."),
 ]
 Diarize = Annotated[
-    bool,
-    Field(default=False, description="Label who spoke when. The result's segments then carry a 1-based "
-                                     "'speaker' number and the Markdown starts each speaker section with "
-                                     "'**Sprecher N:**' (German) or '**Speaker N:**'. Needs a worker with "
-                                     "a verified diarizer; until one is online the job stays pending."),
+    Optional[bool],
+    Field(default=None, description="Label who spoke when. The result's segments then carry a 1-based "
+                                    "'speaker' number and the Markdown starts each speaker section with "
+                                    "'**Sprecher N:**' (German) or '**Speaker N:**'. Needs a worker with "
+                                    "a verified diarizer; until one is online the job stays pending. "
+                                    "Omit to use the execution profile's default; false turns it off."),
 ]
 
 
@@ -220,7 +221,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         profile: PostprocessProfile = None,
         instructions: UserInstructions = None,
         options: Optional[AudioOptions] = None,
-        diarize: Diarize = False,
+        diarize: Diarize = None,
         private: Private = True,
         idempotency_key: IdempotencyKey = None,
     ) -> dict[str, Any]:
@@ -229,8 +230,8 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         With diarize=true the result's segments carry a 'speaker' number and the Markdown
         has one paragraph per speaker section starting with '**Sprecher N:**' (German) or
         '**Speaker N:**'."""
-        if diarize:
-            options = (options or AudioOptions()).model_copy(update={"diarize": True})
+        if diarize is not None:
+            options = (options or AudioOptions()).model_copy(update={"diarize": diarize})
         return await submit(
             ctx, kind="audio", upload_id=upload_id, path=path, options=options,
             execution_profile=execution_profile, language=language, profile=profile,

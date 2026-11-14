@@ -261,18 +261,20 @@ def test_submit_job_sends_typed_options(audio_file, client):
     assert doc_body["options"] == {"ocr": "force", "page_start": 2, "page_end": 3}
 
 
-def test_submit_job_sends_diarize_only_when_true(audio_file, client):
-    # Hubs predating diarize validate options with extra="forbid": the default stays off the wire.
+def test_submit_job_sends_diarize_only_when_set_explicitly(audio_file, client):
+    # Hubs predating diarize validate options with extra="forbid": an unset flag stays off the
+    # wire (the hub then applies the execution profile's default); an explicit false is sent.
     with respx.mock as mock:
         respx.post(f"{BASE}/v1/uploads").mock(return_value=httpx.Response(201, json=UPLOAD_JSON))
         respx.post(f"{BASE}/v1/jobs").mock(
             return_value=httpx.Response(202, json={"job_id": 1, "status": "pending"}))
+        client.submit_job(audio_file, kind="audio", options=AudioOptions(word_timestamps=True))
         client.submit_job(audio_file, kind="audio", options={"diarize": False})
         client.submit_job(audio_file, kind="audio", options=AudioOptions(diarize=True))
-        plain = json.loads(mock.calls[1].request.content)["options"]
-        diarized = json.loads(mock.calls[3].request.content)["options"]
-    assert "diarize" not in plain
-    assert diarized["diarize"] is True
+        sent = [json.loads(mock.calls[i].request.content)["options"] for i in (1, 3, 5)]
+    assert "diarize" not in sent[0]
+    assert sent[1]["diarize"] is False
+    assert sent[2]["diarize"] is True
 
 
 def test_submit_job_uses_given_idempotency_key(audio_file, client):

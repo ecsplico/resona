@@ -44,6 +44,7 @@ from resona_job_core import (
     DocumentOptions,
     Endpoint,
     EndpointKind,
+    ExecutionProfile,
     OrganizationSettings,
     PolicyDenied,
     Stage,
@@ -837,6 +838,7 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         else:
             name, candidates = _resolve_candidates(req, options, settings, media_type)
             check_policy(policy, [_candidate_stage(c, req.kind, settings) for c in candidates])
+            options = _with_profile_defaults(req, options, settings.execution_profiles[name])
         postprocess = _resolve_postprocess(session, organization_id, req, settings, policy)
     except PolicyDenied as exc:
         raise api_error(403, "policy_denied", f"{exc.stage}: {exc.reason}") from None
@@ -846,6 +848,18 @@ def _execution_snapshot(session: Session, organization_id: str, req: JobRequest,
         purpose=req.purpose, release_id=req.release_id,
     )
     return snapshot, postprocess[1] if postprocess else None
+
+
+def _with_profile_defaults(req: JobRequest, options: dict[str, Any], profile: ExecutionProfile) -> dict[str, Any]:
+    """Apply the execution profile's ``diarize`` default to a production audio job that left
+    ``diarize`` out; an explicit value (true or false) wins. Evaluation jobs measure the
+    engines and take only their fixture options."""
+    if (
+        req.kind == "audio" and req.purpose == "production" and profile.diarize
+        and "diarize" not in (req.options or {})
+    ):
+        return {**options, "diarize": True}
+    return options
 
 
 def _link_or_copy(source: Path, dest: Path) -> None:

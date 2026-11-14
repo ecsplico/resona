@@ -100,9 +100,14 @@ def _run_remote(client: ResonaClient, corpus: Corpus, profile: str, release_id: 
                 timeout: float, postprocess_profile: Optional[str] = None) -> list[FixtureRun]:
     submitted = []
     for fixture in corpus.fixtures:
+        options = _fixture_options(fixture)
+        if options.get("diarize") is False:
+            # Evaluation jobs never take the profile's diarize default on the hub, so a false
+            # flag says nothing there; leaving it out keeps hubs predating diarize working.
+            del options["diarize"]
         ref = client.submit_job(
             corpus.path(fixture), kind=fixture.kind, execution_profile=profile,
-            language=fixture.language, options=_fixture_options(fixture), private=True,
+            language=fixture.language, options=options, private=True,
             profile=postprocess_profile if fixture.kind == "document" else None,
             purpose="evaluation", release_id=release_id,
             provenance={"source": f"resona-eval:{corpus.sha256[:12]}:{fixture.id}"},
