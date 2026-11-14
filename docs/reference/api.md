@@ -99,7 +99,7 @@ Content-Type: application/json
 | `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
 | `profile` | string | no (yes for `text`) | Name of a postprocess profile stored on the hub |
 | `instructions` | string | no | 1–8000 characters of user instructions for the profile's `llm`/`extract` steps (see [User instructions](#user-instructions)). Without a profile that has such a step → `422 invalid_instructions` |
-| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`, `diarize` (label speakers; result segments carry `speaker`, only workers that diarize claim the job). Document: see [Document options](#document-options) |
+| `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`, `diarize` (label speakers; result segments carry `speaker`, only workers that diarize claim the job; left out, a production job takes the execution profile's `diarize` setting, default off). Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
 
@@ -356,7 +356,7 @@ then waits up to `RESONA_SYNC_WAIT_SECONDS` (default `60`) for a worker to finis
 | `execution_profile` | string | no | Execution profile (default: the organization's default) |
 | `profile` | string | no | Stored organization profile name; omit to use the organization default |
 | `private` | bool | no | Default `true`; `false` needs `cloud_enabled=true` for the organization |
-| `diarize` | bool | no | Default `false`; `true` labels speakers (`AudioOptions.diarize`): `verbose_json` segments carry `speaker`, the text has `**Sprecher N:**`/`**Speaker N:**` paragraphs. Part of the request an `Idempotency-Key` is matched against. A hub predating diarization ignores the field (unlabelled result, no error). [Limits](../guide/cli.md#diarization-limits) |
+| `diarize` | bool | no | Default: the execution profile's `diarize` setting (off unless the organization turned it on); `true` labels speakers (`AudioOptions.diarize`), `false` turns it off: `verbose_json` segments carry `speaker`, the text has `**Sprecher N:**`/`**Speaker N:**` paragraphs. Part of the request an `Idempotency-Key` is matched against. A hub predating diarization ignores the field (unlabelled result, no error). [Limits](../guide/cli.md#diarization-limits) |
 
 Errors:
 

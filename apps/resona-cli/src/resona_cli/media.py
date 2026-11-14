@@ -300,6 +300,15 @@ def _wait_and_write(client: ResonaClient, req: MediaRequest, run: _Run, source: 
 
 # -- Local --------------------------------------------------------------------
 
+def _local_options(options: Options) -> dict[str, Any]:
+    """Options for ``plan_local``: ``diarize`` only when set explicitly, so the execution
+    profile's ``diarize`` default applies as on the hub."""
+    dumped = options.model_dump(exclude_none=True)
+    if "diarize" not in options.model_fields_set:
+        dumped.pop("diarize", None)
+    return dumped
+
+
 def _run_local(req: MediaRequest) -> None:
     from .local_run import LocalRunError, load_local_settings, plan_local, run_local
 
@@ -314,7 +323,7 @@ def _run_local(req: MediaRequest) -> None:
             engine=req.engine,
             model=req.model,
             language=req.language,
-            options=req.options.model_dump(exclude_none=True),
+            options=_local_options(req.options),
             private=req.private,
             profile=req.profile,
             instructions=req.instructions,

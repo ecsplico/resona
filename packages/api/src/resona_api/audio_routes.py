@@ -194,10 +194,11 @@ def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.Jo
         "profile": fields.get("profile") or None,
         "private": _form_bool(fields.get("private"), default=True),
     }
-    if _form_bool(fields.get("diarize"), default=False, name="diarize"):
+    if fields.get("diarize") is not None:
         # Part of the request, so the Idempotency-Key hash tells a diarized replay apart;
-        # left out when false so keys recorded before diarization keep matching.
-        body["options"] = {"diarize": True}
+        # left out when not sent so keys recorded before diarization keep matching, and so
+        # the execution profile's ``diarize`` default applies.
+        body["options"] = {"diarize": _form_bool(fields["diarize"], default=False, name="diarize")}
     try:
         return jobs_routes.JobRequest.model_validate(body), response_format
     except ValidationError as exc:
@@ -258,8 +259,9 @@ async def create_transcription(
     Multipart fields: ``file`` plus OpenAI ``model``, ``language``,
     ``response_format`` (json|text|verbose_json), ``prompt``/``temperature``
     (ignored) and Resona ``engine``, ``execution_profile``, ``profile``,
-    ``private`` (default true), ``diarize`` (default false: label speakers, needs a
-    worker that diarizes). Admission is identical to ``POST /v1/jobs``.
+    ``private`` (default true), ``diarize`` (label speakers, needs a worker that
+    diarizes; default: the execution profile's ``diarize``). Admission is identical to
+    ``POST /v1/jobs``.
     """
     organization_id = principal.organization_id
     with Session(db_engine) as session:

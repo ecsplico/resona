@@ -243,8 +243,10 @@ def _checked_options(
         except ValidationError as exc:
             raise ValueError(f"invalid {kind} options: {exc}") from exc
     dumped = checked.model_dump(mode="json", exclude_none=True)
-    # A false ``diarize`` is the default: leave it out so hubs predating it (extra="forbid") accept the job.
-    if dumped.get("diarize") is False:
+    # ``diarize`` left unset is the default: leave it out so hubs predating it (extra="forbid")
+    # accept the job and the execution profile's ``diarize`` default applies. An explicit
+    # value (``AudioOptions(diarize=False)``) is sent to override that default.
+    if dumped.get("diarize") is False and "diarize" not in checked.model_fields_set:
         del dumped["diarize"]
     return dumped
 
@@ -740,14 +742,15 @@ class ResonaClient:
         execution_profile: Optional[str] = None,
         private: bool = True,
         profile: Optional[str] = None,
-        diarize: bool = False,
+        diarize: Optional[bool] = None,
     ) -> dict:
         """Transcribe audio through the OpenAI-compatible adapter. POST /v1/audio/transcriptions
 
         The hub queues a normal audio job and waits a bounded time for a worker.
         ``model="whisper-1"`` means the execution profile's default; any other value
         is an override that must be an approved candidate. ``diarize=True`` labels
-        speakers (only workers that diarize run the job); the field is sent only then.
+        speakers (only workers that diarize run the job), ``diarize=False`` overrides an
+        execution profile that diarizes by default; ``None`` sends nothing (profile default).
         A hub predating diarization ignores the field: the result comes back without
         speaker labels and without an error (``submit_job`` gets a 422 there instead).
 
@@ -772,8 +775,8 @@ class ResonaClient:
             "profile": profile,
         }
         data.update({k: v for k, v in optional.items() if v})
-        if diarize:
-            data["diarize"] = "true"
+        if diarize is not None:
+            data["diarize"] = str(diarize).lower()
         content_type = mimetypes.guess_type(audio_path.name)[0] or "application/octet-stream"
         with open(audio_path, "rb") as f:
             resp = self._client.post(

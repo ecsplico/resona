@@ -203,6 +203,26 @@ def test_plain_audio_job_snapshot_omits_diarize_and_any_worker_claims_it(http, f
     assert _claim(http, worker, diarize=True).json()["job_id"] == job_id
 
 
+def test_execution_profile_diarize_default_applies_only_when_the_job_leaves_it_out(
+        http, fresh_org, client_headers, store_settings, wav_bytes):
+    profiles = {name: p.model_dump(mode="json") for name, p in default_settings().execution_profiles.items()}
+    profiles["mac-private"]["diarize"] = True
+    store_settings(fresh_org, execution_profiles=profiles)
+    headers = client_headers(fresh_org)
+
+    def snapshot_options(**fields) -> dict:
+        job_id = new_job(http, headers, wav_bytes, execution_profile="mac-private", **fields)
+        return json.loads(job_row(job_id).execution_snapshot)["options"]
+
+    assert snapshot_options()["diarize"] is True
+    assert snapshot_options(options={"vad_filter": False})["diarize"] is True
+    assert "diarize" not in snapshot_options(options={"diarize": False})
+    # Other profiles keep the plain default.
+    job_id = new_job(http, headers, wav_bytes, execution_profile="private-auto")
+    assert "diarize" not in json.loads(job_row(job_id).execution_snapshot)["options"]
+
+
+
 def _post_segments(http, job_id, worker, lease, segments):
     result = {"schema_version": 1, "kind": "audio", "raw_text": "Hallo Welt", "markdown": "Hallo Welt",
               "segments": segments, "provenance": {"stages": []}}

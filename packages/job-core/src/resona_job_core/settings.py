@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from .policy import Endpoint, ExecutionPolicy
 
@@ -38,6 +38,18 @@ class ExecutionProfile(BaseModel):
 
     audio: list[Candidate] = Field(default_factory=list)
     document: list[Candidate] = Field(default_factory=list)
+    # Default for production audio jobs on this profile that do not set ``diarize``
+    # themselves; a job's explicit ``diarize`` (true or false) always wins.
+    diarize: bool = False
+
+    @model_serializer(mode="wrap")
+    def _omit_default_diarize(self, handler: SerializerFunctionWrapHandler) -> dict:
+        # Left out while false, so settings documents stay readable by releases predating it
+        # (worker ``prepare --settings-file``, CLI settings cache: ``extra="forbid"``).
+        dumped = handler(self)
+        if dumped.get("diarize") is False:
+            del dumped["diarize"]
+        return dumped
 
     def candidates(self, kind: JobKind) -> list[Candidate]:
         if kind == "text":

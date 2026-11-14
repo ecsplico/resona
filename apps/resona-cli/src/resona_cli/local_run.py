@@ -145,6 +145,9 @@ def plan_local(
     else:
         name, runnable = _local_candidates(settings, policy, kind, execution_profile, engine, model, options)
         candidate = runnable[0]
+        if kind == "audio" and "diarize" not in options and settings.execution_profiles[name].diarize:
+            # Same rule as the hub: a job that leaves ``diarize`` out takes the profile default.
+            options = {**options, "diarize": True}
 
     profile_ref = profile if profile is not None else (
         settings.postprocess_profile if settings.polish else None)

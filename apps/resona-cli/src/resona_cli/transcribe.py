@@ -78,10 +78,11 @@ def transcribe_files(
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
     translate: bool = typer.Option(False, "--translate", help="Translate to English."),
     word_timestamps: bool = typer.Option(False, "--word-timestamps", help="Request word timestamps."),
-    diarize: bool = typer.Option(False, "--diarize",
+    diarize: Optional[bool] = typer.Option(None, "--diarize/--no-diarize",
         help="Label who spoke when: segments carry a speaker number, the Markdown starts each "
              "speaker section with **Sprecher N:** (German) or **Speaker N:**. Needs a worker "
-             "with a verified diarizer; otherwise the job waits."),
+             "with a verified diarizer; otherwise the job waits. Default: the execution "
+             "profile's `diarize` setting (off unless the organization turned it on)."),
     local: bool = typer.Option(False, "--local",
         help="Process on this machine with cached hub settings instead of the hub."),
 ):
@@ -110,7 +111,8 @@ def transcribe_files(
         engine=engine,
         model=model,
         profile=profile,
-        options=AudioOptions(translate=translate, word_timestamps=word_timestamps, diarize=diarize),
+        options=AudioOptions(translate=translate, word_timestamps=word_timestamps,
+                             **({} if diarize is None else {"diarize": diarize})),
         local=local,
         instructions=user_instructions,
     ))

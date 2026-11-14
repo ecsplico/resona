@@ -48,7 +48,7 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 | `--instructions TEXT` / `--instructions-file PATH` | (none) | User instructions for the profile's LLM steps (user message; the profile's prompt stays the system message). Needs a `--profile` with an `llm`/`extract` step. Also on `resona doc` and `resona postprocess` |
 | `--translate` | off | Translate to English |
 | `--word-timestamps` | off | Request word timestamps |
-| `--diarize` | off | Label who spoke when; see **Speaker diarization** below |
+| `--diarize/--no-diarize` | profile default | Label who spoke when; see **Speaker diarization** below |
 | `--local` | off | Process on this machine with cached hub settings instead of the hub |
 
 **Outputs**
@@ -70,7 +70,10 @@ For every job one policy summary line goes to stderr, e.g.
 
 **Speaker diarization**
 
-`--diarize` sets `options.diarize` on the job (hub and `--local` alike). The result's `segments`
+`--diarize` sets `options.diarize` on the job (hub and `--local` alike); `--no-diarize` turns it
+off explicitly. Without either flag the execution profile's `diarize` setting applies (off unless
+the organization set `"diarize": true` on that profile, e.g. for a conversation-recording profile).
+Only production audio jobs take the profile default; evaluation and testbench jobs never do. The result's `segments`
 are then speaker sections, each with a 1-based `speaker` number in order of first appearance, and
 the Markdown has one paragraph per section starting with `**Sprecher N:** ` (job language `de`) or
 `**Speaker N:** ` (other languages); long sections continue in further paragraphs without a label.
@@ -295,7 +298,7 @@ resona watch DIRECTORY [OPTIONS]
 | `--engine NAME` / `--model NAME` | (profile) | Override; must match an approved candidate |
 | `--profile NAME` | (none) | Stored postprocess profile name (file/inline JSON only with `--local`) |
 | `--local` | off | Process on this machine with cached hub settings |
-| `--diarize` | off | Label who spoke when, as `resona transcribe --diarize` |
+| `--diarize/--no-diarize` | profile default | Label who spoke when, as `resona transcribe --diarize` |
 
 **Examples**
 
