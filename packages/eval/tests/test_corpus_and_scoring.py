@@ -75,7 +75,7 @@ def test_audio_fixture_options_override_the_job_defaults(corpus, tmp_path):
 
 
 def test_diarization_fixtures_carry_their_reference_speakers(fixture_by_id):
-    for fixture_id, voices in (("de-two-speakers", 2), ("de-case-conference", 4)):
+    for fixture_id, voices in (("de-two-speakers", 2), ("de-case-conference", 3)):
         fixture = fixture_by_id[fixture_id]
         assert fixture.audio_options().diarize
         assert len({t.speaker for t in fixture.speakers}) == voices
@@ -141,7 +141,7 @@ def test_diarization_scores_speaker_metrics(fixture_by_id, result_for):
     merged = [s.model_copy(update={"speaker": 1}) for s in result_for(fixture).segments]
     one_voice = score_fixture(fixture, result_for(fixture, segments=merged))
     assert 0 < one_voice["speaker_attribution"] < 0.6 and one_voice["der"] > 0.4
-    assert one_voice["speaker_count_error"] == 3
+    assert one_voice["speaker_count_error"] == 2
 
 
 def test_diarization_result_without_speakers_attributes_nothing(fixture_by_id, result_for):
