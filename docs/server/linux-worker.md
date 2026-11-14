@@ -30,7 +30,7 @@ docker run --rm --gpus all --entrypoint python <image> -c \
 ```bash
 docker build -f apps/resona-worker/Dockerfile \
   --build-arg BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04 \
-  --build-arg "WORKER_EXTRAS=--extra cuda --extra documents" \
+  --build-arg "WORKER_EXTRAS=--extra cuda --extra documents --extra diarize" \
   --build-arg RESONA_RELEASE_ID=<release> \
   -t resona-worker:<release>-cuda .
 docker image inspect --format '{{.Id}}' resona-worker:<release>-cuda    # sha256:… digest
@@ -40,7 +40,7 @@ Without `--extra cuda` (the default `WORKER_EXTRAS="--extra audio-cpu --extra do
 
 Use the image by digest only (`resona-worker@sha256:…` locally, or the released `ghcr.io/…@sha256:…`). Never use `:latest` or `:cuda`.
 
-Speaker diarization is optional: add `--extra diarize` to `WORKER_EXTRAS` (`"WORKER_EXTRAS=--extra cuda --extra documents --extra diarize"`). `prepare` downloads the pinned `nvidia/Nemotron-3-Diarization` weights with the others and runs a two-speaker check on the GPU; only a worker whose manifest records the diarizer takes diarized jobs.
+The released CUDA image (`ghcr.io/ecsplico/resona-worker-cuda`) includes speaker diarization (`--extra diarize`): `prepare` downloads the pinned `nvidia/Nemotron-3-Diarization` weights with the others and runs a two-speaker check on the GPU; only a worker whose manifest records the diarizer takes diarized jobs. Leave `--extra diarize` out of `WORKER_EXTRAS` to build an image without it.
 
 ## 2. Enroll on the hub
 
