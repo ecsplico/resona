@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-worker"
-version = "0.2.3"
+version = "0.2.4"
 description = "Outbound-only pull worker for the Resona hub: claims jobs, runs approved engines locally, uploads results."
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"

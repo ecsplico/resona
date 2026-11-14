@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-voxtral"
-version = "0.2.3"
+version = "0.2.4"
 description = "HuggingFace Transformers backend for Resona — Voxtral, Whisper, and other ASR pipelines from the HF Hub"
 readme = "README.md"
 license = { text = "Apache-2.0" }

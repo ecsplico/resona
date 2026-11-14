@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-faster-whisper"
-version = "0.2.3"
+version = "0.2.4"
 description = "Faster-whisper (CTranslate2) backend for Resona — the default, recommended ASR engine"
 readme = "README.md"
 license = { text = "Apache-2.0" }

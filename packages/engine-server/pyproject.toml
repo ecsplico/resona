@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-engine-server"
-version = "0.2.3"
+version = "0.2.4"
 description = "FastAPI HTTP/WS server that exposes a Resona ASR backend on :7001 (stateless — no DB, no postprocessing)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
