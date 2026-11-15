@@ -2612,6 +2612,38 @@ native recorder, so a recording keeps going while the screen is locked.</p>
   app versions are left alone (unreadable without their index).</li>
 <li>The hub sniffs ADTS by its frame sync (<code>sniff_media</code>, the MPEG audio branch) and
   admits it as an audio job; ffmpeg decodes it, a cut-off last frame included.</li>
+<li>Directus login (data mode <code>directus</code>): the web build keeps cookie auth (refresh token
+  in the <code>SameSite=Lax</code> httpOnly cookie, first-party through the PWA's <code>/directus</code> proxy).
+  The app runs on <code>https://localhost</code> / <code>capacitor://localhost</code>, cross-site to Directus,
+  where that cookie is never sent; so inside the app (<code>Capacitor.isNativePlatform()</code>)
+  <code>useDirectus</code> uses the SDK's JSON mode: <code>/auth/login</code> and <code>/auth/refresh</code> send and
+  return the refresh token in the body, and <code>app/utils/directusAuth.ts</code>
+  (<code>preferencesAuthStorage</code>) keeps access token, refresh token and expiry in
+  <code>@capacitor/preferences</code> under <code>resona.auth</code>. No refresh timer in the app
+  (<code>autoRefresh: false</code>): Android and iOS freeze it in the background, and on resume it
+  would race the first request's refresh with the same rotating refresh token. Every
+  request instead refreshes an access token within 30 s of expiry first (the SDK's
+  <code>getToken()</code>, one refresh in flight); after a restart the auth middleware's
+  <code>restoreSession()</code> does the same from the stored session. <code>assetUrl()</code> is async and
+  asks <code>getToken()</code> first, so audio fetched after a long pause carries a fresh token.
+  Stored tokens are removed only when Directus rejects the refresh token (400/401 from
+  <code>/auth/refresh</code>): offline, a timeout or a 5xx keep them, the app stays signed in and
+  refreshes on the next request. A request's 401 first waits for a refresh already in
+  flight (a request frozen in the background answers late with the old token on resume)
+  and retries with the new token; only without one it refreshes once and retries, so the
+  rotating refresh token is never sent twice. Logout
+  removes the key, also when the logout request fails. The session ends when the refresh
+  token is unused for <code>REFRESH_TOKEN_TTL</code> (30 days on Coolify) or Directus rejects it.</li>
+<li>Why Preferences and not a secure-storage plugin: Preferences is the Capacitor team's
+  own plugin, versioned with Capacitor 8; the store (Android SharedPreferences, iOS
+  UserDefaults) is private to the app and, unlike web view storage, not evicted by
+  WebKit. It is not encrypted at rest; the Keychain/Keystore plugins that would be
+  (<code>capacitor-secure-storage-plugin</code>, <code>@aparajita/capacitor-secure-storage</code>) are
+  single-maintainer projects, and the web view already keeps the hub token in plain
+  localStorage. Android excludes <code>CapacitorStorage.xml</code> from cloud backup and device
+  transfer (<code>res/xml/backup_rules.xml</code>, <code>data_extraction_rules.xml</code>), so a restored
+  phone signs in again. iOS: UserDefaults are part of the device backup; revisit with
+  the iOS build.</li>
 </ul>
 <h2 id="build-the-debug-apk">Build the debug APK<a class="headerlink" href="#build-the-debug-apk" title="Permanent link">&para;</a></h2>
 <p>Prerequisites: bun, JDK 21, Android SDK with platform 36 and build-tools.
@@ -2631,12 +2663,25 @@ On macOS with Homebrew:</p>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>bun<span class="w"> </span>run<span class="w"> </span>cap:apk
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># → android/app/build/outputs/apk/debug/app-debug.apk</span>
 </code></pre></div>
+<p>With Directus login instead of standalone mode, point the app at the PWA's Directus
+proxy (absolute: the app has no Nitro server):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">NUXT_PUBLIC_DATA_MODE</span><span class="o">=</span>directus<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">NUXT_PUBLIC_DIRECTUS_URL</span><span class="o">=</span>https://&lt;pwa-host&gt;/directus<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">NUXT_PUBLIC_RESONA_API_URL</span><span class="o">=</span>https://&lt;hub-host&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>bun<span class="w"> </span>run<span class="w"> </span>cap:apk
+</code></pre></div>
 <p><code>cap:apk</code> = <code>cap:build</code> (<code>RESONA_CAPACITOR=1 nuxt generate &amp;&amp; cap sync</code>) + <code>./gradlew
 assembleDebug</code> in <code>android/</code>. The native projects (<code>android/</code>, <code>ios/</code>) are committed;
 <code>cap sync</code> copies the web build and plugin list into them (both are gitignored).</p>
 <p>The hub must allow the app's origin in <code>CORS_ORIGINS</code>: <code>https://localhost</code> on Android
-(<code>capacitor://localhost</code> on iOS). The bearer token still guards every call; CORS only
-lets the web view read the responses.</p>
+(<code>capacitor://localhost</code> on iOS); the default in the root <code>docker-compose.coolify.yml</code>
+lists both (an explicit <code>CORS_ORIGINS</code> env must add them). The bearer token still
+guards every call; CORS only lets the web view read the responses. For Directus login,
+Directus <code>CORS_ORIGIN</code> lists them too: every PWA compose file appends <code>APP_ORIGINS</code>
+(default <code>https://localhost,capacitor://localhost</code>) to <code>PWA_ORIGIN</code>. Through the
+<code>/directus</code> proxy the app's <code>Origin</code> reaches Directus, which answers CORS itself. The
+refresh cookie stays <code>SameSite=Lax</code>, so a page on another <code>https://localhost</code> never
+sends it along.</p>
 <h2 id="device-test-android">Device test (Android)<a class="headerlink" href="#device-test-android" title="Permanent link">&para;</a></h2>
 <p>Before: the hub has an online, approved worker and a promoted release for the
 organization's default execution profile (otherwise the job waits in the queue,
@@ -2664,6 +2709,28 @@ organization's default execution profile (otherwise the job waits in the queue,
    save; the transcript covers that minute. Afterwards
    <code>adb shell run-as de.ecsplico.resona ls cache/capacitor-audio-recorder</code> lists no file.</li>
 <li>A normal record → stop → save leaves no file there either.</li>
+</ol>
+<p>Directus login over time (data mode <code>directus</code>, build above; needs a human, ≥ 1 h):</p>
+<ol>
+<li>Install the Directus build, open Resona, sign in with e-mail and password (an account
+   with a Directus password; Keycloak-only accounts have none). The login page shows the
+   hint "Die Anmeldung mit Keycloak ist in der App noch nicht möglich …" instead of the
+   Keycloak button.</li>
+<li>Note the time. Open a recording (player loads), then press Home: the app is in the
+   background.</li>
+<li>After ≥ 20 min (past the 15 min access token): open Resona from the recent apps.
+   Expected: no login page, the list loads, a recording's audio plays.</li>
+<li>Lock the phone for ≥ 45 min more (total ≥ 1 h), unlock, open Resona. Same expectation.</li>
+<li>Swipe the app away (or <code>adb shell am force-stop de.ecsplico.resona</code>), open it again
+   after ≥ 20 min. Expected: still signed in (session restored from Preferences).</li>
+<li>Optional check that the token lives in Preferences:
+   <code>adb shell run-as de.ecsplico.resona cat shared_prefs/CapacitorStorage.xml</code> shows
+   <code>resona.auth</code> with an <code>access_token</code> and a <code>refresh_token</code>.</li>
+<li>Sign-out: the UI has no sign-out button (web neither); that <code>useDirectus().logout()</code>
+   removes the key is unit-tested only. Android Settings → Apps → Resona → Storage →
+   Clear storage resets the app: the login page appears.</li>
+<li>Web build unchanged: sign in on the PWA in a desktop browser (password and Keycloak),
+   reload after ≥ 20 min, still signed in.</li>
 </ol>
 <p>Battery savers of some vendors (Samsung, Xiaomi, Huawei) kill foreground services
 anyway; if the recording ends early, set Resona to "unrestricted" battery use.</p>
@@ -2702,11 +2769,11 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 </tr>
 <tr>
 <td>Directus login</td>
-<td>Blocked as is. The SDK runs in cookie mode: the refresh token is an httpOnly cookie of the Directus host, and from the app origin <code>https://localhost</code> that is a cross-site cookie. The WebView accepts third-party cookies (Capacitor enables them), but Directus sets the refresh cookie <code>SameSite=Lax</code> (<code>REFRESH_TOKEN_COOKIE_SAME_SITE</code> in <code>docker-compose.coolify.yml</code>), so it is not sent on the app's cross-site refresh. Password login gets an access token, but the session ends at the first refresh (~15 min). Fix options: JSON auth mode in the app (refresh token in app storage), or <code>SameSite=None</code> refresh cookies on Directus. Either way Directus <code>CORS_ORIGIN</code> must also list <code>https://localhost</code></td>
+<td>JSON auth mode in the app (#41): access and refresh token in <code>@capacitor/preferences</code>, refreshed before a request once the access token is within 30 s of expiry, also after background or restart; web build unchanged (cookie mode). Directus <code>CORS_ORIGIN</code> lists <code>https://localhost</code> and <code>capacitor://localhost</code> (<code>APP_ORIGINS</code>). Unit-tested with Capacitor and the SDK mocked (<code>test/useDirectus.native.spec.ts</code>); the ≥ 1 h login on a real phone (device test above) is still open</td>
 </tr>
 <tr>
 <td>Keycloak SSO</td>
-<td>Blocked by the same cookie, plus the return: Directus redirects back to a web URL, not into the app. Needs the system browser (<code>@capacitor/browser</code>) + an app link / custom scheme deep link + a token handover Directus SSO does not offer today (it only sets the cookie)</td>
+<td>Not in the app: the login page hides the Keycloak button and says to sign in with password (Keycloak-only accounts: use the browser). Missing: Directus' OpenID callback ends by setting the refresh cookie (<code>AUTH_KEYCLOAK_MODE: cookie</code>) on the Directus host and redirecting to an allow-listed URL; it never hands a token to the redirect target, and no endpoint trades a one-time code for a JSON-mode refresh token. In the app the flow has to run in the system browser (Capacitor opens foreign hosts there; Keycloak/Google refuse embedded web views), so that cookie lands in the browser, not the app. To build: (1) a Directus endpoint extension the browser reaches after SSO (redirect allow-list entry, proxy <code>ALLOWED</code> path) that reads the refresh cookie first-party, refreshes in JSON mode, stores the result under a single-use, short-lived code bound to a verifier the app generated (PKCE-style), clears the browser session and redirects to an app link (<code>https://&lt;pwa-host&gt;/app-auth?code=…</code>, Android App Link with <code>assetlinks.json</code> / iOS Universal Link) or a custom scheme; (2) a POST exchanging code + verifier for <code>{access_token, refresh_token, expires}</code>; (3) in the app <code>@capacitor/browser</code> to start it, <code>@capacitor/app</code> <code>appUrlOpen</code> to receive the code, the intent filter / associated domain, then <code>preferencesAuthStorage().set(...)</code>. About 1–2 days plus a security review of the handover</td>
 </tr>
 <tr>
 <td>Nitro routes</td>
@@ -2730,11 +2797,12 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
   the audio background mode. Calls interrupt it: the plugin only resumes when iOS
   allows it (<code>recordingInterruptionEnded.shouldResume</code>), so the app has to handle those
   events (show the interruption, resume or stop) before iOS is usable; about half a day.</li>
-<li>Hub CORS: add <code>capacitor://localhost</code>.</li>
+<li>Hub CORS: <code>capacitor://localhost</code> is in the default <code>CORS_ORIGINS</code> of the root
+  <code>docker-compose.coolify.yml</code> and in <code>APP_ORIGINS</code> (Directus).</li>
 <li>App Store review needs a privacy policy, the microphone purpose string (set) and a
   reason for background audio (dictation). TestFlight internal testing needs no review.</li>
-<li>Rough effort: 1–2 days for a signed TestFlight build, more if login has to work
-  (same blockers as Android).</li>
+<li>Rough effort: 1–2 days for a signed TestFlight build. Password login works as on
+  Android (JSON auth); Keycloak SSO has the same gap (Findings).</li>
 </ul>
 
 
