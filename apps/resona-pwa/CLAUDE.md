@@ -295,6 +295,15 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   `useRedictationRequest()` (useShell) to the id and opens the recording (a blocked navigation
   clears it); the detail page answers it once the recording is loaded: it starts a part when
   it can take one right then, otherwise drops the request.
+- **Recording page toolbar**: one record button (`HRecordButton`) sits at the right end of
+  `HPlayerDock` (or alone when there is no audio; hidden while a profile runs). Tap
+  (`tap`, < 400 ms, or Enter/Space) records a re-dictation part in `HRecordBar`; hold
+  (`hold-start`/`hold-end`) is push-to-talk, like left Ctrl. Its `press` notes whether the
+  editor had the focus, so a part/dictation goes to the caret while editing, else to the
+  end. The text is read-only until the header pencil (`data-testid="edit"`) turns editing
+  on; a profile's output shows rendered until then. Save/discard are header icons; the
+  title is edited in the page body. The dock's track shows a faint tick at each stored
+  part's `offset_seconds` (`store.listParts`, re-read when `audio_file` changes).
 - **Dictation chips** (`utils/dictationPart.ts`, TipTap inline atom, attrs `partId` + `status`
   `recording|transcribing|error`): push-to-talk and every re-dictated part put a chip at the
   caret (or the end when not editing); it moves with edits and adds nothing to the plain text
