@@ -221,6 +221,28 @@ def test_non_private_job_is_not_claimed_by_private_worker(fresh_org, store_setti
     assert claim_as(public_worker, fresh_org).job_id == job_id
 
 
+def test_private_job_never_reaches_a_cloud_asr_worker(fresh_org, store_settings):
+    cloud = Candidate(engine="deepgram", model="nova-3", accelerator="external")
+    store_settings(fresh_org, cloud_enabled=True)
+    snapshot = {"candidates": [cloud.model_dump(mode="json")]}
+    private_job = make_job(fresh_org, private=True, snapshot=snapshot)
+    cloud_worker = make_worker(fresh_org, private=False, capabilities=(cloud,))
+
+    with Session(engine) as session:
+        claim = broker.try_claim(session, worker_id=cloud_worker, organization_id=fresh_org,
+                                 capabilities=[cloud])
+    assert claim is None
+    assert job_row(private_job).status == JobStatus.PENDING
+
+    # Control: the same worker takes the same candidate for a non-private job.
+    public_job = make_job(fresh_org, private=False, snapshot=snapshot)
+    with Session(engine) as session:
+        claim = broker.try_claim(session, worker_id=cloud_worker, organization_id=fresh_org,
+                                 capabilities=[cloud])
+    assert claim.job_id == public_job
+    assert job_row(private_job).status == JobStatus.PENDING
+
+
 def test_ineligible_poll_leaves_cloud_denied_job_to_the_sweep(fresh_org):
     # Cloud is off by default: a non-private job can no longer run anywhere.
     job_id = make_job(fresh_org, private=False)
