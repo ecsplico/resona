@@ -60,7 +60,8 @@ services:
       AUTH_KEYCLOAK_ALLOW_PUBLIC_REGISTRATION: "true"
       AUTH_KEYCLOAK_DEFAULT_ROLE_ID: ${DIRECTUS_USER_ROLE_ID:?set DIRECTUS_USER_ROLE_ID}
       AUTH_KEYCLOAK_REDIRECT_ALLOW_LIST: ${PWA_ORIGIN}/login
-      CORS_ORIGIN: ${PWA_ORIGIN:?set PWA_ORIGIN}
+      # Plus the Capacitor app (JSON auth): https://localhost (Android), capacitor://localhost (iOS).
+      CORS_ORIGIN: ${PWA_ORIGIN:?set PWA_ORIGIN},${APP_ORIGINS:-https://localhost,capacitor://localhost}
     healthcheck:
       # 127.0.0.1, not localhost: inside the container `localhost` resolves to ::1
       # (IPv6) first, but Directus binds IPv4 0.0.0.0 — wget to ::1 is refused and

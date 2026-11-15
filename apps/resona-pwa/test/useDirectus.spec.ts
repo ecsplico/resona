@@ -59,6 +59,7 @@ describe("useDirectus", () => {
 		const opts = authConfig.options as AuthStorageOpts;
 		expect(opts.autoRefresh).toBe(true);
 		expect(opts.storage).toBeTruthy();
+		expect(useDirectus().ssoSupported).toBe(true);
 	});
 
 	it("the auth storage round-trips the session through localStorage", () => {

@@ -22,9 +22,10 @@ services:
       DB_CLIENT: sqlite3
       DB_FILENAME: /directus/database/data.db
       WEBSOCKETS_ENABLED: "true"
-      # CORS so the browser PWA origin may call Directus directly.
+      # CORS so the browser PWA origin and the Capacitor app (https://localhost
+      # Android, capacitor://localhost iOS) may call Directus directly.
       CORS_ENABLED: "true"
-      CORS_ORIGIN: ${PWA_ORIGIN:-http://localhost:3000}
+      CORS_ORIGIN: ${PWA_ORIGIN:-http://localhost:3000},${APP_ORIGINS:-https://localhost,capacitor://localhost}
     healthcheck:
       # 127.0.0.1, not localhost: inside the container `localhost` resolves to ::1
       # (IPv6) first, but Directus binds IPv4 0.0.0.0 — wget to ::1 is refused and

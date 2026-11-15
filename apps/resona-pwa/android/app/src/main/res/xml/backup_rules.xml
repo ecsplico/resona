@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Capacitor Preferences (CapacitorStorage.xml) holds the
+     Directus refresh token (JSON auth): it stays on this device, a restored or
+     transferred app signs in again. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+</full-backup-content>
