@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-client"
-version = "0.2.4"
+version = "0.2.5"
 description = "HTTP client library for the Resona API — wraps job, profile, and OpenAI-compatible audio routes"
 readme = "README.md"
 license = { text = "Apache-2.0" }

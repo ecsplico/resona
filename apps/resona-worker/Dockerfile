@@ -4,7 +4,7 @@
 #   CPU  (default):  docker build -f apps/resona-worker/Dockerfile .
 #   CUDA:            docker build -f apps/resona-worker/Dockerfile \
 #                      --build-arg BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04 \
-#                      --build-arg WORKER_EXTRAS="--extra cuda --extra documents" .
+#                      --build-arg WORKER_EXTRAS="--extra cuda --extra documents --extra diarize" .
 #
 # Torch: uv.lock pins the cu130 wheels on Linux. Builds with `--extra cuda` install
 # them; every other build installs the same torch/torchvision versions from the PyTorch

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-tts-local"
-version = "0.2.4"
+version = "0.2.5"
 description = "Local / offline text-to-speech engines for Resona (Kokoro, Chatterbox, Qwen3-TTS) — ported from Voicebox"
 readme = "README.md"
 license = { text = "Apache-2.0" }
