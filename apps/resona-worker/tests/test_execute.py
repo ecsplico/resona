@@ -301,6 +301,106 @@ def test_unprepared_diarizer_is_its_own_exit_code(tmp_path: Path, monkeypatch) -
     assert not out.exists()
 
 
+_DEEPGRAM_BODY = {
+    "results": {
+        "channels": [{"alternatives": [{"transcript": "Guten Morgen. Hallo.", "words": []}]}],
+        "utterances": [
+            {"start": 0.6, "end": 1.8, "transcript": "Guten Morgen.", "speaker": 1, "words": [
+                {"word": "guten", "punctuated_word": "Guten", "start": 0.6, "end": 1.0, "speaker": 1},
+                {"word": "morgen", "punctuated_word": "Morgen.", "start": 1.1, "end": 1.8, "speaker": 1},
+            ]},
+            {"start": 2.2, "end": 3.0, "transcript": "Hallo.", "speaker": 0, "words": [
+                {"word": "hallo", "punctuated_word": "Hallo.", "start": 2.2, "end": 3.0, "speaker": 0},
+            ]},
+        ],
+    }
+}
+
+
+def _deepgram_run(
+    tmp_path: Path, monkeypatch, options: dict, body: dict = _DEEPGRAM_BODY
+) -> tuple[int, Path, object]:
+    import httpx
+    import respx
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(json.dumps({"kind": "audio", "language": "de", "options": options,
+                                    "candidate": {"engine": "deepgram", "model": "nova-3", "accelerator": "external"}}))
+    out = tmp_path / "out.json"
+    with respx.mock:
+        route = respx.post("https://api.deepgram.com/v1/listen").mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        code = main(["--snapshot", str(snapshot), "--input", str(DE_SHORT), "--out", str(out)])
+    return code, out, route
+
+
+def test_deepgram_diarizes_in_the_asr_call_into_speaker_sections(tmp_path: Path, monkeypatch) -> None:
+    code, out, route = _deepgram_run(tmp_path, monkeypatch, {"diarize": True})
+
+    assert code == ExitCode.OK
+    params = route.calls.last.request.url.params
+    assert (params["diarize"], params["model"], params["language"]) == ("true", "nova-3", "de")
+    result = JobResult.model_validate_json(out.read_text())
+    # Deepgram's speaker 1 speaks first: renumbered to Sprecher 1.
+    assert result.markdown == "**Sprecher 1:** Guten Morgen.\n\n**Sprecher 2:** Hallo."
+    assert [(s.speaker, s.text) for s in result.segments] == [(1, "Guten Morgen."), (2, "Hallo.")]
+    assert [(s.stage, s.engine, s.accelerator) for s in result.provenance.stages] == [
+        ("asr", "deepgram", "external"),
+        ("diarize", "deepgram", "external"),
+    ]
+
+
+def test_deepgram_word_speakers_are_kept_even_for_a_zero_length_word_at_a_boundary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # By time overlap the zero-length word at 5.0 touches both speakers; Deepgram says speaker 1.
+    body = {
+        "results": {
+            "channels": [{"alternatives": [{"transcript": "Ja. Nein.", "words": []}]}],
+            "utterances": [
+                {"start": 0.0, "end": 5.0, "transcript": "Ja.", "speaker": 0, "words": [
+                    {"word": "ja", "punctuated_word": "Ja.", "start": 0.0, "end": 5.0, "speaker": 0},
+                ]},
+                {"start": 5.0, "end": 5.0, "transcript": "Nein.", "speaker": 1, "words": [
+                    {"word": "nein", "punctuated_word": "Nein.", "start": 5.0, "end": 5.0, "speaker": 1},
+                ]},
+            ],
+        }
+    }
+
+    code, out, _ = _deepgram_run(tmp_path, monkeypatch, {"diarize": True}, body)
+
+    assert code == ExitCode.OK
+    result = JobResult.model_validate_json(out.read_text())
+    assert result.markdown == "**Sprecher 1:** Ja.\n\n**Sprecher 2:** Nein."
+    assert [(s.speaker, s.text) for s in result.segments] == [(1, "Ja."), (2, "Nein.")]
+
+
+def test_deepgram_without_diarize_keeps_utterances_as_segments(tmp_path: Path, monkeypatch) -> None:
+    code, out, route = _deepgram_run(tmp_path, monkeypatch, {})
+
+    assert code == ExitCode.OK
+    assert "diarize" not in route.calls.last.request.url.params
+    result = JobResult.model_validate_json(out.read_text())
+    assert [s.text for s in result.segments] == ["Guten Morgen.", "Hallo."]
+    assert all(s.speaker is None for s in result.segments)
+    assert result.raw_text == "Guten Morgen. Hallo."
+
+
+def test_cloud_candidate_without_provider_key_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:
+    # The key comes from the process environment only; a developer shell may export it.
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(json.dumps({"kind": "audio", "language": "de", "options": {},
+                                    "candidate": {"engine": "deepgram", "model": "nova-3", "accelerator": "external"}}))
+
+    code = main(["--snapshot", str(snapshot), "--input", str(DE_SHORT), "--out", str(tmp_path / "out.json")])
+
+    assert code == ExitCode.UNSUPPORTED_CAPABILITY
+
+
 def test_cuda_candidate_on_a_host_without_cuda_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:
     # Provenance must never claim a device that did not run: no engine is constructed.
     constructed: list[str] = []

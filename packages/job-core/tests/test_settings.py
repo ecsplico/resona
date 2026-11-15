@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from resona_job_core import TEXT_EXECUTION_PROFILE, OrganizationSettings, default_settings
+from resona_job_core import TEXT_EXECUTION_PROFILE, Candidate, OrganizationSettings, default_settings
 
 
 @pytest.mark.parametrize("field", ["execution_profiles", "default_execution_profile"])
@@ -27,3 +27,19 @@ def test_profile_diarize_is_serialized_only_when_on():
     dumped = json.loads(OrganizationSettings.model_validate(body).model_dump_json())
     assert dumped["execution_profiles"]["mac-private"]["diarize"] is True
     assert "diarize" not in dumped["execution_profiles"]["private-auto"]
+
+
+def test_legacy_cloud_candidate_reads_as_external():
+    """Settings and snapshots stored before accelerator 'external' hold cloud candidates on 'cpu'."""
+    legacy = {"engine": "deepgram", "model": "nova-3", "accelerator": "cpu"}
+    assert Candidate.model_validate(legacy).accelerator == "external"
+    assert legacy["accelerator"] == "cpu"
+    body = default_settings().model_dump(mode="json")
+    body["execution_profiles"]["private-auto"]["audio"].append(legacy)
+    loaded = OrganizationSettings.model_validate(body)
+    assert loaded.execution_profiles["private-auto"].audio[-1].accelerator == "external"
+
+
+def test_non_cloud_engine_on_external_is_rejected():
+    with pytest.raises(ValidationError, match="accelerator 'external'"):
+        Candidate(engine="faster-whisper", model="x", accelerator="external")

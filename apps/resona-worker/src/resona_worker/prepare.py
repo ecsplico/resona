@@ -21,6 +21,7 @@ tuples; the hub additionally intersects them with the tuples it approved.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import platform
@@ -42,7 +43,7 @@ from resona_asr_core.model_cache import configure_model_cache
 from resona_job_core import Candidate, JobResult, OrganizationSettings
 
 from .config import CapabilitiesManifest, PreparedCapability, PreparedDiarizer, WeightRecord, runtime_version
-from .execute import ExitCode, subprocess_env
+from .execute import CLOUD_DIARIZERS, ExitCode, subprocess_env
 from .weights import (
     WeightsError,
     download_whisper_checkpoint,
@@ -220,7 +221,13 @@ class _Run:
 
 
 def _execute(
-    executor: Sequence[str], snapshot: dict[str, Any], input_path: Path, scratch: Path, timeout: float
+    executor: Sequence[str],
+    snapshot: dict[str, Any],
+    input_path: Path,
+    scratch: Path,
+    timeout: float,
+    *,
+    private: bool = True,
 ) -> _Run:
     snapshot_path = scratch / "snapshot.json"
     out_path = scratch / "out.json"
@@ -237,7 +244,7 @@ def _execute(
     with (scratch / "engine.stderr").open("wb") as stderr:
         proc = subprocess.Popen(
             cmd,
-            env=subprocess_env(private=True, base=os.environ),
+            env=subprocess_env(private=private, base=os.environ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=stderr,
@@ -304,7 +311,10 @@ def _run_synthetic(
         scratch = Path(tmp)
         input_path = scratch / f"input{fixture.suffix}"
         input_path.write_bytes(fixture.read_bytes())
-        run = _execute(executor, snapshot, input_path, scratch, timeout)
+        # A cloud candidate needs its provider key: it serves only non-private jobs, which
+        # run with the worker's environment, and so does its synthetic run.
+        private = candidate.accelerator != "external"
+        run = _execute(executor, snapshot, input_path, scratch, timeout, private=private)
     return run, _check_result(kind, synthetic, candidate, run)
 
 
@@ -344,9 +354,13 @@ def prepare_candidate(
 
 
 def _diarizer_model() -> tuple[str, list[str]] | None:
-    """(HF repo, weight file patterns) of the installed diarizer; ``None`` without the ``diarize`` extra."""
+    """(HF repo, weight file patterns) of the installed diarizer; ``None`` without the ``diarize``
+    extra (the model stack: transformers with Nemotron-3-Diarization)."""
     try:
         from resona_diarize import MODEL, WEIGHT_PATTERNS
+
+        if importlib.util.find_spec("transformers.models.nemotron3_diarization") is None:
+            return None
     except ImportError:
         return None
     return MODEL, list(WEIGHT_PATTERNS)
@@ -371,20 +385,31 @@ def prepare_diarizer(
     *,
     executor: Sequence[str],
     model_pins: Mapping[str, str],
-    weights: WeightRecord,
+    weights: WeightRecord | None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> PreparedDiarizer:
     """A synthetic two-speaker job with ``candidate``: two speakers, in order, changing in the pause.
 
     The diarizer runs on the accelerator of the job's ASR candidate, which must be ``candidate``'s.
+    ``weights`` is ``None`` for a cloud candidate whose provider diarizes in the ASR call. The
+    provider's model is not ours to check against the synthetic voices (Deepgram hears the two
+    TTS voices as one speaker): there the run only has to return attributed speaker sections;
+    its quality is what the release gate measures on the corpus.
     """
     run, result = _run_synthetic("audio", _DIARIZE, candidate, executor, timeout)
     _check_recorded_revisions("diarize", result, model_pins)
     label = f"synthetic diarize run with {candidate.engine}/{candidate.model}"
+    model = weights.repo if weights is not None else candidate.model
     stage = next((s for s in result.provenance.stages if s.stage == "diarize"), None)
-    if stage is None or stage.model != weights.repo or stage.accelerator != candidate.accelerator:
-        raise PrepareError(f"{label} did not run {weights.repo} on {candidate.accelerator}")
+    if stage is None or stage.model != model or stage.accelerator != candidate.accelerator:
+        raise PrepareError(f"{label} did not run {model} on {candidate.accelerator}")
     speakers = [segment.speaker for segment in result.segments]
+    if weights is None:
+        if not speakers or None in speakers:
+            raise PrepareError(f"{label} returned no speaker sections")
+        return PreparedDiarizer(
+            weights=None, candidate=candidate, seconds=round(run.seconds, 3), accelerator=stage.accelerator
+        )
     if speakers != [1, 2]:
         raise PrepareError(f"{label} found speakers {speakers}, expected [1, 2]")
     first, second = result.segments
@@ -416,7 +441,8 @@ def prepare(
 
     With the ``diarize`` extra installed and an audio candidate in the profile, the diarizer
     is pinned too and must pass a two-speaker job with the first audio candidate; the
-    manifest then records it, which lets the worker claim ``diarize`` jobs.
+    manifest then records it, which lets the worker claim ``diarize`` jobs. A cloud audio
+    candidate whose provider diarizes (Deepgram) takes that check without local weights.
     """
     pairs = profile_candidates(settings, profile)
     if model_pins is None:
@@ -428,7 +454,10 @@ def prepare(
     configure_model_cache()
     weights = [pin_weights(kind, candidate, model_pins, offline=offline) for kind, candidate in pairs]
     audio = next((candidate for kind, candidate in pairs if kind == "audio"), None)
-    diarizer_weights = pin_diarizer(model_pins, offline=offline) if audio is not None else None
+    provider_diarizes = audio is not None and audio.engine in CLOUD_DIARIZERS
+    diarizer_weights = (
+        pin_diarizer(model_pins, offline=offline) if audio is not None and not provider_diarizes else None
+    )
     tested = []
     for (kind, candidate), pinned in zip(pairs, weights, strict=True):
         item = prepare_candidate(
@@ -438,7 +467,7 @@ def prepare(
         if on_tested is not None:
             on_tested(item)
     diarizer = None
-    if audio is not None and diarizer_weights is not None:
+    if audio is not None and (provider_diarizes or diarizer_weights is not None):
         diarizer = prepare_diarizer(
             audio, executor=executor, timeout=timeout, model_pins=model_pins, weights=diarizer_weights
         )

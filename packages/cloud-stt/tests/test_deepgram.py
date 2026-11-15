@@ -34,7 +34,44 @@ def test_transcribe_parses_transcript_and_segment(wav_path):
     assert route.called
     assert result["text"] == "guten morgen"
     assert result["language"] == "de"
-    assert result["segments"] == [{"start": 0.1, "end": 1.2, "text": "guten morgen"}]
+    assert result["segments"] == [
+        {
+            "start": 0.1,
+            "end": 1.2,
+            "text": "guten morgen",
+            "words": [
+                {"start": 0.1, "end": 0.5, "word": " guten"},
+                {"start": 0.6, "end": 1.2, "word": " morgen"},
+            ],
+        }
+    ]
+
+
+@respx.mock
+def test_transcribe_returns_utterances_with_word_speakers(wav_path):
+    body = {
+        "results": {
+            "channels": [{"alternatives": [{"transcript": "Hallo. Guten Tag.", "words": []}]}],
+            "utterances": [
+                {"start": 0.0, "end": 0.5, "transcript": "Hallo.", "speaker": 0,
+                 "words": [{"word": "hallo", "punctuated_word": "Hallo.", "start": 0.0, "end": 0.5, "speaker": 0}]},
+                {"start": 1.0, "end": 1.8, "transcript": "Guten Tag.", "speaker": 1,
+                 "words": [
+                     {"word": "guten", "punctuated_word": "Guten", "start": 1.0, "end": 1.3, "speaker": 1},
+                     {"word": "tag", "punctuated_word": "Tag.", "start": 1.4, "end": 1.8, "speaker": 1},
+                 ]},
+            ],
+        }
+    }
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=body))
+    result = deepgram.transcribe(wav_path, api_key="dgkey", options={"diarize": True, "utterances": True})
+    params = route.calls.last.request.url.params
+    assert (params["diarize"], params["utterances"]) == ("true", "true")
+    assert [s["text"] for s in result["segments"]] == ["Hallo.", "Guten Tag."]
+    assert result["segments"][1]["words"] == [
+        {"start": 1.0, "end": 1.3, "word": " Guten", "speaker": 1},
+        {"start": 1.4, "end": 1.8, "word": " Tag.", "speaker": 1},
+    ]
 
 
 @respx.mock

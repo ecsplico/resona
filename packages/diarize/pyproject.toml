@@ -4,11 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "resona-diarize"
-version = "0.2.5"
+version = "0.2.6"
 description = "Speaker diarization for Resona workers: Nemotron-3-Diarization turns and word-level speaker assignment"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
-dependencies = [
+# ``resona_diarize.turns`` (word-level speaker assignment) is pure Python; cloud workers use
+# it for provider diarization without installing the model stack.
+dependencies = []
+
+[project.optional-dependencies]
+model = [
     "librosa>=0.10.1",
     "numpy>=2.1.3",
     "torch>=2.6.0",

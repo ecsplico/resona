@@ -1,4 +1,5 @@
 from .policy import (
+    CLOUD_ASR_ENGINES,
     CLOUD_KINDS,
     Endpoint,
     EndpointKind,
@@ -6,9 +7,19 @@ from .policy import (
     PolicyDenied,
     Stage,
     check_policy,
+    cloud_asr_endpoint_id,
     is_loopback_url,
 )
-from .settings import TEXT_EXECUTION_PROFILE, Candidate, ExecutionProfile, OrganizationSettings, default_settings
+from .settings import (
+    PLATFORM_OF_ACCELERATOR,
+    PLATFORMS,
+    TEXT_EXECUTION_PROFILE,
+    Candidate,
+    ExecutionProfile,
+    OrganizationSettings,
+    Platform,
+    default_settings,
+)
 from .options import (
     DEFAULT_OCR_ENGINE,
     MAX_INSTRUCTIONS_CHARS,
@@ -25,7 +36,9 @@ from .options import (
 from .results import BBox, JobResult, Page, PageBlock, Provenance, Segment, StageProvenance
 
 __all__ = [
+    "CLOUD_ASR_ENGINES",
     "CLOUD_KINDS",
+    "cloud_asr_endpoint_id",
     "Candidate",
     "Endpoint",
     "EndpointKind",
@@ -35,6 +48,9 @@ __all__ = [
     "PolicyDenied",
     "Stage",
     "TEXT_EXECUTION_PROFILE",
+    "PLATFORM_OF_ACCELERATOR",
+    "PLATFORMS",
+    "Platform",
     "check_policy",
     "default_settings",
     "is_loopback_url",

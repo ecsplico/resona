@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import argparse
 import gc
+import importlib.util
 import json
+import os
 import platform
 import re
 import sys
@@ -214,7 +216,8 @@ def _resolve_weights(candidate: Candidate) -> tuple[str, str | None]:
 
 
 def accelerator_available(accelerator: str) -> bool:
-    """True when this host can run ``accelerator`` now (cuda: PyTorch sees a CUDA device)."""
+    """True when this host can run ``accelerator`` now (cuda: PyTorch sees a CUDA device;
+    external: the cloud ASR client is installed, the provider key is checked per job)."""
     if accelerator == "cuda":
         try:
             import torch
@@ -226,6 +229,8 @@ def accelerator_available(accelerator: str) -> bool:
             return False
     if accelerator == "metal":
         return sys.platform == "darwin" and platform.machine() == "arm64"
+    if accelerator == "external":
+        return importlib.util.find_spec("resona_cloud_stt") is not None
     return accelerator == "cpu"
 
 
@@ -286,8 +291,9 @@ _SPEAKER_LABEL = {"de": "Sprecher"}
 _DEFAULT_SPEAKER_LABEL = "Speaker"
 
 
-def _engine_words(seg: Any) -> list[Any]:
-    """The word timestamps of one engine segment (dicts or objects, Whisper-style ``word``)."""
+def _engine_words(seg: Any) -> list[tuple[Any, int | None]]:
+    """The word timestamps of one engine segment (dicts or objects, Whisper-style ``word``),
+    each with the provider's ``speaker`` when it has one (Deepgram), else ``None``."""
     from resona_diarize import Word
 
     raw = seg.get("words") if isinstance(seg, Mapping) else getattr(seg, "words", None)
@@ -295,41 +301,46 @@ def _engine_words(seg: Any) -> list[Any]:
     for item in raw or []:
         if isinstance(item, Mapping):
             start, end, text = item.get("start"), item.get("end"), item.get("word", item.get("text", ""))
+            speaker = item.get("speaker")
         else:
             start, end = getattr(item, "start", None), getattr(item, "end", None)
             text = getattr(item, "word", getattr(item, "text", ""))
+            speaker = getattr(item, "speaker", None)
         if start is None or end is None:
             continue
-        words.append(Word(float(start), float(end), str(text)))
+        words.append((Word(float(start), float(end), str(text)), None if speaker is None else int(speaker)))
     return words
 
 
 def diarized_transcript(
-    raw_segments: list[Any], text: str, duration: float, turns: list[Any], language: str | None
+    raw_segments: list[Any], text: str, duration: float, turns: list[Any] | None, language: str | None
 ) -> tuple[list[Segment], str] | None:
     """Speaker sections and their Markdown, or ``None`` when the diarizer found no speech.
 
-    Every word gets the speaker whose turns cover most of it; consecutive words of one
-    speaker form a section, which becomes one ``Segment`` with ``speaker``. A segment
-    without word timestamps counts as one word; an engine without segments, as one word
-    spanning the recording. In Markdown each section starts with ``**Sprecher N:** ``
-    (``Speaker`` for other languages) and is broken into paragraphs like
-    :func:`audio_markdown`, over the ASR segments inside it.
+    Every word gets the speaker whose turns cover most of it; with ``turns=None`` (a
+    provider that diarizes in the ASR call) each word keeps the provider's own speaker.
+    Consecutive words of one speaker form a section, which becomes one ``Segment`` with
+    ``speaker``. A segment without word timestamps counts as one word; an engine without
+    segments, as one word spanning the recording. In Markdown each section starts with
+    ``**Sprecher N:** `` (``Speaker`` for other languages) and is broken into paragraphs
+    like :func:`audio_markdown`, over the ASR segments inside it.
     """
     from resona_diarize import Word, assign_words, sections
 
     words: list[Word] = []
+    word_speakers: list[int | None] = []
     owners: list[int] = []
     for index, seg in enumerate(raw_segments):
         found = _engine_words(seg)
         if not found:
             plain = _segment(seg)
-            found = [Word(plain.start, plain.end, f" {plain.text}")] if plain.text else []
-        words.extend(found)
+            found = [(Word(plain.start, plain.end, f" {plain.text}"), None)] if plain.text else []
+        words.extend(word for word, _ in found)
+        word_speakers.extend(speaker for _, speaker in found)
         owners.extend([index] * len(found))
     if not words and text:
-        words, owners = [Word(0.0, duration, f" {text}")], [0]
-    groups = sections(words, assign_words(words, turns))
+        words, word_speakers, owners = [Word(0.0, duration, f" {text}")], [None], [0]
+    groups = sections(words, word_speakers if turns is None else assign_words(words, turns))
     if not groups:
         return None
 
@@ -485,6 +496,100 @@ def _run_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path)
     )
 
 
+# Provider request options per cloud engine: ``utterances`` gives Deepgram's own
+# segmentation (paragraph breaks at pauses), ``smart_format`` its punctuation.
+_CLOUD_OPTIONS: dict[str, dict[str, Any]] = {
+    "deepgram": {"smart_format": True, "punctuate": True, "utterances": True},
+}
+# Cloud engines whose provider diarizes in the same call (per-word ``speaker``).
+CLOUD_DIARIZERS = frozenset({"deepgram"})
+
+
+def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
+    """A cloud ASR candidate: the input goes to the provider with the worker's key.
+
+    Only non-private jobs should reach this path: the hub matches privacy class and the
+    supervisor refuses a private job with an external candidate and checks the provider
+    endpoint with the hub before launching this process. The key comes from the process
+    environment only; private jobs' subprocess environments drop credential-shaped
+    names, but this function itself does not enforce privacy. A provider that diarizes (Deepgram)
+    does so in the same call; its word speakers go through the same speaker sections and
+    Markdown as the on-device diarizer.
+    """
+    try:
+        from resona_cloud_stt import PROVIDER_ENV_KEYS, get_provider
+        from resona_cloud_stt.errors import ProviderHTTPError
+    except ImportError:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "cloud ASR client not installed") from None
+    options = snapshot.get("options") or {}
+    if not isinstance(options, dict):
+        raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "options must be an object")
+    if options.get("translate"):
+        raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "cloud ASR does not translate")
+    diarize = bool(options.get("diarize", False))
+    if diarize and candidate.engine not in CLOUD_DIARIZERS:
+        raise ExecutionFailure(ExitCode.DIARIZER_UNAVAILABLE, f"{candidate.engine} does not diarize")
+    try:
+        provider = get_provider(candidate.engine)
+    except ValueError:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "unknown cloud ASR provider") from None
+    api_key = os.environ.get(PROVIDER_ENV_KEYS[candidate.engine], "").strip()
+    if not api_key:
+        raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "provider key not configured on this worker")
+    request = dict(_CLOUD_OPTIONS.get(candidate.engine, {}))
+    if diarize:
+        request["diarize"] = True
+
+    started = time.perf_counter()
+    try:
+        out = provider.transcribe(
+            input_path,
+            api_key=api_key,
+            model=candidate.model,
+            language=snapshot.get("language"),
+            options=request or None,
+        )
+    except ProviderHTTPError as exc:
+        if exc.status_code in (401, 403):
+            raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "provider rejected the key") from None
+        if exc.status_code in (400, 413, 415, 422):
+            raise ExecutionFailure(ExitCode.UNSUPPORTED_INPUT, "provider rejected the input") from None
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "provider error") from None
+    except Exception:  # noqa: BLE001 - transport errors and timeouts: retry elsewhere/later
+        raise ExecutionFailure(ExitCode.ENGINE_ERROR, "provider request failed") from None
+    seconds = time.perf_counter() - started
+
+    text = str(out.get("text", "")).strip()
+    language = out.get("language") or snapshot.get("language")
+    raw_segments = list(out.get("segments", []) or [])
+    segments = [_segment(seg) for seg in raw_segments]
+    markdown = audio_markdown(segments, text)
+    stages = [
+        StageProvenance(
+            stage="asr", engine=candidate.engine, model=candidate.model, accelerator="external", seconds=seconds
+        )
+    ]
+    if diarize:
+        duration = max((seg.end for seg in segments), default=0.0)
+        diarized = diarized_transcript(raw_segments, text, duration, None, language)
+        if diarized is not None:
+            segments, markdown = diarized
+        # Same provider call: the ASR seconds cover it.
+        stages.append(
+            StageProvenance(
+                stage="diarize", engine=candidate.engine, model=candidate.model, accelerator="external", seconds=0.0
+            )
+        )
+    return JobResult(
+        kind="audio",
+        raw_text=text,
+        markdown=markdown,
+        language=language,
+        segments=segments,
+        provenance=Provenance(stages=stages),
+    )
+
+
 def _run_document(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
     try:
         from resona_engine_docling import (
@@ -587,7 +692,8 @@ def run(snapshot_path: Path, input_path: Path, out_path: Path, metrics_path: Pat
     if kind in ("audio", "document") and isinstance(options, dict) and required_features(kind, options) - known_features():
         raise ExecutionFailure(ExitCode.UNKNOWN_OPTIONS, "options unknown to this release")
     if kind == "audio":
-        result = _run_audio(snapshot, candidate, input_path)
+        runner = _run_cloud_audio if candidate.accelerator == "external" else _run_audio
+        result = runner(snapshot, candidate, input_path)
     elif kind == "document":
         result = _run_document(snapshot, candidate, input_path)
     else:

@@ -10,9 +10,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
-from .policy import Endpoint, ExecutionPolicy
+from .policy import CLOUD_ASR_ENGINES, Endpoint, ExecutionPolicy
 
-Accelerator = Literal["metal", "cuda", "cpu"]
+# ``external``: the engine runs at a cloud provider the worker calls (cloud ASR).
+Accelerator = Literal["metal", "cuda", "cpu", "external"]
+# The release gate measures quality per platform, named after the ASR/layout accelerator.
+Platform = Literal["mac-metal", "linux-cuda", "cpu", "cloud"]
+PLATFORMS: tuple[str, ...] = ("mac-metal", "linux-cuda", "cpu", "cloud")
+PLATFORM_OF_ACCELERATOR: dict[str, str] = {"metal": "mac-metal", "cuda": "linux-cuda", "cpu": "cpu", "external": "cloud"}
 # ``text`` jobs run only a postprocess profile on uploaded text: no engine, no candidates.
 JobKind = Literal["audio", "document", "text"]
 
@@ -31,6 +36,21 @@ class Candidate(BaseModel):
     model_revision: str | None = None
     accelerator: Accelerator
     ocr_engine: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_cloud_accelerator(cls, data: object) -> object:
+        # Settings and job snapshots stored before accelerator 'external' hold cloud
+        # candidates on 'cpu'; read them as 'external' instead of failing.
+        if isinstance(data, dict) and data.get("engine") in CLOUD_ASR_ENGINES and data.get("accelerator") != "external":
+            return {**data, "accelerator": "external"}
+        return data
+
+    @model_validator(mode="after")
+    def _cloud_runs_external(self) -> Candidate:
+        if (self.engine in CLOUD_ASR_ENGINES) != (self.accelerator == "external"):
+            raise ValueError("cloud ASR engines, and only they, run on accelerator 'external'")
+        return self
 
 
 class ExecutionProfile(BaseModel):

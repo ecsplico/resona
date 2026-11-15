@@ -2,6 +2,8 @@
 # Linux worker image. One Dockerfile, two variants selected by build args:
 #
 #   CPU  (default):  docker build -f apps/resona-worker/Dockerfile .
+#                    (also cloud ASR: run it with a cloud execution profile and the
+#                    provider key in the environment, e.g. DEEPGRAM_API_KEY)
 #   CUDA:            docker build -f apps/resona-worker/Dockerfile \
 #                      --build-arg BASE_IMAGE=nvidia/cuda:13.0.1-runtime-ubuntu24.04 \
 #                      --build-arg WORKER_EXTRAS="--extra cuda --extra documents --extra diarize" .
@@ -19,7 +21,7 @@ ARG BASE_IMAGE=python:3.12-slim
 # ---- build ----
 FROM python:3.12-slim AS builder
 
-ARG WORKER_EXTRAS="--extra audio-cpu --extra documents"
+ARG WORKER_EXTRAS="--extra audio-cpu --extra documents --extra cloud"
 ARG TORCH_CPU_INDEX=https://download.pytorch.org/whl/cpu
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
@@ -38,6 +40,7 @@ COPY packages/engine-faster-whisper/ ./packages/engine-faster-whisper/
 COPY packages/engine-whisper/ ./packages/engine-whisper/
 COPY packages/engine-docling/ ./packages/engine-docling/
 COPY packages/diarize/ ./packages/diarize/
+COPY packages/cloud-stt/ ./packages/cloud-stt/
 
 # A uv-managed CPython (not the base image's) so the same /opt/python + venv copy
 # runs on the CUDA runtime base, which ships no Python 3.12 of its own. The uv cache

@@ -38,7 +38,7 @@ from .broker import PROTOCOL_VERSION, _immediate
 from .db.models import ApprovedReleaseTuple, Baseline, Evaluation, Release
 from .deps import get_db_session
 from .errors import api_error, validation_message
-from .releases import hub_release_id, hub_version, is_known
+from .releases import Platform, hub_release_id, hub_version, is_known
 
 router = APIRouter(tags=["Evaluations"])
 
@@ -110,7 +110,7 @@ class EvaluationRequest(BaseModel):
 
     profile: str = Field(pattern=_NAME)
     execution_profile: str = Field(pattern=_NAME)
-    platform: Literal["mac-metal", "linux-cuda", "cpu"]
+    platform: Platform
     release_id: str = Field(pattern=r"^[0-9][0-9A-Za-z.+-]{0,63}$")
     corpus_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     baseline_revision: Optional[StrictInt] = Field(default=None, ge=1)
@@ -299,7 +299,7 @@ def get_evaluation(
 @router.get("/v1/baselines")
 def get_baseline(
     execution_profile: str = Query(..., pattern=_NAME),
-    platform: Literal["mac-metal", "linux-cuda", "cpu"] = Query(...),
+    platform: Platform = Query(...),
     principal: Principal = Depends(admin_principal),
     session: Session = Depends(get_db_session),
 ) -> dict[str, Any]:

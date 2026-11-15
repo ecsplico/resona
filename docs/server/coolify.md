@@ -217,3 +217,33 @@ The hub and MCP containers log request lines without query strings, plus counts 
 ## CPU fallback
 
 The compose file has no CPU fallback worker. The Coolify host has 16 GB RAM and 6 cores, shared with other applications (measured 2026-11-01: 7.7 GB available, 8 GB of swap in use), and the live recognizer already reserves up to 3 CPUs and 3 GB of it ([Live recognizer](#live-recognizer)). A `faster-whisper large-v3` CPU worker would compete with those applications. Add one only after you measure it on this host and an operator approves it explicitly: enroll it as a separate worker, approve only the `cpu-private` candidates, and enable `cpu_fallback_enabled` in the organization settings.
+
+## Cloud ASR worker (Deepgram)
+
+Non-private audio jobs, with or without `--diarize`, can run on Deepgram `nova-3` through a separate cloud worker ([`docker-compose.worker.cloud.yml`](../../docker-compose.worker.cloud.yml)). The hub itself still calls no provider: the worker holds `DEEPGRAM_API_KEY`, claims only non-private jobs (privacy class of its approval) and sends the audio to Deepgram, which diarizes in the same call. The worker loads no model (about 50 MB RSS per job), so it fits next to the hub on this host; deploy it as its own Coolify resource or on any host with outbound HTTPS. Private jobs never reach it: `policy_denied: asr: private job cannot use a cloud endpoint`.
+
+It needs a release whose CPU worker image ships the `cloud` extra and whose hub knows platform `cloud`.
+
+**Rollout order.** Workers and CLIs on 0.2.5 or older cannot parse the settings document once an organization has an execution profile with an `external` candidate; `resona settings set`, `--local` and `resona-worker prepare --settings-file` then fail. Upgrade the hub, every worker and every CLI to 0.2.6 or newer first, and only then add the cloud execution profile.
+
+The worker re-checks the `cloud-asr:<provider>` endpoint with the hub right before it sends audio, so revoking the endpoint or disabling `cloud_enabled` also stops jobs that are already queued.
+
+Once per organization:
+
+1. **Settings** (`resona settings get` → edit → `resona settings set --file`): `cloud_enabled: true`, an endpoint `{"id": "cloud-asr:deepgram", "kind": "cloud_asr", "model": "nova-3"}` (optionally `worker_id` of the cloud worker, to pin it there), and an execution profile
+   ```json
+   "cloud-deepgram": {"audio": [{"engine": "deepgram", "model": "nova-3", "accelerator": "external"}], "document": []}
+   ```
+   Cloud ASR candidates always run on accelerator `external` (platform `cloud`).
+2. **Enroll** in the hub container: `resona-admin worker enroll cloud-1 --organization <org> --token-sha256 <hex>`; put the token file (0600, UID 1000) on the worker host.
+3. **Prepare** with the settings body as `--settings-file` (see the compose header). This makes one real Deepgram call on the packaged German fixtures; with diarization it only checks that Deepgram returns attributed speaker sections, its quality is measured on the corpus in step 5.
+4. **Approve** non-private: `resona-worker capabilities caps.json > approve.json`, then `resona-admin worker approve <worker-id> --non-private --capabilities-file approve.json`. Start the worker (`up -d`).
+5. **Evaluate and promote** the audio fixtures as non-private evaluation jobs:
+   ```bash
+   resona eval --profile cloud-deepgram --remote --allow-cloud --kind audio --output-dir /tmp/eval-cloud
+   resona eval promote <evaluation-id> --report /tmp/eval-cloud/report.json
+   ```
+
+Then `resona transcribe memo.m4a --execution-profile cloud-deepgram --allow-cloud [--diarize]` (or `private: false` on `POST /v1/jobs`) runs on Deepgram. Set `default_execution_profile` to it only if every client of the organization may send audio to Deepgram.
+
+Measured end to end on a local hub (release 0.2.3, 2026-11-14, corpus `229a756d0bc7`): `de-speech` WER 0, `de-numbers` WER 0.136, `silence` 0 insertions, `de-two-speakers` speaker attribution 0.983 / DER 0.103, `de-case-conference` (4 voices) attribution 0.842 / DER 0.211 / 3 speakers found.

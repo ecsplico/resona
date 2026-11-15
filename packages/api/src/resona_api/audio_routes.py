@@ -17,7 +17,7 @@ from decouple import config
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ValidationError
-from resona_job_core import Candidate, JobResult, PolicyDenied
+from resona_job_core import Candidate, JobResult, PolicyDenied, cloud_asr_endpoint_id
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -96,7 +96,7 @@ def _org_engines(session: Session, organization_id: str) -> dict:
         approved = {Candidate.model_validate(c) for c in json.loads(worker.approved_capabilities or "[]")}
         tested = {Candidate.model_validate(c) for c in json.loads(worker.reported_capabilities or "[]")}
         for candidate in approved & tested:
-            cloud = reg.cloud_asr_endpoint_id(candidate.engine) is not None
+            cloud = cloud_asr_endpoint_id(candidate.engine) is not None
             if cloud and worker.approved_private:
                 continue
             offered.setdefault(candidate, set()).add(worker.id)
@@ -108,7 +108,7 @@ def _org_engines(session: Session, organization_id: str) -> dict:
                 worker_ids = offered.get(candidate)
                 if not worker_ids or not cloud_endpoint_allowed(settings, candidate.engine):
                     continue
-                cloud = reg.cloud_asr_endpoint_id(candidate.engine) is not None
+                cloud = cloud_asr_endpoint_id(candidate.engine) is not None
                 entry = engines.setdefault((candidate.engine, kind), {
                     "name": candidate.engine,
                     "kind": "cloud" if cloud else "local",

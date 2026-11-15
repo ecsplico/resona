@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 _URL = "https://api.deepgram.com/v1/listen"
 _WS_URL = "wss://api.deepgram.com/v1/listen"
 _TIMEOUT = 600.0
-_OPTION_KEYS = {"smart_format", "diarize", "punctuate", "numerals"}
+_OPTION_KEYS = {"smart_format", "diarize", "punctuate", "numerals", "utterances"}
 
 
 def _qval(value) -> str:
@@ -48,7 +48,13 @@ def transcribe(
     language: str | None = None,
     options: dict | None = None,
 ) -> TranscriptionResult:
-    """Transcribe ``audio_path`` via the Deepgram REST API."""
+    """Transcribe ``audio_path`` via the Deepgram REST API.
+
+    Segments are Deepgram's utterances when ``options`` asks for them (``utterances``),
+    else one segment over the whole transcript. Each segment carries Whisper-style
+    ``words`` (``word`` with its leading space, ``start``, ``end``) and, with ``diarize``,
+    every word's 0-based Deepgram ``speaker``.
+    """
     audio_path = Path(audio_path)
     params: dict = {"model": model or DEFAULT_MODELS["deepgram"]}
     if language:
@@ -71,14 +77,38 @@ def transcribe(
     data = resp.json()
     alt = data["results"]["channels"][0]["alternatives"][0]
     text = alt.get("transcript", "")
-    words = alt.get("words") or []
-    start = float(words[0]["start"]) if words else 0.0
-    end = float(words[-1]["end"]) if words else 0.0
-    return TranscriptionResult(
-        text=text,
-        language=language or "",
-        segments=[{"start": start, "end": end, "text": text}],
-    )
+    utterances = data["results"].get("utterances") or []
+    if utterances:
+        segments = [
+            {
+                "start": float(u["start"]),
+                "end": float(u["end"]),
+                "text": u.get("transcript", ""),
+                "words": [_word(w) for w in u.get("words") or []],
+            }
+            for u in utterances
+        ]
+    else:
+        words = alt.get("words") or []
+        start = float(words[0]["start"]) if words else 0.0
+        end = float(words[-1]["end"]) if words else 0.0
+        segment: dict = {"start": start, "end": end, "text": text}
+        if words:
+            segment["words"] = [_word(w) for w in words]
+        segments = [segment]
+    return TranscriptionResult(text=text, language=language or "", segments=segments)
+
+
+def _word(raw: dict) -> dict:
+    """One Deepgram word as a Whisper-style word dict (leading space, punctuated when available)."""
+    word = {
+        "start": float(raw["start"]),
+        "end": float(raw["end"]),
+        "word": " " + str(raw.get("punctuated_word") or raw.get("word", "")),
+    }
+    if raw.get("speaker") is not None:
+        word["speaker"] = int(raw["speaker"])
+    return word
 
 
 # ── Live streaming ───────────────────────────────────────────────────

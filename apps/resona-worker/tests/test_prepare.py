@@ -326,6 +326,20 @@ def test_diarizer_that_hears_one_speaker_fails_prepare(prepare_executor: Path, d
         prepare(_settings([monologue], []), "mac-private", executor=(sys.executable, str(prepare_executor)), model_pins=pins)
 
 
+def test_cloud_provider_diarizes_without_local_weights_or_the_synthetic_speaker_check(
+    prepare_executor: Path, diarizer, downloads
+) -> None:
+    # The provider hears the two synthetic TTS voices as one: attributed sections suffice.
+    cloud = Candidate(engine="deepgram", model="nova-3-monologue", accelerator="external")
+
+    manifest = prepare(_settings([cloud], []), "mac-private", executor=(sys.executable, str(prepare_executor)), model_pins={})
+
+    assert manifest.diarizer is not None
+    assert manifest.diarizer.weights is None
+    assert (manifest.diarizer.candidate, manifest.diarizer.accelerator) == (cloud, "external")
+    assert downloads == []
+
+
 def test_installed_diarizer_needs_a_release_pin(prepare_executor: Path, diarizer) -> None:
     with pytest.raises(PrepareError, match=f"does not pin a revision for {DIARIZER}"):
         prepare(_settings([AUDIO], []), "mac-private", executor=NEVER_RUN, model_pins=PINS)

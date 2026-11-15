@@ -27,6 +27,7 @@ from resona_job_core import (
     PolicyDenied,
     Stage,
     check_policy,
+    cloud_asr_endpoint_id,
 )
 from resona_postprocess.pipeline import PostprocessPipeline, build_pipeline
 from resona_postprocess.profile import Profile, ProfileError, bundled_default
@@ -87,7 +88,7 @@ def cloud_endpoint_allowed(settings: OrganizationSettings, engine: str) -> bool:
 
     Engines without a cloud ASR endpoint (local engines) are always allowed.
     """
-    endpoint_id = reg.cloud_asr_endpoint_id(engine)
+    endpoint_id = cloud_asr_endpoint_id(engine)
     if endpoint_id is None:
         return True
     cloud_policy = settings.policy(private=False)

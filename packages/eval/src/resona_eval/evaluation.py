@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from resona_job_core import JobResult
+from resona_job_core import PLATFORM_OF_ACCELERATOR, JobResult
 
 from .corpus import Corpus, Fixture
 from .gate import TOLERANCE, Gate, evaluate_gate
@@ -24,7 +24,6 @@ from .scoring import FixtureMetrics, score_fixture
 
 REPORT_SCHEMA_VERSION = 1
 MEASUREMENT_ONLY = "measurement_only"
-PLATFORM_BY_ACCELERATOR = {"metal": "mac-metal", "cuda": "linux-cuda", "cpu": "cpu"}
 _PRIMARY_STAGES = {"audio": ("asr",), "document": ("layout", "ocr")}
 
 
@@ -57,7 +56,7 @@ def primary_accelerator(result: JobResult) -> str:
 
 
 def detect_platform(runs: Sequence[FixtureRun]) -> str:
-    platforms = {PLATFORM_BY_ACCELERATOR.get(primary_accelerator(run.result), "?") for run in runs}
+    platforms = {PLATFORM_OF_ACCELERATOR.get(primary_accelerator(run.result), "?") for run in runs}
     if len(platforms) != 1 or "?" in platforms:
         raise EvaluationError(f"fixtures ran on mixed or unknown platforms {sorted(platforms)}; pass --platform")
     return platforms.pop()

@@ -36,7 +36,7 @@ def _catalogue():
     ]
 
 
-DEEPGRAM = Candidate(engine="deepgram", model="nova-3", accelerator="cpu")
+DEEPGRAM = Candidate(engine="deepgram", model="nova-3", accelerator="external")
 
 
 def _engine_worker(org_id, caps, *, reported=None, private=True, online=True) -> str:

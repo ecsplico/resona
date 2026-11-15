@@ -38,6 +38,7 @@ from resona_job_core import (
     PolicyDenied,
     Provenance,
     StageProvenance,
+    cloud_asr_endpoint_id,
 )
 from resona_postprocess.llm import PostprocessStepFailed
 from resona_postprocess.pipeline import PostprocessResult, build_pipeline, step_endpoint_id
@@ -386,6 +387,9 @@ class Supervisor:
             # The hub only claims private jobs to approved-private workers; a
             # mismatch means approval changed mid-flight. Let another worker take it.
             raise JobFailure("policy_denied", retryable=True, message="worker not approved for private jobs")
+        if private and candidate is not None and candidate.accelerator == "external":
+            # Cloud ASR sends the audio to a provider: never for a private job.
+            raise JobFailure("policy_denied", retryable=False, message="cloud ASR candidate on a private job")
 
         input_path = job_dir / "input.bin"
         keeper.check()
@@ -407,6 +411,9 @@ class Supervisor:
             result = _text_result(input_path, snapshot.get("language"))
         else:
             keeper.check()
+            if job.kind == "audio" and (asr_endpoint := cloud_asr_endpoint_id(candidate.engine)) is not None:
+                # Same run-time gate as LLM steps: a revoked endpoint or disabled cloud stops the job.
+                self._guard_stage(job, keeper, "asr", asr_endpoint)
             snapshot_path = job_dir / "snapshot.json"
             out_path = job_dir / "out.json"
             snapshot_path.write_text(

@@ -23,6 +23,8 @@ git tag v0.3.0 <merged commit> && git push origin v0.3.0   # runs release.yml
 workflow, deploy its digests: the hub via `docker-compose.coolify.yml` (both `image:` lines,
 [Coolify](coolify.md)), workers via `resona-worker update` (below).
 
+Deploy order for cloud ASR: workers and CLIs 0.2.5 and older fail to parse the settings document once an organization has an execution profile with an `external` (cloud) candidate. Upgrade the hub, all workers and all CLIs to 0.2.6 or newer first, then add the cloud execution profile ([cloud worker runbook](coolify.md#cloud-asr-worker-deepgram)). The cloud worker re-checks its `cloud-asr:<provider>` endpoint with the hub right before sending audio, so revoking it or disabling cloud stops jobs already queued.
+
 ## Release manifest
 
 `release-manifest.json` (schema `release/manifest.schema.json`, model `resona_job_core.release.ReleaseManifest`):
