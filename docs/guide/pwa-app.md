@@ -56,9 +56,13 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
   would race the first request's refresh with the same rotating refresh token. Every
   request instead refreshes an access token within 30 s of expiry first (the SDK's
   `getToken()`, one refresh in flight); after a restart the auth middleware's
-  `restoreSession()` does the same from the stored session. Logout removes the key, also
-  when the logout request fails. The session ends when the refresh token is unused for
-  `REFRESH_TOKEN_TTL` (30 days on Coolify) or Directus rejects it.
+  `restoreSession()` does the same from the stored session. `assetUrl()` is async and
+  asks `getToken()` first, so audio fetched after a long pause carries a fresh token.
+  Stored tokens are removed only when Directus rejects the refresh token (400/401 from
+  `/auth/refresh`): offline, a timeout or a 5xx keep them, the app stays signed in and
+  refreshes on the next request. A request's 401 triggers one refresh and a retry. Logout
+  removes the key, also when the logout request fails. The session ends when the refresh
+  token is unused for `REFRESH_TOKEN_TTL` (30 days on Coolify) or Directus rejects it.
 - Why Preferences and not a secure-storage plugin: Preferences is the Capacitor team's
   own plugin, versioned with Capacitor 8; the store (Android SharedPreferences, iOS
   UserDefaults) is private to the app and, unlike web view storage, not evicted by

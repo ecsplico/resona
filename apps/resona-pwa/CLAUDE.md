@@ -369,8 +369,12 @@ token in `@capacitor/preferences` key `resona.auth`, memory copy; a token-less w
 the key) and `autoRefresh: false` (no timer that freezes in the background and races the
 rotating refresh token on resume; the SDK's `getToken()` refreshes before each request within
 30 s of expiry, `restoreSession()` after a restart). `ssoSupported` is false in the app.
-`logout()` always clears the stored session (also when the request fails); refreshed tokens
-update `accessToken`, so `assetUrl()` never carries an expired login-time token. Android
+Stored tokens go only when Directus rejects the refresh token (`refreshRejected`: 400/401 from
+`/auth/refresh`); offline/timeout/5xx keep them and the session (offline cold start stays
+signed in). A request 401 → one single-flight `refreshSession()` + retry; rejected → clear +
+`/login`. `logout()` always clears the stored session (also when the request fails).
+`assetUrl()` is async (awaits `getToken()`, which refreshes an expiring token): await it in
+every asset fetch path (`directusStore.audioUrl`/`partAudio`). Android
 excludes `CapacitorStorage.xml` from backup (`res/xml/backup_rules.xml`,
 `data_extraction_rules.xml`). Directus `CORS_ORIGIN` = `PWA_ORIGIN` + `APP_ORIGINS` (default
 `https://localhost,capacitor://localhost`) in every compose file.

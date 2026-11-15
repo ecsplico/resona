@@ -118,7 +118,7 @@ describe("useDirectus in the Capacitor app", () => {
 	it("restoreSession clears the stored tokens when the refresh token is rejected", async () => {
 		const d = useDirectus();
 		await options().storage.set(session({ expires_at: Date.now() - 60_000 }));
-		mockClient.refresh.mockRejectedValue(new Error("Invalid user credentials."));
+		mockClient.refresh.mockRejectedValue(Object.assign(new Error("Invalid user credentials."), { response: { status: 401 } }));
 
 		expect(await d.restoreSession()).toBe(false);
 		expect(stored()).toBeNull();
@@ -139,18 +139,27 @@ describe("useDirectus in the Capacitor app", () => {
 		expect(await options().storage.get()).toBeNull();
 	});
 
-	it("asset URLs carry the refreshed access token, not the login-time one", async () => {
+	it("an offline cold start after > 15 min keeps the refresh token and stays signed in", async () => {
+		const d = useDirectus();
+		await options().storage.set(session({ access_token: "old", refresh_token: "keep", expires_at: Date.now() - 60_000 }));
+		mockClient.refresh.mockRejectedValue(new TypeError("Failed to fetch"));
+
+		expect(await d.restoreSession()).toBe(true);
+		expect(d.isAuthenticated.value).toBe(true);
+		expect(stored()).toMatchObject({ refresh_token: "keep" });
+		expect(navigateTo).not.toHaveBeenCalled();
+	});
+
+	it("asset URLs ask for a current token first (the SDK refreshes an expiring one)", async () => {
 		const d = useDirectus();
 		mockClient.login.mockResolvedValue(session());
 		mockClient.getToken.mockResolvedValue("acc");
 		await d.login("a@b.de", "pw");
-		expect(d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=acc");
+		expect(await d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=acc");
 
-		// What the SDK writes on a refresh: a token-less session, then the new one.
-		await options().storage.set({ access_token: null, refresh_token: null, expires: null, expires_at: null });
-		await options().storage.set(session({ access_token: "fresh", refresh_token: "ref2" }));
-		expect(d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=fresh");
-		expect(stored()).toMatchObject({ refresh_token: "ref2" });
+		// > 15 min idle: getToken() refreshes before answering.
+		mockClient.getToken.mockResolvedValue("fresh");
+		expect(await d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=fresh");
 	});
 });
 

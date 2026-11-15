@@ -102,7 +102,7 @@ export function createDirectusStore(): DataStore {
 		},
 
 		async audioUrl(recording) {
-			return recording.audio_file ? useDirectus().assetUrl(recording.audio_file) : null;
+			return recording.audio_file ? await useDirectus().assetUrl(recording.audio_file) : null;
 		},
 
 		async listDocuments(opts) {
@@ -165,7 +165,7 @@ export function createDirectusStore(): DataStore {
 
 		async partAudio(part) {
 			if (!part.audio) return null;
-			const resp = await fetch(useDirectus().assetUrl(part.audio));
+			const resp = await fetch(await useDirectus().assetUrl(part.audio));
 			if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 			return await resp.blob();
 		},
