@@ -3,14 +3,22 @@ import { useNativeRecorder } from "~/composables/useNativeRecorder";
 
 // One ordered log of native calls: the foreground service must be up before the
 // recorder starts (Android cuts the mic of a locked phone otherwise).
-const { calls, recorder, service, filesystem } = vi.hoisted(() => {
+const { calls, recorder, service, filesystem, silence, events, platform } = vi.hoisted(() => {
 	const calls: string[] = [];
 	const log = <T>(name: string, value?: T) => vi.fn(async () => {
 		calls.push(name);
 		return value as T;
 	});
+	// Registered native event listeners by event name; `remove()` drops them again.
+	const events = new Map<string, (event: never) => void>();
+	const addListener = vi.fn(async (name: string, listener: (event: never) => void) => {
+		events.set(name, listener);
+		return { remove: vi.fn(async () => void events.delete(name)) };
+	});
 	return {
 		calls,
+		events,
+		platform: { name: "android" },
 		recorder: {
 			requestPermissions: log("requestPermissions", { recordAudio: "granted" }),
 			startRecording: log("startRecording"),
@@ -19,6 +27,12 @@ const { calls, recorder, service, filesystem } = vi.hoisted(() => {
 			stopRecording: log("stopRecording", { uri: "file:///cache/rec.aac", duration: 0 }),
 			cancelRecording: log("cancelRecording"),
 			getCurrentAmplitude: vi.fn(async () => ({ value: 0.5 })),
+			addListener,
+		},
+		silence: {
+			start: vi.fn(async () => ({ supported: true })),
+			stop: vi.fn(async () => undefined),
+			addListener,
 		},
 		service: {
 			requestPermissions: log("notificationPermission"),
@@ -34,9 +48,10 @@ vi.mock("@capacitor/core", () => ({
 	Capacitor: {
 		isNativePlatform: () => true,
 		isPluginAvailable: () => true,
-		getPlatform: () => "android",
+		getPlatform: () => platform.name,
 		convertFileSrc: (uri: string) => uri.replace("file://", "https://localhost/_capacitor_file_"),
 	},
+	registerPlugin: () => silence,
 }));
 vi.mock("@capgo/capacitor-audio-recorder", () => ({ CapacitorAudioRecorder: recorder }));
 vi.mock("@capawesome-team/capacitor-android-foreground-service", () => ({
@@ -52,6 +67,8 @@ describe("useNativeRecorder", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		calls.length = 0;
+		events.clear();
+		platform.name = "android";
 		vi.useFakeTimers();
 		vi.stubGlobal("fetch", fetchMock);
 		recorder.requestPermissions.mockImplementation(async () => {
@@ -220,5 +237,178 @@ describe("useNativeRecorder", () => {
 		await first.stop();
 		expect(await second.start()).toBe(true);
 		await second.stop();
+	});
+
+	describe("phone call interruptions", () => {
+		function emit(name: string, event: unknown = {}): void {
+			const listener = events.get(name);
+			if (!listener) throw new Error(`no listener for ${name}`);
+			listener(event as never);
+		}
+
+		async function wait(ms: number): Promise<void> {
+			vi.setSystemTime(Date.now() + ms);
+			await vi.advanceTimersByTimeAsync(1000);
+		}
+
+		it("Android: a silenced recording is paused and shown as interrupted until the user continues", async () => {
+			const r = useNativeRecorder();
+			await r.start();
+			// Recordings already running at start belong to other apps: snapshot before the recorder starts.
+			expect(silence.start.mock.invocationCallOrder[0]).toBeLessThan(recorder.startRecording.mock.invocationCallOrder[0]!);
+			await wait(10_000);
+
+			emit("silencedChanged", { silenced: true });
+			expect(r.interrupted.value).toBe("call");
+			expect(recorder.pauseRecording).toHaveBeenCalledTimes(1);
+			expect(r.interruption.value).toBe(
+				"Ein Anruf oder eine andere App hat das Mikrofon übernommen. Die Aufnahme ist angehalten; diese Zeit fehlt darin, Bisheriges bleibt erhalten.",
+			);
+			// The call (30 s) is not counted, as it is not in the audio; nor is the meter read.
+			recorder.getCurrentAmplitude.mockClear();
+			await wait(30_000);
+			expect(r.elapsed.value).toBe(11);
+			expect(recorder.getCurrentAmplitude).not.toHaveBeenCalled();
+			// The call ending changes nothing: the user decides.
+			emit("silencedChanged", { silenced: false });
+			expect(r.interrupted.value).toBe("call");
+			// Pause is not offered while interrupted.
+			r.pause();
+			expect(r.paused.value).toBe(false);
+
+			expect(await r.continueRecording()).toBe(true);
+			expect(recorder.resumeRecording).toHaveBeenCalledTimes(1);
+			expect(r.interrupted.value).toBeNull();
+			expect(r.interruption.value).toBeNull();
+			await wait(5000);
+			expect(r.elapsed.value).toBe(17);
+
+			await r.stop();
+			expect(silence.stop).toHaveBeenCalled();
+			expect(events.size).toBe(0);
+		});
+
+		it("Android: continuing while the call still holds the microphone interrupts again", async () => {
+			const r = useNativeRecorder();
+			await r.start();
+			emit("silencedChanged", { silenced: true });
+			recorder.resumeRecording.mockImplementationOnce(async () => {
+				// The resumed recording is silenced again; reported before resume resolves.
+				emit("silencedChanged", { silenced: true });
+			});
+
+			expect(await r.continueRecording()).toBe(true);
+
+			expect(r.interrupted.value).toBe("call");
+			expect(recorder.pauseRecording).toHaveBeenCalledTimes(2);
+			await r.stop();
+		});
+
+		it("Android: a recording started during a call is interrupted from the start", async () => {
+			recorder.startRecording.mockImplementationOnce(async () => {
+				calls.push("startRecording");
+				emit("silencedChanged", { silenced: true });
+			});
+			const r = useNativeRecorder();
+
+			expect(await r.start()).toBe(true);
+
+			expect(r.interrupted.value).toBe("call");
+			expect(recorder.pauseRecording).toHaveBeenCalledTimes(1);
+			await r.stop();
+		});
+
+		it("Android: when the recorder cannot pause, the notice says the call is in the audio as silence", async () => {
+			recorder.pauseRecording.mockRejectedValueOnce(new Error("pause failed"));
+			const r = useNativeRecorder();
+			await r.start();
+
+			emit("silencedChanged", { silenced: true });
+			await vi.waitFor(() => expect(r.interruptError.value).not.toBeNull());
+			expect(r.interruption.value).toContain("als Stille darin");
+			// It kept recording, so the time counts.
+			await wait(20_000);
+			expect(r.elapsed.value).toBe(21);
+
+			expect(await r.continueRecording()).toBe(true);
+			expect(recorder.resumeRecording).not.toHaveBeenCalled();
+			expect(r.interrupted.value).toBeNull();
+			await r.stop();
+		});
+
+		it("stopping while interrupted keeps the audio up to the call and clears the interruption", async () => {
+			const r = useNativeRecorder();
+			await r.start();
+			await wait(10_000);
+			emit("silencedChanged", { silenced: true });
+			await wait(30_000);
+
+			const blob = await r.stop();
+
+			expect(await blob.text()).toBe("aac-bytes");
+			expect(r.elapsed.value).toBe(11);
+			expect(r.interrupted.value).toBeNull();
+			expect(r.recording.value).toBe(false);
+			expect(silence.stop).toHaveBeenCalled();
+		});
+
+		it("iOS: the plugin's interruption events interrupt; a resume after the call is paused again for the user", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			expect(silence.start).not.toHaveBeenCalled();
+
+			emit("recordingInterruptionBegan");
+			expect(r.interrupted.value).toBe("call");
+			// The plugin paused itself.
+			expect(recorder.pauseRecording).not.toHaveBeenCalled();
+
+			emit("recordingInterruptionEnded", { shouldResume: true });
+			expect(recorder.pauseRecording).toHaveBeenCalledTimes(1);
+			expect(r.interrupted.value).toBe("call");
+
+			expect(await r.continueRecording()).toBe(true);
+			expect(recorder.resumeRecording).toHaveBeenCalledTimes(1);
+			expect(r.interrupted.value).toBeNull();
+
+			await r.stop();
+			expect(events.size).toBe(0);
+		});
+
+		it("iOS: without shouldResume the plugin stays paused; a refused resume keeps the interruption with a reason", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			emit("recordingInterruptionBegan");
+			emit("recordingInterruptionEnded", { shouldResume: false });
+			expect(recorder.pauseRecording).not.toHaveBeenCalled();
+
+			recorder.resumeRecording.mockRejectedValueOnce(new Error("Failed to start a new recording segment after interruption."));
+			expect(await r.continueRecording()).toBe(false);
+			expect(r.interrupted.value).toBe("call");
+			expect(r.interruption.value).toContain("Die Aufnahme konnte nicht fortgesetzt werden.");
+
+			expect(await r.continueRecording()).toBe(true);
+			expect(r.interrupted.value).toBeNull();
+			await r.stop();
+		});
+
+		it("iOS: if the plugin cannot be paused after the call, it records on without the interruption", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			await wait(10_000);
+			emit("recordingInterruptionBegan");
+			await wait(30_000);
+			recorder.pauseRecording.mockRejectedValueOnce(new Error("No active recording to pause."));
+
+			emit("recordingInterruptionEnded", { shouldResume: true });
+
+			await vi.waitFor(() => expect(r.interrupted.value).toBeNull());
+			await wait(5000);
+			await r.stop();
+			// The call is not counted; the time after it is.
+			expect(r.elapsed.value).toBe(17);
+		});
 	});
 });

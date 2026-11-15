@@ -177,6 +177,22 @@ Directus login over time (data mode `directus`, build above; needs a human, ≥ 
 8. Web build unchanged: sign in on the PWA in a desktop browser (password and Keycloak),
    reload after ≥ 20 min, still signed in.
 
+Phone call during a recording (Android 10+; needs a SIM or a second phone):
+
+1. Tap record, dictate a few sentences, keep the app open (or lock the phone).
+2. Call the phone, answer, talk for about 30 s, hang up.
+3. Open Resona: the recording sheet shows "AUFNAHME UNTERBROCHEN" with "Ein Anruf oder eine
+   andere App hat das Mikrofon übernommen. Die Aufnahme ist angehalten; diese Zeit fehlt darin,
+   Bisheriges bleibt erhalten." The clock stopped when the call was answered.
+4. Tap Fortsetzen, dictate a few more sentences, stop and save.
+5. Expected: the player's duration matches the elapsed time shown (the call is not in it), and
+   the transcript has both parts without a long silent stretch between them.
+6. Repeat with Beenden instead of Fortsetzen in step 4: the recording ends at the call.
+
+On an emulator a call can be tried with `adb emu gsm call 5551234`, `adb emu gsm accept
+5551234`, later `adb emu gsm cancel 5551234` (not yet checked whether it silences the recording
+like a real call).
+
 Battery savers of some vendors (Samsung, Xiaomi, Huawei) kill foreground services
 anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 
@@ -186,7 +202,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 | --- | --- |
 | Batch recording while locked (Android) | Native recorder + `microphone` foreground service. Checked on an Android 15 emulator (debug APK, standalone mode): 180 s with the screen off, the service stayed in the foreground (type `0x80`, wake lock held), the saved `.m4a` was 197 s long for 196 s shown on the recording sheet. Long recordings on a real phone (vendor battery savers, real mic) still need the device test above |
 | Push-to-talk, re-dictation | Native recorder too; same upload → hub job flow |
-| Interruptions (#33) | Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits `recordingInterruptionBegan`/`Ended`, which the app does not handle yet, so the clock keeps running |
+| Interruptions (#33, #39) | Web recorder: track `mute`/`ended` and a hidden page interrupt it. Native recorder: locking or backgrounding does not interrupt it (the service keeps the microphone); a phone call (or another app taking the microphone) does. Android 10+: the OS feeds the recording silence during a call and the recorder plugin reports nothing, so the app-local Capacitor plugin `RecordingSilence` (`AudioManager.registerAudioRecordingCallback`, `AudioRecordingConfiguration.isClientSilenced()`, no phone-state permission) reports it. iOS: the recorder plugin's `recordingInterruptionBegan`/`Ended` events. Either way the app pauses the native recording, stops the clock and shows "Aufnahme unterbrochen" ("… diese Zeit fehlt darin"); Fortsetzen resumes the same file, Beenden stops it. The call is cut out of the audio, not filled with silence (Android: except the short delay until the callback fires); if Android refuses to pause, the notice says the call is in the audio as silence. Below Android 10 a call stays undetected. Unit-tested with the plugins mocked and the debug APK builds; the call on a real phone (device test above) is still open, iOS is not built |
 | Recovery after a kill (#33, #40) | Web recorder: IndexedDB chunks (`resona-unfinished-recordings`). Native recorder (Android): records ADTS (`format: "aac"`, plugin ≥ 8.4), which stays readable up to its last frame; on the next open the recordings list offers `recording-*.aac` files left in `cache/capacitor-audio-recorder/` (Behalten → save → hub job, or Verwerfen; the file is deleted either way). Unit-tested with plugin and Filesystem mocked, and ffmpeg decodes a cut-off ADTS file; the kill on a real phone (device test above) is still open. iOS: not offered (the plugin writes to the app's `tmp/`, which the scan does not read) |
 | Live dictation | **Foreground only**, as in the browser. It streams PCM from `getUserMedia` over the `/v1/listen` WebSocket in the web view, and `live.vue` keeps `useWebRecorder()` for the audio of that same stream. Background live would need native PCM capture and a native WebSocket client |
 | Standalone data mode | Works without login: IndexedDB + hub token; processing runs while the app is open |
@@ -201,9 +217,9 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 - Apple developer account (99 USD/year), bundle id `de.ecsplico.resona`, signing in Xcode.
 - First build on a Mac with Xcode: `bun run cap:build && npx cap open ios`, set the
   team, run on a device. The recorder plugin keeps recording in the background with
-  the audio background mode. Calls interrupt it: the plugin only resumes when iOS
-  allows it (`recordingInterruptionEnded.shouldResume`), so the app has to handle those
-  events (show the interruption, resume or stop) before iOS is usable; about half a day.
+  the audio background mode. Calls interrupt it; the app handles the plugin's
+  `recordingInterruptionBegan`/`Ended` events (Findings row "Interruptions"), still to be
+  checked with a call on an iPhone.
 - Hub CORS: `capacitor://localhost` is in the default `CORS_ORIGINS` of the root
   `docker-compose.coolify.yml` and in `APP_ORIGINS` (Directus).
 - App Store review needs a privacy policy, the microphone purpose string (set) and a

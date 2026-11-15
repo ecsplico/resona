@@ -9,6 +9,7 @@ import {
 } from "~/data/unfinishedRecordings";
 import { mergeToWav } from "~/utils/audioMerge";
 import { useWakeLock } from "~/composables/useWakeLock";
+import { describeInterruption, type InterruptReason } from "~/utils/recorderInterruption";
 
 /** Container formats the recorder tries, in order; it takes the first the browser supports. */
 export const RECORDER_MIME_CANDIDATES = [
@@ -20,15 +21,6 @@ export const RECORDER_MIME_CANDIDATES = [
 
 /** Chunk length: a killed page loses at most this much of a persisted recording. */
 export const RECORDER_TIMESLICE_MS = 4000;
-
-/** Why recording stopped by itself: the track went silent, ended, or the page was hidden. */
-export type InterruptReason = "muted" | "ended" | "hidden";
-
-const INTERRUPT_TEXT: Record<InterruptReason, string> = {
-	muted: "Das Mikrofon liefert keinen Ton mehr, z. B. wegen eines Anrufs.",
-	ended: "Das Mikrofon wurde getrennt.",
-	hidden: "Die App war im Hintergrund.",
-};
 
 export interface RecorderOptions {
 	/** Keep the audio in IndexedDB while recording, so a killed page can offer it again. */
@@ -70,7 +62,7 @@ export interface Recorder {
 	levels: Ref<number[]>;
 	/** Why recording stopped by itself; null while it records (or never interrupts). */
 	interrupted: Ref<InterruptReason | null>;
-	/** Why continuing after an interruption failed (German), else null. */
+	/** What went wrong with an interruption (German, e.g. continuing failed), else null. */
 	interruptError: Ref<string | null>;
 	/** German notice for an interruption, null when there is none. */
 	interruption: ComputedRef<string | null>;
@@ -95,7 +87,7 @@ export interface Recorder {
 
 /**
  * The native recorder inside the Capacitor app (keeps recording while the phone is
- * locked; reports no interruptions and persists no chunks, see `useNativeRecorder`),
+ * locked; only a phone call interrupts it, and it persists no chunks, see `useNativeRecorder`),
  * the browser's MediaRecorder everywhere else. `options` only apply to the web recorder.
  */
 export function useRecorder(options: RecorderOptions = {}): Recorder {
@@ -150,10 +142,8 @@ export function useWebRecorder(options: RecorderOptions = {}): Recorder {
 	const interruptError: Ref<string | null> = ref(null);
 	/** Persisted session of the current (or last) recording, null without `persist`. */
 	const sessionId: Ref<string | null> = ref(null);
-	const interruption: ComputedRef<string | null> = computed(() => {
-		if (!interrupted.value) return null;
-		return `${INTERRUPT_TEXT[interrupted.value]} ${interruptError.value ?? "Bisher Aufgenommenes bleibt erhalten."}`;
-	});
+	const interruption: ComputedRef<string | null> = computed(() =>
+		interrupted.value ? describeInterruption(interrupted.value, interruptError.value) : null);
 
 	const wake = useWakeLock();
 
