@@ -2732,6 +2732,33 @@ organization's default execution profile (otherwise the job waits in the queue,
 <li>Web build unchanged: sign in on the PWA in a desktop browser (password and Keycloak),
    reload after ≥ 20 min, still signed in.</li>
 </ol>
+<p>Phone call during a recording (Android 10+; needs a SIM or a second phone):</p>
+<ol>
+<li>Tap record, dictate a few sentences, keep the app open (or lock the phone).</li>
+<li>Call the phone, answer, talk for about 30 s, hang up.</li>
+<li>Open Resona: the recording sheet shows "AUFNAHME UNTERBROCHEN" with "Ein Anruf oder eine
+   andere App hat das Mikrofon übernommen. Die Aufnahme ist angehalten; diese Zeit fehlt darin,
+   Bisheriges bleibt erhalten." The clock stopped when the call was answered.</li>
+<li>Tap Fortsetzen, dictate a few more sentences, stop and save.</li>
+<li>Expected: the player's duration matches the elapsed time shown (the call is not in it), and
+   the transcript has both parts without a long silent stretch between them.</li>
+<li>Repeat with Beenden instead of Fortsetzen in step 4: the recording ends at the call.</li>
+<li>Repeat with the phone locked and the call answered from the lock screen. If the notice
+   instead says "Der Anruf wurde erst verspätet erkannt: ein Teil davon ist als Stille darin",
+   the web view got the event more than 3 s late: the clock then includes that silence and the
+   player's duration should still match it. Note how often this happens.</li>
+<li>Optional: during a recording, start a voice memo in another app. Expect the same interruption.
+   Then: start a Resona recording first and another recording app afterwards <em>without</em> a call;
+   if Android silences that other app and not Resona, nothing must be shown.</li>
+</ol>
+<p>iPhone (once an iOS build exists): run steps 1–6. The notice reads "Die Aufnahme ist
+angehalten, Bisheriges bleibt erhalten." and makes no promise about the audio: the recorder
+plugin (capgo 8.4.1) resumes on its own when the call ends, before the app pauses it again,
+so a few seconds after the call can be in the file. Check how much, and that the player's
+duration still matches the clock.</p>
+<p>On an emulator a call can be tried with <code>adb emu gsm call 5551234</code>, <code>adb emu gsm accept
+5551234</code>, later <code>adb emu gsm cancel 5551234</code> (not yet checked whether it silences the recording
+like a real call).</p>
 <p>Battery savers of some vendors (Samsung, Xiaomi, Huawei) kill foreground services
 anyway; if the recording ends early, set Resona to "unrestricted" battery use.</p>
 <h2 id="findings">Findings<a class="headerlink" href="#findings" title="Permanent link">&para;</a></h2>
@@ -2752,8 +2779,8 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 <td>Native recorder too; same upload → hub job flow</td>
 </tr>
 <tr>
-<td>Interruptions (#33)</td>
-<td>Web recorder only. Locking or backgrounding does not interrupt the native recorder (the service keeps the microphone), so it never shows "Aufnahme unterbrochen". A phone call does interrupt it, unnoticed: on Android 10+ the recording gets silence during the call and the plugin reports nothing; on iOS the plugin emits <code>recordingInterruptionBegan</code>/<code>Ended</code>, which the app does not handle yet, so the clock keeps running</td>
+<td>Interruptions (#33, #39)</td>
+<td>Web recorder: track <code>mute</code>/<code>ended</code> and a hidden page interrupt it. Native recorder: locking or backgrounding does not interrupt it (the service keeps the microphone); a phone call (or another app taking the microphone) does. Android 10+: the OS feeds the recording silence during a call and the recorder plugin reports nothing, so the app-local Capacitor plugin <code>RecordingSilence</code> (<code>AudioManager.registerAudioRecordingCallback</code>, <code>AudioRecordingConfiguration.isClientSilenced()</code> of the app's own recording session, no phone-state permission) reports it with a native timestamp. iOS: the recorder plugin's <code>recordingInterruptionBegan</code>/<code>Ended</code> events (an <code>Ended</code> without <code>shouldResume</code> and without a begin counts only while the plugin reports <code>PAUSED</code>, since it also arrives late after the user continued; after a <code>recordingError</code> the plugin cannot resume, so Fortsetzen is refused and the notice says Beenden keeps everything recorded so far). Either way the app pauses the native recording, stops the clock and shows "Aufnahme unterbrochen"; Fortsetzen resumes the same file, Beenden stops it. Android: the call is cut out of the audio ("… diese Zeit fehlt darin"), except the short delay until the callback fires; when the web view gets the event more than 3 s late (it stalls under the dialer or lock screen), the notice says part of the call is in the audio as silence and the clock counts it; if Android refuses to pause, the notice says the call is in the audio as silence. iOS: the notice promises nothing about the audio, since the plugin resumes on its own after the call before the app can pause it. Below Android 10 a call stays undetected. Unit-tested with the plugins mocked and the debug APK builds; the call on a real phone (device test above) is still open, iOS is not built</td>
 </tr>
 <tr>
 <td>Recovery after a kill (#33, #40)</td>
@@ -2794,9 +2821,9 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 <li>Apple developer account (99 USD/year), bundle id <code>de.ecsplico.resona</code>, signing in Xcode.</li>
 <li>First build on a Mac with Xcode: <code>bun run cap:build &amp;&amp; npx cap open ios</code>, set the
   team, run on a device. The recorder plugin keeps recording in the background with
-  the audio background mode. Calls interrupt it: the plugin only resumes when iOS
-  allows it (<code>recordingInterruptionEnded.shouldResume</code>), so the app has to handle those
-  events (show the interruption, resume or stop) before iOS is usable; about half a day.</li>
+  the audio background mode. Calls interrupt it; the app handles the plugin's
+  <code>recordingInterruptionBegan</code>/<code>Ended</code> events (Findings row "Interruptions"), still to be
+  checked with a call on an iPhone.</li>
 <li>Hub CORS: <code>capacitor://localhost</code> is in the default <code>CORS_ORIGINS</code> of the root
   <code>docker-compose.coolify.yml</code> and in <code>APP_ORIGINS</code> (Directus).</li>
 <li>App Store review needs a privacy policy, the microphone purpose string (set) and a
