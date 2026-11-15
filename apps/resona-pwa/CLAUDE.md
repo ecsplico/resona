@@ -276,7 +276,7 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   `diffEdits` puts moved paragraphs back first (same trimmed text, or ≥ half the words shared),
   so a move is no engine correction.
 - **Recording resilience** (record sheet, live, re-dictation part; web recorder only, the
-  Capacitor app's native recorder has only the recovery, see **Capacitor app**): `useWebRecorder` holds a screen
+  Capacitor app's native recorder has the recovery and phone-call interruptions, see **Capacitor app**): `useWebRecorder` holds a screen
   wake lock (`useWakeLock`, re-requested on `visibilitychange` → visible, released on stop;
   unsupported → nothing) and records with a 4 s timeslice (`RECORDER_TIMESLICE_MS`). With
   `persist`, every chunk goes to IndexedDB (`data/unfinishedRecordings.ts`, databases
@@ -343,10 +343,34 @@ interface: `useRecorder()` returns `useNativeRecorder()` inside the app
 (`hasNativeRecorder()`: `@capgo/capacitor-audio-recorder` ≥ 8.4 with `format: "aac"` = ADTS,
 `audio/aac`; on Android a
 `microphone` foreground service with a notification runs for the whole recording, refusing
-to record when it cannot start; elapsed is wall-clock based; no interruptions, no IndexedDB
-chunks: `interrupted`/`interruption`/`sessionId` stay null, `continueRecording()` is false,
+to record when it cannot start; elapsed is wall-clock based; no IndexedDB chunks,
 `persist`/`reopen` options are ignored), `useWebRecorder(options)` (MediaRecorder with the
-wake lock, chunks and interruptions above) elsewhere. Recovery after a kill (Android only):
+wake lock, chunks and interruptions above) elsewhere. Native interruptions = a phone call (or
+another app) taking the microphone; locking never interrupts. Android 10+: the app-local plugin
+`RecordingSilence` (`android/app/src/main/java/de/ecsplico/resona/RecordingSilencePlugin.java`,
+registered in `MainActivity`; `AudioManager.registerAudioRecordingCallback` +
+`AudioRecordingConfiguration.isClientSilenced()`, no `READ_PHONE_STATE`; `start()` right before
+the recorder starts ignores recordings already running, then pins the first new `MIC` recording's
+session id as ours and judges only it; all state on the main looper, and a callback queued
+before a re-registration ignores itself) emits
+`silencedChanged {silenced, at}` (`at` = native wall-clock ms); the recorder then pauses the
+native recording. iOS: the plugin's `recordingInterruptionBegan` (it paused itself) /
+`recordingInterruptionEnded` (`shouldResume`: it resumed on its own, so the recorder pauses it
+again; `shouldResume: false` without a begin, which the plugin also sends late after the user
+continued, interrupts only when `getRecordingStatus()` is `PAUSED`) and `recordingError` (the
+recorder broke and cannot resume: `continueRecording()` is refused without calling the plugin,
+the notice says Beenden keeps everything recorded so far). Both
+set `interrupted = "call"` (reason text in `utils/recorderInterruption.ts`, shared with the web
+recorder; the native detail texts live in `useNativeRecorder.ts`), stop the clock and wait: `continueRecording()` resumes the same file, Beenden stops
+it. Android notice: "… Die Aufnahme ist angehalten; diese Zeit fehlt darin …" (the delay until
+the callback stays in as silence); an event reaching the web view more than `LATE_SIGNAL_MS`
+(3 s) after `at` (the web view stalls under the dialer/lock screen) says "… ein Teil davon ist
+als Stille darin" and the clock counts that span; a refused pause says the call is in the audio
+as silence. iOS notice promises nothing about the audio ("Die Aufnahme ist angehalten,
+Bisheriges bleibt erhalten."): capgo 8.4.1 resumes after `shouldResume` before the app can
+pause, so audio after the call until that pause lands is in the file (the clock counts it).
+Events during start/resume are applied afterwards (a recording started or continued during a
+call is interrupted at once). Below Android 10 nothing is detected. Recovery after a kill (Android only):
 `data/nativeUnfinished.ts` lists `cache/capacitor-audio-recorder/recording-*.aac` files older
 than the web view (`performance.timeOrigin`; none while the plugin reports a recording; empty
 files deleted, `.m4a` ignored) as `UnfinishedRecording`s with id `native:<file>`;
