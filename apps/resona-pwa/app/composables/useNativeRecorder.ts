@@ -14,15 +14,25 @@ import { describeInterruption, type InterruptReason } from "~/utils/recorderInte
  * reports whether Android silences this app's microphone recording, which it does for the
  * length of a phone call (Android 10+, `AudioRecordingConfiguration.isClientSilenced()`).
  * `start()` before the recorder starts (recordings already running then are not ours),
- * `stop()` once it stopped. `supported` is false below Android 10.
+ * `stop()` once it stopped. `supported` is false below Android 10. `at` = native wall-clock
+ * time (ms) of the change: the web view may deliver the event much later (it stalls while
+ * the dialer or lock screen is up).
  */
 interface RecordingSilencePlugin {
 	start(): Promise<{ supported: boolean }>;
 	stop(): Promise<void>;
-	addListener(eventName: "silencedChanged", listener: (event: { silenced: boolean }) => void): Promise<PluginListenerHandle>;
+	addListener(eventName: "silencedChanged", listener: (event: { silenced: boolean; at?: number }) => void): Promise<PluginListenerHandle>;
 }
 
 const RecordingSilence = registerPlugin<RecordingSilencePlugin>("RecordingSilence");
+
+/**
+ * A silencing that reaches the app later than this was recorded as silence until the app
+ * paused the recording (and the clock counted it), so the notice must not say it is missing.
+ */
+export const LATE_SIGNAL_MS = 3000;
+
+const LATE_TEXT = "Der Anruf wurde erst verspätet erkannt: ein Teil davon ist als Stille darin, Bisheriges bleibt erhalten.";
 
 /**
  * The plugin records AAC as ADTS (`format: "aac"`, `.aac`): self-contained frames, so a
@@ -125,10 +135,15 @@ export function useNativeRecorder(): Recorder {
 	const interrupted: Ref<InterruptReason | null> = ref(null);
 	const interruptError: Ref<string | null> = ref(null);
 	const sessionId: Ref<string | null> = ref(null);
-	// The native recording pauses for the interruption, so the notice says the call is not in it.
+	// Android pauses the native recording for the interruption, so the notice says the call is
+	// not in it. iOS: the plugin resumes on its own after a call before the app can pause it
+	// again, so the notice promises nothing about the audio.
 	const interruption: ComputedRef<string | null> = computed(() =>
 		interrupted.value
-			? describeInterruption(interrupted.value, interruptError.value ?? "Die Aufnahme ist angehalten; diese Zeit fehlt darin, Bisheriges bleibt erhalten.")
+			? describeInterruption(
+					interrupted.value,
+					interruptError.value ?? (isAndroid() ? "Die Aufnahme ist angehalten; diese Zeit fehlt darin, Bisheriges bleibt erhalten." : "Die Aufnahme ist angehalten, Bisheriges bleibt erhalten."),
+				)
 			: null);
 
 	// A native recording is running (set once startRecording resolved).
@@ -146,8 +161,10 @@ export function useNativeRecorder(): Recorder {
 	let nativePaused = false;
 	// continueRecording() is resuming the native recording.
 	let resuming = false;
-	// Latest interruption state reported while starting or resuming, applied afterwards.
+	// Latest interruption state reported while starting or resuming, applied afterwards, and the
+	// native time it began (Android; null when unknown).
 	let pendingCall = false;
+	let pendingAt: number | null = null;
 	let listeners: PluginListenerHandle[] = [];
 
 	function isAndroid(): boolean {
@@ -201,24 +218,27 @@ export function useNativeRecorder(): Recorder {
 		}
 	}
 
-	/** The microphone was taken (true) or given back (false) by a call. */
-	function signal(taken: boolean): void {
+	/** The microphone was taken (true) or given back (false) by a call, natively at `at`. */
+	function signal(taken: boolean, at: number | null = null): void {
 		if (!active || resuming) {
 			pendingCall = taken;
+			pendingAt = taken ? at : null;
 			return;
 		}
-		if (taken) interrupt();
+		if (taken) interrupt(at);
 	}
 
 	/**
 	 * Stops the clock and shows the interruption until the user continues or stops. Android
 	 * keeps recording silence, so the native recording is paused here; iOS paused it itself.
+	 * `at`: when the call took the microphone; reported late, the silence until now is in
+	 * the audio and counted, and the notice says so.
 	 */
-	function interrupt(): void {
+	function interrupt(at: number | null = null): void {
 		if (!active || paused.value || interrupted.value) return;
 		halt();
 		interrupted.value = "call";
-		interruptError.value = null;
+		interruptError.value = at !== null && Date.now() - at > LATE_SIGNAL_MS ? LATE_TEXT : null;
 		nativePaused = true;
 		if (!isAndroid()) return;
 		void CapacitorAudioRecorder.pauseRecording().catch(() => {
@@ -230,29 +250,43 @@ export function useNativeRecorder(): Recorder {
 		});
 	}
 
-	/** iOS: the call ended; `resumed` = the plugin records again on its own. */
+	/**
+	 * iOS: the call ended; `resumed` = the plugin records again on its own. Without a
+	 * preceding begin (the recorder failed and kept a partial file) it counts as one.
+	 */
 	function interruptionEnded(resumed: boolean): void {
 		if (!active || resuming) {
-			if (resumed) pendingCall = false;
+			pendingCall = !resumed;
+			pendingAt = null;
 			return;
 		}
-		if (!resumed || interrupted.value !== "call") return;
-		// Wait for the user, as after any interruption: nothing after the call is recorded unasked.
-		void CapacitorAudioRecorder.pauseRecording().catch(() => {
-			if (!active || interrupted.value !== "call") return;
-			// It records again: the call is not in the audio, what follows is.
-			nativePaused = false;
-			unhalt();
-			interrupted.value = null;
-			interruptError.value = null;
-		});
+		if (!resumed) {
+			if (!interrupted.value) interrupt();
+			return;
+		}
+		if (interrupted.value !== "call") return;
+		// It records again from now: the clock counts that until the pause below lands.
+		unhalt();
+		// Wait for the user, as after any interruption.
+		void CapacitorAudioRecorder.pauseRecording()
+			.then(() => {
+				if (active && interrupted.value === "call") halt();
+			})
+			.catch(() => {
+				if (!active || interrupted.value !== "call") return;
+				// It records again: the call is not in the audio, what follows is.
+				nativePaused = false;
+				interrupted.value = null;
+				interruptError.value = null;
+			});
 	}
 
 	/** Inside the lane, before the recorder starts: listens for calls taking the microphone. */
 	async function watchInterruptions(): Promise<void> {
 		pendingCall = false;
+		pendingAt = null;
 		const handles = isAndroid()
-			? [RecordingSilence.addListener("silencedChanged", ({ silenced }) => signal(silenced))]
+			? [RecordingSilence.addListener("silencedChanged", ({ silenced, at }) => signal(silenced, at ?? null))]
 			: [
 					CapacitorAudioRecorder.addListener("recordingInterruptionBegan", () => signal(true)),
 					CapacitorAudioRecorder.addListener("recordingInterruptionEnded", ({ shouldResume }) => interruptionEnded(shouldResume)),
@@ -279,6 +313,7 @@ export function useNativeRecorder(): Recorder {
 		interruptError.value = null;
 		nativePaused = false;
 		pendingCall = false;
+		pendingAt = null;
 		haltedAt = null;
 	}
 
@@ -355,13 +390,14 @@ export function useNativeRecorder(): Recorder {
 		pausedMs = 0;
 		// Started while a call already had the microphone: Android records silence from the start.
 		const callAtStart = pendingCall;
+		const callAt = pendingAt;
 		clearInterruption();
 		elapsed.value = 0;
 		levels.value = [];
 		recording.value = true;
 		paused.value = false;
 		startTimers();
-		if (callAtStart) interrupt();
+		if (callAtStart) interrupt(callAt);
 		return true;
 	}
 
@@ -409,6 +445,7 @@ export function useNativeRecorder(): Recorder {
 		if (nativePaused) {
 			resuming = true;
 			pendingCall = false;
+			pendingAt = null;
 			try {
 				await CapacitorAudioRecorder.resumeRecording();
 			}
@@ -427,8 +464,10 @@ export function useNativeRecorder(): Recorder {
 		unhalt();
 		interrupted.value = null;
 		const callStill = pendingCall;
+		const callAt = pendingAt;
 		pendingCall = false;
-		if (callStill) interrupt();
+		pendingAt = null;
+		if (callStill) interrupt(callAt);
 		return true;
 	}
 

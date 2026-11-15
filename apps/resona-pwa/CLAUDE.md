@@ -350,17 +350,23 @@ another app) taking the microphone; locking never interrupts. Android 10+: the a
 `RecordingSilence` (`android/app/src/main/java/de/ecsplico/resona/RecordingSilencePlugin.java`,
 registered in `MainActivity`; `AudioManager.registerAudioRecordingCallback` +
 `AudioRecordingConfiguration.isClientSilenced()`, no `READ_PHONE_STATE`; `start()` right before
-the recorder starts ignores recordings already running, then only `MIC` recordings count) emits
-`silencedChanged`; the recorder then pauses the native recording. iOS: the plugin's
-`recordingInterruptionBegan` (it paused itself) / `recordingInterruptionEnded` (`shouldResume`:
-it resumed, so the recorder pauses it again). Both set `interrupted = "call"` (text in
-`utils/recorderInterruption.ts`, shared with the web recorder: "Ein Anruf oder eine andere App
-hat das Mikrofon übernommen. Die Aufnahme ist angehalten; diese Zeit fehlt darin …"), stop the
-clock and wait: `continueRecording()` resumes the same file, Beenden stops it. So the call span
-is cut out of the audio (on Android the short delay until the callback arrives stays in as silence)
-and the notice says so; should Android refuse the pause, the notice says the call is in the audio
-as silence. Events during start/resume are applied afterwards (a recording started or continued
-during a call is interrupted at once). Below Android 10 nothing is detected. Recovery after a kill (Android only):
+the recorder starts ignores recordings already running, then pins the first new `MIC` recording's
+session id as ours and judges only it; all state on the main looper) emits
+`silencedChanged {silenced, at}` (`at` = native wall-clock ms); the recorder then pauses the
+native recording. iOS: the plugin's `recordingInterruptionBegan` (it paused itself) /
+`recordingInterruptionEnded` (`shouldResume`: it resumed on its own, so the recorder pauses it
+again; `shouldResume: false` without a begin = the recorder failed, also an interruption). Both
+set `interrupted = "call"` (texts in `utils/recorderInterruption.ts`, shared with the web
+recorder), stop the clock and wait: `continueRecording()` resumes the same file, Beenden stops
+it. Android notice: "… Die Aufnahme ist angehalten; diese Zeit fehlt darin …" (the delay until
+the callback stays in as silence); an event reaching the web view more than `LATE_SIGNAL_MS`
+(3 s) after `at` (the web view stalls under the dialer/lock screen) says "… ein Teil davon ist
+als Stille darin" and the clock counts that span; a refused pause says the call is in the audio
+as silence. iOS notice promises nothing about the audio ("Die Aufnahme ist angehalten,
+Bisheriges bleibt erhalten."): capgo 8.4.1 resumes after `shouldResume` before the app can
+pause, so audio after the call until that pause lands is in the file (the clock counts it).
+Events during start/resume are applied afterwards (a recording started or continued during a
+call is interrupted at once). Below Android 10 nothing is detected. Recovery after a kill (Android only):
 `data/nativeUnfinished.ts` lists `cache/capacitor-audio-recorder/recording-*.aac` files older
 than the web view (`performance.timeOrigin`; none while the plugin reports a recording; empty
 files deleted, `.m4a` ignored) as `UnfinishedRecording`s with id `native:<file>`;

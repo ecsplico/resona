@@ -28,30 +28,38 @@ import java.util.Set;
  *
  * <p>{@code start()} runs right before the recorder starts: recordings active at that
  * moment belong to other apps and are ignored (configurations reach non-system apps
- * anonymised, so the audio session id is the only handle). Of the recordings that appear
- * afterwards only microphone ones count, which is how the recorder plugin records.
- * Event {@code silencedChanged {silenced}}: on every change, and again on every
- * configuration change while silenced, so a recording resumed during the call is reported
- * again. Used by {@code app/composables/useNativeRecorder.ts}.
+ * anonymised, so the audio session id is the only handle). The first microphone recording
+ * that appears afterwards is ours: its session id is pinned and only it is judged, so an
+ * app that starts recording later does not count. Event
+ * {@code silencedChanged {silenced, at}} ({@code at}: wall-clock ms of the change, as the
+ * web view may deliver it much later): on every change, and again on every configuration
+ * change while silenced, so a recording resumed during the call is reported again. All
+ * state lives on the main looper, where the callback runs. Used by
+ * {@code app/composables/useNativeRecorder.ts}.
  */
 @CapacitorPlugin(name = "RecordingSilence")
 public class RecordingSilencePlugin extends Plugin {
 
+    private final Handler main = new Handler(Looper.getMainLooper());
     private final Set<Integer> foreignSessions = new HashSet<>();
+    private Integer ownSession = null;
     private AudioManager.AudioRecordingCallback callback;
     private boolean silenced = false;
 
     @PluginMethod
     public void start(PluginCall call) {
-        JSObject result = new JSObject();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            JSObject result = new JSObject();
             result.put("supported", false);
             call.resolve(result);
             return;
         }
-        register(audioManager());
-        result.put("supported", true);
-        call.resolve(result);
+        main.post(() -> {
+            register(audioManager());
+            JSObject result = new JSObject();
+            result.put("supported", true);
+            call.resolve(result);
+        });
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -61,6 +69,7 @@ public class RecordingSilencePlugin extends Plugin {
         for (AudioRecordingConfiguration config : audio.getActiveRecordingConfigurations()) {
             foreignSessions.add(config.getClientAudioSessionId());
         }
+        ownSession = null;
         silenced = false;
         callback = new AudioManager.AudioRecordingCallback() {
             @Override
@@ -69,27 +78,37 @@ public class RecordingSilencePlugin extends Plugin {
                 update(configs);
             }
         };
-        audio.registerAudioRecordingCallback(callback, new Handler(Looper.getMainLooper()));
+        audio.registerAudioRecordingCallback(callback, main);
     }
 
     @PluginMethod
     public void stop(PluginCall call) {
-        unregister(audioManager());
-        call.resolve();
+        main.post(() -> {
+            unregister(audioManager());
+            call.resolve();
+        });
     }
 
     @Override
     protected void handleOnDestroy() {
-        unregister(audioManager());
+        main.post(() -> unregister(audioManager()));
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private void update(List<AudioRecordingConfiguration> configs) {
+        if (ownSession == null) {
+            for (AudioRecordingConfiguration config : configs) {
+                int session = config.getClientAudioSessionId();
+                if (foreignSessions.contains(session)) continue;
+                if (config.getClientAudioSource() != MediaRecorder.AudioSource.MIC) continue;
+                ownSession = session;
+                break;
+            }
+            if (ownSession == null) return;
+        }
         boolean now = false;
         for (AudioRecordingConfiguration config : configs) {
-            if (foreignSessions.contains(config.getClientAudioSessionId())) continue;
-            if (config.getClientAudioSource() != MediaRecorder.AudioSource.MIC) continue;
-            if (config.isClientSilenced()) {
+            if (config.getClientAudioSessionId() == ownSession && config.isClientSilenced()) {
                 now = true;
                 break;
             }
@@ -98,6 +117,7 @@ public class RecordingSilencePlugin extends Plugin {
         silenced = now;
         JSObject event = new JSObject();
         event.put("silenced", now);
+        event.put("at", System.currentTimeMillis());
         notifyListeners("silencedChanged", event);
     }
 

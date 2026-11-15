@@ -352,6 +352,38 @@ describe("useNativeRecorder", () => {
 			expect(silence.stop).toHaveBeenCalled();
 		});
 
+		it("Android: a silencing delivered late says the call is partly in the audio as silence, and counts it", async () => {
+			const r = useNativeRecorder();
+			await r.start();
+			await wait(10_000);
+			const callStarted = Date.now();
+			// The web view stalled while the dialer was up: the event arrives 20 s after the call began.
+			await wait(20_000);
+
+			emit("silencedChanged", { silenced: true, at: callStarted });
+
+			expect(r.interrupted.value).toBe("call");
+			expect(recorder.pauseRecording).toHaveBeenCalledTimes(1);
+			expect(r.interruption.value).toContain("ein Teil davon ist als Stille darin");
+			expect(r.interruption.value).not.toContain("fehlt darin");
+			// The 20 s of silence are in the audio, so the clock has them; the time after the pause is not.
+			await wait(30_000);
+			expect(r.elapsed.value).toBe(32);
+			await r.stop();
+		});
+
+		it("Android: a silencing delivered promptly says the call is missing", async () => {
+			const r = useNativeRecorder();
+			await r.start();
+			const at = Date.now();
+			vi.setSystemTime(at + 500);
+
+			emit("silencedChanged", { silenced: true, at });
+
+			expect(r.interruption.value).toContain("diese Zeit fehlt darin");
+			await r.stop();
+		});
+
 		it("iOS: the plugin's interruption events interrupt; a resume after the call is paused again for the user", async () => {
 			platform.name = "ios";
 			const r = useNativeRecorder();
@@ -366,6 +398,10 @@ describe("useNativeRecorder", () => {
 			emit("recordingInterruptionEnded", { shouldResume: true });
 			expect(recorder.pauseRecording).toHaveBeenCalledTimes(1);
 			expect(r.interrupted.value).toBe("call");
+			// The plugin resumed before the app paused it again: no promise that the time is missing.
+			expect(r.interruption.value).toBe(
+				"Ein Anruf oder eine andere App hat das Mikrofon übernommen. Die Aufnahme ist angehalten, Bisheriges bleibt erhalten.",
+			);
 
 			expect(await r.continueRecording()).toBe(true);
 			expect(recorder.resumeRecording).toHaveBeenCalledTimes(1);
@@ -390,6 +426,20 @@ describe("useNativeRecorder", () => {
 
 			expect(await r.continueRecording()).toBe(true);
 			expect(r.interrupted.value).toBeNull();
+			await r.stop();
+		});
+
+		it("iOS: an end without a begin (the recorder failed) interrupts and stops the clock", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			await wait(10_000);
+
+			emit("recordingInterruptionEnded", { shouldResume: false });
+
+			expect(r.interrupted.value).toBe("call");
+			await wait(30_000);
+			expect(r.elapsed.value).toBe(11);
 			await r.stop();
 		});
 
