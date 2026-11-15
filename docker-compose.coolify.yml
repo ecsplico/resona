@@ -49,7 +49,8 @@ services:
     environment:
       DATA_PATH: /data
       RESONA_MAX_UPLOAD_BYTES: ${RESONA_MAX_UPLOAD_BYTES:-209715200}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://resona.ecsplico.de,${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}}
+      # The PWA, the hub itself and the Capacitor app (https://localhost Android, capacitor://localhost iOS).
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://resona.ecsplico.de,${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de},https://localhost,capacitor://localhost}
       RESONA_PUBLIC_URL: ${RESONA_PUBLIC_URL:-https://resona-hub.ecsplico.de}
       # Live recognizer(s) behind WS /v1/listen. Point at a GPU engine-server with
       # e.g. "https://<gpu-host>,http://engine-faster-whisper:7001" (first

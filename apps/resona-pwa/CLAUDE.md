@@ -358,8 +358,28 @@ sets `sessionId = native:<file>` (`nativeSessionId`), and callers read `sessionI
 still finds it. The hub admits ADTS (sniffed as MPEG audio). `live.vue` always uses
 `useWebRecorder()`: live dictation stays in the web view and is foreground-only. Not in the
 app: Nitro routes (calendar,
-debug-report, `/directus` proxy), the service-worker share target (the app has its own, below), Directus cookie login/SSO (`SameSite=Lax`
-refresh cookie, see the findings doc). The hub needs `https://localhost` in `CORS_ORIGINS`.
+debug-report, `/directus` proxy), the service-worker share target (the app has its own, below),
+Keycloak SSO (the login page shows a hint instead of the button; what a handover would need:
+findings doc). The hub needs `https://localhost` in `CORS_ORIGINS`.
+Directus login in the app (#41): `useDirectus` picks the auth mode once via
+`utils/directusAuth.ts` `directusAuthMode()`: web = `cookie` (unchanged: httpOnly
+`SameSite=Lax` refresh cookie, `autoRefresh`, session in localStorage `resona.auth`), app
+(`Capacitor.isNativePlatform()`) = `json` with `preferencesAuthStorage()` (access + refresh
+token in `@capacitor/preferences` key `resona.auth`, memory copy; a token-less write removes
+the key) and `autoRefresh: false` (no timer that freezes in the background and races the
+rotating refresh token on resume; the SDK's `getToken()` refreshes before each request within
+30 s of expiry, `restoreSession()` after a restart). `ssoSupported` is false in the app.
+Stored tokens go only when Directus rejects the refresh token (`refreshRejected`: 400/401 from
+`/auth/refresh`); offline/timeout/5xx keep them and the session (offline cold start stays
+signed in). A request 401 → `getToken()` first (joins an SDK refresh in flight; the SDK's
+`refresh()` never does); a newer token than the request used → retry, else one single-flight
+`refreshSession()` + retry; rejected → clear + `/login`. `logout()` always clears the stored
+session (also when the request fails).
+`assetUrl()` is async (awaits `getToken()`, which refreshes an expiring token): await it in
+every asset fetch path (`directusStore.audioUrl`/`partAudio`). Android
+excludes `CapacitorStorage.xml` from backup (`res/xml/backup_rules.xml`,
+`data_extraction_rules.xml`). Directus `CORS_ORIGIN` = `PWA_ORIGIN` + `APP_ORIGINS` (default
+`https://localhost,capacitor://localhost`) in every compose file.
 Share target in the app (Android): `SEND` intent filter (`audio/*`, PDF, PNG, JPEG, TIFF, DOCX)
 and `SEND_MULTIPLE` (`audio/*`, `application/*`, `image/*`: the common type of several files) →
 `@capgo/capacitor-share-target` (`shareReceived`, retained for cold starts) →
@@ -378,11 +398,12 @@ the hub token gate.
 - **Nuxt 4** (`app/` dir layout, SPA `ssr: false`), **bun** (`bun@1.3.14`), TypeScript
 - **Tailwind v4** via `@tailwindcss/vite` — CSS-first `@theme`, design tokens in
   `app/assets/css/tokens.css`. **No `tailwind.config.js`.**
-- **@directus/sdk v22** — `createDirectus<Schema>(url).with(authentication("json")).with(rest())`
+- **@directus/sdk v22** — `createDirectus<Schema>(url).with(authentication(mode)).with(rest())`;
+  `mode` `cookie` on the web, `json` in the Capacitor app (`utils/directusAuth.ts`)
 - **@vite-pwa/nuxt** — service worker + manifest (installable, offline)
 - **Capacitor 8** (app shell only) — `@capgo/capacitor-audio-recorder`,
   `@capawesome-team/capacitor-android-foreground-service`, `@capacitor/filesystem`,
-  `@capgo/capacitor-share-target`
+  `@capgo/capacitor-share-target`, `@capacitor/preferences` (Directus tokens)
 - **@vueuse/nuxt** (useWebSocket), **@nuxt/fonts** (Fraunces / Instrument Sans / JetBrains Mono)
 - **idb-keyval** — IndexedDB offline queue
 - **Vitest 4** + **@nuxt/test-utils** (environment `nuxt`, happy-dom); **fake-indexeddb**

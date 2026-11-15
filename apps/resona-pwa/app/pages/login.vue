@@ -3,8 +3,10 @@ import { onMounted, ref } from "vue";
 
 definePageMeta({ layout: false });
 
-const { login, loginWithSso, completeSso } = useDirectus();
+const { login, loginWithSso, completeSso, ssoSupported } = useDirectus();
 const ssoProvider = useRuntimeConfig().public.ssoProvider;
+// The app (JSON auth) cannot take over a Directus SSO session (docs/guide/pwa-app.md),
+// so it shows a hint in place of the SSO button.
 
 const email = ref("");
 const password = ref("");
@@ -106,7 +108,7 @@ async function submit(): Promise<void> {
 				Anmelden
 			</HButton>
 			<HButton
-				v-if="ssoProvider"
+				v-if="ssoProvider && ssoSupported"
 				class="login__submit"
 				variant="secondary"
 				type="button"
@@ -114,6 +116,15 @@ async function submit(): Promise<void> {
 			>
 				Mit Keycloak anmelden
 			</HButton>
+			<p
+				v-else-if="ssoProvider"
+				class="login__hint"
+				data-testid="login-sso-hint"
+			>
+				Die Anmeldung mit Keycloak ist in der App noch nicht möglich. Melde dich mit
+				E-Mail und Passwort an. Hast du dein Konto nur über Keycloak angelegt, nutze
+				Resona im Browser.
+			</p>
 		</form>
 	</div>
 </template>
@@ -128,6 +139,7 @@ async function submit(): Promise<void> {
 .login__subtitle { margin:-8px 0 8px; font-size:var(--fs-sm); color:var(--fg3); text-align:center; }
 .login__field { width:100%; }
 .login__error { margin:0; align-self:stretch; padding:10px 12px; border-radius:var(--r-sm); background:var(--tomato-tint); color:var(--danger); font-size:var(--fs-sm); }
+.login__hint { margin:4px 0 0; font-size:var(--fs-sm); color:var(--fg3); text-align:center; }
 .login__submit { width:100%; min-height:48px; margin-top:8px; transition:background-color var(--motion-fast) var(--motion-ease); }
 .login__submit:hover:not(:disabled) { background:var(--accent-hover); }
 @media (min-width:600px) { .login__card { padding:40px 36px 32px; } }

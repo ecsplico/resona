@@ -59,6 +59,7 @@ describe("useDirectus", () => {
 		const opts = authConfig.options as AuthStorageOpts;
 		expect(opts.autoRefresh).toBe(true);
 		expect(opts.storage).toBeTruthy();
+		expect(useDirectus().ssoSupported).toBe(true);
 	});
 
 	it("the auth storage round-trips the session through localStorage", () => {
@@ -178,25 +179,37 @@ describe("useDirectus", () => {
 		expect(d.isAuthenticated.value).toBe(false);
 	});
 
-	it("assetUrl returns a token-less URL before auth", () => {
+	it("assetUrl returns a token-less URL before auth", async () => {
 		const d = useDirectus();
-		expect(d.assetUrl("abc-123")).toBe("http://localhost:7700/assets/abc-123");
+		expect(await d.assetUrl("abc-123")).toBe("http://localhost:7700/assets/abc-123");
 	});
 
 	describe("expired session", () => {
 		const storageOf = () => (authConfig.options as AuthStorageOpts).storage!;
 		const expiredSession = () => ({ access_token: "old", refresh_token: "r", expires: 900000, expires_at: Date.now() - 1000 });
+		const httpError = (status: number, message = "Invalid user credentials.") =>
+			Object.assign(new Error(message), { response: { status } });
 
-		it("restoreSession returns false and clears the stored session when the refresh fails", async () => {
+		it("restoreSession returns false and clears the stored session when Directus rejects the refresh", async () => {
 			useDirectus();
 			storageOf().set(expiredSession());
-			mockClient.refresh.mockRejectedValue(new Error("Invalid user credentials."));
+			mockClient.refresh.mockRejectedValue(httpError(401));
 			mockClient.getToken.mockResolvedValue("old");
 			const d = useDirectus();
 
 			expect(await d.restoreSession()).toBe(false);
 			expect(d.isAuthenticated.value).toBe(false);
 			expect(storageOf().get()).toBeNull();
+		});
+
+		it("restoreSession keeps the stored session when the refresh fails for a server error", async () => {
+			useDirectus();
+			storageOf().set(expiredSession());
+			mockClient.refresh.mockRejectedValue(httpError(503, "Service Unavailable"));
+			const d = useDirectus();
+
+			expect(await d.restoreSession()).toBe(true);
+			expect(storageOf().get()).toMatchObject({ access_token: "old" });
 		});
 
 		it("restoreSession refreshes an expired session and stays logged in", async () => {
@@ -208,15 +221,16 @@ describe("useDirectus", () => {
 
 			expect(await d.restoreSession()).toBe(true);
 			expect(mockClient.refresh).toHaveBeenCalledTimes(1);
-			expect(d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=new");
+			expect(await d.assetUrl("f")).toBe("http://localhost:7700/assets/f?access_token=new");
 		});
 
-		it("a 401 from a request logs out locally and navigates to /login, once", async () => {
+		it("a 401 from a request whose refresh is rejected logs out locally and navigates to /login, once", async () => {
 			const d = useDirectus();
 			storageOf().set({ ...expiredSession(), expires_at: Date.now() + 600000 });
 			d.isAuthenticated.value = true;
-			const err = Object.assign(new Error("Token expired."), { response: { status: 401 } });
+			const err = httpError(401, "Token expired.");
 			rawRequest.mockRejectedValue(err);
+			mockClient.refresh.mockRejectedValue(httpError(401));
 
 			await expect(d.client.request({} as never)).rejects.toBe(err);
 			await expect(d.client.request({} as never)).rejects.toBe(err);
@@ -225,6 +239,32 @@ describe("useDirectus", () => {
 			expect(storageOf().get()).toBeNull();
 			expect(navigateTo).toHaveBeenCalledTimes(1);
 			expect(navigateTo).toHaveBeenCalledWith("/login", { replace: true });
+		});
+
+		it("a 401 from a request refreshes once and retries the request", async () => {
+			const d = useDirectus();
+			d.isAuthenticated.value = true;
+			rawRequest.mockRejectedValueOnce(httpError(401, "Token expired.")).mockResolvedValueOnce({ id: 1 });
+			mockClient.refresh.mockResolvedValue({ access_token: "new" });
+
+			await expect(d.client.request({} as never)).resolves.toEqual({ id: 1 });
+			expect(mockClient.refresh).toHaveBeenCalledTimes(1);
+			expect(rawRequest).toHaveBeenCalledTimes(2);
+			expect(navigateTo).not.toHaveBeenCalled();
+		});
+
+		it("a 401 whose refresh fails transiently keeps the session", async () => {
+			const d = useDirectus();
+			storageOf().set({ ...expiredSession(), expires_at: Date.now() + 600000 });
+			d.isAuthenticated.value = true;
+			const err = httpError(401, "Token expired.");
+			rawRequest.mockRejectedValue(err);
+			mockClient.refresh.mockRejectedValue(new TypeError("Failed to fetch"));
+
+			await expect(d.client.request({} as never)).rejects.toBe(err);
+			expect(d.isAuthenticated.value).toBe(true);
+			expect(storageOf().get()).toMatchObject({ refresh_token: "r" });
+			expect(navigateTo).not.toHaveBeenCalled();
 		});
 
 		it("a non-auth request error leaves the session alone", async () => {
@@ -242,7 +282,7 @@ describe("useDirectus", () => {
 		mockClient.getToken.mockResolvedValue("t");
 		const d = useDirectus();
 		await d.restoreSession();
-		expect(d.assetUrl("file-1")).toBe("http://localhost:7700/assets/file-1?access_token=t");
+		expect(await d.assetUrl("file-1")).toBe("http://localhost:7700/assets/file-1?access_token=t");
 	});
 
 	it("assetUrl appends the access token after login", async () => {
@@ -250,6 +290,6 @@ describe("useDirectus", () => {
 		mockClient.getToken.mockResolvedValue("t");
 		const d = useDirectus();
 		await d.login("a@b.de", "pw");
-		expect(d.assetUrl("file-1")).toBe("http://localhost:7700/assets/file-1?access_token=t");
+		expect(await d.assetUrl("file-1")).toBe("http://localhost:7700/assets/file-1?access_token=t");
 	});
 });

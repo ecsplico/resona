@@ -24,6 +24,7 @@
     "@capacitor/core": "^8",
     "@capacitor/filesystem": "^8",
     "@capacitor/ios": "^8",
+    "@capacitor/preferences": "^8",
     "@capawesome-team/capacitor-android-foreground-service": "^8",
     "@capgo/capacitor-audio-recorder": "^8.4.1",
     "@capgo/capacitor-share-target": "^8.0.67",
