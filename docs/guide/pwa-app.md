@@ -116,6 +116,11 @@ NUXT_PUBLIC_RESONA_API_URL=https://<hub-host> \
 assembleDebug` in `android/`. The native projects (`android/`, `ios/`) are committed;
 `cap sync` copies the web build and plugin list into them (both are gitignored).
 
+App icon and splash screen come from the SVGs in `assets/` (white microphone on
+`#D96846`, the PWA icon; splash on `#FBF5EC`). After changing them, run
+`bun run cap:assets` and commit the generated `android/.../res` and `ios/.../Assets.xcassets`
+files; the tool also reformats `AndroidManifest.xml` without changing it, revert that.
+
 The hub must allow the app's origin in `CORS_ORIGINS`: `https://localhost` on Android
 (`capacitor://localhost` on iOS); the default in the root `docker-compose.coolify.yml`
 lists both (an explicit `CORS_ORIGINS` env must add them). The bearer token still

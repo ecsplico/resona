@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cap:build": "RESONA_CAPACITOR=1 nuxt generate && cap sync",
-    "cap:apk": "bun run cap:build && cd android && ./gradlew assembleDebug"
+    "cap:apk": "bun run cap:build && cd android && ./gradlew assembleDebug",
+    "cap:assets": "bunx @capacitor/assets@4.0.0 generate --android --ios --iconBackgroundColor '#D96846' --splashBackgroundColor '#FBF5EC'"
   },
   "dependencies": {
     "@capacitor/android": "^8",
