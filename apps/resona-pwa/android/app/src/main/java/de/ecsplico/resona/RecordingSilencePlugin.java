@@ -70,11 +70,13 @@ public class RecordingSilencePlugin extends Plugin {
             foreignSessions.add(config.getClientAudioSessionId());
         }
         ownSession = null;
-        silenced = false;
         callback = new AudioManager.AudioRecordingCallback() {
             @Override
             @RequiresApi(Build.VERSION_CODES.Q)
             public void onRecordingConfigChanged(List<AudioRecordingConfiguration> configs) {
+                // A change queued before stop()/start() replaced this registration belongs to
+                // the previous recorder: it must not pin that recorder's session.
+                if (callback != this) return;
                 update(configs);
             }
         };

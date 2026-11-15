@@ -351,13 +351,17 @@ another app) taking the microphone; locking never interrupts. Android 10+: the a
 registered in `MainActivity`; `AudioManager.registerAudioRecordingCallback` +
 `AudioRecordingConfiguration.isClientSilenced()`, no `READ_PHONE_STATE`; `start()` right before
 the recorder starts ignores recordings already running, then pins the first new `MIC` recording's
-session id as ours and judges only it; all state on the main looper) emits
+session id as ours and judges only it; all state on the main looper, and a callback queued
+before a re-registration ignores itself) emits
 `silencedChanged {silenced, at}` (`at` = native wall-clock ms); the recorder then pauses the
 native recording. iOS: the plugin's `recordingInterruptionBegan` (it paused itself) /
 `recordingInterruptionEnded` (`shouldResume`: it resumed on its own, so the recorder pauses it
-again; `shouldResume: false` without a begin = the recorder failed, also an interruption). Both
-set `interrupted = "call"` (texts in `utils/recorderInterruption.ts`, shared with the web
-recorder), stop the clock and wait: `continueRecording()` resumes the same file, Beenden stops
+again; `shouldResume: false` without a begin, which the plugin also sends late after the user
+continued, interrupts only when `getRecordingStatus()` is `PAUSED`) and `recordingError` (the
+recorder broke and cannot resume: `continueRecording()` is refused without calling the plugin,
+the notice says Beenden keeps everything recorded so far). Both
+set `interrupted = "call"` (reason text in `utils/recorderInterruption.ts`, shared with the web
+recorder; the native detail texts live in `useNativeRecorder.ts`), stop the clock and wait: `continueRecording()` resumes the same file, Beenden stops
 it. Android notice: "… Die Aufnahme ist angehalten; diese Zeit fehlt darin …" (the delay until
 the callback stays in as silence); an event reaching the web view more than `LATE_SIGNAL_MS`
 (3 s) after `at` (the web view stalls under the dialer/lock screen) says "… ein Teil davon ist

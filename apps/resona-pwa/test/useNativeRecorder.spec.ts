@@ -27,6 +27,7 @@ const { calls, recorder, service, filesystem, silence, events, platform } = vi.h
 			stopRecording: log("stopRecording", { uri: "file:///cache/rec.aac", duration: 0 }),
 			cancelRecording: log("cancelRecording"),
 			getCurrentAmplitude: vi.fn(async () => ({ value: 0.5 })),
+			getRecordingStatus: vi.fn(async () => ({ status: "RECORDING" })),
 			addListener,
 		},
 		silence: {
@@ -53,7 +54,10 @@ vi.mock("@capacitor/core", () => ({
 	},
 	registerPlugin: () => silence,
 }));
-vi.mock("@capgo/capacitor-audio-recorder", () => ({ CapacitorAudioRecorder: recorder }));
+vi.mock("@capgo/capacitor-audio-recorder", () => ({
+	CapacitorAudioRecorder: recorder,
+	RecordingStatus: { Inactive: "INACTIVE", Recording: "RECORDING", Paused: "PAUSED" },
+}));
 vi.mock("@capawesome-team/capacitor-android-foreground-service", () => ({
 	ForegroundService: service,
 	Importance: { Low: 2 },
@@ -429,18 +433,78 @@ describe("useNativeRecorder", () => {
 			await r.stop();
 		});
 
-		it("iOS: an end without a begin (the recorder failed) interrupts and stops the clock", async () => {
+		it("iOS: an end without a begin interrupts when the plugin is paused, and stops the clock", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			await wait(10_000);
+			recorder.getRecordingStatus.mockResolvedValueOnce({ status: "PAUSED" });
+
+			emit("recordingInterruptionEnded", { shouldResume: false });
+
+			await vi.waitFor(() => expect(r.interrupted.value).toBe("call"));
+			await wait(30_000);
+			expect(r.elapsed.value).toBe(11);
+			expect(await r.continueRecording()).toBe(true);
+			expect(recorder.resumeRecording).toHaveBeenCalledTimes(1);
+			await r.stop();
+		});
+
+		it("iOS: a late end after the user already continued leaves the recording running", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			emit("recordingInterruptionBegan");
+			await r.continueRecording();
+			expect(r.interrupted.value).toBeNull();
+
+			// The plugin records again; iOS delivers the end of the call only now.
+			emit("recordingInterruptionEnded", { shouldResume: false });
+			await vi.waitFor(() => expect(recorder.getRecordingStatus).toHaveBeenCalled());
+			await wait(5000);
+
+			expect(r.interrupted.value).toBeNull();
+			expect(r.elapsed.value).toBeGreaterThan(5);
+			await r.stop();
+		});
+
+		it("iOS: a late end while continuing does not interrupt the resumed recording", async () => {
+			platform.name = "ios";
+			const r = useNativeRecorder();
+			await r.start();
+			emit("recordingInterruptionBegan");
+			recorder.resumeRecording.mockImplementationOnce(async () => {
+				emit("recordingInterruptionEnded", { shouldResume: false });
+			});
+
+			expect(await r.continueRecording()).toBe(true);
+			await vi.waitFor(() => expect(recorder.getRecordingStatus).toHaveBeenCalled());
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(r.interrupted.value).toBeNull();
+			await r.stop();
+		});
+
+		it("iOS: after a recorder failure Fortsetzen is refused and the notice says to tap Beenden, which keeps the audio", async () => {
 			platform.name = "ios";
 			const r = useNativeRecorder();
 			await r.start();
 			await wait(10_000);
 
+			emit("recordingError", { message: "Recording finished unsuccessfully.", uri: "file:///tmp/seg.m4a" });
 			emit("recordingInterruptionEnded", { shouldResume: false });
 
 			expect(r.interrupted.value).toBe("call");
+			expect(r.interruption.value).toContain("Mit Beenden bleibt alles bisher Aufgenommene erhalten.");
+			expect(await r.continueRecording()).toBe(false);
+			expect(recorder.resumeRecording).not.toHaveBeenCalled();
+			expect(r.interruption.value).toContain("lässt sich nicht fortsetzen");
 			await wait(30_000);
 			expect(r.elapsed.value).toBe(11);
-			await r.stop();
+
+			const blob = await r.stop();
+			expect(await blob.text()).toBe("aac-bytes");
+			expect(r.interrupted.value).toBeNull();
 		});
 
 		it("iOS: if the plugin cannot be paused after the call, it records on without the interruption", async () => {

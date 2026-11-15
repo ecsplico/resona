@@ -2,7 +2,7 @@ import { computed, ref, onScopeDispose } from "vue";
 import type { ComputedRef, Ref } from "vue";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { PluginListenerHandle } from "@capacitor/core";
-import { CapacitorAudioRecorder } from "@capgo/capacitor-audio-recorder";
+import { CapacitorAudioRecorder, RecordingStatus } from "@capgo/capacitor-audio-recorder";
 import { ForegroundService, Importance, ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
 import { Filesystem } from "@capacitor/filesystem";
 import type { Recorder } from "./useRecorder";
@@ -33,6 +33,9 @@ const RecordingSilence = registerPlugin<RecordingSilencePlugin>("RecordingSilenc
 export const LATE_SIGNAL_MS = 3000;
 
 const LATE_TEXT = "Der Anruf wurde erst verspätet erkannt: ein Teil davon ist als Stille darin, Bisheriges bleibt erhalten.";
+
+/** iOS: after a recorder failure the plugin cannot resume; stopping keeps what it recorded. */
+const FAILED_TEXT = "Die Aufnahme wurde abgebrochen und lässt sich nicht fortsetzen. Mit Beenden bleibt alles bisher Aufgenommene erhalten.";
 
 /**
  * The plugin records AAC as ADTS (`format: "aac"`, `.aac`): self-contained frames, so a
@@ -165,6 +168,8 @@ export function useNativeRecorder(): Recorder {
 	// native time it began (Android; null when unknown).
 	let pendingCall = false;
 	let pendingAt: number | null = null;
+	// iOS: the recorder failed (`recordingError`); the plugin cannot resume, only stop.
+	let failed = false;
 	let listeners: PluginListenerHandle[] = [];
 
 	function isAndroid(): boolean {
@@ -251,17 +256,23 @@ export function useNativeRecorder(): Recorder {
 	}
 
 	/**
-	 * iOS: the call ended; `resumed` = the plugin records again on its own. Without a
-	 * preceding begin (the recorder failed and kept a partial file) it counts as one.
+	 * iOS: the call ended; `resumed` = the plugin records again on its own. The plugin also
+	 * sends an end without `shouldResume` when it was not paused by the interruption, e.g.
+	 * late, after the user already continued: that counts only when the plugin is paused.
 	 */
 	function interruptionEnded(resumed: boolean): void {
 		if (!active || resuming) {
-			pendingCall = !resumed;
-			pendingAt = null;
+			if (resumed) {
+				pendingCall = false;
+				pendingAt = null;
+			}
+			else {
+				void ifNativePaused();
+			}
 			return;
 		}
 		if (!resumed) {
-			if (!interrupted.value) interrupt();
+			if (!interrupted.value) void ifNativePaused();
 			return;
 		}
 		if (interrupted.value !== "call") return;
@@ -281,6 +292,21 @@ export function useNativeRecorder(): Recorder {
 			});
 	}
 
+	/** An end without a begin interrupts only when the plugin really is paused. */
+	async function ifNativePaused(): Promise<void> {
+		const { status } = await CapacitorAudioRecorder.getRecordingStatus().catch(() => ({ status: null }));
+		if (status === RecordingStatus.Paused) signal(true);
+	}
+
+	/** iOS: the recorder broke (an interruption it could not survive, an encoding error). */
+	function recorderFailed(): void {
+		if (!active) return;
+		failed = true;
+		if (paused.value) paused.value = false;
+		interrupt();
+		interruptError.value = FAILED_TEXT;
+	}
+
 	/** Inside the lane, before the recorder starts: listens for calls taking the microphone. */
 	async function watchInterruptions(): Promise<void> {
 		pendingCall = false;
@@ -290,6 +316,7 @@ export function useNativeRecorder(): Recorder {
 			: [
 					CapacitorAudioRecorder.addListener("recordingInterruptionBegan", () => signal(true)),
 					CapacitorAudioRecorder.addListener("recordingInterruptionEnded", ({ shouldResume }) => interruptionEnded(shouldResume)),
+					CapacitorAudioRecorder.addListener("recordingError", () => recorderFailed()),
 				];
 		const settled = await Promise.allSettled(handles);
 		listeners = settled.flatMap(s => (s.status === "fulfilled" ? [s.value] : []));
@@ -315,6 +342,7 @@ export function useNativeRecorder(): Recorder {
 		pendingCall = false;
 		pendingAt = null;
 		haltedAt = null;
+		failed = false;
 	}
 
 	/**
@@ -441,6 +469,10 @@ export function useNativeRecorder(): Recorder {
 		if (!active || !interrupted.value || resuming) {
 			return false;
 		}
+		if (failed) {
+			interruptError.value = FAILED_TEXT;
+			return false;
+		}
 		interruptError.value = null;
 		if (nativePaused) {
 			resuming = true;
@@ -450,7 +482,7 @@ export function useNativeRecorder(): Recorder {
 				await CapacitorAudioRecorder.resumeRecording();
 			}
 			catch {
-				if (active) interruptError.value = "Die Aufnahme konnte nicht fortgesetzt werden.";
+				if (active) interruptError.value = failed ? FAILED_TEXT : "Die Aufnahme konnte nicht fortgesetzt werden.";
 				return false;
 			}
 			finally {
