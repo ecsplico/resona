@@ -1499,6 +1499,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#cloud-asr-worker-deepgram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cloud ASR worker (Deepgram)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2759,6 +2770,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#cloud-asr-worker-deepgram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cloud ASR worker (Deepgram)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3023,6 +3045,27 @@
 <p>The hub and MCP containers log request lines without query strings, plus counts from the maintenance loop. They never log transcripts, Markdown, original filenames or tokens. Reading the container logs through the Coolify API or CLI (<code>coolify app logs</code>) needs a Coolify token with the <code>read:sensitive</code> ability.</p>
 <h2 id="cpu-fallback">CPU fallback<a class="headerlink" href="#cpu-fallback" title="Permanent link">&para;</a></h2>
 <p>The compose file has no CPU fallback worker. The Coolify host has 16 GB RAM and 6 cores, shared with other applications (measured 2026-11-01: 7.7 GB available, 8 GB of swap in use), and the live recognizer already reserves up to 3 CPUs and 3 GB of it (<a href="#live-recognizer">Live recognizer</a>). A <code>faster-whisper large-v3</code> CPU worker would compete with those applications. Add one only after you measure it on this host and an operator approves it explicitly: enroll it as a separate worker, approve only the <code>cpu-private</code> candidates, and enable <code>cpu_fallback_enabled</code> in the organization settings.</p>
+<h2 id="cloud-asr-worker-deepgram">Cloud ASR worker (Deepgram)<a class="headerlink" href="#cloud-asr-worker-deepgram" title="Permanent link">&para;</a></h2>
+<p>Non-private audio jobs, with or without <code>--diarize</code>, can run on Deepgram <code>nova-3</code> through a separate cloud worker (<a href="../../docker-compose.worker.cloud.yml"><code>docker-compose.worker.cloud.yml</code></a>). The hub itself still calls no provider: the worker holds <code>DEEPGRAM_API_KEY</code>, claims only non-private jobs (privacy class of its approval) and sends the audio to Deepgram, which diarizes in the same call. The worker loads no model (about 50 MB RSS per job), so it fits next to the hub on this host; deploy it as its own Coolify resource or on any host with outbound HTTPS. Private jobs never reach it: <code>policy_denied: asr: private job cannot use a cloud endpoint</code>.</p>
+<p>It needs a release whose CPU worker image ships the <code>cloud</code> extra and whose hub knows platform <code>cloud</code>.</p>
+<p><strong>Rollout order.</strong> Workers and CLIs on 0.2.5 or older cannot parse the settings document once an organization has an execution profile with an <code>external</code> candidate; <code>resona settings set</code>, <code>--local</code> and <code>resona-worker prepare --settings-file</code> then fail. Upgrade the hub, every worker and every CLI to 0.2.6 or newer first, and only then add the cloud execution profile.</p>
+<p>The worker re-checks the <code>cloud-asr:&lt;provider&gt;</code> endpoint with the hub right before it sends audio, so revoking the endpoint or disabling <code>cloud_enabled</code> also stops jobs that are already queued.</p>
+<p>Once per organization:</p>
+<ol>
+<li><strong>Settings</strong> (<code>resona settings get</code> → edit → <code>resona settings set --file</code>): <code>cloud_enabled: true</code>, an endpoint <code>{"id": "cloud-asr:deepgram", "kind": "cloud_asr", "model": "nova-3"}</code> (optionally <code>worker_id</code> of the cloud worker, to pin it there), and an execution profile
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">&quot;cloud-deepgram&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;audio&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepgram&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nova-3&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;accelerator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;external&quot;</span><span class="p">}],</span><span class="w"> </span><span class="nt">&quot;document&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]}</span>
+</code></pre></div>
+   Cloud ASR candidates always run on accelerator <code>external</code> (platform <code>cloud</code>).</li>
+<li><strong>Enroll</strong> in the hub container: <code>resona-admin worker enroll cloud-1 --organization &lt;org&gt; --token-sha256 &lt;hex&gt;</code>; put the token file (0600, UID 1000) on the worker host.</li>
+<li><strong>Prepare</strong> with the settings body as <code>--settings-file</code> (see the compose header). This makes one real Deepgram call on the packaged German fixtures; with diarization it only checks that Deepgram returns attributed speaker sections, its quality is measured on the corpus in step 5.</li>
+<li><strong>Approve</strong> non-private: <code>resona-worker capabilities caps.json &gt; approve.json</code>, then <code>resona-admin worker approve &lt;worker-id&gt; --non-private --capabilities-file approve.json</code>. Start the worker (<code>up -d</code>).</li>
+<li><strong>Evaluate and promote</strong> the audio fixtures as non-private evaluation jobs:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--profile<span class="w"> </span>cloud-deepgram<span class="w"> </span>--remote<span class="w"> </span>--allow-cloud<span class="w"> </span>--kind<span class="w"> </span>audio<span class="w"> </span>--output-dir<span class="w"> </span>/tmp/eval-cloud
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>promote<span class="w"> </span>&lt;evaluation-id&gt;<span class="w"> </span>--report<span class="w"> </span>/tmp/eval-cloud/report.json
+</code></pre></div></li>
+</ol>
+<p>Then <code>resona transcribe memo.m4a --execution-profile cloud-deepgram --allow-cloud [--diarize]</code> (or <code>private: false</code> on <code>POST /v1/jobs</code>) runs on Deepgram. Set <code>default_execution_profile</code> to it only if every client of the organization may send audio to Deepgram.</p>
+<p>Measured end to end on a local hub (release 0.2.3, 2026-11-14, corpus <code>229a756d0bc7</code>): <code>de-speech</code> WER 0, <code>de-numbers</code> WER 0.136, <code>silence</code> 0 insertions, <code>de-two-speakers</code> speaker attribution 0.983 / DER 0.103, <code>de-case-conference</code> (4 voices) attribution 0.842 / DER 0.211 / 3 speakers found.</p>
 
 
 
