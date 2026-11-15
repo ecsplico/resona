@@ -2673,6 +2673,10 @@ proxy (absolute: the app has no Nitro server):</p>
 <p><code>cap:apk</code> = <code>cap:build</code> (<code>RESONA_CAPACITOR=1 nuxt generate &amp;&amp; cap sync</code>) + <code>./gradlew
 assembleDebug</code> in <code>android/</code>. The native projects (<code>android/</code>, <code>ios/</code>) are committed;
 <code>cap sync</code> copies the web build and plugin list into them (both are gitignored).</p>
+<p>App icon and splash screen come from the SVGs in <code>assets/</code> (white microphone on
+<code>#D96846</code>, the PWA icon; splash on <code>#FBF5EC</code>). After changing them, run
+<code>bun run cap:assets</code> and commit the generated <code>android/.../res</code> and <code>ios/.../Assets.xcassets</code>
+files; the tool also reformats <code>AndroidManifest.xml</code> without changing it, revert that.</p>
 <p>The hub must allow the app's origin in <code>CORS_ORIGINS</code>: <code>https://localhost</code> on Android
 (<code>capacitor://localhost</code> on iOS); the default in the root <code>docker-compose.coolify.yml</code>
 lists both (an explicit <code>CORS_ORIGINS</code> env must add them). The bearer token still

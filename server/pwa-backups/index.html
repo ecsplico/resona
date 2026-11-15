@@ -2799,7 +2799,7 @@
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>HUB_DATA_VOLUME=&lt;hub-app-uuid&gt;_resona-data
 </code></pre></div>
-<p>The backup service then mounts that volume at <code>/source/hub</code> and sets <code>BACKUP_HUB=true</code>. Without <code>HUB_DATA_VOLUME</code> it mounts an empty placeholder volume <code>resona-pwa-backup-no-hub</code> and ignores it. If the mounted volume holds no <code>db/jjobs.sqlite</code> (wrong name, or Coolify renamed the volume), every run fails and the container turns unhealthy: confirm after the first run with <code>restic ls latest | grep hub-jjobs</code>.</p>
+<p>The backup service then mounts that volume at <code>/source/hub</code> and passes its name as <code>BACKUP_HUB_VOLUME</code>. Without <code>HUB_DATA_VOLUME</code> it mounts an empty placeholder volume <code>resona-pwa-backup-no-hub</code> and ignores it. If the mounted volume holds no <code>db/jjobs.sqlite</code> (wrong name, or Coolify renamed the volume), every run fails and the container turns unhealthy: confirm after the first run with <code>restic ls latest | grep hub-jjobs</code>.</p>
 <p>If the hub moves to another host, run the same image there with only <code>/source/hub</code> mounted, a separate <code>BACKUP_HOST_TAG</code> and the same repository, or give it its own repository.</p>
 <h2 id="restore-drill">Restore drill<a class="headerlink" href="#restore-drill" title="Permanent link">&para;</a></h2>
 <p>Run it after setup and then every quarter, on a machine that is <strong>not</strong> the production host. It proves the password, the S3 keys and the dumps all work.</p>
