@@ -586,7 +586,7 @@ See [docs/configuration/environment.md](docs/configuration/environment.md) for t
 
 ### Issue tracker
 
-Issues, plans and tickets live as GitHub issues on `ecsplico/resona` (one tracker for the whole monorepo, `gh` CLI); nothing is tracked in the filesystem. An approved plan becomes an `epic` issue titled `<XXX>: …`; its `i-<xxx>-…` tickets are native sub-issues with native `blocked_by` dependencies. The repo is public: no hosts, credentials or patient data in issues. See `docs/agents/issue-tracker.md`.
+Issues, plans and tickets live as GitHub issues on `ecsplico/resona` (one tracker for the whole monorepo, `gh` CLI); nothing is tracked in the filesystem. An approved plan becomes an `epic` issue titled `<XXX>: …`; its `i-<xxx>-…` tickets are native sub-issues with native `blocked_by` dependencies. Every epic is a native sub-issue of one `goal` issue (`Goal: <outcome>`). The repo is public: no hosts, credentials or patient data in issues. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

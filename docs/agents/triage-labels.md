@@ -17,6 +17,7 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 | Label  | Meaning |
 | ------ | ------- |
 | `epic` | An effort's plan; its tickets are native sub-issues (see `issue-tracker.md`) |
+| `goal` | A product outcome; its epics are native sub-issues (see `issue-tracker.md`) |
 
 ## Area labels
 
