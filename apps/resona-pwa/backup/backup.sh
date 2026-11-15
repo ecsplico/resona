@@ -5,7 +5,7 @@
 # Sources (mounted by docker-compose.coolify.yml, profile `backup`):
 #   /source/directus/database/data.db   Directus SQLite (dumped, never copied raw)
 #   /source/directus/uploads            Directus uploads
-#   /source/hub (BACKUP_HUB=true)       hub resona-data volume: db/jjobs.sqlite is
+#   /source/hub (BACKUP_HUB_VOLUME set) hub resona-data volume: db/jjobs.sqlite is
 #                                       dumped, organizations/*/testbench kept
 set -eu
 
@@ -53,7 +53,7 @@ backup_once() {
 	set -- "$DUMP_DIR" /source/directus/uploads
 	dump_sqlite /source/directus/database/data.db "$DUMP_DIR/directus.db"
 
-	if [ "${BACKUP_HUB:-}" = "true" ]; then
+	if [ -n "${BACKUP_HUB_VOLUME:-}" ]; then
 		# Fails loudly when the mounted volume is not the hub's (no database inside).
 		dump_sqlite /source/hub/db/jjobs.sqlite "$DUMP_DIR/hub-jjobs.sqlite"
 		for dir in /source/hub/organizations/*/testbench; do

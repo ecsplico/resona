@@ -69,7 +69,7 @@ docker volume ls --format '{{.Name}}' | grep '_resona-data$'
 HUB_DATA_VOLUME=<hub-app-uuid>_resona-data
 ```
 
-The backup service then mounts that volume at `/source/hub` and sets `BACKUP_HUB=true`. Without `HUB_DATA_VOLUME` it mounts an empty placeholder volume `resona-pwa-backup-no-hub` and ignores it. If the mounted volume holds no `db/jjobs.sqlite` (wrong name, or Coolify renamed the volume), every run fails and the container turns unhealthy: confirm after the first run with `restic ls latest | grep hub-jjobs`.
+The backup service then mounts that volume at `/source/hub` and passes its name as `BACKUP_HUB_VOLUME`. Without `HUB_DATA_VOLUME` it mounts an empty placeholder volume `resona-pwa-backup-no-hub` and ignores it. If the mounted volume holds no `db/jjobs.sqlite` (wrong name, or Coolify renamed the volume), every run fails and the container turns unhealthy: confirm after the first run with `restic ls latest | grep hub-jjobs`.
 
 If the hub moves to another host, run the same image there with only `/source/hub` mounted, a separate `BACKUP_HOST_TAG` and the same repository, or give it its own repository.
 
