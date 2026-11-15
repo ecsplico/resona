@@ -84,4 +84,52 @@ describe("useDirectus in the app with the real SDK", () => {
 		expect(JSON.parse(prefs.get(AUTH_STORAGE_KEY)!)).toMatchObject({ access_token: "a2", refresh_token: "r2" });
 		client.globals.fetch = realFetch;
 	});
+
+	it("a 401 arriving while an SDK refresh is in flight joins it: one /auth/refresh, retry, session kept", async () => {
+		const d = useDirectus();
+		const { client } = d;
+		d.isAuthenticated.value = true;
+		await captured.storage!.set({ access_token: "a1", refresh_token: "r1", expires: 900_000, expires_at: Date.now() + 600_000 });
+
+		const calls: { url: string; auth?: string }[] = [];
+		const frozen = Promise.withResolvers<undefined>();
+		const refreshDone = Promise.withResolvers<undefined>();
+		const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+			const auth = (init.headers as Record<string, string> | undefined)?.Authorization;
+			calls.push({ url, auth });
+			if (url.endsWith("/auth/refresh")) {
+				// Let the frozen request answer while this refresh is still running.
+				frozen.resolve(undefined);
+				await refreshDone.promise;
+				return json({ data: { access_token: "a2", refresh_token: "r2", expires: 900_000 } });
+			}
+			if (url.includes("/items/recordings") && auth === "Bearer a1") {
+				// Sent before the app went to the background, answered on resume.
+				await frozen.promise;
+				setTimeout(refreshDone.resolve, 10, undefined);
+				return new Response(JSON.stringify({ errors: [{ message: "Token expired." }] }), {
+					status: 401,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+			return json({ data: [] });
+		});
+		const realFetch = client.globals.fetch;
+		client.globals.fetch = fetchMock as unknown as typeof fetch;
+
+		const late = client.request(readItems("recordings"));
+		await vi.waitFor(() => expect(calls).toHaveLength(1));
+		// Resume after > 15 min: the stored token is now expired, the next request's
+		// getToken() starts the SDK refresh.
+		await captured.storage!.set({ access_token: "a1", refresh_token: "r1", expires: 900_000, expires_at: Date.now() - 60_000 });
+		const fresh = client.request(readItems("transcripts"));
+
+		await expect(late).resolves.toEqual([]);
+		await expect(fresh).resolves.toEqual([]);
+		expect(calls.filter(c => c.url.endsWith("/auth/refresh"))).toHaveLength(1);
+		expect(calls.filter(c => c.url.includes("/items/recordings")).map(c => c.auth)).toEqual(["Bearer a1", "Bearer a2"]);
+		expect(d.isAuthenticated.value).toBe(true);
+		expect(JSON.parse(prefs.get(AUTH_STORAGE_KEY)!)).toMatchObject({ access_token: "a2", refresh_token: "r2" });
+		client.globals.fetch = realFetch;
+	});
 });

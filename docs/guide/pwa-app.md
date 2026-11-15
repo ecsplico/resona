@@ -60,7 +60,10 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
   asks `getToken()` first, so audio fetched after a long pause carries a fresh token.
   Stored tokens are removed only when Directus rejects the refresh token (400/401 from
   `/auth/refresh`): offline, a timeout or a 5xx keep them, the app stays signed in and
-  refreshes on the next request. A request's 401 triggers one refresh and a retry. Logout
+  refreshes on the next request. A request's 401 first waits for a refresh already in
+  flight (a request frozen in the background answers late with the old token on resume)
+  and retries with the new token; only without one it refreshes once and retries, so the
+  rotating refresh token is never sent twice. Logout
   removes the key, also when the logout request fails. The session ends when the refresh
   token is unused for `REFRESH_TOKEN_TTL` (30 days on Coolify) or Directus rejects it.
 - Why Preferences and not a secure-storage plugin: Preferences is the Capacitor team's

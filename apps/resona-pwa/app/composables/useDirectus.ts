@@ -41,7 +41,9 @@ function refreshRejected(err: unknown): boolean {
 }
 
 // One explicit refresh at a time: the refresh token rotates, so a second
-// concurrent refresh would send the spent token and be rejected.
+// concurrent refresh would send the spent token and be rejected. The SDK's
+// refresh() does not join one its getToken() or timer already started; the 401
+// path below waits for those through getToken() before it gets here.
 function refreshSession(c: ResonaDirectusClient): Promise<unknown> {
 	refreshing ??= c.refresh().finally(() => {
 		refreshing = null;
@@ -74,24 +76,36 @@ function getClient(): ResonaDirectusClient {
 			.with(rest());
 		// The SDK swallows a failed refresh and keeps sending the dead token, so
 		// requests 401 ("Token expired.") while the page still looks logged in. On a
-		// 401: refresh once and retry; when Directus rejects the refresh token the
-		// session is over (back to /login); a transient refresh failure keeps it.
+		// 401: retry with a newer token if one arrived meanwhile, else refresh once and
+		// retry; when Directus rejects the refresh token the session is over (back to
+		// /login); a transient refresh failure keeps it.
 		const request = base.request.bind(base);
 		base.request = (async (options: Parameters<typeof request>[0]) => {
+			// The token this request goes out with: rest() asks getToken() again right
+			// after and gets the same one (it refreshes only near expiry, and this call
+			// already did).
+			const used = await base.getToken();
 			try {
 				return await request(options);
 			}
 			catch (err) {
 				if (errorStatus(err) !== 401 || !isAuthenticated.value) throw err;
-				try {
-					await refreshSession(base);
-				}
-				catch (refreshErr) {
-					if (refreshRejected(refreshErr) && isAuthenticated.value) {
-						void clearLocalSession();
-						void nuxtApp?.runWithContext(() => navigateTo("/login", { replace: true }));
+				// Waits for a refresh the SDK has in flight (getToken() of another request,
+				// the web timer): typical on resume, when a request frozen in the
+				// background is sent late with the old token. Refreshing again would send
+				// the spent refresh token and be rejected.
+				const current = await base.getToken();
+				if (!current || current === used) {
+					try {
+						await refreshSession(base);
 					}
-					throw err;
+					catch (refreshErr) {
+						if (refreshRejected(refreshErr) && isAuthenticated.value) {
+							void clearLocalSession();
+							void nuxtApp?.runWithContext(() => navigateTo("/login", { replace: true }));
+						}
+						throw err;
+					}
 				}
 				return await request(options);
 			}
