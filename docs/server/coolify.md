@@ -222,7 +222,13 @@ The compose file has no CPU fallback worker. The Coolify host has 16 GB RAM and 
 
 Non-private audio jobs, with or without `--diarize`, can run on Deepgram `nova-3` through a separate cloud worker ([`docker-compose.worker.cloud.yml`](../../docker-compose.worker.cloud.yml)). The hub itself still calls no provider: the worker holds `DEEPGRAM_API_KEY`, claims only non-private jobs (privacy class of its approval) and sends the audio to Deepgram, which diarizes in the same call. The worker loads no model (about 50 MB RSS per job), so it fits next to the hub on this host; deploy it as its own Coolify resource or on any host with outbound HTTPS. Private jobs never reach it: `policy_denied: asr: private job cannot use a cloud endpoint`.
 
-It needs a release whose CPU worker image ships the `cloud` extra and whose hub knows platform `cloud`. Then, once per organization:
+It needs a release whose CPU worker image ships the `cloud` extra and whose hub knows platform `cloud`.
+
+**Rollout order.** Workers and CLIs on 0.2.5 or older cannot parse the settings document once an organization has an execution profile with an `external` candidate; `resona settings set`, `--local` and `resona-worker prepare --settings-file` then fail. Upgrade the hub, every worker and every CLI to 0.2.6 or newer first, and only then add the cloud execution profile.
+
+The worker re-checks the `cloud-asr:<provider>` endpoint with the hub right before it sends audio, so revoking the endpoint or disabling `cloud_enabled` also stops jobs that are already queued.
+
+Once per organization:
 
 1. **Settings** (`resona settings get` → edit → `resona settings set --file`): `cloud_enabled: true`, an endpoint `{"id": "cloud-asr:deepgram", "kind": "cloud_asr", "model": "nova-3"}` (optionally `worker_id` of the cloud worker, to pin it there), and an execution profile
    ```json

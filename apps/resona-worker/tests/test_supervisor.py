@@ -422,3 +422,64 @@ def test_exited_executor_group_answering_eperm_does_not_crash_the_worker(build_s
     assert calls and all(pid != os.getpid() for pid in calls)
     assert len(hub.paths("/result")) == 1
     assert hub.paths("/fail") == []
+
+
+DEEPGRAM = Candidate(engine="deepgram", model="nova-3", accelerator="external")
+OPEN_POLICY = {
+    "private": False,
+    "cloud_enabled": True,
+    "approved_endpoint_ids": ["cloud-asr:deepgram"],
+    "endpoints": [],
+}
+
+
+def test_private_job_with_external_candidate_is_denied_without_running(build_supervisor, fakes) -> None:
+    hub = fakes.FakeHub(DEEPGRAM)
+    supervisor = build_supervisor(hub, capabilities=(DEEPGRAM,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert (failure["code"], failure["retryable"]) == ("policy_denied", False)
+    assert hub.paths("/policy") == []
+    assert hub.paths("/result") == []
+
+
+def test_cloud_job_is_policy_checked_before_the_executor(build_supervisor, fakes) -> None:
+    hub = fakes.FakeHub(DEEPGRAM, snapshot=fakes.snapshot_for(DEEPGRAM, policy=OPEN_POLICY), job_input=b"ENGINE")
+    hub.approved_private = False
+    supervisor = build_supervisor(hub, capabilities=(DEEPGRAM,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, policy_body),) = hub.paths("/policy")
+    assert json.loads(policy_body) == {"stage": "asr", "endpoint_id": "cloud-asr:deepgram"}
+    # The stub executor ran (ENGINE input fails there), after the check passed.
+    ((_, _, _, body),) = hub.paths("/fail")
+    assert json.loads(body)["code"] == "engine_error"
+
+
+def test_denied_cloud_endpoint_check_prevents_the_executor(build_supervisor, fakes) -> None:
+    hub = fakes.FakeHub(DEEPGRAM, snapshot=fakes.snapshot_for(DEEPGRAM, policy=OPEN_POLICY), job_input=b"ENGINE")
+    hub.approved_private = False
+    hub.policy_status = 403
+    hub.policy_body = {"error": "policy_denied", "message": "endpoint revoked"}
+    supervisor = build_supervisor(hub, capabilities=(DEEPGRAM,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/fail")
+    failure = json.loads(body)
+    assert (failure["code"], failure["retryable"]) == ("policy_denied", False)
+    assert hub.paths("/result") == []
+
+
+def test_local_engine_job_makes_no_extra_policy_call(build_supervisor, fakes) -> None:
+    hub = fakes.FakeHub(CAND)
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    supervisor.run(once=True)
+
+    assert hub.paths("/policy") == []
+    assert len(hub.paths("/result")) == 1

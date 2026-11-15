@@ -18,6 +18,7 @@ import argparse
 import gc
 import importlib.util
 import json
+import os
 import platform
 import re
 import sys
@@ -290,8 +291,9 @@ _SPEAKER_LABEL = {"de": "Sprecher"}
 _DEFAULT_SPEAKER_LABEL = "Speaker"
 
 
-def _engine_words(seg: Any) -> list[Any]:
-    """The word timestamps of one engine segment (dicts or objects, Whisper-style ``word``)."""
+def _engine_words(seg: Any) -> list[tuple[Any, int | None]]:
+    """The word timestamps of one engine segment (dicts or objects, Whisper-style ``word``),
+    each with the provider's ``speaker`` when it has one (Deepgram), else ``None``."""
     from resona_diarize import Word
 
     raw = seg.get("words") if isinstance(seg, Mapping) else getattr(seg, "words", None)
@@ -299,41 +301,46 @@ def _engine_words(seg: Any) -> list[Any]:
     for item in raw or []:
         if isinstance(item, Mapping):
             start, end, text = item.get("start"), item.get("end"), item.get("word", item.get("text", ""))
+            speaker = item.get("speaker")
         else:
             start, end = getattr(item, "start", None), getattr(item, "end", None)
             text = getattr(item, "word", getattr(item, "text", ""))
+            speaker = getattr(item, "speaker", None)
         if start is None or end is None:
             continue
-        words.append(Word(float(start), float(end), str(text)))
+        words.append((Word(float(start), float(end), str(text)), None if speaker is None else int(speaker)))
     return words
 
 
 def diarized_transcript(
-    raw_segments: list[Any], text: str, duration: float, turns: list[Any], language: str | None
+    raw_segments: list[Any], text: str, duration: float, turns: list[Any] | None, language: str | None
 ) -> tuple[list[Segment], str] | None:
     """Speaker sections and their Markdown, or ``None`` when the diarizer found no speech.
 
-    Every word gets the speaker whose turns cover most of it; consecutive words of one
-    speaker form a section, which becomes one ``Segment`` with ``speaker``. A segment
-    without word timestamps counts as one word; an engine without segments, as one word
-    spanning the recording. In Markdown each section starts with ``**Sprecher N:** ``
-    (``Speaker`` for other languages) and is broken into paragraphs like
-    :func:`audio_markdown`, over the ASR segments inside it.
+    Every word gets the speaker whose turns cover most of it; with ``turns=None`` (a
+    provider that diarizes in the ASR call) each word keeps the provider's own speaker.
+    Consecutive words of one speaker form a section, which becomes one ``Segment`` with
+    ``speaker``. A segment without word timestamps counts as one word; an engine without
+    segments, as one word spanning the recording. In Markdown each section starts with
+    ``**Sprecher N:** `` (``Speaker`` for other languages) and is broken into paragraphs
+    like :func:`audio_markdown`, over the ASR segments inside it.
     """
     from resona_diarize import Word, assign_words, sections
 
     words: list[Word] = []
+    word_speakers: list[int | None] = []
     owners: list[int] = []
     for index, seg in enumerate(raw_segments):
         found = _engine_words(seg)
         if not found:
             plain = _segment(seg)
-            found = [Word(plain.start, plain.end, f" {plain.text}")] if plain.text else []
-        words.extend(found)
+            found = [(Word(plain.start, plain.end, f" {plain.text}"), None)] if plain.text else []
+        words.extend(word for word, _ in found)
+        word_speakers.extend(speaker for _, speaker in found)
         owners.extend([index] * len(found))
     if not words and text:
-        words, owners = [Word(0.0, duration, f" {text}")], [0]
-    groups = sections(words, assign_words(words, turns))
+        words, word_speakers, owners = [Word(0.0, duration, f" {text}")], [None], [0]
+    groups = sections(words, word_speakers if turns is None else assign_words(words, turns))
     if not groups:
         return None
 
@@ -498,33 +505,17 @@ _CLOUD_OPTIONS: dict[str, dict[str, Any]] = {
 CLOUD_DIARIZERS = frozenset({"deepgram"})
 
 
-def _provider_turns(raw_segments: list[Any]) -> list[Any]:
-    """Speaker turns from the provider's per-word speakers (0-based), consecutive words merged."""
-    from resona_diarize import Turn
-
-    turns: list[Turn] = []
-    for seg in raw_segments:
-        for word in seg.get("words") or []:
-            if word.get("speaker") is None:
-                continue
-            speaker = int(word["speaker"]) + 1
-            if turns and turns[-1].speaker == speaker:
-                turns[-1] = Turn(turns[-1].start, float(word["end"]), speaker)
-            else:
-                turns.append(Turn(float(word["start"]), float(word["end"]), speaker))
-    return turns
-
-
 def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path: Path) -> JobResult:
     """A cloud ASR candidate: the input goes to the provider with the worker's key.
 
-    Only non-private jobs reach this worker (the hub matches privacy class, and private
-    jobs get an environment without credentials). A provider that diarizes (Deepgram)
+    Only non-private jobs should reach this path: the hub matches privacy class and the
+    supervisor refuses a private job with an external candidate and checks the provider
+    endpoint with the hub before launching this process. The key comes from the process
+    environment only; private jobs' subprocess environments drop credential-shaped
+    names, but this function itself does not enforce privacy. A provider that diarizes (Deepgram)
     does so in the same call; its word speakers go through the same speaker sections and
     Markdown as the on-device diarizer.
     """
-    from decouple import config
-
     try:
         from resona_cloud_stt import PROVIDER_ENV_KEYS, get_provider
         from resona_cloud_stt.errors import ProviderHTTPError
@@ -542,7 +533,7 @@ def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path:
         provider = get_provider(candidate.engine)
     except ValueError:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "unknown cloud ASR provider") from None
-    api_key = str(config(PROVIDER_ENV_KEYS[candidate.engine], default="")).strip()
+    api_key = os.environ.get(PROVIDER_ENV_KEYS[candidate.engine], "").strip()
     if not api_key:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "provider key not configured on this worker")
     request = dict(_CLOUD_OPTIONS.get(candidate.engine, {}))
@@ -580,7 +571,7 @@ def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path:
     ]
     if diarize:
         duration = max((seg.end for seg in segments), default=0.0)
-        diarized = diarized_transcript(raw_segments, text, duration, _provider_turns(raw_segments), language)
+        diarized = diarized_transcript(raw_segments, text, duration, None, language)
         if diarized is not None:
             segments, markdown = diarized
         # Same provider call: the ASR seconds cover it.

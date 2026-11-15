@@ -37,6 +37,15 @@ class Candidate(BaseModel):
     accelerator: Accelerator
     ocr_engine: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_cloud_accelerator(cls, data: object) -> object:
+        # Settings and job snapshots stored before accelerator 'external' hold cloud
+        # candidates on 'cpu'; read them as 'external' instead of failing.
+        if isinstance(data, dict) and data.get("engine") in CLOUD_ASR_ENGINES and data.get("accelerator") != "external":
+            return {**data, "accelerator": "external"}
+        return data
+
     @model_validator(mode="after")
     def _cloud_runs_external(self) -> Candidate:
         if (self.engine in CLOUD_ASR_ENGINES) != (self.accelerator == "external"):
