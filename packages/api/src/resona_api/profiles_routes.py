@@ -9,9 +9,11 @@ from resona_postprocess.profile import ProfileError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from . import schemas
 from .auth import Principal, admin_principal, client_principal
 from .db.models import ProfileRevision
 from .deps import get_db_session
+from .openapi import CLIENT
 from .privacy import (
     BUNDLED_PROFILE_NAME,
     ProfileNotFound,
@@ -20,7 +22,7 @@ from .privacy import (
     validate_profile_body,
 )
 
-router = APIRouter()
+router = APIRouter(tags=[CLIENT])
 
 
 def _require_name(name: str) -> None:
@@ -40,7 +42,10 @@ def _latest_row(session: Session, organization_id: str, name: str) -> ProfileRev
     ).first()
 
 
-@router.get("/profiles", summary="List the organization's profiles", tags=["Config"])
+@router.get(
+    "/profiles", summary="List the organization's profiles", tags=["Config"], operation_id="profiles_list",
+    response_model=schemas.ProfileList, responses=schemas.error_responses(),
+)
 def list_profiles_route(
     principal: Principal = Depends(client_principal),
     session: Session = Depends(get_db_session),
@@ -62,7 +67,13 @@ def list_profiles_route(
     return {"profiles": profiles}
 
 
-@router.get("/profiles/{name}", summary="Get one profile", tags=["Config"])
+@router.get(
+    "/profiles/{name}", summary="Get one profile", tags=["Config"], operation_id="profiles_get",
+    response_model=schemas.ProfileView, response_model_exclude_unset=True,
+    responses=schemas.error_responses({
+        404: [schemas.DETAIL], 409: ["stored_profile_invalid"], 422: ["invalid_profile_name"],
+    }),
+)
 def get_profile_route(
     name: str,
     principal: Principal = Depends(client_principal),
@@ -84,7 +95,14 @@ def get_profile_route(
     }
 
 
-@router.put("/profiles/{name}", summary="Create the next revision of a profile", tags=["Config"])
+@router.put(
+    "/profiles/{name}", summary="Create the next revision of a profile", tags=["Config"],
+    operation_id="profiles_put", response_model=schemas.ProfileRef,
+    responses=schemas.error_responses({
+        409: ["reserved_profile_name", "revision_conflict"],
+        422: ["invalid_profile_name", "invalid_profile", schemas.VALIDATION],
+    }),
+)
 def put_profile_route(
     name: str,
     body: dict,
@@ -120,7 +138,13 @@ def put_profile_route(
     return {"name": name, "revision": revision}
 
 
-@router.delete("/profiles/{name}", summary="Delete a profile", tags=["Config"])
+@router.delete(
+    "/profiles/{name}", summary="Delete a profile", tags=["Config"], operation_id="profiles_delete",
+    response_model=schemas.Deleted,
+    responses=schemas.error_responses({
+        404: [schemas.DETAIL], 409: ["revision_conflict"], 422: ["invalid_profile_name"],
+    }),
+)
 def delete_profile_route(
     name: str,
     principal: Principal = Depends(admin_principal),

@@ -30,11 +30,12 @@ from .db.engine import engine
 from .db.models import TestbenchItem, TestbenchRun, Upload
 from .deps import get_db_session
 from .errors import api_error
+from .openapi import ADMIN
 from .settings_store import current_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1/testbench", tags=["Testbench"])
+router = APIRouter(prefix="/v1/testbench", tags=[ADMIN, "Testbench"])
 
 _LANGUAGE = re.compile(r"^[a-z]{2,3}$")
 DISABLED_MESSAGE = (

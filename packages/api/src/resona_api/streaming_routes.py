@@ -42,9 +42,11 @@ from resona_cloud_stt.streaming import open_stream, supports_streaming
 from resona_job_core import PolicyDenied
 
 from . import engine_registry as reg
+from . import schemas
 from .auth import Principal, client_principal, websocket_principal
 from .db.engine import engine as db_engine
 from .deps import get_db_session
+from .openapi import CLIENT
 from .privacy import admit, cloud_endpoint_allowed
 from .settings_store import current_settings
 
@@ -53,7 +55,7 @@ from .settings_store import current_settings
 _CLOUD_FINAL_DRAIN_SECONDS = 3.0
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=[CLIENT])
 
 
 # Encodings that map directly to the engine's int16 PCM input.
@@ -68,7 +70,10 @@ def _streamable(info) -> bool:
     )
 
 
-@router.get("/v1/listen/engines", tags=["Streaming"])
+@router.get(
+    "/v1/listen/engines", tags=["Streaming"], operation_id="listen_engines_list",
+    response_model=schemas.ListenEngineList, responses=schemas.error_responses(),
+)
 def list_listen_engines(
     principal: Principal = Depends(client_principal),
     session: Session = Depends(get_db_session),

@@ -7,12 +7,14 @@ from resona_job_core import OrganizationSettings
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
+from . import schemas
 from .auth import Principal, admin_principal, client_principal
 from .db.models import SettingsRevision
 from .deps import get_db_session
+from .openapi import CLIENT
 from .settings_store import current_settings
 
-router = APIRouter()
+router = APIRouter(tags=[CLIENT])
 
 
 def _etag(revision: int) -> str:
@@ -28,7 +30,10 @@ def _parse_if_match(value: str) -> int | None:
     return int(candidate) if candidate.isdigit() else None
 
 
-@router.get("/v1/settings", tags=["Settings"])
+@router.get(
+    "/v1/settings", tags=["Settings"], operation_id="settings_get", response_model=schemas.SettingsDoc,
+    responses=schemas.error_responses({404: [schemas.DETAIL]}),
+)
 def get_settings(
     response: Response,
     principal: Principal = Depends(client_principal),
@@ -47,7 +52,16 @@ def get_settings(
     }
 
 
-@router.put("/v1/settings", tags=["Settings"])
+@router.put(
+    "/v1/settings", tags=["Settings"], operation_id="settings_put", response_model=schemas.SettingsDoc,
+    responses=schemas.error_responses({
+        400: [schemas.DETAIL],
+        404: [schemas.DETAIL],
+        409: ["revision_conflict"],
+        422: [schemas.VALIDATION],
+        428: [schemas.DETAIL],
+    }),
+)
 def put_settings(
     body: OrganizationSettings,
     response: Response,

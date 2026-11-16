@@ -15,23 +15,24 @@ import uuid
 
 from decouple import config
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, ValidationError
 from resona_job_core import Candidate, JobResult, PolicyDenied, cloud_asr_endpoint_id
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
 from . import engine_registry as reg
-from . import clock, jobs_routes, storage
+from . import clock, jobs_routes, schemas, storage
 from .auth import Principal, client_principal
 from .db.engine import engine as db_engine
 from .db.models import Job, JobStatus, Organization, Worker
 from .errors import api_error, validation_message
+from .openapi import CLIENT
 from .privacy import admit_speech, cloud_endpoint_allowed
 from .settings_store import current_settings
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=[CLIENT])
 
 SYNC_WAIT_SECONDS: float = config("RESONA_SYNC_WAIT_SECONDS", default=60.0, cast=float)
 SYNC_POLL_SECONDS = 0.25
@@ -155,7 +156,10 @@ def _org_engines(session: Session, organization_id: str) -> dict:
     return {"engines": [*engines.values(), *speech], "default": default}
 
 
-@router.get("/v1/engines", tags=["Engines"])
+@router.get(
+    "/v1/engines", tags=["Engines"], operation_id="engines_list", response_model=schemas.EngineList,
+    responses=schemas.error_responses(),
+)
 def list_engines(principal: Principal = Depends(client_principal)):
     """Engines the caller's organization can use: tested, approved and policy-filtered."""
     with Session(db_engine) as session:
@@ -248,7 +252,32 @@ def _openai_response(result: JobResult, response_format: str):
     return JSONResponse(payload)
 
 
-@router.post("/v1/audio/transcriptions", tags=["Audio"])
+_TRANSCRIPTION_ERRORS = schemas.error_responses(schemas.merge_codes(schemas.UPLOAD, schemas.ADMISSION, {
+    400: ["invalid_idempotency_key"],
+    404: ["job_not_found"],
+    409: ["job_cancelled"],
+    410: ["content_unavailable"],
+    502: ["job_failed"],
+    504: ["timeout"],
+}), model=schemas.JobErrorBody)
+_TRANSCRIPTION_ERRORS[502]["description"] = (
+    "The job failed: `error` is the job's own error code (open set, e.g. `unsupported_input`), "
+    "`job_failed` when it has none."
+)
+_TRANSCRIPTION_ERRORS[504]["description"] = (
+    "Error: `timeout`. The job keeps running; `job_id` and the `Location` header name it."
+)
+
+
+@router.post(
+    "/v1/audio/transcriptions", tags=["Audio"], operation_id="audio_transcriptions_create",
+    response_model=schemas.TranscriptionResponse,
+    responses={
+        200: {"content": {"text/plain": {"schema": {"type": "string"}}},
+              "description": "The transcript: JSON, or plain text with `response_format=text`."},
+        **_TRANSCRIPTION_ERRORS,
+    },
+)
 async def create_transcription(
     request: Request,
     principal: Principal = Depends(client_principal),
@@ -319,7 +348,21 @@ class SpeechRequest(BaseModel):
     language: str | None = None
 
 
-@router.post("/v1/audio/speech", tags=["Audio"])
+@router.post(
+    "/v1/audio/speech", tags=["Audio"], operation_id="audio_speech_create", response_class=Response,
+    responses={
+        200: {"content": {"audio/*": {"schema": {"type": "string", "format": "binary"}}},
+              "description": "The synthesized audio; the content type follows the engine and `response_format`."},
+        **schemas.error_responses({
+            400: [schemas.DETAIL],
+            403: ["policy_denied"],
+            409: [schemas.DETAIL],
+            422: [schemas.VALIDATION],
+            502: [schemas.DETAIL],
+            503: [schemas.DETAIL],
+        }),
+    },
+)
 def create_speech(
     body: SpeechRequest,
     principal: Principal = Depends(client_principal),

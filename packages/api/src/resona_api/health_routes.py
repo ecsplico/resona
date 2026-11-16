@@ -20,19 +20,20 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from . import clock, maintenance
+from . import clock, maintenance, schemas
 from .db.engine import engine
 from .db.models import Worker
 from .db.schema import TARGET_VERSION
 from .jobs_routes import WORKER_ONLINE_WINDOW
+from .openapi import CLIENT
 from .paths import DATA_PATH, DB_PATH
 
-router = APIRouter(tags=["Health"])
+router = APIRouter(tags=[CLIENT, "Health"])
 
 MAINTENANCE_MAX_AGE = timedelta(seconds=3 * maintenance.INTERVAL_SECONDS)
 
 
-@router.get("/health")
+@router.get("/health", operation_id="health_get", response_model=schemas.HealthView)
 def health() -> dict[str, str]:
     """Liveness: the process serves HTTP. Checks nothing else."""
     return {"status": "ok"}
@@ -76,7 +77,10 @@ def _capacity() -> str:
     return "available" if online else "degraded"
 
 
-@router.get("/ready", response_model=None)
+@router.get(
+    "/ready", operation_id="ready_get", response_model=schemas.ReadyView,
+    responses={503: {"model": schemas.ReadyView, "description": "Not ready: a check failed (`status: not_ready`)."}},
+)
 def ready() -> JSONResponse:
     checks = {
         "schema": _schema_current(),
