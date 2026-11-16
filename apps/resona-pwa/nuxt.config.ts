@@ -35,6 +35,9 @@ export default defineNuxtConfig({
 		// /directus/** proxies the allow-listed Directus API paths, so Directus needs
 		// no public host of its own (server/routes/directus/[...path].ts).
 		directusInternalUrl: "",
+		// Server-side URL of the dictation MCP service (NUXT_DICTATIONS_MCP_INTERNAL_URL).
+		// When set, /mcp proxies to it (server/routes/mcp.ts); empty = 404.
+		dictationsMcpInternalUrl: "",
 		public: {
 			directusUrl: "http://localhost:7700",
 			resonaApiUrl: "http://localhost:7710",

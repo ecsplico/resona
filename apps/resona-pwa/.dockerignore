@@ -15,4 +15,7 @@ coverage
 worker/.venv
 worker/__pycache__
 worker/.pytest_cache
+mcp/.venv
+mcp/__pycache__
+mcp/.pytest_cache
 **/.DS_Store

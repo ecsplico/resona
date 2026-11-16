@@ -8,7 +8,8 @@ transcribed by the backend, and they review/edit/export the result. Built on the
 design system (plain Vue + Tailwind v4 CSS tokens — no component library).
 
 **This app lives in the resona monorepo at `apps/resona-pwa/`, but it is a separate
-deployable with its own toolchain** (bun, own compose files, own uv env for `worker/`).
+deployable with its own toolchain** (bun, own compose files, own uv envs for `worker/`
+and `mcp/`).
 It talks to its backends over HTTP/WebSocket only. Never import from `packages/*` or any
 other Python code in the monorepo, and nothing there imports from here — communicate over
 HTTP exclusively. Run every command below from `apps/resona-pwa/` (or `just pwa <recipe>`
@@ -102,6 +103,28 @@ state machine and German error messages as the standalone `localProcessor.ts`. E
 hub default), `WORKER_POLL_INTERVAL`, `WORKER_BATCH`, `WORKER_STALE_MINUTES`. Build/run
 it via `docker compose` (the `project-worker` service). A derived title (`title_auto`) is
 best effort: a failed title write is logged (no text) and never marks the row `error`.
+
+### Dictation MCP
+
+`resona-dictations-mcp` lives in `mcp/` (package `resona_dictations_mcp`, own `uv.lock`,
+`mcp==2.3.0` like the monorepo's `resona-mcp`, no imports from it or `packages/*`): MCP
+access to a user's **own dictations** over Streamable HTTP, compose service
+`dictations-mcp` (no published port; `docker-compose.backend.yml` binds loopback `:7740`
+for `bun run dev`), reached at `<app origin>/mcp` through `server/routes/mcp.ts`
+(`NUXT_DICTATIONS_MCP_INTERNAL_URL`, empty = 404; forwards no cookies). Rules: it acts
+only with the caller's Directus token (`Authorization: Bearer`, verified via `GET
+/users/me`, accepted tokens cached 30 s by hash, session bound to the token hash, a
+Directus 401 in a tool call drops the cache entry), holds no admin/worker token, never
+calls the hub, and adds no owner filter (the `user` policy scopes every read; `directus.py`
+is the only Directus client, list queries go in a `SEARCH` body so they reach no URL log).
+Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
+`list_dictations` (cursor = last `date_created` + count of rows already returned at that
+instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
+(`transcripts.text` in ranges ≤ 32768). Logs: `tool= user= outcome= ids= ms=`, never text,
+titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa test-mcp`)
+start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
+compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running
+one). Epic #79; details `mcp/README.md`.
 
 ### Backup
 
@@ -516,6 +539,8 @@ shared/debugReport.ts                # debug report size limit + redaction (app 
 server/                              # the sanctioned Nitro OAuth layer (server only)
 ├── api/calendar/index.{get,delete}.ts  # single provider-agnostic endpoint
 ├── api/debug-report.post.ts         # temporary: logs the redacted /debug report as [resona-debug]
+├── routes/directus/[...path].ts     # same-origin proxy to Directus (allow-listed API paths)
+├── routes/mcp.ts                    # same-origin proxy to the dictations-mcp service (/mcp)
 └── utils/calendar/                  # provider interface + registry + Google + session
 ```
 
@@ -633,6 +658,7 @@ the server via `useRuntimeConfig(event)` — these never reach the browser:
 | `NUXT_GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth client secret |
 | `NUXT_GOOGLE_REDIRECT_URI` | (derived) | override; default `<origin>/api/calendar` |
 | `NUXT_SESSION_PASSWORD` | (empty) | 32+ char secret sealing the token cookie |
+| `NUXT_DICTATIONS_MCP_INTERNAL_URL` | (empty) | dictation MCP service behind `/mcp` (set in the compose files); empty = 404 |
 
 Never commit `.env` (gitignored); only `.env.example` is tracked.
 
@@ -681,6 +707,8 @@ for PWA-manifest/service-worker changes).
 - Don't deploy the web app via `nuxt generate` (static) now that Nitro routes exist — use the
   Nitro Node/serverless server (`nuxt build` → `node .output/server`). The only static build
   is the Capacitor app's web assets (`bun run cap:build`).
+- Don't give the `dictations-mcp` service a Directus admin/worker token or hub access, and
+  don't log transcript text, titles, search queries or tokens there.
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.
 - Don't set `engine` on a `recordings` row — it belongs on `transcripts`.
 - Don't set live-WS auth via headers — browsers can't; use `?token=`.

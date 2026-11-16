@@ -60,6 +60,24 @@ jobs:
       - name: Test
         run: uv run --python 3.12 pytest -q
 
+  # The dictation MCP service; its isolation tests start Directus + bootstrap from
+  # docker-compose.backend.yml (tests/conftest.py).
+  mcp:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/resona-pwa/mcp
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/resona-pwa/mcp/uv.lock
+
+      - name: Test
+        run: uv run --python 3.12 pytest -q
+
   # The user policy + owner-guard extension against a real Directus (#19): the
   # image from directus/Dockerfile.directus (pinned minor), bootstrap.mjs twice
   # (idempotent), then directus/verify-permissions.mjs.
