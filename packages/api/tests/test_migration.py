@@ -295,6 +295,46 @@ def test_v7_database_gains_unreported_worker_features(legacy_db, monkeypatch):
 
 
 
+def test_v8_database_gains_webhook_endpoints_and_keeps_jobs(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:8])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 8)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    raw = sqlite3.connect(legacy_db)  # a v8 hub's models had no webhook table
+    raw.execute("DROP TABLE webhookendpoint")
+    raw.commit()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    versions = [r[0] for r in raw.execute("SELECT version FROM schema_version ORDER BY version")]
+    columns = {r[1] for r in raw.execute("PRAGMA table_info(webhookendpoint)")}
+    jobs = raw.execute("SELECT COUNT(*) FROM job").fetchone()[0]
+    insert = (
+        "INSERT INTO webhookendpoint (id, organization_id, name, url, secret, created_at, revoked_at) "
+        "VALUES (?, 'bootstrap-org', 'app', 'https://hooks.example.org/x', 'whsec_x', '2026-01-01 10:00:00', ?)"
+    )
+    raw.execute(insert, ("wh_1", None))
+    with pytest.raises(sqlite3.IntegrityError):  # one unrevoked endpoint per name
+        raw.execute(insert, ("wh_2", None))
+    raw.execute(insert, ("wh_3", "2026-01-02 10:00:00"))  # revoked rows do not hold the name
+    raw.close()
+    assert versions == list(range(1, schema.TARGET_VERSION + 1)) and schema.TARGET_VERSION >= 9
+    assert columns == {"id", "organization_id", "name", "url", "secret", "created_at", "revoked_at"}
+    assert jobs == 2
+
+
+def test_fresh_database_has_the_unique_webhook_name_index(tmp_path):
+    path = tmp_path / "fresh.db"
+    migrate(_engine_for(path))
+    raw = sqlite3.connect(path)
+    ddl = raw.execute("SELECT sql FROM sqlite_master WHERE name = 'ux_webhookendpoint_active_name'").fetchone()[0]
+    raw.close()
+    assert "UNIQUE" in ddl and "revoked_at IS NULL" in ddl
+
+
 def test_v3_database_never_reissues_a_deleted_job_id(legacy_db, monkeypatch):
     from resona_api.db.models import Job
 

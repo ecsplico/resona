@@ -275,12 +275,13 @@ def _restore(backup: str) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print("restore complete")
-    for name in ("credentials_revoked", "workers_revoked", "leases_invalidated",
+    for name in ("credentials_revoked", "workers_revoked", "webhooks_revoked", "leases_invalidated",
                  "inputs_unavailable", "results_unavailable", "uploads_dropped"):
         print(f"  {name}: {getattr(report, name)}")
     for name, count in report.maintenance.items():
         print(f"  maintenance.{name}: {count}")
-    print("Every restored credential is revoked; issue fresh credentials and re-enroll workers.")
+    print("Every restored credential and webhook endpoint is revoked; issue fresh credentials, "
+          "re-enroll workers and register the webhook endpoints again.")
     return 0
 
 

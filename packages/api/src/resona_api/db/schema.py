@@ -33,14 +33,14 @@ from typing import Any
 from decouple import config
 from pydantic import ValidationError
 from sqlalchemy.dialects import sqlite as sqlite_dialect
-from sqlalchemy.schema import CreateTable
+from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlmodel import SQLModel
 
 from resona_job_core import JobResult, Provenance, Segment, default_settings
 
 from .. import clock, storage
 from ..paths import FILE_PATH
-from .models import Job, Organization, SettingsRevision
+from .models import Job, Organization, SettingsRevision, WebhookEndpoint
 
 log = logging.getLogger(__name__)
 
@@ -472,6 +472,28 @@ def _v8_worker_features(conn: sqlite3.Connection) -> AfterCommit | None:
 
 
 
+# ── migration 9: webhook endpoints ──────────────────────────────────────
+#
+# On a fresh database migration 1 already created the table from the ORM
+# metadata, but ``_create_missing_tables`` emits no indexes: the partial unique
+# index (one unrevoked endpoint per organization and name) is created here.
+
+def _v9_webhook_endpoints(conn: sqlite3.Connection) -> AfterCommit | None:
+    _create_missing_tables(conn)
+    table = WebhookEndpoint.__table__
+    if table.name not in _table_names(conn):
+        raise SchemaError("migration 9 did not create the webhookendpoint table")
+    dialect = sqlite_dialect.dialect()
+    for index in table.indexes:
+        conn.execute(str(CreateIndex(index, if_not_exists=True).compile(dialect=dialect)))
+    present = {r[1] for r in conn.execute(f"PRAGMA index_list({table.name})")}
+    missing = {index.name for index in table.indexes} - present
+    if missing:
+        raise SchemaError(f"migration 9 did not create indexes: {sorted(missing)}")
+    return None
+
+
+
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (1, _v1_identity_settings_jobs),
@@ -482,6 +504,7 @@ MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (6, _v6_worker_text_jobs),
     (7, _v7_worker_diarize),
     (8, _v8_worker_features),
+    (9, _v9_webhook_endpoints),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]
