@@ -70,6 +70,25 @@ watch([() => recording.value?.id, () => recording.value?.audio_file], async () =
 	audioSrc.value = next;
 }, { immediate: true });
 
+// Where each later part (re-dictation) starts in the audio: faint ticks on the
+// player's track. Read again whenever the audio file changes (a part was appended).
+const partMarks = ref<number[]>([]);
+
+watch([() => recording.value?.id, () => recording.value?.audio_file], async ([recId, file]) => {
+	if (!recId || !file) {
+		partMarks.value = [];
+		return;
+	}
+	try {
+		const parts = await store.listParts(recId);
+		partMarks.value = parts.flatMap(p => (p.offset_seconds != null && p.offset_seconds > 0 ? [p.offset_seconds] : []));
+	}
+	catch {
+		// Ticks are an aid only: without the parts the track simply has none.
+		partMarks.value = [];
+	}
+}, { immediate: true });
+
 // Distinguish a transient "service unreachable" failure (offline styling +
 // retry hint) from a genuine transcription error (red banner).
 const offlineError = computed(() => isServiceUnreachable(recording.value?.error_message));
@@ -258,15 +277,22 @@ function discardEdits(): void {
 // result replaces it as a whole. Once it lands, the editor shows it.
 const postprocessing = computed(() => postprocessRunning(transcript.value));
 
-// A profile's output is shown rendered (headings, paragraphs); "Bearbeiten"
-// switches to the editor, which also opens for dictation.
-const editingProcessed = ref(false);
-const showRendered = computed(() => Boolean(transcript.value?.applied_profile) && !editingProcessed.value);
+// The text is read-only until "Bearbeiten" (pencil) turns editing on. A profile's
+// output is shown rendered (headings, paragraphs) while not editing.
+const editing = ref(false);
+const showRendered = computed(() => Boolean(transcript.value?.applied_profile) && !editing.value);
+
+async function toggleEditing(): Promise<void> {
+	editing.value = !editing.value;
+	if (!editing.value) return;
+	await nextTick();
+	editorRef.value?.focus();
+}
 
 function reseed(): void {
 	edit.seed(transcript.value?.text ?? "");
 	forgetUnsaved();
-	editingProcessed.value = false;
+	editing.value = false;
 }
 
 watch(postprocessing, (running, wasRunning) => {
@@ -401,19 +427,23 @@ const pttKeyLabel = isMac ? "ctrl" : "Strg";
 async function startDictation(): Promise<void> {
 	if (pttState.value !== "idle" || redict.recording.value) return;
 	pttError.value = null;
+	pttStopWanted = false;
 	// Dictation inserts at the caret, so the rendered view gives way to the editor.
 	if (showRendered.value) {
-		editingProcessed.value = true;
+		editing.value = true;
 		await nextTick();
 	}
 	pttPart = `ptt-${++pttSeq}`;
-	// At the caret when the user is in the text, else at its end.
+	// At the caret when the user was in the text at the press, else at its end.
 	const ed = editorRef.value;
-	ed?.insertDictationPart(pttPart, ed.hasFocus() ? "caret" : "end");
+	ed?.insertDictationPart(pttPart, editingAtPress || ed.hasFocus() ? "caret" : "end");
+	editingAtPress = false;
 	try {
 		await pttRecorder.start();
 		pttState.value = "recording";
 		pttDiag.record("mic", true, "Mikrofonzugriff erteilt.");
+		// Released while the microphone was still opening.
+		if (pttStopWanted) void stopDictation();
 	}
 	catch (err) {
 		dropPttPart();
@@ -423,7 +453,7 @@ async function startDictation(): Promise<void> {
 }
 
 async function stopDictation(): Promise<void> {
-	pttLatched.value = false;
+	pttStopWanted = false;
 	if (pttState.value !== "recording") return;
 	pttState.value = "transcribing";
 	if (pttPart) editorRef.value?.setDictationPartStatus(pttPart, "transcribing");
@@ -475,42 +505,14 @@ async function stopDictation(): Promise<void> {
 	}
 }
 
-// Touch has no Ctrl key and holding a button while the thumb also has to reach
-// the text is awkward: a short tap latches dictation on, the next tap stops it;
-// holding (>= 400 ms) keeps the old push-to-talk behavior (stop on release).
-const PTT_HOLD_MS = 400;
-let pttDownAt = 0;
-const pttLatched = ref(false);
+// The record button: holding it (or the left Ctrl key) dictates at the caret while
+// held, or at the end of the text when not editing. A release that comes while
+// the microphone is still opening stops the dictation as soon as it records.
+let pttStopWanted = false;
 
-function onPttDown(e: PointerEvent): void {
-	if (pttLatched.value) return;
-	pttDownAt = Date.now();
-	try {
-		(e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
-	}
-	catch {
-		// pointer capture unsupported in test env
-	}
-	void startDictation();
-}
-
-function onPttUp(e: PointerEvent): void {
-	try {
-		(e.currentTarget as Element | null)?.releasePointerCapture?.(e.pointerId);
-	}
-	catch {
-		// pointer capture unsupported in test env
-	}
-	if (pttLatched.value) {
-		pttLatched.value = false;
-		void stopDictation();
-		return;
-	}
-	if (e.type === "pointerup" && Date.now() - pttDownAt < PTT_HOLD_MS && pttState.value === "recording") {
-		pttLatched.value = true;
-		return;
-	}
-	void stopDictation();
+function releaseDictation(): void {
+	if (pttState.value === "recording") void stopDictation();
+	else if (pttPart) pttStopWanted = true;
 }
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -521,11 +523,19 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 function onKeyUp(e: KeyboardEvent): void {
-	if (e.code === pttKeyCode && pttState.value === "recording") {
+	if (e.code === pttKeyCode && pttPart) {
 		e.preventDefault();
-		void stopDictation();
+		releaseDictation();
 	}
 }
+
+const recordLabel = computed(() => {
+	if (pttState.value === "recording") return "Diktat läuft – loslassen zum Einfügen";
+	if (pttState.value === "transcribing") return "Diktat wird transkribiert…";
+	return `Aufnehmen: tippen hängt an, halten (oder ${pttKeyLabel}) diktiert an der Cursorposition`;
+});
+// A profile run replaces the text as a whole: nothing is recorded into it meanwhile.
+const canRecord = computed(() => canEdit.value && !postprocessing.value);
 
 // ── Re-dictation (record more parts; each lands where its chip stands) ─────
 // The bar records one part at a time; a stopped part is stored with its audio
@@ -567,11 +577,11 @@ const postprocessBlocked = computed(() => {
 const MOVED_TO_END = "Ein Nachdiktat wurde ans Ende gesetzt, weil sich der Text geändert hat.";
 // The part the record bar is recording (null: bar closed).
 let redictMicPart: string | null = null;
-// Pressing the button moves the focus out of the text, so whether the user was
-// editing is noted on pointerdown, before that happens.
+// A press can move the focus out of the text, so whether the user was editing is
+// noted when the record button goes down, before that could happen.
 let editingAtPress = false;
 
-function noteRedictPress(): void {
+function noteRecordPress(): void {
 	editingAtPress = editorRef.value?.hasFocus() ?? false;
 }
 
@@ -908,8 +918,8 @@ onUnmounted(() => {
 				@click="goBack"
 			>
 				<svg
-					width="20"
-					height="20"
+					width="24"
+					height="24"
 					viewBox="0 0 24 24"
 					fill="none"
 					stroke="currentColor"
@@ -921,55 +931,87 @@ onUnmounted(() => {
 					<path d="M15 18l-6-6 6-6" />
 				</svg>
 			</button>
-			<input
-				v-if="editingTitle"
-				ref="titleInput"
-				v-model="titleDraft"
-				class="detail__title-input"
-				type="text"
-				aria-label="Titel"
-				data-testid="title-input"
-				@keydown.enter.prevent="commitTitle"
-				@keydown.esc.prevent="cancelTitleEdit"
-				@blur="commitTitle"
-			>
-			<button
-				v-else
-				type="button"
-				class="detail__bar-title detail__bar-title--btn"
-				title="Titel ändern"
-				data-testid="bar-title"
-				:disabled="!recording"
-				@click="startTitleEdit"
-			>
-				{{ recording?.title || "Aufnahme" }}
-			</button>
-			<span
-				v-if="titleError"
-				class="detail__tool-error"
-				role="alert"
-				data-testid="title-error"
-			>{{ titleError }}</span>
+			<span class="detail__bar-spacer" />
 			<div class="detail__actions">
-				<template v-if="canEdit && dirty">
-					<HButton
-						variant="secondary"
-						:disabled="edit.saving.value"
-						data-testid="discard-edits"
-						@click="discardEdits"
+				<button
+					v-if="canEdit && dirty"
+					type="button"
+					class="detail__icon"
+					aria-label="Änderungen verwerfen"
+					title="Änderungen verwerfen"
+					:disabled="edit.saving.value"
+					data-testid="discard-edits"
+					@click="discardEdits"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
 					>
-						Verwerfen
-					</HButton>
-				</template>
-				<HButton
+						<path d="M3 7v6h6" />
+						<path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+					</svg>
+				</button>
+				<button
+					v-if="canEdit && !postprocessing"
+					type="button"
+					class="detail__icon"
+					:class="{ 'detail__icon--on': editing }"
+					:aria-pressed="editing"
+					:aria-label="editing ? 'Bearbeiten beenden' : 'Bearbeiten'"
+					:title="editing ? 'Bearbeiten beenden' : 'Bearbeiten'"
+					data-testid="edit"
+					@click="toggleEditing"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M12 20h9" />
+						<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+					</svg>
+				</button>
+				<button
 					v-if="canEdit"
-					variant="primary"
+					type="button"
+					class="detail__icon"
+					:class="{ 'detail__icon--accent': dirty && !edit.saving.value }"
+					:aria-label="edit.saving.value ? 'Speichert…' : 'Speichern'"
+					:title="edit.saving.value ? 'Speichert…' : 'Speichern'"
+					:aria-busy="edit.saving.value"
 					:disabled="edit.saving.value || pttState !== 'idle' || postprocessing || !dirty"
 					data-testid="save-transcript"
 					@click="saveTranscript()"
 				>
-					{{ edit.saving.value ? "Speichert…" : "Speichern" }}
-				</HButton>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+						<polyline points="17 21 17 13 7 13 7 21" />
+						<polyline points="7 3 7 8 15 8" />
+					</svg>
+				</button>
 				<button
 					v-if="canShare"
 					type="button"
@@ -980,8 +1022,8 @@ onUnmounted(() => {
 					@click="shareTranscript"
 				>
 					<svg
-						width="18"
-						height="18"
+						width="22"
+						height="22"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
@@ -1017,8 +1059,8 @@ onUnmounted(() => {
 					@click="copyTranscript"
 				>
 					<svg
-						width="18"
-						height="18"
+						width="22"
+						height="22"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
@@ -1050,8 +1092,8 @@ onUnmounted(() => {
 					@click="askDelete"
 				>
 					<svg
-						width="18"
-						height="18"
+						width="22"
+						height="22"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
@@ -1123,9 +1165,40 @@ onUnmounted(() => {
 
 			<template v-else-if="recording">
 				<section class="detail__meta">
-					<h1 class="detail__title">
-						{{ recording.title || "Aufnahme" }}
+					<input
+						v-if="editingTitle"
+						ref="titleInput"
+						v-model="titleDraft"
+						class="detail__title detail__title-input"
+						type="text"
+						aria-label="Titel"
+						data-testid="title-input"
+						@keydown.enter.prevent="commitTitle"
+						@keydown.esc.prevent="cancelTitleEdit"
+						@blur="commitTitle"
+					>
+					<h1
+						v-else
+						class="detail__title"
+					>
+						<button
+							type="button"
+							class="detail__title-btn"
+							title="Titel ändern"
+							data-testid="bar-title"
+							@click="startTitleEdit"
+						>
+							{{ recording.title || "Aufnahme" }}
+						</button>
 					</h1>
+					<p
+						v-if="titleError"
+						class="detail__tool-error"
+						role="alert"
+						data-testid="title-error"
+					>
+						{{ titleError }}
+					</p>
 					<p
 						v-if="metaLine"
 						class="detail__metaline tabular"
@@ -1355,19 +1428,6 @@ onUnmounted(() => {
 						:blocked="postprocessBlocked"
 						@changed="onPostprocessChanged"
 					/>
-					<div
-						v-if="transcript?.applied_profile && !postprocessing"
-						class="detail__viewbar"
-					>
-						<button
-							type="button"
-							class="detail__viewtoggle"
-							data-testid="transcript-view-toggle"
-							@click="editingProcessed = !editingProcessed"
-						>
-							{{ showRendered ? "Bearbeiten" : "Formatiert anzeigen" }}
-						</button>
-					</div>
 					<div class="detail__surface">
 						<MarkdownView
 							v-if="showRendered"
@@ -1378,7 +1438,7 @@ onUnmounted(() => {
 							v-else
 							ref="editorRef"
 							v-model="edit.text.value"
-							:editable="!postprocessing"
+							:editable="editing && !postprocessing"
 							:movable="wide"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
@@ -1425,96 +1485,9 @@ onUnmounted(() => {
 		</div>
 
 		<div
-			v-if="canEdit || (recording?.audio_file && audioSrc)"
+			v-if="canRecord || (recording?.audio_file && audioSrc)"
 			class="detail__foot"
 		>
-			<div
-				v-if="canEdit && !postprocessing"
-				class="detail__tools"
-				role="group"
-				aria-label="Diktieren und weiter aufnehmen"
-			>
-				<button
-					type="button"
-					class="detail__ptt"
-					:class="{
-						'detail__ptt--active': pttState === 'recording',
-						'detail__ptt--busy': pttState === 'transcribing',
-					}"
-					:disabled="pttState === 'transcribing' || redict.recording.value"
-					data-testid="push-to-talk"
-					:aria-pressed="pttState === 'recording'"
-					:aria-label="`Zum Diktieren gedrückt halten (${pttKeyLabel})`"
-					@pointerdown.prevent="onPttDown"
-					@pointerup="onPttUp"
-					@pointercancel="onPttUp"
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<rect
-							x="9"
-							y="2"
-							width="6"
-							height="12"
-							rx="3"
-						/>
-						<path d="M5 10a7 7 0 0 0 14 0" />
-						<line
-							x1="12"
-							y1="17"
-							x2="12"
-							y2="21"
-						/>
-					</svg>
-					<span>{{
-						pttState === "recording" ? (pttLatched ? "Aufnahme… tippen zum Beenden" : "Aufnahme… loslassen zum Transkribieren")
-						: pttState === "transcribing" ? "Transkribiert…"
-							: `Diktieren (tippen oder ${pttKeyLabel} halten)`
-					}}</span>
-				</button>
-				<button
-					type="button"
-					class="detail__ptt"
-					:disabled="pttState !== 'idle' || redict.recording.value"
-					data-testid="continue-recording"
-					@pointerdown="noteRedictPress"
-					@click="startRedictation"
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<circle
-							cx="12"
-							cy="12"
-							r="9"
-						/>
-						<circle
-							cx="12"
-							cy="12"
-							r="3.5"
-							fill="currentColor"
-						/>
-					</svg>
-					<span>Weiter aufnehmen</span>
-				</button>
-			</div>
 			<HRecordBar
 				v-if="redict.recording.value"
 				label="Nachdiktat"
@@ -1533,7 +1506,37 @@ onUnmounted(() => {
 				v-else-if="recording?.audio_file && audioSrc"
 				:src="audioSrc"
 				:fallback-duration="recording.duration_seconds ?? undefined"
-			/>
+				:marks="partMarks"
+			>
+				<HRecordButton
+					v-if="canRecord"
+					:label="recordLabel"
+					:active="pttState === 'recording'"
+					:busy="pttState === 'transcribing'"
+					:disabled="pttState === 'transcribing'"
+					data-testid="record"
+					@press="noteRecordPress"
+					@tap="startRedictation"
+					@hold-start="startDictation"
+					@hold-end="releaseDictation"
+				/>
+			</HPlayerDock>
+			<div
+				v-else
+				class="detail__recrow"
+			>
+				<HRecordButton
+					:label="recordLabel"
+					:active="pttState === 'recording'"
+					:busy="pttState === 'transcribing'"
+					:disabled="pttState === 'transcribing'"
+					data-testid="record"
+					@press="noteRecordPress"
+					@tap="startRedictation"
+					@hold-start="startDictation"
+					@hold-end="releaseDictation"
+				/>
+			</div>
 		</div>
 	</div>
 </template>
@@ -1544,15 +1547,19 @@ onUnmounted(() => {
 .detail { min-height:100dvh; display:flex; flex-direction:column; background:var(--bg); }
 .detail--pane { min-height:0; flex:1 0 auto; }
 .detail__bar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:10px 12px 10px 16px; padding-top:calc(10px + env(safe-area-inset-top)); background:var(--bg); border-bottom:1px solid var(--border); }
-.detail__bar-title--btn { background:none; border:0; padding:4px 6px; margin:-4px -6px; text-align:left; cursor:text; border-radius:6px; }
-.detail__bar-title--btn:hover:not(:disabled) { background:var(--crust-soft); }
-.detail__title-input { flex:1; min-width:0; font:inherit; font-family:var(--font-body); font-size:var(--fs-md); font-weight:600; padding:4px 8px; border:1.5px solid var(--accent); border-radius:8px; background:var(--white); color:var(--fg1); }
+.detail__bar-spacer { flex:1; }
+.detail__title-btn { all:unset; cursor:text; border-radius:6px; padding:2px 6px; margin:-2px -6px; overflow-wrap:anywhere; }
+.detail__title-btn:hover { background:var(--crust-soft); }
+.detail__title-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.detail__title-input { width:100%; box-sizing:border-box; padding:2px 8px; margin:-4px -8px; border:1.5px solid var(--accent); border-radius:8px; background:var(--white); }
 .detail__leave { position:sticky; bottom:0; z-index:6; }
-.detail__bar-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-body); font-size:var(--fs-md); font-weight:600; color:var(--fg1); }
 .detail__actions { display:flex; align-items:center; gap:2px; }
-.detail__icon { width:38px; height:38px; flex:0 0 auto; border:none; border-radius:50%; background:transparent; color:var(--crust-deep); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background var(--motion-fast) var(--motion-ease); }
-.detail__icon:hover { background:var(--cream-deep); }
-.detail__icon:active { background:var(--crust-soft); }
+.detail__icon { width:42px; height:42px; flex:0 0 auto; border:none; border-radius:50%; background:transparent; color:var(--crust-deep); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); }
+.detail__icon:disabled { opacity:0.4; cursor:default; background:transparent; }
+.detail__icon--on { background:var(--crust-soft); color:var(--fg1); }
+.detail__icon--accent { color:var(--accent); }
+.detail__icon:hover:not(:disabled) { background:var(--cream-deep); }
+.detail__icon:active:not(:disabled) { background:var(--crust-soft); }
 .detail__icon--danger:hover { background:var(--tomato-soft); color:var(--tomato-deep); }
 .detail__confirm { display:flex; align-items:center; gap:12px; padding:12px 20px; background:var(--tomato-soft); }
 .detail__confirm-text { flex:1; font-family:var(--font-body); font-size:14px; font-weight:600; color:var(--tomato-deep); }
@@ -1575,21 +1582,13 @@ onUnmounted(() => {
 .detail__banner-icon { flex-shrink:0; align-self:flex-start; margin-top:1px; }
 .detail__banner-text { flex:1; min-width:180px; display:flex; flex-direction:column; gap:4px; }
 .detail__banner-hint { font-size:13px; opacity:0.85; }
-.detail__tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .detail__tool-error { flex-basis:100%; color:var(--danger); font-family:var(--font-body); font-size:13px; }
 .detail__save-state { font-family:var(--font-body); font-size:13px; color:var(--fg3); }
 .detail__save-state--dirty { color:var(--accent-ink,var(--accent)); font-weight:600; }
 .detail__surface { flex:1; display:flex; flex-direction:column; min-height:240px; }
 .detail__surface > :deep(*) { flex:1; }
-.detail__viewbar { display:flex; justify-content:flex-end; margin:-8px 0 -8px; }
-.detail__viewtoggle { border:none; background:transparent; padding:6px 4px; font-family:var(--font-body); font-size:var(--fs-sm); font-weight:600; color:var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
-.detail__ptt { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:999px; border:1.5px solid var(--border-strong); background:var(--white); color:var(--fg2); font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer; touch-action:none; user-select:none; transition:background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
-.detail__ptt:hover:not(:disabled) { border-color:var(--accent); }
-.detail__ptt--active { background:var(--accent); color:var(--fg-on-accent); border-color:var(--accent); }
-.detail__ptt--busy { opacity:0.65; cursor:default; }
-.detail__ptt:disabled:not(.detail__ptt--busy) { opacity:0.5; cursor:default; }
 .detail__foot { position:sticky; bottom:0; z-index:5; background:var(--white); padding-bottom:env(safe-area-inset-bottom); }
-.detail__foot .detail__tools { padding:10px 16px 0; justify-content:center; border-top:1px solid var(--border); }
-.detail__foot .h-dock { border-top:0; padding-top:10px; }
+.detail__foot .h-dock { border-top:1px solid var(--border); }
+.detail__recrow { display:flex; justify-content:flex-end; padding:12px 20px 16px; border-top:1px solid var(--border); }
 .detail__statusrow { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 </style>

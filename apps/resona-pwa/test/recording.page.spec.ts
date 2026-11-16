@@ -283,9 +283,32 @@ function mergedAudio(partId: string, over: Partial<RedictationAudio> = {}): Redi
 	return { partId, ok: true, audio_file: "file-2", duration_seconds: 70, ...over } as RedictationAudio;
 }
 
+// The dock's record button. Its own tap/hold timing is covered in HRecordButton.spec;
+// here its events drive the page: tap = a part in the record bar, hold = dictation.
+function recordButton(w: VueWrapper) {
+	return w.findComponent({ name: "HRecordButton" });
+}
+
+async function tapRecord(w: VueWrapper): Promise<void> {
+	recordButton(w).vm.$emit("press");
+	recordButton(w).vm.$emit("tap");
+	await flushPromises();
+}
+
+async function holdRecord(w: VueWrapper): Promise<void> {
+	recordButton(w).vm.$emit("press");
+	recordButton(w).vm.$emit("hold-start");
+	await flushPromises();
+}
+
+async function releaseRecord(w: VueWrapper): Promise<void> {
+	recordButton(w).vm.$emit("hold-end");
+	await flushPromises();
+}
+
 // Record one part through the record bar: open → stop. Returns its id.
 async function recordPart(w: VueWrapper): Promise<string> {
-	await w.find("[data-testid=\"continue-recording\"]").trigger("click");
+	await tapRecord(w);
 	await flushPromises();
 	expect(w.find("[data-testid=\"record-bar-label\"]").text()).toBe("Nachdiktat");
 	await w.find("[data-testid=\"stop\"]").trigger("click");
@@ -522,7 +545,7 @@ describe("recording detail page", () => {
 		(save.element as HTMLButtonElement).click();
 		(save.element as HTMLButtonElement).click();
 		await nextTick();
-		expect(save.text()).toBe("Speichert…");
+		expect(save.attributes("aria-label")).toBe("Speichert…");
 		expect(save.attributes("disabled")).toBeDefined();
 		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Speichert…");
 
@@ -549,11 +572,8 @@ describe("recording detail page", () => {
 		});
 
 		async function dictate(w: VueWrapper): Promise<void> {
-			const ptt = w.find("[data-testid=\"push-to-talk\"]");
-			await ptt.trigger("pointerdown", { pointerId: 1 });
-			await flushPromises();
-			heldFor(500);
-			await ptt.trigger("pointerup", { pointerId: 1 });
+			await holdRecord(w);
+			await releaseRecord(w);
 			await vi.waitFor(() => expect(area(w).value).toContain("diktiert"));
 			await flushPromises();
 		}
@@ -593,14 +613,10 @@ describe("recording detail page", () => {
 			const reply = Promise.withResolvers<Response>();
 			globalThis.fetch = vi.fn(() => reply.promise) as unknown as typeof fetch;
 			const w = await mountSuspended(RecordingPage);
-			const ptt = w.find("[data-testid=\"push-to-talk\"]");
-			await ptt.trigger("pointerdown", { pointerId: 1 });
-			await flushPromises();
+			await holdRecord(w);
 			expect(area(w).dataset.dictationParts).toMatch(/^ptt-\d+:recording$/);
 			expect(area(w).value).toBe("Hallo Welt");
-			heldFor(500);
-			await ptt.trigger("pointerup", { pointerId: 1 });
-			await flushPromises();
+			await releaseRecord(w);
 			expect(area(w).dataset.dictationParts).toMatch(/^ptt-\d+:transcribing$/);
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
 			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeDefined();
@@ -616,12 +632,8 @@ describe("recording detail page", () => {
 			// Caret after "Hallo": the chip goes there, not to the end.
 			editorCaret.value = 5;
 			const w = await mountSuspended(RecordingPage);
-			const ptt = w.find("[data-testid=\"push-to-talk\"]");
-			await ptt.trigger("pointerdown", { pointerId: 1 });
-			await flushPromises();
-			heldFor(500);
-			await ptt.trigger("pointerup", { pointerId: 1 });
-			await flushPromises();
+			await holdRecord(w);
+			await releaseRecord(w);
 			// The user keeps typing in front of the chip while the dictation transcribes.
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("Oh, Hallo Welt");
 
@@ -657,12 +669,8 @@ describe("recording detail page", () => {
 			vi.stubGlobal("confirm", confirm);
 			globalThis.fetch = vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
 			const w = await mountSuspended(RecordingPage);
-			const ptt = w.find("[data-testid=\"push-to-talk\"]");
-			await ptt.trigger("pointerdown", { pointerId: 1 });
-			await flushPromises();
-			heldFor(500);
-			await ptt.trigger("pointerup", { pointerId: 1 });
-			await flushPromises();
+			await holdRecord(w);
+			await releaseRecord(w);
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
 			expect(guards.leave!(elsewhere, here)).toBe(false);
 			expect(confirm).toHaveBeenCalledWith("Das laufende Diktat geht verloren. Trotzdem verlassen?");
@@ -685,9 +693,7 @@ describe("recording detail page", () => {
 
 		const w = await mountSuspended(RecordingPage);
 
-		const ptt = w.find("[data-testid=\"push-to-talk\"]");
-		await ptt.trigger("pointerdown", { pointerId: 1 });
-		await w.vm.$nextTick();
+		await holdRecord(w);
 		// Recorder starts
 		expect(recorderStart).toHaveBeenCalled();
 		// Chip inserted into the editor, the text itself unchanged.
@@ -695,9 +701,7 @@ describe("recording detail page", () => {
 		expect(areaAfter.dataset.dictationParts).toMatch(/^ptt-\d+:recording$/);
 		expect(areaAfter.value).toBe("Hallo Welt");
 
-		heldFor(500);
-		await ptt.trigger("pointerup", { pointerId: 1 });
-		await w.vm.$nextTick();
+		await releaseRecord(w);
 		await new Promise(r => setTimeout(r, 0));
 		await w.vm.$nextTick();
 
@@ -719,15 +723,9 @@ describe("recording detail page", () => {
 		expect(areaFinal.dataset.dictationParts).toBe("");
 	});
 
-	/** Makes the next pointerup look like it came after a long press (hold = push-to-talk, tap = latch). */
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
-
-	function heldFor(ms: number): void {
-		const now = Date.now();
-		vi.spyOn(Date, "now").mockReturnValue(now + ms);
-	}
 
 	it("leaving with unsaved text edits asks, and Verwerfen restores the saved text", async () => {
 		const w = await mountSuspended(RecordingPage);
@@ -743,36 +741,12 @@ describe("recording detail page", () => {
 		expect((w.find("[data-testid=\"transcript-edit\"]").element as HTMLTextAreaElement).value).toBe(saved);
 	});
 
-	it("tapping the dictation button latches recording until the next tap", async () => {
-		globalThis.fetch = vi.fn(async () => new Response(
-			JSON.stringify({ text: "satz" }),
-			{ status: 200, headers: { "Content-Type": "application/json" } },
-		)) as unknown as typeof fetch;
-		const w = await mountSuspended(RecordingPage);
-		const ptt = w.find("[data-testid=\"push-to-talk\"]");
-		await ptt.trigger("pointerdown", { pointerId: 1 });
-		await w.vm.$nextTick();
-		await ptt.trigger("pointerup", { pointerId: 1 });
-		await w.vm.$nextTick();
-		expect(globalThis.fetch).not.toHaveBeenCalled();
-		expect(ptt.text()).toContain("tippen zum Beenden");
-		await ptt.trigger("pointerdown", { pointerId: 1 });
-		await ptt.trigger("pointerup", { pointerId: 1 });
-		await new Promise(r => setTimeout(r, 0));
-		await w.vm.$nextTick();
-		expect(globalThis.fetch).toHaveBeenCalled();
-	});
-
 	it("push-to-talk without a hub token records the diagnostic and never calls the hub", async () => {
 		useHubSettings().token = "";
 		globalThis.fetch = vi.fn() as unknown as typeof fetch;
 		const w = await mountSuspended(RecordingPage);
-		const ptt = w.find("[data-testid=\"push-to-talk\"]");
-		await ptt.trigger("pointerdown", { pointerId: 1 });
-		await w.vm.$nextTick();
-		heldFor(500);
-		await ptt.trigger("pointerup", { pointerId: 1 });
-		await w.vm.$nextTick();
+		await holdRecord(w);
+		await releaseRecord(w);
 		await new Promise(r => setTimeout(r, 0));
 		await w.vm.$nextTick();
 		expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -809,7 +783,7 @@ describe("recording detail page", () => {
 			});
 			expect(startPolling).toHaveBeenCalledTimes(2);
 			expect(area(w).readOnly).toBe(true);
-			expect(w.find("[data-testid=\"push-to-talk\"]").exists()).toBe(false);
+			expect(w.find("[data-testid=\"record\"]").exists()).toBe(false);
 
 			// A poll delivers the profile's output: shown rendered, the raw text stays.
 			live.transcript!.value = { ...live.transcript!.value!, ...processedTranscript() };
@@ -821,8 +795,8 @@ describe("recording detail page", () => {
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
 			expect(w.find("[data-testid=\"postprocess-raw\"] pre").text()).toBe("Hallo Welt");
 
-			// "Bearbeiten" opens the Markdown source in the editor.
-			await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+			// The pencil opens the Markdown source in the editor.
+			await w.find("[data-testid=\"edit\"]").trigger("click");
 			expect(area(w).readOnly).toBe(false);
 			expect(area(w).value).toBe(PROCESSED);
 		});
@@ -837,7 +811,7 @@ describe("recording detail page", () => {
 		it("does not store edits of a profile's output as engine corrections", async () => {
 			transcript.value = processedTranscript();
 			const w = await mountSuspended(RecordingPage);
-			await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+			await w.find("[data-testid=\"edit\"]").trigger("click");
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
 			await w.find("[data-testid=\"save-transcript\"]").trigger("click");
 			await flushPromises();
@@ -865,13 +839,10 @@ describe("recording detail page", () => {
 			)) as unknown as typeof fetch;
 			transcript.value = processedTranscript();
 			const w = await mountSuspended(RecordingPage);
-			const ptt = w.find("[data-testid=\"push-to-talk\"]");
-			await ptt.trigger("pointerdown", { pointerId: 1 });
-			await flushPromises();
+			await holdRecord(w);
 			expect(area(w).dataset.dictationParts).toMatch(/^ptt-\d+:recording$/);
 			expect(area(w).value).toBe(PROCESSED);
-			heldFor(500);
-			await ptt.trigger("pointerup", { pointerId: 1 });
+			await releaseRecord(w);
 			await vi.waitFor(() => expect(area(w).value).toBe(`${PROCESSED} diktiert `));
 			// Saved on its own, no "Speichern" needed.
 			await vi.waitFor(() => expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
@@ -896,7 +867,7 @@ describe("recording detail page", () => {
 			});
 
 			async function saveTypedEdit(w: VueWrapper): Promise<void> {
-				await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+				await w.find("[data-testid=\"edit\"]").trigger("click");
 				await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
 				await w.find("[data-testid=\"save-transcript\"]").trigger("click");
 				await flushPromises();
@@ -940,7 +911,7 @@ describe("recording detail page", () => {
 			it("saves a continued part on its own and still asks after the typed edits are saved", async () => {
 				transcript.value = processedTranscript();
 				const w = await mountSuspended(RecordingPage);
-				await w.find("[data-testid=\"transcript-view-toggle\"]").trigger("click");
+				await w.find("[data-testid=\"edit\"]").trigger("click");
 				await w.find("[data-testid=\"transcript-edit\"]").setValue("## Befund gekürzt");
 				await landPart(await recordPart(w), "Neuer Teil");
 				// The part goes onto the saved profile output, the typing stays unsaved.
@@ -1002,8 +973,7 @@ describe("recording detail page", () => {
 
 		it("an interrupted part shows the reason; Fortsetzen records on", async () => {
 			const w = await mountSuspended(RecordingPage);
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			redict.interruption!.value = "Die App war im Hintergrund. Bisher Aufgenommenes bleibt erhalten.";
 			await nextTick();
 			expect(w.find("[data-testid=\"interruption\"]").text()).toContain("Die App war im Hintergrund.");
@@ -1015,8 +985,7 @@ describe("recording detail page", () => {
 		it("records in the record bar in place of the player, with a chip at the end", async () => {
 			const w = await mountSuspended(RecordingPage);
 			await vi.waitFor(() => expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(true));
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			expect(redict.start).toHaveBeenCalledWith("part-1");
 			expect(w.find("[data-testid=\"record-bar\"]").exists()).toBe(true);
 			expect(w.findComponent({ name: "HPlayerDock" }).exists()).toBe(false);
@@ -1084,7 +1053,7 @@ describe("recording detail page", () => {
 		it("records the next part while the first still transcribes; each lands at its own chip", async () => {
 			const w = await mountSuspended(RecordingPage);
 			const first = await recordPart(w);
-			expect(w.find("[data-testid=\"continue-recording\"]").attributes("disabled")).toBeUndefined();
+			expect(w.find("[data-testid=\"record\"]").attributes("disabled")).toBeUndefined();
 			const second = await recordPart(w);
 			expect(chips(w)).toBe(`${first}:transcribing ${second}:transcribing`);
 
@@ -1100,6 +1069,7 @@ describe("recording detail page", () => {
 		it("typing and Speichern stay free while a part transcribes", async () => {
 			const w = await mountSuspended(RecordingPage);
 			const part = await recordPart(w);
+			await w.find("[data-testid=\"edit\"]").trigger("click");
 			expect(area(w).readOnly).toBe(false);
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt!");
 			const save = w.find("[data-testid=\"save-transcript\"]");
@@ -1145,8 +1115,7 @@ describe("recording detail page", () => {
 		it("cancel in the record bar drops the part and its chip", async () => {
 			const w = await mountSuspended(RecordingPage);
 			const reloads = listReloads();
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			await w.find("[data-testid=\"cancel\"]").trigger("click");
 			await flushPromises();
 			expect(redict.cancel).toHaveBeenCalledOnce();
@@ -1159,8 +1128,7 @@ describe("recording detail page", () => {
 		it("an empty part removes its chip", async () => {
 			redict.finish.mockResolvedValueOnce(false);
 			const w = await mountSuspended(RecordingPage);
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			await w.find("[data-testid=\"stop\"]").trigger("click");
 			await flushPromises();
 			expect(chips(w)).toBe("");
@@ -1181,12 +1149,11 @@ describe("recording detail page", () => {
 				return false;
 			});
 			const w = await mountSuspended(RecordingPage);
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			expect(w.find("[data-testid=\"continue-error\"]").text()).toBe("Mikrofon nicht verfügbar");
 			expect(chips(w)).toBe("");
 			expect(w.find("[data-testid=\"record-bar\"]").exists()).toBe(false);
-			expect(w.find("[data-testid=\"continue-recording\"]").attributes("disabled")).toBeUndefined();
+			expect(w.find("[data-testid=\"record\"]").attributes("disabled")).toBeUndefined();
 		});
 
 		it("a landed part whose save failed stays unsaved and says so", async () => {
@@ -1303,11 +1270,10 @@ describe("recording detail page", () => {
 				window.dispatchEvent(new KeyboardEvent("keydown", { code: "ControlLeft" }));
 				await flushPromises();
 			};
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			await ctrl();
 			expect(chips(w)).toBe("part-1:recording");
-			expect(w.find("[data-testid=\"push-to-talk\"]").attributes("disabled")).toBeDefined();
+			expect(w.find("[data-testid=\"record\"]").exists()).toBe(false);
 
 			await w.find("[data-testid=\"stop\"]").trigger("click");
 			await flushPromises();
@@ -1338,8 +1304,7 @@ describe("recording detail page", () => {
 			expect(guards.leave!(other, here)).toBe(true);
 			expect(confirm).not.toHaveBeenCalled();
 
-			await w.find("[data-testid=\"continue-recording\"]").trigger("click");
-			await flushPromises();
+			await tapRecord(w);
 			confirm.mockReturnValueOnce(false);
 			expect(guards.leave!(other, here)).toBe(false);
 			expect(confirm).toHaveBeenCalledWith("Das laufende Nachdiktat geht verloren. Trotzdem verlassen?");
@@ -1365,7 +1330,7 @@ describe("recording detail page", () => {
 			recording.value = baseRecording({ status: "pending" });
 			transcript.value = null;
 			const w = await mountSuspended(RecordingPage);
-			expect(w.find("[data-testid=\"continue-recording\"]").exists()).toBe(false);
+			expect(w.find("[data-testid=\"record\"]").exists()).toBe(false);
 		});
 	});
 });

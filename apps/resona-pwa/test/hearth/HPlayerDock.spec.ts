@@ -43,4 +43,11 @@ describe("HPlayerDock", () => {
 		expect(fmt(5)).toBe("0:05");
 		expect(fmt(Number.NaN)).toBe("0:00");
 	});
+
+	it("marks where later parts start, only inside the audio", async () => {
+		const w = await mountSuspended(HPlayerDock, { props: { src: "blob://x", fallbackDuration: 100, marks: [0, 25, 100, 140] } });
+		const marks = w.findAll("[data-testid=\"player-mark\"]");
+		expect(marks).toHaveLength(1);
+		expect(marks[0]!.attributes("style")).toContain("25%");
+	});
 });
