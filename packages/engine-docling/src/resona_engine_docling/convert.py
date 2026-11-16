@@ -173,7 +173,12 @@ def _ocr_options(options: DocumentOptions):  # type: ignore[no-untyped-def]
         return OcrMacOptions(lang=[_OCRMAC_LANG[lang] for lang in options.languages], mode=mode, scale=scale)
     if options.ocr_engine == "rapidocr":
         threshold = {} if options.ocr_min_confidence is None else {"text_score": options.ocr_min_confidence}
-        return RapidOcrOptions(lang=[_RAPIDOCR_LANG], mode=mode, scale=scale, **threshold)
+        # use_cls=False: RapidOCR's per-line 0°/180° classifier flips upright Latin lines
+        # (scores 0.91-0.93, just over its 0.9 threshold) and the recognizer then garbles the
+        # whole line. Pages are already upright here (`orientation.upright` runs for every OCR
+        # engine), so the classifier only adds wrong flips. Keep Det.unclip_ratio at its 1.6
+        # default: narrower boxes drop inter-word spaces (#31).
+        return RapidOcrOptions(lang=[_RAPIDOCR_LANG], mode=mode, scale=scale, use_cls=False, **threshold)
     return TesseractCliOcrOptions(
         lang=[_TESSERACT_LANG[lang] for lang in options.languages], mode=mode, scale=scale
     )
