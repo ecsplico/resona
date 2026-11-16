@@ -1,7 +1,10 @@
 import type { CorrectionEdit, Recording, RecordingPart, ResonaDocument, Transcript } from "~/types/directus";
 
-/** `title_auto`: the title is a date placeholder the processor replaces with one derived from the transcript. */
-export interface NewRecording { title: string; title_auto?: boolean; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
+/**
+ * `title_auto`: the title is a date placeholder the processor replaces with one derived from the transcript.
+ * `id`: picked by the caller, so a retried create finds the row an earlier attempt made (see `createRecording`).
+ */
+export interface NewRecording { id?: string; title: string; title_auto?: boolean; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
 /** What the save sheet hands over for a new recording; `titleAuto` becomes `title_auto`. */
 export interface SaveRequest { title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }
 /**

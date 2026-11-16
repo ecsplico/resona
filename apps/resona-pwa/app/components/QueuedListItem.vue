@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { QueuedItem } from "~/composables/useOfflineQueue";
 
-const props = defineProps<{ item: QueuedItem }>();
+// `uploading`: the queue is being uploaded right now; otherwise the row waits for the
+// connection or the next retry.
+const props = defineProps<{ item: QueuedItem; uploading?: boolean }>();
 
 function formatDuration(seconds?: number): string {
 	if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
@@ -34,8 +36,8 @@ const meta = computed(() => {
 				class="queued-row__meta"
 			>{{ meta }}</span>
 		</div>
-		<HChip tone="warning">
-			Wartet (offline)
+		<HChip :tone="uploading ? 'neutral' : 'warning'">
+			{{ uploading ? "Wird hochgeladen…" : "Wartet (offline)" }}
 		</HChip>
 	</div>
 </template>

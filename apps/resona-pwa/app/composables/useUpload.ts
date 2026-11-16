@@ -15,6 +15,8 @@ interface SaveArgs {
 	duration_seconds: number;
 	/** Original filename of an uploaded/shared file (used for MIME + extension). */
 	sourceName?: string;
+	/** The recording's id, picked by the caller; a retry with the same id returns the row already made. */
+	id?: string;
 }
 
 export function useUpload() {
@@ -30,6 +32,7 @@ export function useUpload() {
 			const { blob, filename } = normalizeAudio(args.blob, args.title, args.sourceName);
 			const duration = args.duration_seconds > 0 ? args.duration_seconds : await probeDuration(blob);
 			const created = await useDataStore().createRecording({
+				id: args.id,
 				title: args.title,
 				title_auto: args.titleAuto ?? false,
 				language: args.language,
