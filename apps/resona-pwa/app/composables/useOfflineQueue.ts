@@ -11,6 +11,13 @@ export interface QueueInput {
 	profile: string;
 	transcribe?: boolean;
 	duration_seconds?: number;
+	/**
+	 * The recording's id, picked before the first upload attempt: a retry after a
+	 * timeout whose create did land finds that row instead of creating a second one.
+	 */
+	recordingId?: string;
+	/** File name of an uploaded file (its type and extension); the stored blob loses it. */
+	sourceName?: string;
 }
 
 export interface QueuedItem extends QueueInput {
@@ -51,6 +58,12 @@ function newId(): string {
 
 let counter = 0;
 let seqCounter = 0;
+
+// One drain at a time for the whole app: two overlapping drains would upload the same
+// item twice. A sync asked for while one runs makes that one go round once more.
+const syncing = ref(false);
+let draining: Promise<SyncResult> | null = null;
+let again = false;
 
 export function useOfflineQueue() {
 	const s = getStore();
@@ -99,7 +112,7 @@ export function useOfflineQueue() {
 		}
 	}
 
-	async function sync(uploadFn: (item: QueuedItem) => Promise<unknown>): Promise<SyncResult> {
+	async function drain(uploadFn: (item: QueuedItem) => Promise<unknown>): Promise<SyncResult> {
 		const items = await pending();
 		const succeeded: string[] = [];
 		const failed: string[] = [];
@@ -115,6 +128,34 @@ export function useOfflineQueue() {
 		}
 		pendingCount.value = failed.length;
 		return { succeeded, failed };
+	}
+
+	/**
+	 * Uploads every queued item. While a sync runs, another call joins it (and makes it
+	 * look at the queue once more, for items added meanwhile) instead of uploading in
+	 * parallel. `succeeded` covers every round, `failed` the last one.
+	 */
+	function sync(uploadFn: (item: QueuedItem) => Promise<unknown>): Promise<SyncResult> {
+		if (draining) {
+			again = true;
+			return draining;
+		}
+		syncing.value = true;
+		draining = (async () => {
+			const succeeded: string[] = [];
+			let failed: string[];
+			do {
+				again = false;
+				const round = await drain(uploadFn);
+				succeeded.push(...round.succeeded);
+				failed = round.failed;
+			} while (again);
+			return { succeeded, failed };
+		})().finally(() => {
+			draining = null;
+			syncing.value = false;
+		});
+		return draining;
 	}
 
 	function startAutoSync(uploadFn: (item: QueuedItem) => Promise<unknown>): () => void {
@@ -142,6 +183,8 @@ export function useOfflineQueue() {
 
 	return {
 		pendingCount,
+		/** A sync is uploading right now (app-wide). */
+		syncing,
 		pending,
 		enqueue,
 		remove,

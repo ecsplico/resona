@@ -446,7 +446,13 @@ the hub token gate.
   `@capawesome-team/capacitor-android-foreground-service`, `@capacitor/filesystem`,
   `@capgo/capacitor-share-target`, `@capacitor/preferences` (Directus tokens)
 - **@vueuse/nuxt** (useWebSocket), **@nuxt/fonts** (Fraunces / Instrument Sans / JetBrains Mono)
-- **idb-keyval** — IndexedDB offline queue
+- **idb-keyval** — IndexedDB offline queue. Every new recording saved from the list
+  (`RecordingsPane.onSave`) goes through it: the save sheet closes at once, the upload runs
+  in the background (one drain at a time, 5 min per attempt, retried every 30 s from the
+  poll and on `online`), the queued row shows "Wird hochgeladen..." / "Wartet (offline)".
+  The recording id is picked client-side (`QueueInput.recordingId` → `createRecording({id})`,
+  Directus create permission allows `id`), so a retry after a timed-out attempt that did
+  land finds that row instead of creating a second one
 - **Vitest 4** + **@nuxt/test-utils** (environment `nuxt`, happy-dom); **fake-indexeddb**
   polyfill
 

@@ -250,9 +250,13 @@ export function createLocalStore(): DataStore {
 		},
 
 		async createRecording(input, audio, filename) {
+			if (input.id) {
+				const existing = await get<LocalRecording>(input.id, db().recordings);
+				if (existing) return existing;
+			}
 			const ts = now();
 			const row: LocalRecording = {
-				id: crypto.randomUUID(),
+				id: input.id ?? crypto.randomUUID(),
 				title: input.title,
 				title_auto: input.title_auto ?? false,
 				language: input.language,

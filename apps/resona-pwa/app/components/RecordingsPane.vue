@@ -23,6 +23,7 @@ const { copy, toText, downloadMarkdown } = useExport();
 const store = useDataStore();
 const queue = useOfflineQueue();
 const queued = ref<QueuedItem[]>([]);
+const queueSyncing = queue.syncing;
 const settings = useSettingsDrawer();
 const hubSettings = useHubSettings();
 const gate = useHubTokenGate();
@@ -76,6 +77,9 @@ function startPolling(): void {
 	pollTimer = setInterval(() => {
 		if (hasActiveRecording()) {
 			void list({ search: search.value, since: since.value });
+		}
+		if (queued.value.length > 0 && !queue.syncing.value && navigator.onLine && Date.now() - lastSync >= QUEUE_RETRY_MS) {
+			void syncQueue();
 		}
 	}, POLL_MS);
 }
@@ -360,28 +364,48 @@ async function cancelRecording(): Promise<void> {
 	showRecorder.value = false;
 }
 
+/**
+ * Closes the sheet at once: the audio goes into the offline queue (IndexedDB) first and
+ * uploads from there in the background, shown as a queued row until it is in the list.
+ * A slow or timed-out upload therefore never keeps the sheet open, and the recording's
+ * id is picked here, so a retry of an upload that did land creates no second recording.
+ */
 async function onSave(payload: SaveRequest): Promise<void> {
 	const blob = pendingBlob.value;
 	if (!blob) {
 		return;
 	}
-	const created = await saveRecording({
-		blob,
-		title: payload.title,
-		titleAuto: payload.titleAuto,
-		language: payload.language,
-		profile: payload.profile,
-		transcribe: payload.transcribe,
-		duration_seconds: pendingDuration.value,
-	});
 	pendingBlob.value = null;
 	showSave.value = false;
+	const recordingId = crypto.randomUUID();
+	let queuedId: string;
+	try {
+		queuedId = await queue.enqueue({
+			blob,
+			title: payload.title,
+			titleAuto: payload.titleAuto,
+			language: payload.language,
+			profile: payload.profile,
+			transcribe: payload.transcribe,
+			duration_seconds: pendingDuration.value,
+			recordingId,
+			sourceName: blob instanceof File ? blob.name : undefined,
+		});
+	}
+	catch (err) {
+		// Not stored: the recorder's own copy stays and is offered again ("Nicht gespeichert").
+		if (pendingSession.value) releaseUnfinished(pendingSession.value);
+		pendingSession.value = null;
+		void refreshUnfinished();
+		recordError.value = humanizeError(err, "Die Aufnahme konnte nicht gespeichert werden.");
+		return;
+	}
 	dropPendingSession();
-	await refresh();
 	await refreshQueued();
+	const result = await syncQueue();
 	// Desktop: open the new recording in the right pane next to the list.
-	if (wide.value) {
-		await openRoute(`/recording/${created.id}`);
+	if (wide.value && result.succeeded.includes(queuedId)) {
+		await openRoute(`/recording/${recordingId}`);
 	}
 }
 
@@ -472,23 +496,49 @@ onMounted(() => {
 	void refreshUnfinished();
 	void refreshQueued();
 	startPolling();
-	// Drain the offline queue to Directus whenever connectivity returns; refresh
-	// both lists after each successful upload so the row moves to the server list.
-	queue.startAutoSync(async (item: QueuedItem) => {
-		const created = await saveRecording({
-			blob: item.blob,
-			title: item.title,
-			titleAuto: item.titleAuto ?? false,
-			language: item.language,
-			profile: item.profile,
-			transcribe: item.transcribe ?? true,
-			duration_seconds: item.duration_seconds ?? 0,
-		});
-		await refresh();
-		await refreshQueued();
-		return created;
-	});
+	// Drain the offline queue to Directus whenever connectivity returns.
+	queue.startAutoSync(uploadQueued);
 });
+
+// A stalled request must not hold the queue (one drain at a time) for the rest of the
+// session: after this long the attempt counts as failed and is tried again later. The
+// recording id is fixed, so a late landing of the stalled attempt creates no duplicate.
+const QUEUE_UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
+/** One queued recording to the data store; the list then shows it instead of the queued row. */
+async function uploadQueued(item: QueuedItem): Promise<Recording> {
+	// (Executor form instead of Promise.withResolvers: iOS Safari < 17.4.)
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const stalled = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error("Upload timed out")), QUEUE_UPLOAD_TIMEOUT_MS);
+	});
+	const created = await Promise.race([saveRecording({
+		id: item.recordingId,
+		blob: item.blob,
+		title: item.title,
+		titleAuto: item.titleAuto ?? false,
+		language: item.language,
+		profile: item.profile,
+		transcribe: item.transcribe ?? true,
+		duration_seconds: item.duration_seconds ?? 0,
+		sourceName: item.sourceName,
+	}), stalled]).finally(() => clearTimeout(timer));
+	await refresh();
+	await refreshQueued();
+	return created;
+}
+
+// A failed upload (timeout, server error while online) is tried again from the poll,
+// at most this often; going online again tries at once (startAutoSync).
+const QUEUE_RETRY_MS = 30_000;
+let lastSync = 0;
+
+async function syncQueue() {
+	lastSync = Date.now();
+	const result = await queue.sync(uploadQueued);
+	await refreshQueued();
+	return result;
+}
 </script>
 
 <template>
@@ -640,6 +690,7 @@ onMounted(() => {
 					v-for="item in queued"
 					:key="item.id"
 					:item="item"
+					:uploading="queueSyncing"
 				/>
 			</div>
 

@@ -1,4 +1,6 @@
+import "fake-indexeddb/auto";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useOfflineQueue } from "~/composables/useOfflineQueue";
 import { ref } from "vue";
 import { mountSuspended, mockNuxtImport } from "@nuxt/test-utils/runtime";
 import IndexPage from "~/pages/index.vue";
@@ -28,16 +30,11 @@ mockNuxtImport("useProfiles", () => () => ({ list: profileList }));
 
 mockNuxtImport("navigateTo", () => vi.fn());
 
-// The page reads the offline queue on mount and after save; the test env has no
-// IndexedDB, so stub the composable to a no-op empty queue.
-mockNuxtImport("useOfflineQueue", () => () => ({
-	pending: vi.fn().mockResolvedValue([]),
-	startAutoSync: vi.fn(),
-	pendingCount: ref(0),
-}));
+// The real offline queue on fake-indexeddb: the save goes through it.
 
 describe("upload existing audio file", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		await useOfflineQueue().clearAll();
 		vi.clearAllMocks();
 		items.value = [];
 	});
@@ -60,13 +57,11 @@ describe("upload existing audio file", () => {
 		expect((titleInput.element as HTMLInputElement).value).toBe("interview");
 
 		await w.find("[data-testid=\"save\"]").trigger("click");
-		await w.vm.$nextTick();
-
-		expect(saveRecording).toHaveBeenCalledTimes(1);
-		const arg = saveRecording.mock.calls[0]![0] as { blob: File; title: string };
-		expect(arg.blob).toBeInstanceOf(File);
-		expect(arg.blob.name).toBe("interview.mp3");
+		await vi.waitFor(() => expect(saveRecording).toHaveBeenCalledTimes(1));
+		const arg = saveRecording.mock.calls[0]![0] as { blob: Blob; title: string; sourceName?: string };
+		expect(await arg.blob.text()).toBe("fake audio");
 		expect(arg.blob.type).toBe("audio/mpeg");
+		expect(arg.sourceName).toBe("interview.mp3");
 		expect(arg.title).toBe("interview");
 	});
 });

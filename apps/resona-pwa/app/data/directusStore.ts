@@ -51,9 +51,19 @@ export function createDirectusStore(): DataStore {
 		},
 
 		async createRecording(input, audio, filename) {
-			const fileId = audio ? await uploadFile(audio, filename) : null;
 			const { client } = useDirectus();
+			if (input.id) {
+				// A retry after an attempt that timed out on the phone but did land: that row,
+				// not a second recording (and no second audio upload).
+				const existing = await client.request(readItems("recordings", {
+					filter: { id: { _eq: input.id } },
+					limit: 1,
+				})) as Recording[];
+				if (existing[0]) return existing[0];
+			}
+			const fileId = audio ? await uploadFile(audio, filename) : null;
 			return await client.request(createItem("recordings", {
+				...(input.id ? { id: input.id } : {}),
 				title: input.title,
 				title_auto: input.title_auto ?? false,
 				audio_file: fileId ?? undefined,

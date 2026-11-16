@@ -285,7 +285,8 @@ const PERMISSIONS = [
 	{ collection: "recordings", action: "read", permissions: { user_created: OWNER } },
 	{
 		collection: "recordings", action: "create", permissions: {},
-		fields: ["title", "title_auto", "audio_file", "language", "profile", "source", "status", "duration_seconds"],
+		// `id`: the PWA picks it before the upload, so a retried save finds its row (no duplicate)
+		fields: ["id", "title", "title_auto", "audio_file", "language", "profile", "source", "status", "duration_seconds"],
 	},
 	{
 		collection: "recordings", action: "update", permissions: { user_created: OWNER },

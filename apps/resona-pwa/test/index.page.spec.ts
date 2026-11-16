@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, reactive, ref } from "vue";
 import type { Component } from "vue";
@@ -10,6 +11,7 @@ import type { Recording } from "~/types/directus";
 import { useHubSettings } from "~/composables/useHubSettings";
 import { provideShell, useRecordingsRefresh, useRedictationRequest, useSettingsDrawer } from "~/composables/useShell";
 import type { UnfinishedRecording } from "~/data/unfinishedRecordings";
+import { useOfflineQueue } from "~/composables/useOfflineQueue";
 
 // Recordings a killed page left behind; the real store needs IndexedDB.
 const unfinished = vi.hoisted(() => ({
@@ -75,13 +77,7 @@ mockNuxtImport("navigateTo", () => navigateTo);
 const store = vi.hoisted(() => ({ getTranscript: vi.fn(), deleteRecording: vi.fn() }));
 mockNuxtImport("useDataStore", () => () => store);
 
-// The page reads the offline queue on mount; the test env has no IndexedDB, so
-// stub the composable to return an empty queue and a no-op autosync.
-mockNuxtImport("useOfflineQueue", () => () => ({
-	pending: vi.fn().mockResolvedValue([]),
-	startAutoSync: vi.fn(),
-	pendingCount: ref(0),
-}));
+// The real offline queue on fake-indexeddb: saving goes through it.
 
 const route = vi.hoisted(() => ({ path: "/" }));
 mockNuxtImport("useRoute", () => () => reactive(route));
@@ -110,18 +106,20 @@ async function saveUploadedFile(w: VueWrapper): Promise<void> {
 	});
 	await input.trigger("change");
 	w.findComponent({ name: "SaveSheet" }).vm.$emit("save", { title: "Diktat", language: "de", profile: "default", transcribe: true });
+	await vi.waitFor(() => expect(saveRecording).toHaveBeenCalled());
 	await flushPromises();
 }
 
 describe("index (recordings list) page", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		await useOfflineQueue().clearAll();
 		vi.clearAllMocks();
 		clearNuxtState([...LIST_STATE_KEYS]);
 		items.value = [recA, recB];
 		pending.value = false;
 		error.value = null;
 		route.path = "/";
-		saveRecording.mockResolvedValue({ ...recA, id: "rec-new", title: "Diktat" });
+		saveRecording.mockImplementation(async (args: { id?: string }) => ({ ...recA, id: args.id ?? "rec-new", title: "Diktat" }));
 		unfinished.rows = [];
 		unfinished.listUnfinished.mockImplementation(async () => unfinished.rows);
 		unfinished.discardUnfinished.mockImplementation(async (id: string) => {
@@ -158,6 +156,7 @@ describe("index (recordings list) page", () => {
 			expect(unfinished.discardUnfinished).not.toHaveBeenCalled();
 
 			sheet.vm.$emit("save", { title: "Gerettet", language: "de", profile: "default", transcribe: true });
+			await vi.waitFor(() => expect(saveRecording).toHaveBeenCalled());
 			await flushPromises();
 			const saved = saveRecording.mock.calls[0]![0] as { blob: Blob; duration_seconds: number };
 			expect(await saved.blob.text()).toBe("rec");
@@ -217,7 +216,20 @@ describe("index (recordings list) page", () => {
 		await saveUploadedFile(w);
 		expect(saveRecording).toHaveBeenCalledWith(expect.objectContaining({ title: "Diktat" }));
 		expect(refresh).toHaveBeenCalled();
-		expect(navigateTo).toHaveBeenCalledWith("/recording/rec-new");
+		const { id } = saveRecording.mock.calls[0]![0] as { id: string };
+		expect(id).toMatch(/^[0-9a-f-]{36}$/);
+		expect(navigateTo).toHaveBeenCalledWith(`/recording/${id}`);
+	});
+
+	it("closes the save sheet at once while the upload still hangs, and lists it as uploading", async () => {
+		const upload = Promise.withResolvers<unknown>();
+		saveRecording.mockImplementation(() => upload.promise);
+		const w = await mountSuspended(IndexPage);
+		await saveUploadedFile(w);
+		expect(w.findComponent({ name: "SaveSheet" }).exists()).toBe(false);
+		expect(w.find("[data-testid=\"queued-list\"]").text()).toContain("Wird hochgeladen");
+		upload.resolve({ ...recA, id: "rec-late" });
+		await flushPromises();
 	});
 
 	it("reloads the list when another view requests a refresh", async () => {
