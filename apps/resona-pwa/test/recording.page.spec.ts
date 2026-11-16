@@ -406,9 +406,16 @@ describe("recording detail page", () => {
 		expect(w.text()).toContain("Boom kaputt");
 	});
 
+	// ⋯ in the header: opens the menu and picks `item`.
+	async function chooseMore(w: VueWrapper, item: "postprocess" | "txt" | "md" | "delete"): Promise<void> {
+		await w.find("[data-testid=\"menu-trigger\"]").trigger("click");
+		await w.find(`[data-testid="menu-${item}"]`).trigger("click");
+		await flushPromises();
+	}
+
 	it("delete asks for confirmation then deletes, reloads the list and navigates home", async () => {
 		const w = await mountSuspended(RecordingPage);
-		await w.find("[data-testid=\"delete\"]").trigger("click");
+		await chooseMore(w, "delete");
 		expect(w.find("[data-testid=\"confirm-delete\"]").exists()).toBe(true);
 		expect(store.deleteRecording).not.toHaveBeenCalled();
 
@@ -434,7 +441,7 @@ describe("recording detail page", () => {
 
 	it("cancel hides the confirm UI without deleting", async () => {
 		const w = await mountSuspended(RecordingPage);
-		await w.find("[data-testid=\"delete\"]").trigger("click");
+		await chooseMore(w, "delete");
 		await w.find("[data-testid=\"cancel-delete\"]").trigger("click");
 		expect(w.find("[data-testid=\"confirm-delete\"]").exists()).toBe(false);
 		expect(store.deleteRecording).not.toHaveBeenCalled();
@@ -469,18 +476,17 @@ describe("recording detail page", () => {
 		expect(w.find("[data-testid=\"transcript-edit\"]").exists()).toBe(true);
 	});
 
-	it("review switch is a radiogroup that sets the review state via the data store", async () => {
+	it("Freigeben is a toggle in the header that sets the review state via the data store", async () => {
 		const w = await mountSuspended(RecordingPage);
-		expect(w.find("[role=\"radiogroup\"]").exists()).toBe(true);
-		const editing = w.find("[data-testid=\"review-editing\"]");
-		const ready = w.find("[data-testid=\"review-ready\"]");
-		expect(editing.attributes("aria-checked")).toBe("true");
-		expect(ready.text()).toBe("Freigegeben");
-		expect(w.text()).not.toContain("Fertig");
-		await ready.trigger("click");
+		const review = () => w.find("[data-testid=\"review\"]");
+		expect(review().attributes("aria-pressed")).toBe("false");
+		expect(review().attributes("aria-label")).toBe("Freigeben");
+		await review().trigger("click");
 		await vi.waitFor(() => expect(store.updateRecording).toHaveBeenCalledWith("rec-1", { review_status: "ready" }));
 		await nextTick();
-		expect(w.find("[data-testid=\"review-ready\"]").attributes("aria-checked")).toBe("true");
+		expect(review().attributes("aria-pressed")).toBe("true");
+		await review().trigger("click");
+		await vi.waitFor(() => expect(store.updateRecording).toHaveBeenLastCalledWith("rec-1", { review_status: "editing" }));
 	});
 
 	it("confirming the unchanged placeholder title makes it the user's (title_auto false)", async () => {
@@ -503,33 +509,52 @@ describe("recording detail page", () => {
 		expect(w.find("[data-testid=\"title-input\"]").exists()).toBe(false);
 	});
 
-	it("export menu opens and both items export, Escape closes it", async () => {
+	it("the ⋯ menu downloads the text and the Markdown", async () => {
 		const w = await mountSuspended(RecordingPage, { attachTo: document.body });
-		expect(w.find("[data-testid=\"export-txt\"]").exists()).toBe(false);
-		await w.find("[data-testid=\"export-menu\"]").trigger("click");
-		await w.find("[data-testid=\"export-txt\"]").trigger("click");
+		await chooseMore(w, "txt");
 		expect(exporter.downloadText).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1" }), expect.objectContaining({ text: "Hallo Welt" }));
-		expect(w.find("[data-testid=\"export-txt\"]").exists()).toBe(false);
-
-		await w.find("[data-testid=\"export-menu\"]").trigger("click");
-		await w.find("[data-testid=\"export-md\"]").trigger("click");
-		expect(exporter.downloadMarkdown).toHaveBeenCalledTimes(1);
-
-		await w.find("[data-testid=\"export-menu\"]").trigger("click");
-		await w.find("[role=\"menu\"]").trigger("keydown", { key: "Escape" });
 		expect(w.find("[role=\"menu\"]").exists()).toBe(false);
-		expect(document.activeElement).toBe(w.find("[data-testid=\"export-menu\"]").element);
+		await chooseMore(w, "md");
+		expect(exporter.downloadMarkdown).toHaveBeenCalledTimes(1);
 		w.unmount();
 	});
 
-	it("save button is disabled when clean and enabled when dirty", async () => {
+	it("Nachbearbeiten in the ⋯ menu opens the profile dialog", async () => {
+		const w = await mountSuspended(RecordingPage);
+		expect(w.find("[data-testid=\"postprocess-dialog\"]").exists()).toBe(false);
+		await chooseMore(w, "postprocess");
+		expect(w.find("[data-testid=\"postprocess-dialog\"]").exists()).toBe(true);
+		await w.find("[data-testid=\"postprocess-cancel\"]").trigger("click");
+		expect(w.find("[data-testid=\"postprocess-dialog\"]").exists()).toBe(false);
+	});
+
+	it("the pencil becomes save and discard while editing; both end editing", async () => {
 		const w = await mountSuspended(RecordingPage);
 		const save = () => w.find("[data-testid=\"save-transcript\"]");
-		expect(save().attributes("disabled")).toBeDefined();
+		const area = () => w.find("[data-testid=\"transcript-edit\"]");
+		const readOnly = () => (area().element as HTMLTextAreaElement).readOnly;
+		expect(save().exists()).toBe(false);
+		expect(readOnly()).toBe(true);
+		await w.find("[data-testid=\"edit\"]").trigger("click");
+		expect(w.find("[data-testid=\"edit\"]").exists()).toBe(false);
+		expect(readOnly()).toBe(false);
 		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
-		await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
-		expect(save().attributes("disabled")).toBeUndefined();
+		await area().setValue("Hallo Welt, geändert");
 		expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Ungespeicherte Änderungen");
+		await w.find("[data-testid=\"discard-edits\"]").trigger("click");
+		expect((area().element as HTMLTextAreaElement).value).toBe("Hallo Welt");
+		expect(readOnly()).toBe(true);
+		expect(save().exists()).toBe(false);
+
+		await w.find("[data-testid=\"edit\"]").trigger("click");
+		await area().setValue("Hallo Welt, geändert");
+		await save().trigger("click");
+		await flushPromises();
+		expect(store.updateTranscript).toHaveBeenCalledWith("t-1", { text: "Hallo Welt, geändert" });
+		expect(readOnly()).toBe(true);
+		expect(w.find("[data-testid=\"edit\"]").exists()).toBe(true);
+		// The typed edit's correction is written after the save; let it land here.
+		await vi.waitFor(() => expect(store.recordCorrection).toHaveBeenCalledTimes(1));
 	});
 
 	it("Speichern shows Speichert… at once and a double click saves once", async () => {
@@ -587,7 +612,8 @@ describe("recording detail page", () => {
 			// New content, not a correction of the engine's text.
 			expect(store.recordCorrection).not.toHaveBeenCalled();
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
-			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeDefined();
+			// Clean and not editing: no save button.
+			expect(w.find("[data-testid=\"save-transcript\"]").exists()).toBe(false);
 			expect(guards.leave!(elsewhere, here)).toBe(true);
 		});
 
@@ -619,7 +645,7 @@ describe("recording detail page", () => {
 			await releaseRecord(w);
 			expect(area(w).dataset.dictationParts).toMatch(/^ptt-\d+:transcribing$/);
 			expect(w.find("[data-testid=\"save-state\"]").text()).toBe("Gespeichert");
-			expect(w.find("[data-testid=\"save-transcript\"]").attributes("disabled")).toBeDefined();
+			expect(w.find("[data-testid=\"save-transcript\"]").exists()).toBe(false);
 
 			reply.resolve(new Response(JSON.stringify({ text: "diktiert" }), { status: 200, headers: { "Content-Type": "application/json" } }));
 			await vi.waitFor(() => expect(area(w).value).toBe("Hallo Welt diktiert "));
@@ -776,6 +802,7 @@ describe("recording detail page", () => {
 			refresh.mockImplementationOnce(async () => {
 				live.transcript!.value = { ...live.transcript!.value!, postprocess_status: "pending", postprocess_profile: "transcript-markdown-de" };
 			});
+			await chooseMore(w, "postprocess");
 			await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 			await flushPromises();
 			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
@@ -804,6 +831,7 @@ describe("recording detail page", () => {
 		it("is blocked while the text has unsaved edits", async () => {
 			const w = await mountSuspended(RecordingPage);
 			await w.find("[data-testid=\"transcript-edit\"]").setValue("Hallo Welt, geändert");
+			await chooseMore(w, "postprocess");
 			expect(w.find("[data-testid=\"postprocess-run\"]").attributes("disabled")).toBeDefined();
 			expect(w.find("[data-testid=\"postprocess-blocked\"]").exists()).toBe(true);
 		});
@@ -878,6 +906,7 @@ describe("recording detail page", () => {
 				const w = await mountSuspended(RecordingPage);
 				await saveTypedEdit(w);
 				store.updateTranscript.mockClear();
+				await chooseMore(w, "postprocess");
 				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 				await flushPromises();
 				expect(confirm).toHaveBeenCalledTimes(1);
@@ -889,6 +918,7 @@ describe("recording detail page", () => {
 				const w = await mountSuspended(RecordingPage);
 				await saveTypedEdit(w);
 				store.updateTranscript.mockClear();
+				await chooseMore(w, "postprocess");
 				await w.find("[data-testid=\"postprocess-restore\"]").trigger("click");
 				await flushPromises();
 				expect(confirm).toHaveBeenCalledTimes(1);
@@ -900,6 +930,7 @@ describe("recording detail page", () => {
 				const w = await mountSuspended(RecordingPage);
 				await landPart(await recordPart(w), "Neuer Teil");
 				store.updateTranscript.mockClear();
+				await chooseMore(w, "postprocess");
 				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 				await flushPromises();
 				expect(confirm).not.toHaveBeenCalled();
@@ -927,6 +958,7 @@ describe("recording detail page", () => {
 				await flushPromises();
 				expect(store.updateTranscript).toHaveBeenLastCalledWith("t-1", { text: "## Befund gekürzt\nNeuer Teil" });
 				store.updateTranscript.mockClear();
+				await chooseMore(w, "postprocess");
 				await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 				await flushPromises();
 				expect(confirm).toHaveBeenCalledTimes(1);

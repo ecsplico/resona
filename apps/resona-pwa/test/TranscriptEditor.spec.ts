@@ -27,6 +27,26 @@ describe("TranscriptEditor (TipTap)", () => {
 		expect(w.text()).toContain("Hallo Welt");
 	});
 
+	it("draws a line above and below each part's text it finds, and none once that text was edited", async () => {
+		const w = await mountSuspended(TranscriptEditor, {
+			props: { modelValue: "Anfang\nTeil eins\nTeil zwei\nMitte\nAm Ende", sections: ["Teil eins\n\nTeil zwei", "Am Ende", "Fehlt"] },
+		});
+		mounted.push(w);
+		await nextTick();
+		const marks = () => w.findAll("p").map(p => [p.text(), p.classes("tt-section-start"), p.classes("tt-section-end")]);
+		expect(marks()).toEqual([
+			["Anfang", false, false],
+			["Teil eins", true, false],
+			["Teil zwei", false, true],
+			["Mitte", false, false],
+			["Am Ende", true, true],
+		]);
+		await w.setProps({ modelValue: "Anfang\nTeil eins geändert\nTeil zwei\nMitte\nAm Ende" });
+		await nextTick();
+		expect(marks()[1]).toEqual(["Teil eins geändert", false, false]);
+		expect(marks()[2]).toEqual(["Teil zwei", false, false]);
+	});
+
 	it("emits plain text (one paragraph per line) when the document changes", async () => {
 		const w = await mountEditor("erste zeile\nzweite zeile");
 		await nextTick();

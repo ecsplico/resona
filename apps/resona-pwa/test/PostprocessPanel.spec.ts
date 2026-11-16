@@ -49,8 +49,9 @@ function processed(extra: Partial<Transcript> = {}): Transcript {
 	});
 }
 
+// The profile choice is a dialog the page opens; these tests drive it open.
 async function mount(t: Transcript, blocked: string | null = null) {
-	const w = await mountSuspended(PostprocessPanel, { props: { transcript: t, blocked } });
+	const w = await mountSuspended(PostprocessPanel, { props: { transcript: t, blocked, open: true } });
 	await flushPromises();
 	return w;
 }
@@ -83,6 +84,7 @@ describe("PostprocessPanel", () => {
 			postprocess_profile: "transcript-markdown-de",
 		});
 		expect(w.emitted("changed")).toHaveLength(1);
+		expect(w.emitted("update:open")).toEqual([[false]]);
 	});
 
 	it("preselects the profile last run on the transcript", async () => {
@@ -174,5 +176,6 @@ describe("PostprocessPanel", () => {
 		await flushPromises();
 		expect(w.find("[data-testid=\"postprocess-action-error\"]").exists()).toBe(true);
 		expect(w.emitted("changed")).toBeUndefined();
+		expect(w.emitted("update:open")).toBeUndefined();
 	});
 });

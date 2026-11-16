@@ -4,6 +4,7 @@ import { humanizeError, isServiceUnreachable } from "#shared/errors";
 import { HubError } from "~/composables/useHub";
 import type { RedictationAnchor, RedictationAudio } from "~/composables/useRedictation";
 import type { Recording, RecordingPart, Transcript } from "~/types/directus";
+import type { HMenuItem } from "~/components/hearth/HMenu.vue";
 import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
 import { rebaseInsertion, rebaseOffset, sha256Hex } from "~/utils/correction";
 
@@ -73,6 +74,10 @@ watch([() => recording.value?.id, () => recording.value?.audio_file], async () =
 // Where each later part (re-dictation) starts in the audio: faint ticks on the
 // player's track. Read again whenever the audio file changes (a part was appended).
 const partMarks = ref<number[]>([]);
+// The texts later parts added to the transcript: the editor draws a soft line
+// above and below each one it still finds. Parts landed on this page are added
+// as they land.
+const partTexts = ref<string[]>([]);
 
 watch([() => recording.value?.id, () => recording.value?.audio_file], async ([recId, file]) => {
 	if (!recId || !file) {
@@ -82,9 +87,11 @@ watch([() => recording.value?.id, () => recording.value?.audio_file], async ([re
 	try {
 		const parts = await store.listParts(recId);
 		partMarks.value = parts.flatMap(p => (p.offset_seconds != null && p.offset_seconds > 0 ? [p.offset_seconds] : []));
+		const stored = parts.flatMap(p => ((p.status === "applied" || p.status === "done") && p.text ? [p.text] : []));
+		partTexts.value = [...new Set([...partTexts.value, ...stored])];
 	}
 	catch {
-		// Ticks are an aid only: without the parts the track simply has none.
+		// Ticks and lines are an aid only: without the parts there are none.
 		partMarks.value = [];
 	}
 }, { immediate: true });
@@ -282,11 +289,21 @@ const postprocessing = computed(() => postprocessRunning(transcript.value));
 const editing = ref(false);
 const showRendered = computed(() => Boolean(transcript.value?.applied_profile) && !editing.value);
 
-async function toggleEditing(): Promise<void> {
-	editing.value = !editing.value;
-	if (!editing.value) return;
+// One header button: the pencil turns editing on; while editing (or with unsaved
+// changes) save and discard (X) stand in its place, and both end editing.
+async function startEditing(): Promise<void> {
+	editing.value = true;
 	await nextTick();
 	editorRef.value?.focus();
+}
+
+async function saveAndClose(): Promise<void> {
+	if (await saveTranscript()) editing.value = false;
+}
+
+function discardAndClose(): void {
+	discardEdits();
+	editing.value = false;
 }
 
 function reseed(): void {
@@ -351,6 +368,7 @@ async function commitTitle(): Promise<void> {
 
 // ── Review status (editing / ready) ────────────────────────────────────────
 const reviewStatus = computed<Recording["review_status"]>(() => recording.value?.review_status ?? "editing");
+const released = computed(() => reviewStatus.value === "ready");
 const settingStatus = ref(false);
 
 async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
@@ -700,6 +718,7 @@ async function landRedictation(partId: string, text: string): Promise<boolean> {
 		redictNotice.value = "Im neuen Teil wurde kein Text erkannt.";
 		return true;
 	}
+	partTexts.value = [...partTexts.value, text];
 	let saved: boolean;
 	if (placed) {
 		const { base, at, inserted } = placed;
@@ -862,6 +881,23 @@ function exportMd(): void {
 	downloadMarkdown(recording.value, currentTranscript());
 }
 
+// ⋯ in the header: Nachbearbeiten (a dialog), downloads and Löschen.
+type MoreAction = "postprocess" | "txt" | "md" | "delete";
+const postprocessOpen = ref(false);
+const moreItems = computed<HMenuItem<MoreAction>[]>(() => [
+	...(canEdit.value && transcript.value ? [{ id: "postprocess" as const, label: "Nachbearbeiten…" }] : []),
+	{ id: "txt", label: "Als Text herunterladen" },
+	{ id: "md", label: "Als Markdown herunterladen" },
+	{ id: "delete", label: "Löschen", danger: true },
+]);
+
+function onMoreAction(action: MoreAction): void {
+	if (action === "postprocess") postprocessOpen.value = true;
+	else if (action === "txt") exportTxt();
+	else if (action === "md") exportMd();
+	else askDelete();
+}
+
 function askDelete(): void {
 	confirmingDelete.value = true;
 }
@@ -933,41 +969,66 @@ onUnmounted(() => {
 			</button>
 			<span class="detail__bar-spacer" />
 			<div class="detail__actions">
-				<button
-					v-if="canEdit && dirty"
-					type="button"
-					class="detail__icon"
-					aria-label="Änderungen verwerfen"
-					title="Änderungen verwerfen"
-					:disabled="edit.saving.value"
-					data-testid="discard-edits"
-					@click="discardEdits"
-				>
-					<svg
-						width="22"
-						height="22"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
+				<template v-if="canEdit && (editing || dirty)">
+					<button
+						type="button"
+						class="detail__icon"
+						aria-label="Änderungen verwerfen"
+						title="Änderungen verwerfen"
+						:disabled="edit.saving.value"
+						data-testid="discard-edits"
+						@click="discardAndClose"
 					>
-						<path d="M3 7v6h6" />
-						<path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
-					</svg>
-				</button>
+						<svg
+							width="22"
+							height="22"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M18 6L6 18M6 6l12 12" />
+						</svg>
+					</button>
+					<button
+						type="button"
+						class="detail__icon"
+						:class="{ 'detail__icon--accent': dirty && !edit.saving.value }"
+						:aria-label="edit.saving.value ? 'Speichert…' : 'Speichern'"
+						:title="edit.saving.value ? 'Speichert…' : 'Speichern'"
+						:aria-busy="edit.saving.value"
+						:disabled="edit.saving.value || pttState !== 'idle' || postprocessing"
+						data-testid="save-transcript"
+						@click="saveAndClose"
+					>
+						<svg
+							width="22"
+							height="22"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+							<polyline points="17 21 17 13 7 13 7 21" />
+							<polyline points="7 3 7 8 15 8" />
+						</svg>
+					</button>
+				</template>
 				<button
-					v-if="canEdit && !postprocessing"
+					v-else-if="canEdit && !postprocessing"
 					type="button"
 					class="detail__icon"
-					:class="{ 'detail__icon--on': editing }"
-					:aria-pressed="editing"
-					:aria-label="editing ? 'Bearbeiten beenden' : 'Bearbeiten'"
-					:title="editing ? 'Bearbeiten beenden' : 'Bearbeiten'"
+					aria-label="Bearbeiten"
+					title="Bearbeiten"
 					data-testid="edit"
-					@click="toggleEditing"
+					@click="startEditing"
 				>
 					<svg
 						width="22"
@@ -988,13 +1049,13 @@ onUnmounted(() => {
 					v-if="canEdit"
 					type="button"
 					class="detail__icon"
-					:class="{ 'detail__icon--accent': dirty && !edit.saving.value }"
-					:aria-label="edit.saving.value ? 'Speichert…' : 'Speichern'"
-					:title="edit.saving.value ? 'Speichert…' : 'Speichern'"
-					:aria-busy="edit.saving.value"
-					:disabled="edit.saving.value || pttState !== 'idle' || postprocessing || !dirty"
-					data-testid="save-transcript"
-					@click="saveTranscript()"
+					:class="{ 'detail__icon--ready': released }"
+					:aria-pressed="released"
+					:aria-label="released ? 'Freigegeben – zurück in Bearbeitung' : 'Freigeben'"
+					:title="released ? 'Freigegeben – zurück in Bearbeitung' : 'Freigeben'"
+					:disabled="settingStatus"
+					data-testid="review"
+					@click="setReviewStatus(released ? 'editing' : 'ready')"
 				>
 					<svg
 						width="22"
@@ -1007,9 +1068,12 @@ onUnmounted(() => {
 						stroke-linejoin="round"
 						aria-hidden="true"
 					>
-						<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-						<polyline points="17 21 17 13 7 13 7 21" />
-						<polyline points="7 3 7 8 15 8" />
+						<circle
+							cx="12"
+							cy="12"
+							r="9"
+						/>
+						<path d="M8 12.5l2.7 2.7L16 9.8" />
 					</svg>
 				</button>
 				<button
@@ -1079,46 +1143,12 @@ onUnmounted(() => {
 						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
 					</svg>
 				</button>
-				<ExportMenu
-					@txt="exportTxt"
-					@md="exportMd"
+				<HMenu
+					class="detail__more"
+					label="Weitere Aktionen"
+					:items="moreItems"
+					@select="onMoreAction"
 				/>
-				<button
-					type="button"
-					class="detail__icon detail__icon--danger"
-					aria-label="Löschen"
-					title="Löschen"
-					data-testid="delete"
-					@click="askDelete"
-				>
-					<svg
-						width="22"
-						height="22"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M3 6h18" />
-						<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-						<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-						<line
-							x1="10"
-							y1="11"
-							x2="10"
-							y2="17"
-						/>
-						<line
-							x1="14"
-							y1="11"
-							x2="14"
-							y2="17"
-						/>
-					</svg>
-				</button>
 			</div>
 		</header>
 
@@ -1219,19 +1249,10 @@ onUnmounted(() => {
 						</li>
 					</ul>
 					<div
-						v-if="recording.status !== 'done' || canEdit"
+						v-if="recording.status !== 'done'"
 						class="detail__state"
 					>
-						<StatusChip
-							v-if="recording.status !== 'done'"
-							:status="recording.status"
-						/>
-						<ReviewSwitch
-							v-if="canEdit"
-							:model-value="reviewStatus ?? 'editing'"
-							:disabled="settingStatus"
-							@update:model-value="setReviewStatus"
-						/>
+						<StatusChip :status="recording.status" />
 					</div>
 				</section>
 
@@ -1424,6 +1445,7 @@ onUnmounted(() => {
 
 					<PostprocessPanel
 						v-if="transcript"
+						v-model:open="postprocessOpen"
 						:transcript="transcript"
 						:blocked="postprocessBlocked"
 						@changed="onPostprocessChanged"
@@ -1440,6 +1462,7 @@ onUnmounted(() => {
 							v-model="edit.text.value"
 							:editable="editing && !postprocessing"
 							:movable="wide"
+							:sections="partTexts"
 							data-testid="transcript-edit"
 							placeholder="Noch kein Transkript – hier tippen oder diktieren."
 							@typed="typedEdits += 1"
@@ -1556,11 +1579,12 @@ onUnmounted(() => {
 .detail__actions { display:flex; align-items:center; gap:2px; }
 .detail__icon { width:42px; height:42px; flex:0 0 auto; border:none; border-radius:50%; background:transparent; color:var(--crust-deep); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); }
 .detail__icon:disabled { opacity:0.4; cursor:default; background:transparent; }
-.detail__icon--on { background:var(--crust-soft); color:var(--fg1); }
+.detail__icon--ready { color:var(--olive-deep); }
+.detail__more :deep(.h-menu__trigger) { width:42px; height:42px; color:var(--crust-deep); }
+.detail__more :deep(.h-menu__trigger svg) { width:22px; height:22px; }
 .detail__icon--accent { color:var(--accent); }
 .detail__icon:hover:not(:disabled) { background:var(--cream-deep); }
 .detail__icon:active:not(:disabled) { background:var(--crust-soft); }
-.detail__icon--danger:hover { background:var(--tomato-soft); color:var(--tomato-deep); }
 .detail__confirm { display:flex; align-items:center; gap:12px; padding:12px 20px; background:var(--tomato-soft); }
 .detail__confirm-text { flex:1; font-family:var(--font-body); font-size:14px; font-weight:600; color:var(--tomato-deep); }
 .detail__confirm-actions { display:flex; gap:8px; }

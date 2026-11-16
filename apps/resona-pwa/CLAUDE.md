@@ -207,7 +207,9 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   transcription, as the live page does.
 - **Expert mode** (Einstellungen → Verbindung, `useHubSettings().expert`, per device): the project-worker / `localProcessor` store the hub `JobResult.provenance` (`worker_id`, per-stage engine/model/accelerator/seconds) in the `provenance` json field of `transcripts` and `documents` (bootstrap adds it to existing installs); the recording and document pages render it via `describeProvenance()` (`app/utils/provenance.ts`) only when expert mode is on. Live-dictation transcripts have no provenance.
 - **Nachbearbeiten** (re-process a transcript with a hub postprocess profile, hub job kind
-  `text`): `PostprocessPanel.vue` on the recording page lists `GET /profiles`
+  `text`): `PostprocessPanel.vue` on the recording page shows the run's status (running,
+  error, raw transcript) inline; its profile choice, run and restore live in a dialog the
+  header's ⋯ menu opens (closed after a request is written). It lists `GET /profiles`
   (`useProfiles`, which exposes a load `error` instead of a fake one-entry list) and writes
   `postprocessRequest(profile)` (`app/utils/postprocess.ts`: only `postprocess_status:
   "pending"` + `postprocess_profile`) onto the transcript row; it is enabled only when the
@@ -301,9 +303,15 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   (`hold-start`/`hold-end`) is push-to-talk, like left Ctrl. Its `press` notes whether the
   editor had the focus, so a part/dictation goes to the caret while editing, else to the
   end. The text is read-only until the header pencil (`data-testid="edit"`) turns editing
-  on; a profile's output shows rendered until then. Save/discard are header icons; the
-  title is edited in the page body. The dock's track shows a faint tick at each stored
-  part's `offset_seconds` (`store.listParts`, re-read when `audio_file` changes).
+  on; a profile's output shows rendered until then. While editing or with unsaved edits,
+  save and discard icons stand in the pencil's place, and both end editing. Next to them:
+  the review toggle (`data-testid="review"`, "Freigeben", `aria-pressed` =
+  `review_status === "ready"`), Teilen, Kopieren and a ⋯ `HMenu` with Nachbearbeiten… (opens
+  `PostprocessPanel`'s dialog, `v-model:open`), Als Text / Als Markdown herunterladen and
+  Löschen. The title is edited in the page body. The dock's track shows a faint tick at each
+  stored part's `offset_seconds` (`store.listParts`, re-read when `audio_file` changes); the
+  editor draws a soft line above and below each part's text (`sections` prop,
+  `utils/partSections.ts`) until that text is edited.
 - **Dictation chips** (`utils/dictationPart.ts`, TipTap inline atom, attrs `partId` + `status`
   `recording|transcribing|error`): push-to-talk and every re-dictated part put a chip at the
   caret (or the end when not editing); it moves with edits and adds nothing to the plain text

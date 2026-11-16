@@ -5,7 +5,8 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { JSONContent } from "@tiptap/vue-3";
 import { closeHistory } from "@tiptap/pm/history";
-import { TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
 	DICTATION_PART,
 	DICTATION_PART_ADD,
@@ -15,6 +16,7 @@ import {
 	insertDictationNode,
 	type DictationPartStatus,
 } from "~/utils/dictationPart";
+import { partSections } from "~/utils/partSections";
 
 // The transcript is stored as plain text (Directus `text` field). TipTap is used
 // purely as the editing surface: we map plain text ↔ paragraphs so exports, copy
@@ -24,11 +26,13 @@ const BLOCK = "\n";
 
 // `editable: false` locks the text (e.g. while a postprocess profile rewrites it).
 // `movable`: paragraphs can be moved up/down (Alt+↑/↓ and a control at the caret's
-// paragraph); meant for desktop, phones leave it off.
-const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; editable?: boolean; movable?: boolean }>(), {
+// paragraph); meant for desktop, phones leave it off. `sections`: texts later
+// dictation parts added; each one found gets a soft line above and below.
+const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; editable?: boolean; movable?: boolean; sections?: string[] }>(), {
 	placeholder: "",
 	editable: true,
 	movable: false,
+	sections: () => [],
 });
 
 // `typed`: the user changed the text (keyboard, paste, cut, undo); not emitted for
@@ -77,6 +81,30 @@ const MoveBlocks = Extension.create({
 	},
 });
 
+// Decorations only: the lines are drawn, never stored, and follow the text as
+// long as the paragraphs still read as the part's text.
+const sectionKey = new PluginKey("partSections");
+const PartSections = Extension.create({
+	name: "partSections",
+	addProseMirrorPlugins() {
+		return [new Plugin({
+			key: sectionKey,
+			props: {
+				decorations(state) {
+					if (props.sections.length === 0) return DecorationSet.empty;
+					const blocks: { from: number; to: number; text: string }[] = [];
+					state.doc.forEach((node, offset) => blocks.push({ from: offset, to: offset + node.nodeSize, text: node.textContent }));
+					const decorations = partSections(blocks.map(b => b.text), props.sections).flatMap(({ start, end }) => [
+						...(start > 0 ? [Decoration.node(blocks[start]!.from, blocks[start]!.to, { class: "tt-section-start" })] : []),
+						Decoration.node(blocks[end]!.from, blocks[end]!.to, { class: "tt-section-end" }),
+					]);
+					return DecorationSet.create(state.doc, decorations);
+				},
+			},
+		})];
+	},
+});
+
 // Whether the editor has focus, and where the move control stands: the top of the
 // caret's top-level block inside `.tt-editor`, and whether that block is the first/last.
 const focused = ref(false);
@@ -90,6 +118,7 @@ const editor = useEditor({
 		Placeholder.configure({ placeholder: props.placeholder }),
 		DictationPart,
 		MoveBlocks,
+		PartSections,
 	],
 	onUpdate: ({ editor }) => {
 		const text = editor.getText({ blockSeparator: BLOCK });
@@ -122,6 +151,12 @@ watch(() => props.modelValue, (value) => {
 
 watch(() => props.editable, (value) => {
 	editor.value?.setEditable(value, false);
+});
+
+// New section texts: redraw (an empty transaction, outside the undo history).
+watch(() => props.sections, () => {
+	const e = editor.value;
+	if (e) e.view.dispatch(e.state.tr.setMeta("addToHistory", false));
 });
 
 // Insert dictated text at the caret and leave the cursor at the end of the
@@ -432,6 +467,9 @@ defineExpose({
 .tt-editor :deep(.ProseMirror) { flex:1; min-height:240px; box-sizing:border-box; padding:16px 18px; outline:none; white-space:pre-wrap; font-family:var(--font-body); font-size:16px; line-height:1.6; color:var(--fg1); }
 .tt-editor :deep(.ProseMirror p) { margin:0 0 0.6em; }
 .tt-editor :deep(.ProseMirror p:last-child) { margin-bottom:0; }
+/* Soft lines around the text a later dictation part added. */
+.tt-editor :deep(.ProseMirror p.tt-section-start) { border-top:1px solid var(--border); padding-top:0.6em; }
+.tt-editor :deep(.ProseMirror p.tt-section-end) { border-bottom:1px solid var(--border); padding-bottom:0.6em; }
 .tt-editor :deep(.ProseMirror p.is-editor-empty:first-child::before) { content:attr(data-placeholder); float:left; height:0; pointer-events:none; color:var(--fg3); }
 /* Dictation chip: the label is generated, so the node holds no text to copy or paste. */
 .tt-editor :deep(.dictation-part) { display:inline-flex; align-items:center; gap:6px; margin:0 2px; padding:1px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent-ink); font-size:13px; font-weight:600; line-height:1.6; white-space:nowrap; vertical-align:baseline; user-select:none; cursor:default; }
