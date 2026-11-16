@@ -27,7 +27,10 @@ classifiers = [
 dependencies = [
     "resona-asr-core>=0.1.0",
     "resona-engine-server>=0.1.0",
-    "openai-whisper>=20240930",
+    # 20250625 patches its CUDA median-filter kernel via `_unsafe_update_src`; older
+    # releases assign `kernel.src`, which triton 3.7 (torch 2.12 cu130) rejects with a
+    # TypeError, so every word-timestamp job (all diarized jobs) failed on CUDA.
+    "openai-whisper>=20250625",
     "torch>=2.10",
     # openai-whisper pulls numba (unpinned). Ancient numba (<=0.53) declares no
     # numpy upper bound, so a fresh resolve prefers the newest numpy (>=2.3) and
