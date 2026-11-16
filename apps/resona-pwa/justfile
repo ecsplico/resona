@@ -33,3 +33,7 @@ test-worker:
 check:
     bun run lint
     bun run typecheck
+
+# Upload the hub profiles this app uses (title-de + the offered catalogue profiles); needs an org-admin RESONA_API_KEY
+push-profiles:
+    ./scripts/push-profiles.sh

@@ -1,7 +1,7 @@
 """Chunked llm steps (document polish): placeholders, length guard, hard failure, policy."""
 
 import json
-from importlib import resources
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -173,10 +173,9 @@ def test_non_loopback_local_endpoint_is_denied_before_any_call(monkeypatch) -> N
     assert fake.chunks == []
 
 
-def test_bundled_document_polish_profile_runs_long_markdown_in_chunks(monkeypatch) -> None:
-    data = json.loads(
-        resources.files("resona_postprocess").joinpath("profiles/document-polish-de.json").read_text("utf-8")
-    )
+def test_catalogue_document_polish_profile_runs_long_markdown_in_chunks(monkeypatch) -> None:
+    catalogue = Path(__file__).resolve().parents[3] / "profiles"
+    data = json.loads((catalogue / "document-polish-de.json").read_text("utf-8"))
     profile = Profile.from_dict(data)
     fake = _install(monkeypatch, lambda chunk: chunk)
     long_doc = "\n\n".join([DOC] * 30)

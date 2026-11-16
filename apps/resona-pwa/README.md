@@ -158,6 +158,10 @@ There are **two transcription paths**:
 **Nachbearbeiten**: on a recording's detail page a stored transcript can be re-processed
 with a postprocess profile stored on the hub (e.g. `transcript-markdown-de` for chapter
 headings and paragraphs, `transcript-polish-de` for an LLM polish on the worker host).
+These two and the app's own `title-de` (title suggestion after a live dictation,
+`profiles/title-de.json`) are not on a hub by default: an org admin uploads them once with
+`RESONA_API_URL=… RESONA_API_KEY=<org-admin token> just push-profiles` (see
+`profiles/README.md`).
 The profile runs as a hub `text` job on the raw transcript, so no audio is re-uploaded
 and the hub's 24 h result retention does not matter; the raw transcript stays available
 next to the processed one and can be restored or re-run with another profile. Directus

@@ -263,6 +263,7 @@ and the same policy checks; no execution subprocess is started.
 
 ```bash
 # Re-run a new profile on job 12's transcript
+# transcript-markdown-de / document-polish-de: catalogue profiles, pushed once from profiles/
 resona postprocess --job 12 --profile transcript-markdown-de   # -> job-12.transcript-markdown-de.md
 
 # Fix dictation commands in a note, next to it -> befund.fix.md
