@@ -1,5 +1,5 @@
-import { assertCalendarEnabled } from "~~/server/utils/calendar/enabled";
-import { handleCalendars, handleCallback, handleConnect, handleEvents, providerFromQuery } from "~~/server/utils/calendar/handlers";
+import { assertCalendarEnabled } from "../../utils/calendar/enabled";
+import { handleCalendars, handleCallback, handleConnect, handleEvents, providerFromQuery } from "../../utils/calendar/handlers";
 
 // GET /api/calendar — the single calendar endpoint (provider via ?provider=):
 //   ?code= / ?error=   → OAuth callback (provider derived from `state`)

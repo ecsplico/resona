@@ -34,6 +34,11 @@ services:
       PUBLIC_URL: ${PWA_ORIGIN}/directus
       REFRESH_TOKEN_COOKIE_SECURE: "true"
       REFRESH_TOKEN_COOKIE_SAME_SITE: lax
+      # Parent domain (e.g. ecsplico.de) so the refresh cookie set on the PWA origin is
+      # also sent to the verlauf origin's /directus proxy (a sibling subdomain; same
+      # site, so SameSite=lax still holds). Empty = host-only cookie (PWA only).
+      REFRESH_TOKEN_COOKIE_DOMAIN: ${DIRECTUS_COOKIE_DOMAIN:-}
+      SESSION_COOKIE_DOMAIN: ${DIRECTUS_COOKIE_DOMAIN:-}
       # Session length. The refresh-token cookie's maxAge is REFRESH_TOKEN_TTL
       # (Directus has no separate cookie TTL for it); every /auth/refresh starts a
       # new REFRESH_TOKEN_TTL window, so this is an idle limit. SESSION_COOKIE_TTL
@@ -59,9 +64,10 @@ services:
       AUTH_KEYCLOAK_IDENTIFIER_KEY: email
       AUTH_KEYCLOAK_ALLOW_PUBLIC_REGISTRATION: "true"
       AUTH_KEYCLOAK_DEFAULT_ROLE_ID: ${DIRECTUS_USER_ROLE_ID:?set DIRECTUS_USER_ROLE_ID}
-      AUTH_KEYCLOAK_REDIRECT_ALLOW_LIST: ${PWA_ORIGIN}/login
+      AUTH_KEYCLOAK_REDIRECT_ALLOW_LIST: ${PWA_ORIGIN}/login,${VERLAUF_ORIGIN:-}/login
+      # VERLAUF_ORIGIN must be set once the verlauf service is deployed (SSO return + CORS).
       # Plus the Capacitor app (JSON auth): https://localhost (Android), capacitor://localhost (iOS).
-      CORS_ORIGIN: ${PWA_ORIGIN:?set PWA_ORIGIN},${APP_ORIGINS:-https://localhost,capacitor://localhost}
+      CORS_ORIGIN: ${PWA_ORIGIN:?set PWA_ORIGIN},${VERLAUF_ORIGIN:-},${APP_ORIGINS:-https://localhost,capacitor://localhost}
     healthcheck:
       # 127.0.0.1, not localhost: inside the container `localhost` resolves to ::1
       # (IPv6) first, but Directus binds IPv4 0.0.0.0 — wget to ::1 is refused and
@@ -131,6 +137,59 @@ services:
       NUXT_GOOGLE_REDIRECT_URI: ${NUXT_GOOGLE_REDIRECT_URI:-}
       NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-}
     depends_on:
+      directus-bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Resona Verlauf: second app (apps/resona-verlauf, Nuxt layer over resona-pwa) on its
+  # own host. Build context is apps/ so the layer sibling is in the image. It proxies
+  # Directus itself at /directus (inherited Nitro route). Google Calendar refresh token
+  # lives in the verlauf-data volume.
+  verlauf:
+    build:
+      context: ..
+      dockerfile: resona-verlauf/Dockerfile
+      args:
+        NUXT_PUBLIC_DIRECTUS_URL: ${VERLAUF_ORIGIN}/directus
+        # SSO starts on the PWA origin: Directus' callback/PUBLIC_URL live there.
+        NUXT_PUBLIC_SSO_DIRECTUS_URL: ${PWA_ORIGIN}/directus
+        NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL:-http://localhost:7710}
+        NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
+        NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}
+        NUXT_PUBLIC_CALENDAR_ENABLED: "false"
+        NUXT_PUBLIC_DATA_MODE: ${NUXT_PUBLIC_DATA_MODE:-directus}
+    expose:
+      - "3000"
+    networks: [default, coolify]
+    labels:
+      - caddy_0=${VERLAUF_ORIGIN:?set VERLAUF_ORIGIN}
+      - caddy_0.encode=zstd gzip
+      - caddy_0.reverse_proxy={{upstreams 3000}}
+      - caddy_0.header=-Server
+      - caddy_ingress_network=coolify
+    volumes:
+      - verlauf-data:/data/verlauf
+    environment:
+      NUXT_PUBLIC_DIRECTUS_URL: ${VERLAUF_ORIGIN}/directus
+      NUXT_PUBLIC_SSO_DIRECTUS_URL: ${PWA_ORIGIN}/directus
+      NUXT_PUBLIC_SSO_PROVIDER: keycloak
+      NUXT_DIRECTUS_INTERNAL_URL: http://directus:8055
+      NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL}
+      NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
+      NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-default}
+      NUXT_PUBLIC_DATA_MODE: ${NUXT_PUBLIC_DATA_MODE:-directus}
+      # Server-only secrets; Google OAuth redirect is <VERLAUF_ORIGIN>/api/termine.
+      NUXT_GOOGLE_CLIENT_ID: ${NUXT_GOOGLE_CLIENT_ID:-}
+      NUXT_GOOGLE_CLIENT_SECRET: ${NUXT_GOOGLE_CLIENT_SECRET:-}
+      NUXT_GOOGLE_REDIRECT_URI: ${NUXT_VERLAUF_GOOGLE_REDIRECT_URI:-}
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-}
+      NUXT_VERLAUF_CALENDAR_ID: ${NUXT_VERLAUF_CALENDAR_ID:-}
+      NUXT_VERLAUF_TITLE_PREFIXES: ${NUXT_VERLAUF_TITLE_PREFIXES:-EG,FG}
+      NUXT_VERLAUF_ALLOWED_EMAILS: ${NUXT_VERLAUF_ALLOWED_EMAILS:-}
+      NUXT_VERLAUF_DATA_DIR: /data/verlauf
+    depends_on:
+      directus:
+        condition: service_healthy
       directus-bootstrap:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -216,6 +275,7 @@ services:
 volumes:
   directus-db:
   directus-uploads:
+  verlauf-data:
   backup-cache:
   backup-state:
   hub-data:

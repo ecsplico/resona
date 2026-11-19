@@ -15,6 +15,17 @@ const nav = useBackNav();
 // name with the event's "<name> – <date>" title.
 const route = useRoute();
 const presetTitle = typeof route.query.title === "string" ? route.query.title : "";
+// Started from an appointment (Resona Verlauf: &event=…&eventStart=…&eventTitle=…):
+// the saved recording keeps the link to that calendar event.
+function queryString(key: string): string {
+	const value = route.query[key];
+	return typeof value === "string" ? value : "";
+}
+const eventLink = {
+	calendar_event_id: queryString("event"),
+	calendar_event_start: queryString("eventStart"),
+	calendar_event_title: queryString("eventTitle"),
+};
 
 const capture = usePcmCapture();
 const hubLive = useLive();
@@ -501,6 +512,7 @@ async function confirmSave(): Promise<void> {
 			source: "live",
 			status: "done",
 			duration_seconds: capturedDuration.value,
+			...(eventLink.calendar_event_id ? eventLink : {}),
 		};
 		const recording = await store.createRecording(input, blob, `${recordingTitle}.webm`);
 		// The audio is stored with the recording now.

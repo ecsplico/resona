@@ -44,6 +44,9 @@ export default defineNuxtConfig({
 			dataMode: "directus",
 			// Directus auth provider key for single sign-on ("" = password login only).
 			ssoProvider: "",
+			// Directus base URL used ONLY to start the SSO login ("" = directusUrl). A second
+			// app on another origin points this at the origin Directus' PUBLIC_URL lives on.
+			ssoDirectusUrl: "",
 		},
 	},
 	devServer: { port: 7730 },
