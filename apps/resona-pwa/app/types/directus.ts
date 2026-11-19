@@ -31,6 +31,13 @@ export interface Recording {
 	review_status?: "editing" | "ready";
 	hub_job_id?: number | null;
 	hub_job_key?: string | null;
+	// The calendar appointment the dictation was started from (Google event id,
+	// recurring instances look like `<base>_20260603T133000Z`), its start and raw title.
+	calendar_event_id?: string | null;
+	calendar_event_start?: string | null;
+	calendar_event_title?: string | null;
+	// When the transcript was copied into the patient record; null = not yet.
+	adopted_at?: string | null;
 }
 export interface Transcript {
 	id: string;

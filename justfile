@@ -3,6 +3,8 @@
 
 # PWA recipes (apps/resona-pwa/justfile): `just pwa test`, `just pwa backend`, …
 mod pwa 'apps/resona-pwa'
+# Verlauf recipes (apps/resona-verlauf/justfile): `just verlauf dev`, …
+mod verlauf 'apps/resona-verlauf'
 
 # Show available recipes
 default:

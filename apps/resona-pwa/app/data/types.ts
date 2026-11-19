@@ -3,8 +3,21 @@ import type { CorrectionEdit, Recording, RecordingPart, ResonaDocument, Transcri
 /**
  * `title_auto`: the title is a date placeholder the processor replaces with one derived from the transcript.
  * `id`: picked by the caller, so a retried create finds the row an earlier attempt made (see `createRecording`).
+ * `calendar_*`: the calendar appointment the dictation belongs to (set when started from one, e.g. `/live?event=…`).
  */
-export interface NewRecording { id?: string; title: string; title_auto?: boolean; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number }
+export interface NewRecording {
+	id?: string; title: string; title_auto?: boolean; language: string; profile: string; source: "batch" | "live"; status: "pending" | "done"; duration_seconds: number;
+	calendar_event_id?: string; calendar_event_start?: string; calendar_event_title?: string;
+}
+/** The appointment link of a new recording; empty unless it was started from a calendar event. */
+export function calendarFields(input: NewRecording): Pick<NewRecording, "calendar_event_id" | "calendar_event_start" | "calendar_event_title"> {
+	if (!input.calendar_event_id) return {};
+	return {
+		calendar_event_id: input.calendar_event_id,
+		calendar_event_start: input.calendar_event_start,
+		calendar_event_title: input.calendar_event_title,
+	};
+}
 /** What the save sheet hands over for a new recording; `titleAuto` becomes `title_auto`. */
 export interface SaveRequest { title: string; titleAuto: boolean; language: string; profile: string; transcribe: boolean }
 /**
@@ -52,4 +65,6 @@ export interface DataStore {
 	updatePart(id: string, patch: RecordingPartPatch): Promise<void>;
 	/** The part's own audio, or null once it was cleaned up. */
 	partAudio(part: RecordingPart): Promise<Blob | null>;
+	/** Marks a recording as adopted into the patient record (`adopted_at` = now) or clears the mark (`null`). */
+	setAdopted(id: string, adopted: boolean): Promise<void>;
 }

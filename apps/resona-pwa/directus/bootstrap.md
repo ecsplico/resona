@@ -69,6 +69,11 @@ snapshot (§4).
 | source | string (dropdown) | batch / live; default `batch` |
 | review_status | string (dropdown) | editing / ready; default `editing` — user review workflow, independent of `status` |
 | hub_job_id | integer | nullable — durable Resona hub job id set by the project-worker while the job runs; rows with it set are never reclaimed as stale |
+| hub_job_key | string | nullable — hub Idempotency-Key of the current submission attempt |
+| calendar_event_id | string | nullable — Google event id of the appointment the dictation was started from (Resona Verlauf, `/live?event=…`); recurring instances look like `<base>_20260603T133000Z`. User may create/update it |
+| calendar_event_start | timestamp | nullable — that appointment's start. User may create/update it |
+| calendar_event_title | string | nullable — that appointment's raw title (contains the patient name). User may create/update it |
+| adopted_at | timestamp | nullable — when the transcript was copied into the patient record (Verlauf desktop "Übernommen"); null = not yet. User may update it |
 
 ### `transcripts`
 | Field | Type | Notes |

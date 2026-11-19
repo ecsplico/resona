@@ -582,6 +582,13 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
 - **recordings** also has `hub_job_id` (integer, the in-flight hub job) and `hub_job_key`
   (string, the hub Idempotency-Key of the current submission attempt; persisted before
   `POST /v1/jobs`, kept by stale recovery, cleared on `done`/`error`).
+- **recordings** links to a calendar appointment (Resona Verlauf, `/live?event=…&eventStart=…&eventTitle=…`):
+  `calendar_event_id` (string, Google event id; recurring instances `<base>_20260603T133000Z`),
+  `calendar_event_start` (timestamp), `calendar_event_title` (string, raw event title: holds the
+  patient name), all nullable, set on create only when `event` is present. `adopted_at`
+  (timestamp, null = not yet) is the Verlauf desktop "Übernommen" mark, written by
+  `store.setAdopted(id, adopted)`. The `user` policy may create the `calendar_*` fields and
+  update them plus `adopted_at`; bootstrap adds fields and widens existing permission rows.
 - **documents**: `id, user_created, date_created, date_updated, title, file (→
   directus_files), status (pending|processing|done|error), error_message, markdown,
   pages (json), hub_job_id, hub_job_key`.
@@ -613,11 +620,12 @@ for existing installs, although it now processes documents too.
 All public config flows through `runtimeConfig.public` (set via `NUXT_PUBLIC_*` env vars,
 defaults in `nuxt.config.ts`). Read it with `useRuntimeConfig().public` — never hardcode
 URLs. No token or engine is configured at build time — the hub token is per device
-(Einstellungen → Verbindung). The 6 keys:
+(Einstellungen → Verbindung). The 7 keys:
 
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `NUXT_PUBLIC_DIRECTUS_URL` | `http://localhost:7700` | Directus base URL |
+| `NUXT_PUBLIC_SSO_DIRECTUS_URL` | `` (= Directus URL) | Directus base URL used only to start the SSO login (set by the Verlauf app to the PWA origin's `/directus`) |
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Resona hub base URL |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
