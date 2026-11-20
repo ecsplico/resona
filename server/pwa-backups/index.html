@@ -1413,10 +1413,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#including-the-hubs-resona-data-volume" class="md-nav__link">
+  <a href="#moving-from-a-backup-that-included-the-hub-volume" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Including the hub's resona-data volume
+        Moving from a backup that included the hub volume
       
     </span>
   </a>
@@ -2568,10 +2568,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#including-the-hubs-resona-data-volume" class="md-nav__link">
+  <a href="#moving-from-a-backup-that-included-the-hub-volume" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Including the hub's resona-data volume
+        Moving from a backup that included the hub volume
       
     </span>
   </a>
@@ -2682,12 +2682,12 @@
 
 
 <h1 id="pwa-backups-and-encryption-at-rest">PWA backups and encryption at rest<a class="headerlink" href="#pwa-backups-and-encryption-at-rest" title="Permanent link">&para;</a></h1>
-<p>The PWA stack (<code>apps/resona-pwa/docker-compose.coolify.yml</code>) keeps everything a user produces in two Docker volumes: <code>directus-db</code> (Directus SQLite, <code>data.db</code>) and <code>directus-uploads</code> (recordings and documents). The hub keeps its SQLite database and testbench items on <code>resona-data</code> (root <code>docker-compose.coolify.yml</code>). This page covers the opt-in encrypted off-site backup of those volumes, the restore drill, who holds the keys, and the state of disk encryption on the host.</p>
+<p>The PWA stack (<code>apps/resona-pwa/docker-compose.coolify.yml</code>) keeps everything a user produces in two Docker volumes: <code>directus-db</code> (Directus SQLite, <code>data.db</code>) and <code>directus-uploads</code> (recordings and documents). This page covers the opt-in encrypted off-site backup of those two volumes, the restore drill, who holds the keys, and the state of disk encryption on the host.</p>
+<p>The hub is a separate layer with its own data (<code>resona-data</code>: SQLite database and testbench items) and its own backup service in the root <code>docker-compose.coolify.yml</code>: see <a href="../coolify/#backup">Coolify: Backup</a>. The PWA backup never mounts or reads the hub volume.</p>
 <h2 id="what-the-backup-service-does">What the backup service does<a class="headerlink" href="#what-the-backup-service-does" title="Permanent link">&para;</a></h2>
 <p>The compose service <code>backup</code> (profile <code>backup</code>, image built from <code>apps/resona-pwa/backup/</code>) is <a href="https://restic.net">restic</a> with a small script:</p>
 <ol>
 <li>Dumps <code>data.db</code> through the SQLite backup API on a read-only connection (<code>sqlite3 -readonly … .backup</code>) and runs <code>PRAGMA quick_check</code> on the dump. The live file is never copied raw.</li>
-<li>Optionally dumps the hub's <code>db/jjobs.sqlite</code> the same way and adds <code>organizations/*/testbench</code>. Hub job payloads are transient and not backed up (see <a href="../coolify/#restore-a-backup">Coolify: Restore a backup</a>).</li>
 <li><code>restic backup</code> of the dumps and <code>directus-uploads</code> to the repository. restic encrypts client-side (AES-256 + Poly1305), so the storage provider only sees ciphertext.</li>
 <li><code>restic forget --prune --keep-daily 7 --keep-weekly 4 --keep-monthly 6</code>.</li>
 <li>On Sundays, <code>restic check --read-data-subset 5%</code>.</li>
@@ -2707,16 +2707,8 @@
 <td>Directus database dump</td>
 </tr>
 <tr>
-<td><code>/dumps/hub-jjobs.sqlite</code></td>
-<td>hub database dump (only with <code>HUB_DATA_VOLUME</code>)</td>
-</tr>
-<tr>
 <td><code>/source/directus/uploads/</code></td>
 <td>Directus uploads</td>
-</tr>
-<tr>
-<td><code>/source/hub/organizations/&lt;id&gt;/testbench/</code></td>
-<td>hub testbench items (only with <code>HUB_DATA_VOLUME</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -2778,10 +2770,6 @@
 <td><code>BACKUP_ON_START</code></td>
 <td>optional, default <code>true</code></td>
 </tr>
-<tr>
-<td><code>HUB_DATA_VOLUME</code></td>
-<td>optional, see below</td>
-</tr>
 </tbody>
 </table>
 <p>The variables are checked by the script, not by Compose: a deployment without the <code>backup</code> profile needs none of them, and the backup container exits with a message naming the first missing one.</p>
@@ -2793,25 +2781,24 @@
 </code></pre></div>
 </li>
 </ol>
-<h3 id="including-the-hubs-resona-data-volume">Including the hub's <code>resona-data</code> volume<a class="headerlink" href="#including-the-hubs-resona-data-volume" title="Permanent link">&para;</a></h3>
-<p>The hub runs as a separate Coolify app on the same Docker host, so its volume has a Coolify-generated name (<code>&lt;hub-app-uuid&gt;_resona-data</code>). Find it on the host and set it in the PWA app env:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>volume<span class="w"> </span>ls<span class="w"> </span>--format<span class="w"> </span><span class="s1">&#39;{{.Name}}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">&#39;_resona-data$&#39;</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>HUB_DATA_VOLUME=&lt;hub-app-uuid&gt;_resona-data
-</code></pre></div>
-<p>The backup service then mounts that volume at <code>/source/hub</code> and passes its name as <code>BACKUP_HUB_VOLUME</code>. Without <code>HUB_DATA_VOLUME</code> it mounts an empty placeholder volume <code>resona-pwa-backup-no-hub</code> and ignores it. If the mounted volume holds no <code>db/jjobs.sqlite</code> (wrong name, or Coolify renamed the volume), every run fails and the container turns unhealthy: confirm after the first run with <code>restic ls latest | grep hub-jjobs</code>.</p>
-<p>If the hub moves to another host, run the same image there with only <code>/source/hub</code> mounted, a separate <code>BACKUP_HOST_TAG</code> and the same repository, or give it its own repository.</p>
+<h3 id="moving-from-a-backup-that-included-the-hub-volume">Moving from a backup that included the hub volume<a class="headerlink" href="#moving-from-a-backup-that-included-the-hub-volume" title="Permanent link">&para;</a></h3>
+<p>Earlier versions could add the hub's volume with <code>HUB_DATA_VOLUME</code>. That option is gone:</p>
+<ol>
+<li>Remove <code>HUB_DATA_VOLUME</code> from the PWA app env and redeploy; the snapshots then hold app data only.</li>
+<li>Turn on the hub's own backup (<a href="../coolify/#backup">Coolify: Backup</a>).</li>
+<li>Older snapshots of this repository still contain <code>/dumps/hub-jjobs.sqlite</code>. restic applies retention per host and path set, so they are not thinned out by the daily run: once the hub backup has enough history, remove them with <code>restic forget --prune &lt;snapshot-id&gt;…</code> (<code>restic snapshots</code> shows each snapshot's paths), and delete the unused Docker volume <code>resona-pwa-backup-no-hub</code> if it exists.</li>
+</ol>
 <h2 id="restore-drill">Restore drill<a class="headerlink" href="#restore-drill" title="Permanent link">&para;</a></h2>
 <p>Run it after setup and then every quarter, on a machine that is <strong>not</strong> the production host. It proves the password, the S3 keys and the dumps all work.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">RESTIC_REPOSITORY</span><span class="o">=</span><span class="s1">&#39;s3:https://fsn1.your-objectstorage.com/&lt;bucket&gt;/resona&#39;</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AWS_ACCESS_KEY_ID</span><span class="o">=</span>…<span class="w"> </span><span class="nv">AWS_SECRET_ACCESS_KEY</span><span class="o">=</span>…
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nb">read</span><span class="w"> </span>-rs<span class="w"> </span>RESTIC_PASSWORD<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">export</span><span class="w"> </span>RESTIC_PASSWORD
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nb">alias</span><span class="w"> </span><span class="nv">restic</span><span class="o">=</span><span class="s1">&#39;docker run --rm -i -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -v &quot;$PWD/restore:/restore&quot; restic/restic:0.18.1&#39;</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>restic<span class="w"> </span>snapshots
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>restic<span class="w"> </span>restore<span class="w"> </span>latest<span class="w"> </span>--target<span class="w"> </span>/restore
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>sqlite3<span class="w"> </span>restore/dumps/directus.db<span class="w"> </span><span class="s1">&#39;PRAGMA integrity_check; SELECT count(*) FROM recordings; SELECT count(*) FROM directus_files;&#39;</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>ls<span class="w"> </span>restore/source/directus/uploads<span class="w"> </span><span class="p">|</span><span class="w"> </span>wc<span class="w"> </span>-l
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">RESTIC_REPOSITORY</span><span class="o">=</span><span class="s1">&#39;s3:https://fsn1.your-objectstorage.com/&lt;bucket&gt;/resona&#39;</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AWS_ACCESS_KEY_ID</span><span class="o">=</span>…<span class="w"> </span><span class="nv">AWS_SECRET_ACCESS_KEY</span><span class="o">=</span>…
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nb">read</span><span class="w"> </span>-rs<span class="w"> </span>RESTIC_PASSWORD<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">export</span><span class="w"> </span>RESTIC_PASSWORD
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nb">alias</span><span class="w"> </span><span class="nv">restic</span><span class="o">=</span><span class="s1">&#39;docker run --rm -i -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -v &quot;$PWD/restore:/restore&quot; restic/restic:0.18.1&#39;</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>restic<span class="w"> </span>snapshots
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>restic<span class="w"> </span>restore<span class="w"> </span>latest<span class="w"> </span>--target<span class="w"> </span>/restore
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>sqlite3<span class="w"> </span>restore/dumps/directus.db<span class="w"> </span><span class="s1">&#39;PRAGMA integrity_check; SELECT count(*) FROM recordings; SELECT count(*) FROM directus_files;&#39;</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>ls<span class="w"> </span>restore/source/directus/uploads<span class="w"> </span><span class="p">|</span><span class="w"> </span>wc<span class="w"> </span>-l
 </code></pre></div>
 <p>The two counts should roughly match the uploads count and the live app. Record date, snapshot ID and counts in the ops log.</p>
 <h3 id="restoring-production">Restoring production<a class="headerlink" href="#restoring-production" title="Permanent link">&para;</a></h3>
@@ -2820,19 +2807,19 @@
 <li>Restore the snapshot on the host as above (<code>restic restore &lt;snapshot-id&gt; --target /restore</code>).</li>
 <li>
 <p>Copy the data into the volumes, owned by the <code>node</code> user (uid 1000) Directus runs as:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>&lt;app-uuid&gt;_directus-db:/d<span class="w"> </span>-v<span class="w"> </span>/restore:/r<span class="w"> </span>alpine<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;rm -f /d/data.db-journal /d/data.db-wal /d/data.db-shm &amp;&amp; cp /r/dumps/directus.db /d/data.db &amp;&amp; chown 1000:1000 /d/data.db&#39;</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>&lt;app-uuid&gt;_directus-uploads:/u<span class="w"> </span>-v<span class="w"> </span>/restore:/r<span class="w"> </span>alpine<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;cp -a /r/source/directus/uploads/. /u/ &amp;&amp; chown -R 1000:1000 /u&#39;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>&lt;app-uuid&gt;_directus-db:/d<span class="w"> </span>-v<span class="w"> </span>/restore:/r<span class="w"> </span>alpine<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;rm -f /d/data.db-journal /d/data.db-wal /d/data.db-shm &amp;&amp; cp /r/dumps/directus.db /d/data.db &amp;&amp; chown 1000:1000 /d/data.db&#39;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>&lt;app-uuid&gt;_directus-uploads:/u<span class="w"> </span>-v<span class="w"> </span>/restore:/r<span class="w"> </span>alpine<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;cp -a /r/source/directus/uploads/. /u/ &amp;&amp; chown -R 1000:1000 /u&#39;</span>
 </code></pre></div>
 </li>
 <li>
 <p>Start the app: <code>coolify app start &lt;app-uuid&gt;</code>. <code>directus-bootstrap</code> re-runs idempotently.</p>
 </li>
-<li>Hub (only if it is lost too): copy <code>/restore/dumps/hub-jjobs.sqlite</code> to <code>/data/backup.sqlite</code> on the hub volume and follow <a href="../coolify/#restore-a-backup">Coolify: Restore a backup</a> (<code>resona-admin restore</code>; it revokes all credentials and workers).</li>
 <li>Delete <code>/restore</code> from the host.</li>
 </ol>
 <p>Users signed in through Keycloak keep their accounts (matched by e-mail); their sessions start fresh.</p>
+<p>If the hub is lost too, restore it separately from its own repository: <a href="../coolify/#restore-a-backup">Coolify: Restore a backup</a> (<code>resona-admin restore</code>; it revokes all credentials and workers, so the project-worker needs a fresh <code>RESONA_API_KEY</code>).</p>
 <h2 id="key-custody">Key custody<a class="headerlink" href="#key-custody" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><code>RESTIC_PASSWORD</code> is the only key to the data.</strong> Without it the repository cannot be decrypted, by us or anyone else. Keep it in at least two places outside the server: the team password manager (entry "Resona backup restic", readable by two named admins) and a sealed paper copy in the office safe. The copy in the Coolify env is only for the running service and lives on the same host it protects.</li>
@@ -2844,12 +2831,12 @@
 <h2 id="encryption-at-rest-verschlusselung-im-ruhezustand">Encryption at rest (Verschlüsselung im Ruhezustand)<a class="headerlink" href="#encryption-at-rest-verschlusselung-im-ruhezustand" title="Permanent link">&para;</a></h2>
 <h3 id="finding-2026-11-10-read-only-inspection">Finding (2026-11-10, read-only inspection)<a class="headerlink" href="#finding-2026-11-10-read-only-inspection" title="Permanent link">&para;</a></h3>
 <p>The Coolify host is a netcup KVM server (<code>/sys/class/dmi/id/sys_vendor</code> = <code>netcup</code>). Its disk is <strong>not encrypted at the OS level</strong>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>NAME   TYPE FSTYPE  SIZE MOUNTPOINT
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>vda    disk         320G
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>├─vda1 part           2M
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>├─vda2 part ext4      1G /boot
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>├─vda3 part ext4      9G /
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>└─vda4 part ext4    310G /srv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>NAME   TYPE FSTYPE  SIZE MOUNTPOINT
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>vda    disk         320G
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>├─vda1 part           2M
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>├─vda2 part ext4      1G /boot
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>├─vda3 part ext4      9G /
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>└─vda4 part ext4    310G /srv
 </code></pre></div>
 <ul>
 <li>No <code>crypt</code>/<code>luks</code>/device-mapper entries in <code>/proc/mounts</code>, <code>cryptsetup</code> is not installed.</li>
@@ -2858,7 +2845,7 @@
 </ul>
 <p>The restic backups are encrypted; the live data is not. Protection against someone with access to the hypervisor storage or a discarded disk needs LUKS.</p>
 <p>To repeat the check:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>ssh<span class="w"> </span>root@&lt;host&gt;<span class="w"> </span><span class="s1">&#39;lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINT; grep -E &quot;crypt|luks|mapper&quot; /proc/mounts; docker info --format &quot;{{.DockerRootDir}}&quot;; findmnt -T &quot;$(docker info --format &quot;{{.DockerRootDir}}&quot;)&quot;&#39;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ssh<span class="w"> </span>root@&lt;host&gt;<span class="w"> </span><span class="s1">&#39;lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINT; grep -E &quot;crypt|luks|mapper&quot; /proc/mounts; docker info --format &quot;{{.DockerRootDir}}&quot;; findmnt -T &quot;$(docker info --format &quot;{{.DockerRootDir}}&quot;)&quot;&#39;</span>
 </code></pre></div>
 <h3 id="luks-migration-outline">LUKS migration outline<a class="headerlink" href="#luks-migration-outline" title="Permanent link">&para;</a></h3>
 <p><code>/srv</code> holds everything worth protecting (Docker, Coolify, swap), so encrypting <code>vda4</code> is enough; <code>/</code> and <code>/boot</code> stay plain so the server can boot to an unlock prompt.</p>
