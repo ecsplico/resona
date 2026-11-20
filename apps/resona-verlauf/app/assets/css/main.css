@@ -1,0 +1,5 @@
+/* The layer's nuxt.config lists `~/assets/css/main.css`, and in a layer app `~` is
+   this app's srcDir: this file forwards to the layer's stylesheet and lets Tailwind
+   scan the layer's sources too. */
+@import "../../../../resona-pwa/app/assets/css/main.css";
+@source "../../../../resona-pwa/app";

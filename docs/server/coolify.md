@@ -7,6 +7,7 @@ The public hub runs on the ecsplico Coolify server from `docker-compose.coolify.
 | `hub` | `ghcr.io/ecsplico/resona-hub@sha256:<digest>` | `:7000` (`expose` only) | `https://resona-hub.ecsplico.de/*` |
 | `mcp` | same image, `resona-mcp http` | `:7010` (`expose` only) | `https://resona-hub.ecsplico.de/mcp` |
 | `engine-faster-whisper` | `ghcr.io/ecsplico/resona-engine-faster-whisper@sha256:<digest>` | `:7001` (`expose` only) | none: internal, reached only by `hub` |
+| `backup` | built from `packages/api/backup/` (restic) | nothing | none: idle unless `RESTIC_REPOSITORY` is set ([Backup](#backup)) |
 
 There are no GPUs, Docker socket mounts, privileges or published ports. All containers run with a read-only root filesystem, all capabilities dropped and `no-new-privileges`; `hub` and `mcp` run as UID 1000, the engine as its image's root user with only its model cache volume `hf-cache` and `/tmp` writable. SQLite and the transient job payloads live on the named volume `resona-data` (`/data`); the database is never exposed. Queued jobs (uploads, documents, postprocessing) run on approved pull workers that connect outbound over HTTPS ([Mac worker](mac-worker.md), [Linux CUDA worker](full-stack.md)). When no worker is online, jobs wait in the queue. Live dictation (`WS /v1/listen`) does not go through workers: the hub bridges it to an engine-server, by default the internal `engine-faster-whisper` ([Live recognizer](#live-recognizer)).
 
@@ -24,7 +25,7 @@ TLS ends at Coolify's Caddy proxy. In raw mode Coolify adds no labels or network
   4. Realm settings → Tokens: keep "Revoke Refresh Token" off (parallel refreshes from two tabs would revoke each other's token).
   5. Takes effect at each user's next SSO login.
   6. Logging out in the PWA does not end the Keycloak offline session: revoke it under Users → user → Sessions (Offline). Disabling a user in Keycloak ends their PWA session at the next refresh (≤ 15 min).
-- Encrypted off-site backups and the encryption-at-rest finding: [PWA backups](pwa-backups.md) (compose profile `backup`).
+- The PWA backs up its own volumes (Directus database and uploads) from its own compose file: [PWA backups](pwa-backups.md) (compose profile `backup`). It does not see the hub volume; the hub backs up `resona-data` itself ([Backup](#backup)).
 - Legacy: the hub also answers `https://resona.ecsplico.de/v1/workers/*` (a `handle` route in the compose labels) so workers still configured with the old origin keep working. Re-point them with `--hub https://resona-hub.ecsplico.de`, then remove the `caddy_1*` labels.
 
 ## Image
@@ -181,34 +182,122 @@ The task command is limited to about 250 characters. `worker approve` needs the 
 
 Without `--token-sha256`, `resona-admin` generates the token and prints it once into the task output, so prefer the hash.
 
-## Restore a backup
+## Backup
 
-Back up the database with the SQLite backup API while the hub runs (never by copying the file), for example from the `hub` container:
+The hub backs up its own data. The compose service `backup` (image built from `packages/api/backup/`, [restic](https://restic.net) plus a small script) mounts `resona-data` and nothing else. It is **off unless `RESTIC_REPOSITORY` is set**: without it the container logs `backup is off`, idles and reports healthy. It runs as UID 1000 like the hub, read-only root filesystem, no capabilities, no route.
+
+Each run:
+
+1. dumps `db/jjobs.sqlite` through the SQLite backup API on a read-only connection (`sqlite3 -readonly … .backup`) and runs `PRAGMA quick_check` on the dump. The live file is never copied raw;
+2. `restic backup` of the dump and of `organizations/*/testbench` (testbench originals and collected runs). restic encrypts client-side, so the storage provider only sees ciphertext. Job payloads (inputs, results) are transient, 24 h at most, and are not backed up;
+3. `restic forget --prune --keep-daily 7 --keep-weekly 4 --keep-monthly 6`, and on Sundays `restic check --read-data-subset 5%`.
+
+It runs once at container start, then daily at `BACKUP_TIME`. A failed run is logged and retried at the next slot; the healthcheck turns **unhealthy** once the last success is older than 26 h (the time of the last success lives in the `backup-state` volume).
+
+Snapshot layout:
+
+|Path|Content|
+|---|---|
+|`/dumps/hub-jjobs.sqlite`|hub database dump|
+|`/source/hub/organizations/<storage-id>/testbench/`|testbench items|
+
+Coolify env of the hub app:
+
+|Variable|Value|
+|---|---|
+|`RESTIC_REPOSITORY`|e.g. `s3:https://<s3-endpoint>/<bucket>/resona-hub`; setting it turns the backup on|
+|`RESTIC_PASSWORD`|the repository password (required once the repository is set)|
+|`BACKUP_S3_ACCESS_KEY_ID` / `BACKUP_S3_SECRET_ACCESS_KEY`|S3 keys (required for an `s3:` repository)|
+|`BACKUP_S3_REGION`|optional|
+|`BACKUP_TIME` / `BACKUP_TZ`|optional, default `02:30` / `Europe/Berlin`|
+|`BACKUP_KEEP_DAILY` / `_WEEKLY` / `_MONTHLY`|optional, default `7` / `4` / `6`|
+|`BACKUP_ON_START`|optional, default `true`|
+|`BACKUP_HOST_TAG`|optional, default `resona-hub`|
+
+With the repository set and another required variable missing, the container exits with a message naming it. Use a repository of its own for the hub (its own path or bucket and its own password), separate from the PWA's: the two backups belong to two layers and are restored independently. Password custody and rotation work as described under [PWA backups: Key custody](pwa-backups.md#key-custody).
+
+After the first deploy with the variables set, check the `backup` container log for `backup finished`, then:
+
+```bash
+docker exec <app-uuid>-backup-1 restic snapshots
+docker exec <app-uuid>-backup-1 restic ls latest
+```
+
+`backup` is the only service of the compose file that is built on the host instead of pulled, so a deploy also needs Docker Hub (`restic/restic`) and the Alpine package mirror.
+
+### One-off dump without restic
+
+From the `hub` container, with the SQLite backup API (never by copying the file):
 
 ```bash
 python -c "import sqlite3; s=sqlite3.connect('/data/db/jjobs.sqlite'); d=sqlite3.connect('/data/backup.sqlite'); s.backup(d)"
 ```
 
-Payload directories are transient and are not backed up.
+## Restore a backup
+
+Fetch the snapshot on the server (same variables as the service; `AWS_*` are the `BACKUP_S3_*` values):
+
+```bash
+export RESTIC_REPOSITORY=… AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
+read -rs RESTIC_PASSWORD && export RESTIC_PASSWORD
+docker run --rm -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+  -v "$PWD/restore:/restore" restic/restic:0.18.1 restore latest --target /restore
+```
 
 Restore only while the hub is stopped. `resona-admin restore` refuses to run while a hub holds the lock file next to the database:
 
 ```bash
 coolify app stop <app-uuid>
-# on the server: one-off container on the same volume
+# on the server: put the dump and the testbench items on the volume, owned by UID 1000
+docker run --rm -v <resona-data volume>:/data -v "$PWD/restore:/r:ro" alpine sh -c \
+  'cp /r/dumps/hub-jjobs.sqlite /data/backup.sqlite && chown 1000:1000 /data/backup.sqlite \
+   && if [ -d /r/source/hub/organizations ]; then mkdir -p /data/organizations && cp -a /r/source/hub/organizations/. /data/organizations/ && chown -R 1000:1000 /data/organizations; fi'
+# one-off hub container on the same volume
 docker run --rm -v <resona-data volume>:/data <hub image> resona-admin restore /data/backup.sqlite
+docker run --rm -v <resona-data volume>:/data alpine rm /data/backup.sqlite
 coolify app start <app-uuid>
+rm -rf restore
 ```
 
 The restore:
 
 1. copies the backup over the database with the SQLite backup API and migrates it to the current schema;
-2. revokes **every** restored credential and worker. A credential that was revoked after the backup was taken therefore cannot come back. Issue fresh credentials and re-enroll the workers afterwards;
+2. revokes **every** restored credential, worker and webhook endpoint. A credential that was revoked after the backup was taken therefore cannot come back. Issue fresh credentials and re-enroll the workers afterwards;
 3. invalidates every active lease: processing jobs are requeued, or failed when no attempt or time is left;
 4. marks jobs whose payload files are gone as `content_unavailable`: pending jobs without input fail with that code, and completed jobs without a result file answer `410 content_unavailable` on the result route. Results are never fabricated;
 5. runs one maintenance pass, which reapplies content and metadata retention before the hub serves requests.
 
 It prints counts only, never identifiers of content.
+
+### Restore drill (local)
+
+Proves that a snapshot written by the backup image passes `resona-admin restore`, without touching a deployment: a scratch directory, a throwaway Docker volume and a local restic repository. Run it from a checkout (`uv sync --package resona-api`):
+
+```bash
+T=$(mktemp -d) && mkdir -p "$T/data" "$T/repo" "$T/restore" "$T/new"
+docker build -t resona-hub-backup:drill packages/api/backup
+
+# 1. a hub database with one organization and one credential
+DATA_PATH="$T/data" uv run --package resona-api resona-admin organization create drill
+DATA_PATH="$T/data" uv run --package resona-api resona-admin credential issue --organization drill --role client
+
+# 2. copy it into a throwaway volume owned by the hub's UID, as on the server
+docker volume create hub-backup-drill
+docker run --rm -v "$T/data:/src:ro" -v hub-backup-drill:/dst alpine sh -c 'cp -a /src/. /dst/ && chown -R 1000:1000 /dst'
+
+# 3. one backup into a local repository, then restore the snapshot
+drill() { docker run --rm --tmpfs /dumps:uid=1000,gid=1000 -e RESTIC_REPOSITORY=/repo -e RESTIC_PASSWORD=drill-only \
+  -v hub-backup-drill:/source/hub -v "$T/repo:/repo" -v "$T/restore:/restore" resona-hub-backup:drill "$@"; }
+drill run
+drill restic restore latest --target /restore
+
+# 4. restore into an empty hub data directory
+DATA_PATH="$T/new" uv run --package resona-api resona-admin restore "$T/restore/dumps/hub-jjobs.sqlite"
+
+docker volume rm hub-backup-drill && rm -rf "$T"
+```
+
+Step 3 ends with `backup finished`; step 4 prints `restore complete` and `credentials_revoked: 1`. For a drill against the real repository, restore the latest snapshot on a machine that is not the production host (first block of this section) and run step 4 on its `dumps/hub-jjobs.sqlite`.
 
 ## Logs
 

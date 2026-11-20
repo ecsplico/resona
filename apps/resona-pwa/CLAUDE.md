@@ -8,7 +8,8 @@ transcribed by the backend, and they review/edit/export the result. Built on the
 design system (plain Vue + Tailwind v4 CSS tokens — no component library).
 
 **This app lives in the resona monorepo at `apps/resona-pwa/`, but it is a separate
-deployable with its own toolchain** (bun, own compose files, own uv env for `worker/`).
+deployable with its own toolchain** (bun, own compose files, own uv envs for `worker/`
+and `mcp/`).
 It talks to its backends over HTTP/WebSocket only. Never import from `packages/*` or any
 other Python code in the monorepo, and nothing there imports from here — communicate over
 HTTP exclusively. Run every command below from `apps/resona-pwa/` (or `just pwa <recipe>`
@@ -88,6 +89,17 @@ which idempotently provisions collections, the `user` role/policy, and the
 that in `.env` first, e.g. `openssl rand -hex 24`). See `directus/bootstrap.md`.
 CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 
+### Hub profiles
+
+`profiles/title-de.json` is this app's own postprocess profile (one `extract` step `title` on
+endpoint `local-llm`; `useTitleJob` reads `structured.title.title`). A hub knows it only after
+`just push-profiles` (`scripts/push-profiles.sh`: `resona profiles push` for `profiles/*.json`,
+then the catalogue profiles offered under Nachbearbeiten, `transcript-markdown-de` and
+`transcript-polish-de`, from `RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI`
+names the `resona` command; needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
+checks the file against the hub's documented profile format and `titleFromResult`, without
+importing hub code.
+
 ### Worker
 
 The `resona-project-worker` lives in `worker/` (package `resona_project_worker`) — a
@@ -103,11 +115,34 @@ hub default), `WORKER_POLL_INTERVAL`, `WORKER_BATCH`, `WORKER_STALE_MINUTES`. Bu
 it via `docker compose` (the `project-worker` service). A derived title (`title_auto`) is
 best effort: a failed title write is logged (no text) and never marks the row `error`.
 
+### Dictation MCP
+
+`resona-dictations-mcp` lives in `mcp/` (package `resona_dictations_mcp`, own `uv.lock`,
+`mcp==2.3.0` like the monorepo's `resona-mcp`, no imports from it or `packages/*`): MCP
+access to a user's **own dictations** over Streamable HTTP, compose service
+`dictations-mcp` (no published port; `docker-compose.backend.yml` binds loopback `:7740`
+for `bun run dev`), reached at `<app origin>/mcp` through `server/routes/mcp.ts`
+(`NUXT_DICTATIONS_MCP_INTERNAL_URL`, empty = 404; forwards no cookies). Rules: it acts
+only with the caller's Directus token (`Authorization: Bearer`, verified via `GET
+/users/me`, accepted tokens cached 30 s by hash, session bound to the token hash, a
+Directus 401 in a tool call drops the cache entry), holds no admin/worker token, never
+calls the hub, and adds no owner filter (the `user` policy scopes every read; `directus.py`
+is the only Directus client, list queries go in a `SEARCH` body so they reach no URL log).
+Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
+`list_dictations` (cursor = last `date_created` + count of rows already returned at that
+instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
+(`transcripts.text` in ranges ≤ 32768). Logs: `tool= user= outcome= ids= ms=`, never text,
+titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa test-mcp`)
+start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
+compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running
+one). Epic #79; details `mcp/README.md`.
+
 ### Backup
 
 `backup/` (`Dockerfile` on `restic/restic`, script `backup.sh` = `resona-backup`) is the
 `backup` service of `docker-compose.coolify.yml`, active only with compose profile `backup`:
-SQLite dumps of Directus (and optionally the hub volume) + uploads → encrypted restic
+SQLite dump of Directus + uploads (app data only, never the hub volume: the hub backs
+up itself, `docs/server/coolify.md#backup`) → encrypted restic
 snapshot in S3, daily at `BACKUP_TIME` (`HH:MM`, 00:00–23:59), with retention. `last-success`
 lives in the `backup-state` volume; the healthcheck stays healthy until the first backup
 of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
@@ -173,7 +208,7 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   model runs in the browser outside the page thread (not exposed in Web Workers), the page only
   awaits it, so capture and live transcript keep running. Only when it gives no title,
   `useTitleJob().suggestTitleRemote` (hub `kind:"text"`
-  job, profile `title-de`, first 4000 chars, reads `structured.title.title`, always deletes the
+  job, profile `title-de` = `profiles/title-de.json` here, first 4000 chars, reads `structured.title.title`, always deletes the
   job, null on any failure) may replace it ("Titel wird verfeinert…"). Either result replaces
   the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
   start or leaving the page abort both and a late answer is dropped. A title field cleared
@@ -516,6 +551,8 @@ shared/debugReport.ts                # debug report size limit + redaction (app 
 server/                              # the sanctioned Nitro OAuth layer (server only)
 ├── api/calendar/index.{get,delete}.ts  # single provider-agnostic endpoint
 ├── api/debug-report.post.ts         # temporary: logs the redacted /debug report as [resona-debug]
+├── routes/directus/[...path].ts     # same-origin proxy to Directus (allow-listed API paths)
+├── routes/mcp.ts                    # same-origin proxy to the dictations-mcp service (/mcp)
 └── utils/calendar/                  # provider interface + registry + Google + session
 ```
 
@@ -582,6 +619,13 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
 - **recordings** also has `hub_job_id` (integer, the in-flight hub job) and `hub_job_key`
   (string, the hub Idempotency-Key of the current submission attempt; persisted before
   `POST /v1/jobs`, kept by stale recovery, cleared on `done`/`error`).
+- **recordings** links to a calendar appointment (Resona Verlauf, `/live?event=…&eventStart=…&eventTitle=…`):
+  `calendar_event_id` (string, Google event id; recurring instances `<base>_20260603T133000Z`),
+  `calendar_event_start` (timestamp), `calendar_event_title` (string, raw event title: holds the
+  patient name), all nullable, set on create only when `event` is present. `adopted_at`
+  (timestamp, null = not yet) is the Verlauf desktop "Übernommen" mark, written by
+  `store.setAdopted(id, adopted)`. The `user` policy may create the `calendar_*` fields and
+  update them plus `adopted_at`; bootstrap adds fields and widens existing permission rows.
 - **documents**: `id, user_created, date_created, date_updated, title, file (→
   directus_files), status (pending|processing|done|error), error_message, markdown,
   pages (json), hub_job_id, hub_job_key`.
@@ -613,11 +657,12 @@ for existing installs, although it now processes documents too.
 All public config flows through `runtimeConfig.public` (set via `NUXT_PUBLIC_*` env vars,
 defaults in `nuxt.config.ts`). Read it with `useRuntimeConfig().public` — never hardcode
 URLs. No token or engine is configured at build time — the hub token is per device
-(Einstellungen → Verbindung). The 6 keys:
+(Einstellungen → Verbindung). The 7 keys:
 
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `NUXT_PUBLIC_DIRECTUS_URL` | `http://localhost:7700` | Directus base URL |
+| `NUXT_PUBLIC_SSO_DIRECTUS_URL` | `` (= Directus URL) | Directus base URL used only to start the SSO login (set by the Verlauf app to the PWA origin's `/directus`) |
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Resona hub base URL |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
 | `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
@@ -633,6 +678,7 @@ the server via `useRuntimeConfig(event)` — these never reach the browser:
 | `NUXT_GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth client secret |
 | `NUXT_GOOGLE_REDIRECT_URI` | (derived) | override; default `<origin>/api/calendar` |
 | `NUXT_SESSION_PASSWORD` | (empty) | 32+ char secret sealing the token cookie |
+| `NUXT_DICTATIONS_MCP_INTERNAL_URL` | (empty) | dictation MCP service behind `/mcp` (set in the compose files); empty = 404 |
 
 Never commit `.env` (gitignored); only `.env.example` is tracked.
 
@@ -681,6 +727,8 @@ for PWA-manifest/service-worker changes).
 - Don't deploy the web app via `nuxt generate` (static) now that Nitro routes exist — use the
   Nitro Node/serverless server (`nuxt build` → `node .output/server`). The only static build
   is the Capacitor app's web assets (`bun run cap:build`).
+- Don't give the `dictations-mcp` service a Directus admin/worker token or hub access, and
+  don't log transcript text, titles, search queries or tokens there.
 - Don't hardcode backend URLs — use `useRuntimeConfig().public`.
 - Don't set `engine` on a `recordings` row — it belongs on `transcripts`.
 - Don't set live-WS auth via headers — browsers can't; use `?token=`.

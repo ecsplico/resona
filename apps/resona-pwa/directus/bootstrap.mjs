@@ -100,6 +100,13 @@ const COLLECTIONS = {
 		// hub Idempotency-Key of the current submission attempt; kept across stale
 		// recovery so a lost create response never yields a second hub job
 		plain("hub_job_key", "string"),
+		// the calendar appointment the dictation was started from (Resona Verlauf):
+		// Google event id (recurring instances `<base>_20260603T133000Z`), start and raw title
+		plain("calendar_event_id", "string"),
+		{ field: "calendar_event_start", type: "timestamp", schema: {}, meta: { interface: "datetime" } },
+		plain("calendar_event_title", "string"),
+		// when the transcript was copied into the patient record; null = not yet
+		{ field: "adopted_at", type: "timestamp", schema: {}, meta: { interface: "datetime" } },
 	],
 	transcripts: [
 		uuidPk,
@@ -285,12 +292,20 @@ const PERMISSIONS = [
 	{ collection: "recordings", action: "read", permissions: { user_created: OWNER } },
 	{
 		collection: "recordings", action: "create", permissions: {},
-		// `id`: the PWA picks it before the upload, so a retried save finds its row (no duplicate)
-		fields: ["id", "title", "title_auto", "audio_file", "language", "profile", "source", "status", "duration_seconds"],
+		// `id`: the PWA picks it before the upload, so a retried save finds its row (no duplicate);
+		// `calendar_*`: the appointment a dictation was started from (Resona Verlauf)
+		fields: [
+			"id", "title", "title_auto", "audio_file", "language", "profile", "source", "status", "duration_seconds",
+			"calendar_event_id", "calendar_event_start", "calendar_event_title",
+		],
 	},
 	{
 		collection: "recordings", action: "update", permissions: { user_created: OWNER },
-		fields: ["title", "title_auto", "status", "error_message", "review_status", "audio_file", "duration_seconds"],
+		// `adopted_at`: the Verlauf desktop "Übernommen" mark
+		fields: [
+			"title", "title_auto", "status", "error_message", "review_status", "audio_file", "duration_seconds",
+			"calendar_event_id", "calendar_event_start", "calendar_event_title", "adopted_at",
+		],
 	},
 	{ collection: "recordings", action: "delete", permissions: { user_created: OWNER } },
 	// transcripts: scoped to the parent recording's owner. Create has no item rule:

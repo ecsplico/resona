@@ -35,6 +35,9 @@ export default defineNuxtConfig({
 		// /directus/** proxies the allow-listed Directus API paths, so Directus needs
 		// no public host of its own (server/routes/directus/[...path].ts).
 		directusInternalUrl: "",
+		// Server-side URL of the dictation MCP service (NUXT_DICTATIONS_MCP_INTERNAL_URL).
+		// When set, /mcp proxies to it (server/routes/mcp.ts); empty = 404.
+		dictationsMcpInternalUrl: "",
 		public: {
 			directusUrl: "http://localhost:7700",
 			resonaApiUrl: "http://localhost:7710",
@@ -44,6 +47,9 @@ export default defineNuxtConfig({
 			dataMode: "directus",
 			// Directus auth provider key for single sign-on ("" = password login only).
 			ssoProvider: "",
+			// Directus base URL used ONLY to start the SSO login ("" = directusUrl). A second
+			// app on another origin points this at the origin Directus' PUBLIC_URL lives on.
+			ssoDirectusUrl: "",
 		},
 	},
 	devServer: { port: 7730 },

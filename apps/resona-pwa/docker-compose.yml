@@ -76,6 +76,8 @@ services:
       NUXT_GOOGLE_CLIENT_SECRET: ${NUXT_GOOGLE_CLIENT_SECRET:-}
       NUXT_GOOGLE_REDIRECT_URI: ${NUXT_GOOGLE_REDIRECT_URI:-}
       NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-}
+      # /mcp proxy target (server/routes/mcp.ts); the service has no published port.
+      NUXT_DICTATIONS_MCP_INTERNAL_URL: http://dictations-mcp:8000
     depends_on:
       directus-bootstrap:
         condition: service_completed_successfully
@@ -106,6 +108,27 @@ services:
         condition: service_healthy
       directus-bootstrap:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  # MCP access to a user's own dictations (mcp/, resona-dictations-mcp). It acts only
+  # with the Directus token the caller sends: no admin or worker token, no hub access.
+  # No published port: the PWA proxies it at <PWA origin>/mcp (server/routes/mcp.ts).
+  dictations-mcp:
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      DICTATIONS_MCP_HOST: 0.0.0.0
+      DICTATIONS_MCP_PORT: "8000"
+      DICTATIONS_MCP_ALLOWED_HOSTS: dictations-mcp:8000,127.0.0.1:8000
+      DICTATIONS_MCP_ALLOWED_ORIGINS: ${PWA_ORIGIN:-http://localhost:7730}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    depends_on:
+      directus:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

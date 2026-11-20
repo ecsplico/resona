@@ -1,6 +1,7 @@
 import { createItem, deleteItem, readItem, readItems, updateItem, uploadFiles } from "@directus/sdk";
 import type { Query } from "@directus/sdk";
 import type { Recording, RecordingPart, ResonaDocument, Schema, Transcript } from "~/types/directus";
+import { calendarFields } from "~/data/types";
 import type { DataStore } from "~/data/types";
 
 async function uploadFile(file: Blob, filename: string): Promise<string> {
@@ -72,12 +73,18 @@ export function createDirectusStore(): DataStore {
 				source: input.source,
 				status: input.status,
 				duration_seconds: input.duration_seconds,
+				...calendarFields(input),
 			})) as Recording;
 		},
 
 		async updateRecording(id, patch) {
 			const { client } = useDirectus();
 			await client.request(updateItem("recordings", id, patch));
+		},
+
+		async setAdopted(id, adopted) {
+			const { client } = useDirectus();
+			await client.request(updateItem("recordings", id, { adopted_at: adopted ? new Date().toISOString() : null }));
 		},
 
 		// The previous file stays in directus_files: the `user` role has no delete

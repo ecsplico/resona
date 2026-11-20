@@ -1,6 +1,7 @@
 import { createStore, del, get, promisifyRequest, set, values } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import type { Provenance, Recording, RecordingPart, ResonaDocument, Transcript } from "~/types/directus";
+import { calendarFields } from "~/data/types";
 import type { DataStore } from "~/data/types";
 
 // Browser-local backend for NUXT_PUBLIC_DATA_MODE=standalone. idb-keyval can
@@ -267,6 +268,8 @@ export function createLocalStore(): DataStore {
 				error_message: null,
 				hub_job_id: null,
 				hub_job_key: null,
+				...calendarFields(input),
+				adopted_at: null,
 				date_created: ts,
 				date_updated: ts,
 			};
@@ -277,6 +280,10 @@ export function createLocalStore(): DataStore {
 
 		async updateRecording(id, patch) {
 			await patchRow<LocalRecording>(db().recordings, id, patch, "Aufnahme nicht gefunden");
+		},
+
+		async setAdopted(id, adopted) {
+			await patchRow<LocalRecording>(db().recordings, id, { adopted_at: adopted ? now() : null }, "Aufnahme nicht gefunden");
 		},
 
 		async replaceAudio(id, audio, filename, durationSeconds) {

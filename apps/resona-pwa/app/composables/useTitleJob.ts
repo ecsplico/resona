@@ -1,6 +1,6 @@
 import { HubError, type HubResult } from "~/composables/useHub";
 
-/** Hub profile (bundled in resona-postprocess, pushed with `resona profiles push`): one extract step named `title`. */
+/** Hub profile (`profiles/title-de.json` in this app, uploaded with `just push-profiles`): one extract step named `title`. */
 export const TITLE_PROFILE = "title-de";
 /** Only the beginning of a text goes to the model. */
 export const TITLE_INPUT_MAX_CHARS = 4000;

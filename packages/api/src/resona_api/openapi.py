@@ -25,7 +25,7 @@ AUDIENCES = (CLIENT, ADMIN, WORKER)
 
 AUDIENCE_TAGS = [
     {"name": CLIENT, "description": "Published contract: uploads, jobs, results, audio, engines, profiles, settings."},
-    {"name": ADMIN, "description": "Internal: management API, evaluations, testbench."},
+    {"name": ADMIN, "description": "Internal: management API, webhook endpoints, evaluations, testbench."},
     {"name": WORKER, "description": "Internal: pull-worker protocol."},
 ]
 

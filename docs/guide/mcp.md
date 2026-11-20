@@ -41,7 +41,7 @@ get_result(12)                                 → {markdown: "...", next_offset
 get_result(12, offset=32768)                   → … until next_offset is null
 ```
 
-Re-polishing an earlier transcript with another stored profile:
+Re-polishing an earlier transcript with another stored profile. `profile` names a profile stored on the hub; `transcript-polish-de` comes from the repository's `profiles/` catalogue and exists only after an org admin pushed it (`resona profiles push`, see [Profile catalogue](postprocessing.md#profile-catalogue)); an unknown name is the tool error `profile_not_found`:
 
 ```text
 postprocess_text(job_id=12, profile="transcript-polish-de")  → {job_id: 13, status: "pending", private: true}

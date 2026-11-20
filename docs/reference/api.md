@@ -245,6 +245,26 @@ PUT /v1/settings      (org_admin, If-Match: <revision>)
 
 ---
 
+### Webhook endpoints (role `org_admin`)
+
+An organization registers the URLs the hub may notify when a job finishes. Endpoints are addressed by `name` (`^[a-z0-9][a-z0-9-]{0,62}$`, unique among the organization's unrevoked endpoints). Client, worker and hub operator credentials get `403`; a name of another organization is `404 webhook_not_found`.
+
+```
+POST   /v1/webhooks                {name, url}  → 201 {name, url, created_at, secret}
+GET    /v1/webhooks                             → {items: [{name, url, created_at}]}  (unrevoked, by name)
+GET    /v1/webhooks/{name}                      → {name, url, created_at}
+POST   /v1/webhooks/{name}/rotate               → {name, url, created_at, secret}
+DELETE /v1/webhooks/{name}                      → 204  (revoked; the name is free again)
+```
+
+`secret` is the signing secret (`whsec_` + 32 random bytes in base64). It appears only in the create and rotate responses: store it then, listings never contain it. Rotation replaces it at once. The hub keeps it in plaintext in its database, because signing needs it.
+
+URL rules (`422 invalid_webhook_url`): scheme `https`, no user or password, at most 2048 characters, and the host must resolve and must not resolve to a loopback, private (RFC 1918 and similar), link-local or unspecified address. When the hub operator sets `RESONA_WEBHOOK_ALLOW_PRIVATE=true`, such internal hosts are accepted, and for them also `http`; `http` to a public host is never accepted.
+
+Other errors: `422 invalid_webhook_name`, `409 webhook_exists` (an unrevoked endpoint has that name), `404 webhook_not_found` (unknown or revoked). `resona-admin restore` revokes every restored endpoint; register them again afterwards.
+
+---
+
 ### Management (`/v1/admin`, roles `org_admin`, `hub_operator`)
 
 An org admin manages only its own organization: any other `{org}` returns `404 organization_not_found`. A hub operator manages every organization. Worker and credential IDs of another organization return `404` (`worker_not_found`, `credential_not_found`), never `403`. Other roles get `403`.

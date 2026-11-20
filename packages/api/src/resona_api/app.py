@@ -135,6 +135,7 @@ from .streaming_routes import router as streaming_router
 from .evaluations_routes import router as evaluations_router
 from .admin_routes import router as admin_router, static_router as admin_static_router
 from .testbench_routes import router as testbench_router
+from .webhooks_routes import router as webhooks_router
 app.include_router(jobs_router)
 app.include_router(health_router)
 app.include_router(worker_router)
@@ -146,3 +147,4 @@ app.include_router(evaluations_router)
 app.include_router(admin_router)
 app.include_router(admin_static_router)
 app.include_router(testbench_router)
+app.include_router(webhooks_router)

@@ -142,7 +142,8 @@ export function useDirectus() {
 	// OpenID flow and returns to `returnPath` with its refresh-token cookie set.
 	function loginWithSso(provider: string, returnPath: string): void {
 		const redirect = encodeURIComponent(`${window.location.origin}${returnPath}`);
-		window.location.assign(`${directusUrl}/auth/login/${provider}?redirect=${redirect}`);
+		const ssoBase = useRuntimeConfig().public.ssoDirectusUrl || directusUrl;
+		window.location.assign(`${ssoBase}/auth/login/${provider}?redirect=${redirect}`);
 	}
 
 	// Called on the page SSO returns to: trades the refresh-token cookie for a session.

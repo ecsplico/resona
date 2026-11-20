@@ -1,8 +1,9 @@
-"""Bundled German dictation rules and the transcript Markdown profiles."""
+"""Bundled German dictation rules and the catalogue's transcript Markdown profiles."""
 
 import json
 import time
 from importlib import resources
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from resona_postprocess.profile import resolve_profile
 from resona_postprocess.replacements import apply_replacements
 
 PACKAGE = resources.files("resona_postprocess")
+CATALOGUE = Path(__file__).resolve().parents[3] / "profiles"
 DEFAULT_RULES = json.loads(PACKAGE.joinpath("default_replacements.json").read_text("utf-8"))
 TRANSCRIPT_PROFILES = ("transcript-markdown-de", "transcript-polish-de")
 
@@ -32,9 +34,8 @@ def _rules(text: str) -> str:
     return apply_replacements(text, DEFAULT_RULES)
 
 
-def _bundled_profile(name: str):
-    with resources.as_file(PACKAGE.joinpath(f"profiles/{name}.json")) as path:
-        return resolve_profile(str(path), path.parent)
+def _catalogue_profile(name: str):
+    return resolve_profile(str(CATALOGUE / f"{name}.json"), CATALOGUE)
 
 
 @pytest.mark.parametrize("text", [
@@ -170,7 +171,7 @@ def test_question_and_exclamation_commands() -> None:
 
 @pytest.mark.parametrize("name", TRANSCRIPT_PROFILES)
 def test_transcript_profiles_reuse_the_default_command_rules(name: str) -> None:
-    profile = _bundled_profile(name)
+    profile = _catalogue_profile(name)
     rules = profile.steps[0]["rules"]
     # Inline rules (hosted profiles reject 'source'); they must stay the command part of the defaults.
     assert DEFAULT_RULES[-len(rules):] == rules
@@ -178,13 +179,13 @@ def test_transcript_profiles_reuse_the_default_command_rules(name: str) -> None:
 
 
 def test_transcript_markdown_profile_runs_without_llm() -> None:
-    profile = _bundled_profile("transcript-markdown-de")
+    profile = _catalogue_profile("transcript-markdown-de")
     pipe = build_pipeline(profile, policy=ExecutionPolicy(private=True))
     assert pipe.run("Kapitel Anamnese Absatz Text Punkt").text == "## Anamnese\n\nText."
 
 
 def test_transcript_polish_profile_needs_local_llm_and_polishes_after_rules(monkeypatch) -> None:
-    profile = _bundled_profile("transcript-polish-de")
+    profile = _catalogue_profile("transcript-polish-de")
     with pytest.raises(PolicyDenied):
         build_pipeline(profile, policy=ExecutionPolicy(private=True))
 

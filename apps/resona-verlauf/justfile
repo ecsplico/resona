@@ -1,0 +1,17 @@
+# Resona Verlauf recipes: `just verlauf dev`, `just verlauf test`, …
+
+default:
+    @just --list
+
+# Install JS dependencies (layer + app)
+install:
+    cd ../resona-pwa && bun install
+    bun install
+
+# Start the dev server, exposed on the network
+dev:
+    bun run dev -- --host
+
+# Run the frontend test suite
+test:
+    bun run test

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from enum import Enum
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from .. import clock
 
 logger = logging.getLogger(__name__)
@@ -331,3 +331,36 @@ class TestbenchRun(SQLModel, table=True):
         sa_column=Column(DateTime, nullable=False),
     )
     completed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+
+
+class WebhookEndpoint(SQLModel, table=True):
+    """A URL an organization registered to be notified when its jobs finish.
+
+    Kept outside the revisioned settings because it holds the signing ``secret``,
+    stored in plaintext (HMAC needs it) and returned only by create and rotate.
+    ``name`` is unique per organization among unrevoked rows; a revoked row stays
+    and frees its name.
+    """
+
+    __table_args__ = (
+        Index(
+            "ux_webhookendpoint_active_name",
+            "organization_id",
+            "name",
+            unique=True,
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: str = Field(primary_key=True)  # "wh_" + token_hex(8)
+    organization_id: str = Field(foreign_key="organization.id", nullable=False)
+    name: str
+    url: str = Field(sa_column=Column(Text, nullable=False))
+    secret: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime, nullable=False),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )

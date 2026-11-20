@@ -1,16 +1,17 @@
 # PWA backups and encryption at rest
 
-The PWA stack (`apps/resona-pwa/docker-compose.coolify.yml`) keeps everything a user produces in two Docker volumes: `directus-db` (Directus SQLite, `data.db`) and `directus-uploads` (recordings and documents). The hub keeps its SQLite database and testbench items on `resona-data` (root `docker-compose.coolify.yml`). This page covers the opt-in encrypted off-site backup of those volumes, the restore drill, who holds the keys, and the state of disk encryption on the host.
+The PWA stack (`apps/resona-pwa/docker-compose.coolify.yml`) keeps everything a user produces in two Docker volumes: `directus-db` (Directus SQLite, `data.db`) and `directus-uploads` (recordings and documents). This page covers the opt-in encrypted off-site backup of those two volumes, the restore drill, who holds the keys, and the state of disk encryption on the host.
+
+The hub is a separate layer with its own data (`resona-data`: SQLite database and testbench items) and its own backup service in the root `docker-compose.coolify.yml`: see [Coolify: Backup](coolify.md#backup). The PWA backup never mounts or reads the hub volume.
 
 ## What the backup service does
 
 The compose service `backup` (profile `backup`, image built from `apps/resona-pwa/backup/`) is [restic](https://restic.net) with a small script:
 
 1. Dumps `data.db` through the SQLite backup API on a read-only connection (`sqlite3 -readonly … .backup`) and runs `PRAGMA quick_check` on the dump. The live file is never copied raw.
-2. Optionally dumps the hub's `db/jjobs.sqlite` the same way and adds `organizations/*/testbench`. Hub job payloads are transient and not backed up (see [Coolify: Restore a backup](coolify.md#restore-a-backup)).
-3. `restic backup` of the dumps and `directus-uploads` to the repository. restic encrypts client-side (AES-256 + Poly1305), so the storage provider only sees ciphertext.
-4. `restic forget --prune --keep-daily 7 --keep-weekly 4 --keep-monthly 6`.
-5. On Sundays, `restic check --read-data-subset 5%`.
+2. `restic backup` of the dumps and `directus-uploads` to the repository. restic encrypts client-side (AES-256 + Poly1305), so the storage provider only sees ciphertext.
+3. `restic forget --prune --keep-daily 7 --keep-weekly 4 --keep-monthly 6`.
+4. On Sundays, `restic check --read-data-subset 5%`.
 
 It runs once at container start, then daily at `BACKUP_TIME` (local time in `BACKUP_TZ`, `00:00`–`23:59`). A failed run is logged and retried at the next slot. The container healthcheck turns **unhealthy** once the last successful backup is older than 26 h, so Coolify shows a failing backup. The time of the last success lives in the `backup-state` volume, so it survives restarts; until the first backup after a start is due (immediately, or with `BACKUP_ON_START=false` the next `BACKUP_TIME`) plus 2 h for it to run, a missing or old success does not count as unhealthy.
 
@@ -19,9 +20,7 @@ Snapshot layout (paths inside the repository):
 |Path|Content|
 |---|---|
 |`/dumps/directus.db`|Directus database dump|
-|`/dumps/hub-jjobs.sqlite`|hub database dump (only with `HUB_DATA_VOLUME`)|
 |`/source/directus/uploads/`|Directus uploads|
-|`/source/hub/organizations/<id>/testbench/`|hub testbench items (only with `HUB_DATA_VOLUME`)|
 
 ## Setup
 
@@ -46,7 +45,6 @@ Snapshot layout (paths inside the repository):
     |`BACKUP_TZ`|optional, default `Europe/Berlin`|
     |`BACKUP_KEEP_DAILY` / `_WEEKLY` / `_MONTHLY`|optional, default `7` / `4` / `6`|
     |`BACKUP_ON_START`|optional, default `true`|
-    |`HUB_DATA_VOLUME`|optional, see below|
 
     The variables are checked by the script, not by Compose: a deployment without the `backup` profile needs none of them, and the backup container exits with a message naming the first missing one.
 
@@ -57,21 +55,13 @@ Snapshot layout (paths inside the repository):
     docker exec <app-uuid>-backup-1 restic ls latest | head
     ```
 
-### Including the hub's `resona-data` volume
+### Moving from a backup that included the hub volume
 
-The hub runs as a separate Coolify app on the same Docker host, so its volume has a Coolify-generated name (`<hub-app-uuid>_resona-data`). Find it on the host and set it in the PWA app env:
+Earlier versions could add the hub's volume with `HUB_DATA_VOLUME`. That option is gone:
 
-```bash
-docker volume ls --format '{{.Name}}' | grep '_resona-data$'
-```
-
-```
-HUB_DATA_VOLUME=<hub-app-uuid>_resona-data
-```
-
-The backup service then mounts that volume at `/source/hub` and passes its name as `BACKUP_HUB_VOLUME`. Without `HUB_DATA_VOLUME` it mounts an empty placeholder volume `resona-pwa-backup-no-hub` and ignores it. If the mounted volume holds no `db/jjobs.sqlite` (wrong name, or Coolify renamed the volume), every run fails and the container turns unhealthy: confirm after the first run with `restic ls latest | grep hub-jjobs`.
-
-If the hub moves to another host, run the same image there with only `/source/hub` mounted, a separate `BACKUP_HOST_TAG` and the same repository, or give it its own repository.
+1. Remove `HUB_DATA_VOLUME` from the PWA app env and redeploy; the snapshots then hold app data only.
+2. Turn on the hub's own backup ([Coolify: Backup](coolify.md#backup)).
+3. Older snapshots of this repository still contain `/dumps/hub-jjobs.sqlite`. restic applies retention per host and path set, so they are not thinned out by the daily run: once the hub backup has enough history, remove them with `restic forget --prune <snapshot-id>…` (`restic snapshots` shows each snapshot's paths), and delete the unused Docker volume `resona-pwa-backup-no-hub` if it exists.
 
 ## Restore drill
 
@@ -105,10 +95,11 @@ The two counts should roughly match the uploads count and the live app. Record d
     ```
 
 4. Start the app: `coolify app start <app-uuid>`. `directus-bootstrap` re-runs idempotently.
-5. Hub (only if it is lost too): copy `/restore/dumps/hub-jjobs.sqlite` to `/data/backup.sqlite` on the hub volume and follow [Coolify: Restore a backup](coolify.md#restore-a-backup) (`resona-admin restore`; it revokes all credentials and workers).
-6. Delete `/restore` from the host.
+5. Delete `/restore` from the host.
 
 Users signed in through Keycloak keep their accounts (matched by e-mail); their sessions start fresh.
+
+If the hub is lost too, restore it separately from its own repository: [Coolify: Restore a backup](coolify.md#restore-a-backup) (`resona-admin restore`; it revokes all credentials and workers, so the project-worker needs a fresh `RESONA_API_KEY`).
 
 ## Key custody
 

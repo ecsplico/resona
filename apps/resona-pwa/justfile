@@ -29,7 +29,16 @@ test:
 test-worker:
     cd worker && uv run pytest -q
 
+# Run the dictation MCP service's tests (own uv environment in mcp/; starts a throwaway
+# Directus from docker-compose.backend.yml on a free port for the two-user isolation tests)
+test-mcp:
+    cd mcp && uv run pytest -q
+
 # Lint and type-check the frontend
 check:
     bun run lint
     bun run typecheck
+
+# Upload the hub profiles this app uses (title-de + the offered catalogue profiles); needs an org-admin RESONA_API_KEY
+push-profiles:
+    ./scripts/push-profiles.sh
