@@ -82,7 +82,8 @@ Verbindung (`useHubTokenGate()`; `RecordingsPane` record/upload, `documents/inde
 upload, `share-target.vue` which keeps the stashed file until the token is entered;
 continue-recording already checks `hub.hasToken()`). In **directus mode** the token is also
 stored per user in `directus_users.hub_token` (bootstrap adds the field plus `user`-policy
-read/update with filter `id = $CURRENT_USER`, fields limited to `hub_token`; admin
+read/update with filter `id = $CURRENT_USER`, fields limited to `hub_token` (plus `token`,
+the personal MCP token, see **Dictation MCP**); admin
 unaffected). `useHubTokenSync()` (`push` on change in the settings drawer, `pull` from
 `useDirectus` after login/SSO/session restore) fills an empty local token from
 `/users/me`; a device that has a token keeps it and uploads it only if the account has
@@ -151,6 +152,21 @@ titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa te
 start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
 compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running
 one). Epic #79; details `mcp/README.md`.
+
+The personal MCP token is the user's static Directus token (`directus_users.token`),
+managed in Einstellungen → MCP (`McpTokenSection.vue` + `useMcpToken()`, tab mounted only
+while open): "Token erstellen" makes 32 bytes with `crypto.getRandomValues` (base64url,
+`utils/mcpSetup.ts` `generateMcpToken`), writes it with `PATCH /users/me` (response
+`fields=id`) and shows it once, with copy buttons and snippets (`mcpSnippets`: Claude Code
+`claude mcp add --transport http resona <origin>/mcp --header …`, Claude Desktop via
+`mcp-remote`, Cursor) for `window.location.origin`; "Ersetzen" / "Widerrufen" (`token: null`)
+ask inline first. The app never requests the `token` field: existence is
+`GET /users?filter={id: $CURRENT_USER, token: _nnull}&fields=id&limit=1` (Directus allows
+only `_null`/`_nnull`/`_empty`/`_nempty` on concealed fields, and a read of `token` returns
+`**********` anyway). Bootstrap gives the `user` policy read + update on `token` of the own
+row; `verify-permissions.mjs` checks user B can neither set nor read A's token and a revoked
+token is `401`. Standalone mode shows only a one-line explanation (no account); the
+Capacitor app shows a pointer to the web app (its origin is not the server's).
 
 ### Backup
 

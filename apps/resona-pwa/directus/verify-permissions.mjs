@@ -3,7 +3,8 @@
 // (CI job `directus` in .github/workflows/pwa.yml; also runnable against a local
 // stack). Creates two throwaway users with recordings, asserts who may create
 // transcripts, corrections and recording parts on which recording (parts also with
-// whose audio file), then deletes what it created.
+// whose audio file) and who may set or read whose personal MCP token
+// (`directus_users.token`), then deletes what it created.
 //
 // Env: DIRECTUS_URL, ADMIN_EMAIL, ADMIN_PASSWORD, DIRECTUS_TOKEN (the worker token
 // pinned by bootstrap.mjs). Exit 1 on any failed check.
@@ -133,6 +134,32 @@ try {
 	const storedParts = await data(admin, "GET", `/items/recording_parts?filter[recording][_in]=${a1},${a2},${b1}&fields=id,text&limit=-1`);
 	check("no rejected part stored", { status: storedParts.length === 1 && storedParts[0].id === p1?.id ? 200 : 500, body: {} }, 200);
 	check("delete own part", await call(a, "DELETE", `/items/recording_parts/${p1?.id}`), 204);
+
+	// personal MCP token (directus_users.token, Einstellungen → MCP): only the user's own
+	// row, written but never read back as a value
+	const [idA] = userIds;
+	const tokenA = `verify-mcp-a-${stamp}-${crypto.randomUUID()}`;
+	const tokenX = `verify-mcp-x-${stamp}-${crypto.randomUUID()}`;
+	const hasToken = `/users?fields=id&limit=1&filter=${encodeURIComponent(JSON.stringify({ id: { _eq: "$CURRENT_USER" }, token: { _nnull: true } }))}`;
+	const tokenSet = async token => (await data(token, "GET", hasToken)).length === 1;
+	check("set own token", await call(a, "PATCH", "/users/me?fields=id", { token: tokenA }), 200);
+	check("own token authenticates", await call(tokenA, "GET", "/users/me?fields=id"), 200);
+	const ownRead = await call(a, "GET", "/users/me?fields=token");
+	check("own token read back is concealed", { status: ownRead.status === 200 && ownRead.body.data?.token === "**********" ? 200 : 500, body: {} }, 200);
+	check("existence check: own token set", { status: await tokenSet(a) ? 200 : 500, body: {} }, 200);
+	check("existence check: other user has none", { status: await tokenSet(b) ? 500 : 200, body: {} }, 200);
+	check("set someone else's token", await call(b, "PATCH", `/users/${idA}`, { token: tokenX }), 403);
+	check("someone else's token unchanged", await call(tokenA, "GET", "/users/me?fields=id"), 200);
+	check("rejected token does not authenticate", await call(tokenX, "GET", "/users/me?fields=id"), 401);
+	// 403, or (should another policy ever let B see A's row) no token in it
+	const foreignRead = await call(b, "GET", `/users/${idA}?fields=token`);
+	const foreignHidden = foreignRead.status === 403 || (foreignRead.status === 200 && foreignRead.body.data?.token == null);
+	check("read someone else's token", { status: foreignHidden ? 200 : 500, body: {} }, 200);
+	const others = await data(b, "GET", `/users?fields=id&limit=-1&filter=${encodeURIComponent(JSON.stringify({ token: { _nnull: true } }))}`);
+	check("someone else's token hidden in lists", { status: others.length ? 500 : 200, body: {} }, 200);
+	check("revoke own token", await call(a, "PATCH", "/users/me?fields=id", { token: null }), 200);
+	check("revoked token rejected", await call(tokenA, "GET", "/users/me?fields=id"), 401);
+	check("existence check: own token revoked", { status: await tokenSet(a) ? 500 : 200, body: {} }, 200);
 }
 finally {
 	// recordings cascade to their transcripts, corrections and parts

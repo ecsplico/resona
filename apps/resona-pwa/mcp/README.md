@@ -14,6 +14,9 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 - Every request needs `Authorization: Bearer <token>`: a Directus token of the user
   (a static token of their own user row, or an access token). No token, or one that
   Directus rejects, is `401` before any tool runs.
+- Users create, replace and revoke their static token in the app under Einstellungen
+  → MCP, which also shows setup snippets for Claude Code, Claude Desktop and Cursor.
+  The token has the same rights as the user's login.
 - The server checks the token with Directus `GET /users/me` and keeps an accepted
   token for 30 s (by SHA-256 hash). Each Directus call of a tool runs with the token
   itself, so a revoked token gets no data at once; the first such rejection drops the
