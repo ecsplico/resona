@@ -71,7 +71,7 @@ The following variables are the most important to set in `.env`. For the full li
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATA_PATH` | `./data` | Host path for persistent data (transcripts, DB, audio files). Mount this as a volume. |
+| `DATA_PATH` | `./data` | Host path for hub data: the SQLite database, job inputs/results until their retention ends (results 24 h) and opt-in testbench items. The hub keeps no users or dictations. Mount this as a volume. |
 | `RESONA_MAX_UPLOAD_BYTES` | `209715200` (200 MiB) | Upload and worker-result size limit; larger requests get `413`. Hub access always needs an org-bound token from `resona-admin` (run inside the container, e.g. `docker compose exec api resona-admin credential issue --organization <id> --role client`). |
 | `RESONA_ENGINE_KEY` | _(unset)_ | Engine auth key for engine-to-engine calls. Auth is disabled when not set. |
 | `DEFAULT_FASTWHISPER_MODEL` | `large-v3` | faster-whisper model to load |
