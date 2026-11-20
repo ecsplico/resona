@@ -100,6 +100,19 @@ describe("createLocalStore", () => {
 			expect(rows.map(r => r.id)).not.toContain(ids[0]);
 		});
 
+		it("lists every recording of the given calendar events, beyond the 100 limit", async () => {
+			const linked: string[] = [];
+			for (let i = 0; i < 101; i++) {
+				linked.push((await store.createRecording(input(`T${i}`, { calendar_event_id: `e${i % 2}` }), null, "t.webm")).id);
+			}
+			await store.createRecording(input("Ohne Termin"), null, "o.webm");
+			const rows = await store.listRecordings({ eventIds: ["e0", "e1"] });
+			expect(rows.length).toBe(101);
+			expect(rows[0]!.id).toBe(linked[100]);
+			expect((await store.listRecordings({ eventIds: ["e1"] })).length).toBe(50);
+			expect(await store.listRecordings({ eventIds: [] })).toEqual([]);
+		});
+
 		it("stores the audio and round-trips it with name and type via readFile", async () => {
 			const rec = await store.createRecording(input("Notiz"), audio("abc"), "Notiz.webm");
 			expect(typeof rec.audio_file).toBe("string");

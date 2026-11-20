@@ -563,7 +563,7 @@ app/
 ├── pages/
 │   ├── index.vue                    # phone: RecordingsPane; desktop pane: empty right-pane state
 │   ├── login.vue                    # Directus email/password login
-│   ├── live.vue                     # live transcription (reads ?title= to preset name)
+│   ├── live.vue                     # live transcription (reads ?title= to preset name; with ?event= renders the LiveEventContext extension point)
 │   ├── calendar.vue                 # Google Calendar: connect, filter, start dictation
 │   ├── documents/index.vue          # Dokumente: upload PDF/images, search, status (both modes)
 │   ├── documents/[id].vue           # document detail: markdown, retry, copy/.md export, delete
@@ -690,6 +690,13 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
   (timestamp, null = not yet) is the Verlauf desktop "Übernommen" mark, written by
   `store.setAdopted(id, adopted)`. The `user` policy may create the `calendar_*` fields and
   update them plus `adopted_at`; bootstrap adds fields and widens existing permission rows.
+  `store.listRecordings({ eventIds })` returns every recording linked to those events (Directus
+  `calendar_event_id _in`, 100 ids per request, no 100-row limit; `[]` → none).
+- **`/live` extension point**: with `?event=` the page renders `<LiveEventContext part="before"
+  | "after" :event-id>` above and below the transcript inside `.live__column`. Here
+  `app/components/LiveEventContext.vue` renders nothing; a layer app overrides it with a
+  same-named component (Resona Verlauf: the patient's earlier dictations and later
+  appointments, expert mode only).
 - **documents**: `id, user_created, date_created, date_updated, title, file (→
   directus_files), status (pending|processing|done|error), error_message, markdown,
   pages (json), hub_job_id, hub_job_key`.

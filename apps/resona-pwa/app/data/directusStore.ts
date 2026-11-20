@@ -4,6 +4,9 @@ import type { Recording, RecordingPart, ResonaDocument, Schema, Transcript } fro
 import { calendarFields } from "~/data/types";
 import type { DataStore } from "~/data/types";
 
+// `listRecordings({ eventIds })` asks per this many ids, keeping each query string short.
+const EVENT_ID_CHUNK = 100;
+
 async function uploadFile(file: Blob, filename: string): Promise<string> {
 	const { client } = useDirectus();
 	const form = new FormData();
@@ -26,6 +29,18 @@ export function createDirectusStore(): DataStore {
 			if (opts.since) {
 				filter.date_created = { _gte: opts.since };
 			}
+			const { client } = useDirectus();
+			if (opts.eventIds) {
+				const ids = [...new Set(opts.eventIds)];
+				const chunks: string[][] = [];
+				for (let i = 0; i < ids.length; i += EVENT_ID_CHUNK) chunks.push(ids.slice(i, i + EVENT_ID_CHUNK));
+				const pages = await Promise.all(chunks.map(chunk => client.request(readItems("recordings", {
+					sort: ["-date_created"],
+					limit: -1,
+					filter: { ...filter, calendar_event_id: { _in: chunk } } as Query<Schema, Recording>["filter"],
+				})) as Promise<Recording[]>));
+				return pages.flat().sort((a, b) => (b.date_created ?? "").localeCompare(a.date_created ?? ""));
+			}
 			const query: Query<Schema, Recording> = {
 				sort: ["-date_created"],
 				limit: 100,
@@ -33,7 +48,6 @@ export function createDirectusStore(): DataStore {
 			if (Object.keys(filter).length > 0) {
 				query.filter = filter as Query<Schema, Recording>["filter"];
 			}
-			const { client } = useDirectus();
 			return await client.request(readItems("recordings", query)) as Recording[];
 		},
 

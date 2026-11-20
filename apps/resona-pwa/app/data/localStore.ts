@@ -232,11 +232,13 @@ export function createLocalStore(): DataStore {
 
 		async listRecordings(opts) {
 			const rows = await values<LocalRecording>(db().recordings);
-			return rows
+			const eventIds = opts.eventIds ? new Set(opts.eventIds) : null;
+			const matching = rows
 				.filter(r => titleMatches(r.title, opts.search))
 				.filter(r => !opts.since || (r.date_created ?? "") >= opts.since)
-				.sort((a, b) => byCreatedAsc(b, a))
-				.slice(0, 100);
+				.filter(r => !eventIds || (!!r.calendar_event_id && eventIds.has(r.calendar_event_id)))
+				.sort((a, b) => byCreatedAsc(b, a));
+			return eventIds ? matching : matching.slice(0, 100);
 		},
 
 		async getRecording(id) {

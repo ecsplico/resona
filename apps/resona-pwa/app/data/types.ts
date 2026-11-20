@@ -40,7 +40,11 @@ export type RecordingPartPatch = Partial<Pick<RecordingPart, "anchor_offset" | "
 	& { status?: "pending" | "applied" | "discarded" };
 export interface DataStore {
 	readonly mode: "directus" | "standalone";
-	listRecordings(opts: { search?: string; since?: string }): Promise<Recording[]>;
+	/**
+	 * Newest first, at most 100 — except with `eventIds`: then every recording linked
+	 * to one of those calendar events (`calendar_event_id`), unlimited; `[]` → none.
+	 */
+	listRecordings(opts: { search?: string; since?: string; eventIds?: readonly string[] }): Promise<Recording[]>;
 	getRecording(id: string): Promise<Recording>;
 	getTranscript(recordingId: string): Promise<Transcript | null>;
 	createRecording(input: NewRecording, audio: Blob | null, filename: string): Promise<Recording>;
