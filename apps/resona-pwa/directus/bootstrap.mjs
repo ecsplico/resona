@@ -354,9 +354,12 @@ const PERMISSIONS = [
 	{ collection: "directus_files", action: "create", permissions: {} },
 	{ collection: "directus_files", action: "read", permissions: { uploaded_by: OWNER } },
 	{ collection: "directus_files", action: "update", permissions: { uploaded_by: OWNER } },
-	// users: the own hub token only (never anyone else's row, no other fields)
-	{ collection: "directus_users", action: "read", permissions: { id: OWNER }, fields: ["id", "hub_token"] },
-	{ collection: "directus_users", action: "update", permissions: { id: OWNER }, fields: ["hub_token"] },
+	// users: the own hub token and the own static Directus token (the personal MCP
+	// token, Einstellungen → MCP), never anyone else's row, no other fields. `token` is
+	// a concealed system field: a read returns `**********` (or null), never the value;
+	// read access only lets the PWA ask "is one set?" with `filter[token][_nnull]`.
+	{ collection: "directus_users", action: "read", permissions: { id: OWNER }, fields: ["id", "hub_token", "token"] },
+	{ collection: "directus_users", action: "update", permissions: { id: OWNER }, fields: ["hub_token", "token"] },
 ];
 
 async function ensureUserRole() {

@@ -13,6 +13,7 @@ const emit = defineEmits<{ close: [] }>();
 const ALL_TABS = [
 	{ key: "hub", label: "Verbindung" },
 	{ key: "live", label: "Live" },
+	{ key: "mcp", label: "MCP" },
 	{ key: "calendar", label: "Kalender" },
 ] as const;
 type TabKey = (typeof ALL_TABS)[number]["key"];
@@ -549,6 +550,16 @@ watch(tab, (value) => {
 				>
 					Lädt…
 				</p>
+			</section>
+
+			<section
+				v-else-if="tab === 'mcp'"
+				id="settings-panel"
+				class="drawer__body"
+				role="tabpanel"
+				aria-labelledby="settings-tab-mcp"
+			>
+				<McpTokenSection />
 			</section>
 
 			<section

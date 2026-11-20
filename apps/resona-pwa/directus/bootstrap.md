@@ -25,9 +25,10 @@ to exactly the state documented below:
   permission when it is missing or too old;
 - the custom field **`directus_users.hub_token`** (string, hidden) plus `user`-policy
   `directus_users` read/update restricted to `id = $CURRENT_USER` and the fields
-  `id`/`hub_token`: the user's own Resona hub token, synced across their devices by
-  the PWA (directus mode). Other users' rows and fields stay unreadable; admins are
-  unaffected;
+  `id`/`hub_token`/`token`: the user's own Resona hub token, synced across their
+  devices by the PWA (directus mode), and their own static Directus token, the
+  personal MCP token of Einstellungen → MCP. Other users' rows and fields stay
+  unreadable; admins are unaffected;
 - the **`transcribe-worker`** admin user whose static token is **pinned to
   `DIRECTUS_TOKEN`** from `.env` — so the worker authenticates with no
   copy-paste (§3). `DIRECTUS_TOKEN` must be set (e.g. `openssl rand -hex 24`);
@@ -153,9 +154,13 @@ Create a role **"user"** (non-admin). Add a policy with:
   (validation). The bootstrap patches existing permissions whose fields/filters
   differ (`~ perm … updated`), so re-running it tightens older installs.
 
-- `directus_users`: read (`id`, `hub_token`) and update (`hub_token`) where
-  `id = $CURRENT_USER` — the user's own hub token, nothing else. Needs the custom
-  field `hub_token` (string) on `directus_users`.
+- `directus_users`: read (`id`, `hub_token`, `token`) and update (`hub_token`,
+  `token`) where `id = $CURRENT_USER` — the user's own hub token and own static
+  token, nothing else. Needs the custom field `hub_token` (string) on
+  `directus_users`. `token` is a concealed system field: every read returns
+  `**********` or null, never the value; the read grant only lets the PWA test
+  `filter[token][_nnull]` (whether a token exists). A static token has the same
+  rights as the user's login (it is what the dictation MCP authenticates with).
 
 **Create ownership guard (hook extension).** Directus 11 ignores item rules
 (`permissions`) on create and checks `validation` against the request payload, where

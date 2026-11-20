@@ -25,6 +25,20 @@ mockNuxtImport("useHubTokenSync", () => () => tokenSync);
 
 mockNuxtImport("useDeviceSpeech", () => () => ({ availability, install: installPack }));
 
+// The MCP section itself is covered by McpTokenSection.spec.ts.
+const mcpCheck = vi.hoisted(() => vi.fn(async () => true));
+mockNuxtImport("useMcpToken", () => () => ({
+	availability: "available" as const,
+	exists: ref(false),
+	shown: ref(null),
+	busy: ref(false),
+	error: ref(null),
+	check: mcpCheck,
+	create: vi.fn(),
+	revoke: vi.fn(),
+	hide: vi.fn(),
+}));
+
 mockNuxtImport("useCalendar", () => () => ({
 	status: ref(null),
 	settings: reactive({ calendarId: "", query: "", daysBack: 0, daysAhead: 30 }),
@@ -438,6 +452,23 @@ describe("SettingsDrawer – modal behaviour", () => {
 		await tablist.trigger("keydown", { key: "End" });
 		expect(selected().element).toBe(tabs[tabs.length - 1]!.element);
 		wrapper.unmount();
+	});
+});
+
+describe("SettingsDrawer – MCP tab", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("mounts the MCP section only once its tab opens", async () => {
+		const wrapper = await mountSuspended(SettingsDrawer);
+		expect(wrapper.find("[data-testid=settings-mcp]").exists()).toBe(false);
+		expect(mcpCheck).not.toHaveBeenCalled();
+		await wrapper.find("[data-testid=settings-tab-mcp]").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid=settings-mcp]").exists()).toBe(true);
+		expect(wrapper.find("[role=tabpanel]").attributes("aria-labelledby")).toBe("settings-tab-mcp");
+		expect(mcpCheck).toHaveBeenCalledTimes(1);
 	});
 });
 
