@@ -31,6 +31,10 @@ theme:
     - content.code.annotate
     - toc.follow
 
+# Renders the committed contract/openapi.json into reference/http-api.md (offline).
+hooks:
+  - scripts/mkdocs_openapi.py
+
 plugins:
   - search
   - mkdocstrings:
@@ -95,6 +99,7 @@ nav:
   - API Reference:
     - resona-client: reference/client.md
     - resona-api: reference/api.md
+    - HTTP API (client contract): reference/http-api.md
     - resona-engine-server: reference/engine-server.md
     - resona-asr-core: reference/asr-core.md
     - resona-cloud-stt: reference/cloud-stt.md

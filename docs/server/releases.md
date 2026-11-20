@@ -14,7 +14,7 @@ running other code. CI (`test.yml`) fails on such a commit: once `vX.Y.Z` is tag
 change to `main` must carry a new version.
 
 ```bash
-just bump 0.3.0              # every pyproject.toml + uv.lock (scripts/release_version.py bump)
+just bump 0.3.0              # every pyproject.toml + uv.lock (scripts/release_version.py bump), then contract/openapi.json
 git commit -am "chore(release): 0.3.0" && git push   # via PR
 git tag v0.3.0 <merged commit> && git push origin v0.3.0   # runs release.yml
 ```
