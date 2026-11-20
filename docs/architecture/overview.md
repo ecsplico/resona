@@ -2,6 +2,17 @@
 
 Resona is a modular transcription platform composed of loosely coupled packages. Each package has a single clear responsibility. Cross-service communication is over HTTP; the engine never sees the database, and the database never runs inference.
 
+## Layers
+
+Resona has two layers. The rule between them is recorded in [ADR 0001: Hub and app boundary](../adr/0001-hub-and-app-boundary.md); the contract diagram is on the [home page](../index.md#two-layers).
+
+| Layer | What | Owns | Code |
+|-------|------|------|------|
+| Hub | Transformation layer: turns uploads into results, bridges live audio | uploads, jobs, live streaming, profiles, execution policy, workers, evaluation; organizations and credentials, not users; a job's result for 24 hours | `packages/*`, `apps/resona-cli`, `apps/resona-worker`, `apps/resona-mcp` |
+| Reference app | One maintained consumer of the hub contract (PWA, Android/iOS shell, Directus data layer, project worker) | users, dictations, recordings, transcripts, documents, long-term storage, UI | `apps/resona-pwa` (moving to its own repository) |
+
+The only connection is the published HTTP and WebSocket contract: jobs (`/v1/uploads`, `/v1/jobs`), live streaming (`WS /v1/listen`) and profiles (`/profiles`). An app learns a job's outcome by pull (`GET /v1/jobs/{id}`, the source of truth) and, once added, by push (signed webhooks for terminal job states). The hub never stores app entities or calls app code; an app never reads hub storage, the hub database or hub source, and gets no access another app could not have. The rest of this page describes the hub.
+
 ## Package table
 
 | Package | Port | Role | GPU |
@@ -108,4 +119,4 @@ DATA_PATH/
 └── organizations/<storage_id>/jobs/<id>/ ← job input and result files (expire per retention)
 ```
 
-`DATA_PATH`, `FILE_PATH` and `DB_PATH` are resolved in `resona_api/paths.py` and read via `python-decouple` so they can be overridden by environment variables or a `.env` file. Content lives in expiring files, not in the database: inputs are deleted on terminal state, results after 24 hours, metadata after 7 days.
+`DATA_PATH`, `FILE_PATH` and `DB_PATH` are resolved in `resona_api/paths.py` and read via `python-decouple` so they can be overridden by environment variables or a `.env` file. Content lives in expiring files, not in the database: inputs are deleted on terminal state, results after 24 hours, metadata after 7 days. There are no users and no dictations here: an app that wants to keep a result fetches and stores it itself. The one exception to the retention is the opt-in [testbench](../guide/testbench.md), whose items an org admin contributes and deletes.

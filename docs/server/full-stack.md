@@ -155,4 +155,4 @@ curl http://localhost:7000/v1/engines
 
 - The engine process requires a GPU for model inference. The API process does not use a GPU.
 - Model weights are cached in `${HOME}/.cache/huggingface` (HuggingFace models) or the faster-whisper cache directory. First startup downloads the model and is slow; subsequent starts are fast.
-- The API stores jobs and transcripts in `DATA_PATH` (default `./data`). Set this to an absolute path in production to avoid confusion with the working directory.
+- The API keeps its database and job inputs/results in `DATA_PATH` (default `./data`) until their retention ends (results 24 h); an app keeps the transcripts it wants to retain. Set this to an absolute path in production to avoid confusion with the working directory.

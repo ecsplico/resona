@@ -57,60 +57,66 @@ plugins:
             merge_init_into_class: true
             show_if_no_docstring: false
 
+# Two layers (docs/adr/0001-hub-and-app-boundary.md): the hub, and the reference app
+# that consumes its published contract.
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Start: getting-started/quick-start.md
-    - Local-Only Mode: getting-started/local-only.md
-  - User Guide:
-    - CLI Reference: guide/cli.md
-    - Engine Selection: guide/engines.md
-    - Text Replacements: guide/replacements.md
-    - Postprocessing: guide/postprocessing.md
-    - Speech Synthesis: guide/tts.md
-    - MCP Server: guide/mcp.md
-    - Privacy: guide/privacy.md
-    - Evaluation & Baselines: guide/evaluation.md
-    - Testbench: guide/testbench.md
+  - Hub:
+    - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+      - Local-Only Mode: getting-started/local-only.md
+    - User Guide:
+      - CLI Reference: guide/cli.md
+      - Engine Selection: guide/engines.md
+      - Text Replacements: guide/replacements.md
+      - Postprocessing: guide/postprocessing.md
+      - Speech Synthesis: guide/tts.md
+      - MCP Server: guide/mcp.md
+      - Privacy: guide/privacy.md
+      - Evaluation & Baselines: guide/evaluation.md
+      - Testbench: guide/testbench.md
+    - Server Setup:
+      - Docker Deployment: server/docker.md
+      - Full-Stack (uv): server/full-stack.md
+      - Mac Single-Host Stack (Apple Silicon): server/mac-stack.md
+      - CPU Single-Host Stack (Linux, no GPU): server/cpu-standalone.md
+      - Mac Worker (Apple Silicon): server/mac-worker.md
+      - Linux Worker (NVIDIA, Docker): server/linux-worker.md
+      - Coolify Deployment (public hub): server/coolify.md
+      - Releases & Worker Updates: server/releases.md
+    - Configuration:
+      - Environment Variables: configuration/environment.md
+      - Config Files: configuration/config-files.md
+    - Architecture:
+      - Overview: architecture/overview.md
+      - "ADR 0001: Hub and App Boundary": adr/0001-hub-and-app-boundary.md
+      - Stateless Engine Contract: architecture/engine-contract.md
+      - Job Lifecycle: architecture/job-lifecycle.md
+      - Postprocessing Pipeline: architecture/postprocessing.md
+    - API Reference:
+      - resona-client: reference/client.md
+      - resona-api: reference/api.md
+      - resona-engine-server: reference/engine-server.md
+      - resona-asr-core: reference/asr-core.md
+      - resona-cloud-stt: reference/cloud-stt.md
+      - resona-cloud-tts: reference/cloud-tts.md
+      - resona-postprocess: reference/postprocess.md
+    - Development:
+      - Dev Workflow: development/workflow.md
+      - Adding an Engine: development/adding-engine.md
+      - Testing: development/testing.md
+    - Design:
+      - Admin Console Product Brief: design/admin-product.md
+      - Admin Console Design Direction: design/admin-console.md
+    - Maybe Features:
+      - Sprechertrennung (Studie): maybe-features/diarization.md
+  - Reference app:
     - Resona App (Capacitor): guide/pwa-app.md
-  - Server Setup:
-    - Docker Deployment: server/docker.md
-    - Full-Stack (uv): server/full-stack.md
-    - Mac Single-Host Stack (Apple Silicon): server/mac-stack.md
-    - CPU Single-Host Stack (Linux, no GPU): server/cpu-standalone.md
-    - Mac Worker (Apple Silicon): server/mac-worker.md
-    - Linux Worker (NVIDIA, Docker): server/linux-worker.md
-    - Coolify Deployment (public hub): server/coolify.md
-    - Releases & Worker Updates: server/releases.md
     - PWA Backups & Encryption at Rest: server/pwa-backups.md
-  - Configuration:
-    - Environment Variables: configuration/environment.md
-    - Config Files: configuration/config-files.md
-  - Architecture:
-    - Overview: architecture/overview.md
-    - Stateless Engine Contract: architecture/engine-contract.md
-    - Job Lifecycle: architecture/job-lifecycle.md
-    - Postprocessing Pipeline: architecture/postprocessing.md
-  - API Reference:
-    - resona-client: reference/client.md
-    - resona-api: reference/api.md
-    - resona-engine-server: reference/engine-server.md
-    - resona-asr-core: reference/asr-core.md
-    - resona-cloud-stt: reference/cloud-stt.md
-    - resona-cloud-tts: reference/cloud-tts.md
-    - resona-postprocess: reference/postprocess.md
-  - Development:
-    - Dev Workflow: development/workflow.md
-    - Adding an Engine: development/adding-engine.md
-    - Testing: development/testing.md
-  - Design:
-    - Admin Console Product Brief: design/admin-product.md
-    - Admin Console Design Direction: design/admin-console.md
-  - Maybe Features:
-    - YouTube-Share (Studie): maybe-features/youtube-share.md
-    - Sprechertrennung (Studie): maybe-features/diarization.md
-    - Forge-Editor-Integration (Studie): maybe-features/forge-editor-integration.md
+    - Maybe Features:
+      - YouTube-Share (Studie): maybe-features/youtube-share.md
+      - Forge-Editor-Integration (Studie): maybe-features/forge-editor-integration.md
 
 # Agent workflow config (issue tracker, labels, domain docs) is not site content.
 exclude_docs: |
