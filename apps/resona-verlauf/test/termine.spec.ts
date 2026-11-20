@@ -12,6 +12,7 @@ import {
 	isEventId,
 	isOffenWindow,
 	isSamePatient,
+	isTerminMark,
 	liveQuery,
 	matchesPrefix,
 	MAX_RANGE_DAYS,
@@ -153,16 +154,24 @@ describe("ranges", () => {
 });
 
 describe("open appointments", () => {
-	it("keeps past, undeclined, undictated ones, newest first", () => {
+	it("keeps past, unmarked, undictated ones, newest first", () => {
 		const events = [
 			termin({ id: "old", start: "2026-11-02T08:00:00Z" }),
 			termin({ id: "new", start: "2026-11-18T08:00:00Z" }),
 			termin({ id: "done", start: "2026-11-10T08:00:00Z" }),
-			termin({ id: "no", start: "2026-11-11T08:00:00Z", declined: true }),
+			termin({ id: "erledigt", start: "2026-11-11T08:00:00Z", mark: "erledigt" }),
+			termin({ id: "abgesagt", start: "2026-11-12T08:00:00Z", mark: "abgesagt" }),
 			termin({ id: "later", start: "2026-11-20T15:00:00Z" }),
 		];
 		const open = openTermine(events, new Set(["done"]), new Date("2026-11-20T12:00:00Z"));
 		expect(open.map(e => e.id)).toEqual(["new", "old"]);
+	});
+
+	it("accepts the two mark statuses only", () => {
+		expect(isTerminMark("erledigt")).toBe(true);
+		expect(isTerminMark("abgesagt")).toBe(true);
+		expect(isTerminMark("declined")).toBe(false);
+		expect(isTerminMark(undefined)).toBe(false);
 	});
 
 	it("formats when, all-day included", () => {
