@@ -4465,7 +4465,8 @@
 <code>response_format</code> (json|text|verbose_json), <code>prompt</code>/<code>temperature</code>
 (ignored) and Resona <code>engine</code>, <code>execution_profile</code>, <code>profile</code>,
 <code>private</code> (default true), <code>diarize</code> (label speakers, needs a worker that
-diarizes; default: the execution profile's <code>diarize</code>). Admission is identical to
+diarizes; default: the execution profile's <code>diarize</code>), <code>webhook</code> (name of an
+active webhook endpoint notified when the job ends). Admission is identical to
 <code>POST /v1/jobs</code>.</p>
 <table>
 <thead>
@@ -4543,7 +4544,7 @@ diarizes; default: the execution profile's <code>diarize</code>). Admission is i
 </tr>
 <tr>
 <td>422</td>
-<td>Error: <code>invalid_upload</code>, <code>empty_upload</code>, <code>invalid_request</code>, <code>invalid_options</code>, <code>invalid_instructions</code>, <code>invalid_profile</code>, <code>kind_mismatch</code>, <code>no_candidates</code>, <code>unapproved_override</code>.</td>
+<td>Error: <code>invalid_upload</code>, <code>empty_upload</code>, <code>invalid_request</code>, <code>invalid_options</code>, <code>invalid_instructions</code>, <code>invalid_profile</code>, <code>kind_mismatch</code>, <code>no_candidates</code>, <code>unapproved_override</code>, <code>unknown_webhook</code>.</td>
 <td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
 </tr>
 <tr>
@@ -4720,7 +4721,7 @@ diarizes; default: the execution profile's <code>diarize</code>). Admission is i
 </tr>
 <tr>
 <td>422</td>
-<td>Error: <code>invalid_request</code>, <code>invalid_options</code>, <code>invalid_instructions</code>, <code>invalid_profile</code>, <code>kind_mismatch</code>, <code>no_candidates</code>, <code>unapproved_override</code>, <code>profile_required</code>, <code>release_not_staged</code>.</td>
+<td>Error: <code>invalid_request</code>, <code>invalid_options</code>, <code>invalid_instructions</code>, <code>invalid_profile</code>, <code>kind_mismatch</code>, <code>no_candidates</code>, <code>unapproved_override</code>, <code>unknown_webhook</code>, <code>profile_required</code>, <code>release_not_staged</code>.</td>
 <td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
 </tr>
 </tbody>
@@ -6050,6 +6051,12 @@ the profile changed it; they have no segments or pages.</p>
 <td>string or null</td>
 <td>yes</td>
 <td></td>
+</tr>
+<tr>
+<td><code>webhook</code></td>
+<td>string or null</td>
+<td>no</td>
+<td>Name of the webhook endpoint notified when the job ends.</td>
 </tr>
 </tbody>
 </table>

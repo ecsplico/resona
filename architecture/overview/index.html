@@ -2955,7 +2955,7 @@
 </tr>
 </tbody>
 </table>
-<p>The only connection is the published HTTP and WebSocket contract: jobs (<code>/v1/uploads</code>, <code>/v1/jobs</code>), live streaming (<code>WS /v1/listen</code>) and profiles (<code>/profiles</code>). An app learns a job's outcome by pull (<code>GET /v1/jobs/{id}</code>, the source of truth) and, once added, by push (signed webhooks for terminal job states). The hub never stores app entities or calls app code; an app never reads hub storage, the hub database or hub source, and gets no access another app could not have. The rest of this page describes the hub.</p>
+<p>The only connection is the published HTTP and WebSocket contract: jobs (<code>/v1/uploads</code>, <code>/v1/jobs</code>), live streaming (<code>WS /v1/listen</code>) and profiles (<code>/profiles</code>). An app learns a job's outcome by pull (<code>GET /v1/jobs/{id}</code>, the source of truth) and by push (signed webhooks for terminal job states, sent by the hub's webhook dispatcher from a durable outbox; see <a href="../../reference/api/#webhook-endpoints-role-org_admin">Webhook endpoints</a>). The hub never stores app entities or calls app code; an app never reads hub storage, the hub database or hub source, and gets no access another app could not have. The rest of this page describes the hub.</p>
 <h2 id="package-table">Package table<a class="headerlink" href="#package-table" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

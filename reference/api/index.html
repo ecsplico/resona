@@ -3636,6 +3636,7 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>GET    /v1/webhooks/{name}                      → {name, url, created_at}
 <a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>POST   /v1/webhooks/{name}/rotate               → {name, url, created_at, secret}
 <a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>DELETE /v1/webhooks/{name}                      → 204  (revoked; the name is free again)
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>GET    /v1/webhooks/{name}/deliveries?limit=50  → {items: [{id, job_id, event, attempts, last_status, delivered_at, last_error}]}
 </code></pre></div>
 <p><code>secret</code> is the signing secret (<code>whsec_</code> + 32 random bytes in base64). It appears only in the create and rotate responses: store it then, listings never contain it. Rotation replaces it at once. The hub keeps it in plaintext in its database, because signing needs it.</p>
 <p>URL rules (<code>422 invalid_webhook_url</code>): scheme <code>https</code>, no user or password, at most 2048 characters, and the host must resolve and must not resolve to a loopback, private (RFC 1918 and similar), link-local or unspecified address. When the hub operator sets <code>RESONA_WEBHOOK_ALLOW_PRIVATE=true</code>, such internal hosts are accepted, and for them also <code>http</code>; <code>http</code> to a public host is never accepted.</p>
@@ -3643,7 +3644,40 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <p>Job events: a production job created with <code>webhook</code> (<code>POST /v1/jobs</code>, or the <code>webhook</code> form field of <code>/v1/audio/transcriptions</code>) gets one outbox row (<code>WebhookDelivery</code>) in the same transaction that makes it <code>completed</code>, <code>failed</code> or <code>cancelled</code>, deleting a pending or processing job included (<code>cancelled</code>, <code>error_code: deleted</code>); the later purge of a deleted job's tombstone writes none, nor do retries that requeue the job. An endpoint revoked before the job ends gets no event. Evaluation and testbench jobs never notify. The payload (<code>resona_job_core.webhooks.JobEvent</code>) carries identifiers only, never content or error messages:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;job.completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;error_code&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;finished_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-11-20T12:00:00Z&quot;</span><span class="p">}</span>
 </code></pre></div>
-<p><code>type</code> is <code>job.completed</code>, <code>job.failed</code> or <code>job.cancelled</code>; <code>error_code</code> is the job's error code (null when completed). Signatures follow Standard Webhooks (<code>resona_job_core.webhooks.sign</code>: <code>v1,</code> + base64 HMAC-SHA256 over <code>&lt;msg_id&gt;.&lt;timestamp&gt;.&lt;body&gt;</code>, keyed with the base64-decoded part of the <code>whsec_</code> secret).</p>
+<p><code>type</code> is <code>job.completed</code>, <code>job.failed</code> or <code>job.cancelled</code>; <code>error_code</code> is the job's error code (null when completed).</p>
+<p>Delivery: the hub POSTs the payload to the endpoint URL within about a second of the job ending, with the <a href="https://www.standardwebhooks.com/">Standard Webhooks</a> headers</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>webhook-id</code></td>
+<td>delivery id (string); the same on every retry of this event, use it to drop duplicates</td>
+</tr>
+<tr>
+<td><code>webhook-timestamp</code></td>
+<td>Unix seconds of this attempt</td>
+</tr>
+<tr>
+<td><code>webhook-signature</code></td>
+<td><code>v1,</code> + base64 HMAC-SHA256 over <code>&lt;webhook-id&gt;.&lt;webhook-timestamp&gt;.&lt;body&gt;</code>, keyed with the base64-decoded part of the <code>whsec_</code> secret (<code>resona_job_core.webhooks.sign</code>)</td>
+</tr>
+<tr>
+<td><code>content-type</code></td>
+<td><code>application/json</code></td>
+</tr>
+<tr>
+<td><code>user-agent</code></td>
+<td><code>resona-hub/&lt;release&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<p>Verify the signature over the raw body bytes before parsing them. Any <code>2xx</code> answer counts as delivered; anything else, including a redirect (never followed), a timeout (10 s) or a refused connection, is retried after 5 s, 30 s, 2 min, 10 min and 30 min, then hourly. The URL is checked against the URL rules again before every attempt. A delivery still unsent 24 hours after the job ended is abandoned (<code>last_error: expired</code>); revoking the endpoint abandons its pending deliveries (<code>endpoint_revoked</code>). One endpoint receives its events one at a time in the order the jobs ended: while the oldest pending event waits for a retry, later ones wait behind it. Delivery is at least once: a hub restart during a send repeats it with the same <code>webhook-id</code>. Pull (<code>GET /v1/jobs/{id}</code>) stays the source of truth.</p>
+<p><code>GET /v1/webhooks/{name}/deliveries</code> lists the endpoint's deliveries newest first (<code>limit</code> 1–100, default 50): metadata only, never the payload, URL or secret. <code>delivered_at</code> is null until a <code>2xx</code>; <code>last_status</code> is the last HTTP status (null when no answer came); <code>last_error</code> is null, <code>http_&lt;status&gt;</code>, <code>timeout</code>, <code>connection_error</code>, <code>invalid_url</code> (the URL broke the URL rules at send time), <code>expired</code> or <code>endpoint_revoked</code>. Delivery rows are deleted seven days after creation.</p>
 <hr />
 <h3 id="management-v1admin-roles-org_admin-hub_operator">Management (<code>/v1/admin</code>, roles <code>org_admin</code>, <code>hub_operator</code>)<a class="headerlink" href="#management-v1admin-roles-org_admin-hub_operator" title="Permanent link">&para;</a></h3>
 <p>An org admin manages only its own organization: any other <code>{org}</code> returns <code>404 organization_not_found</code>. A hub operator manages every organization. Worker and credential IDs of another organization return <code>404</code> (<code>worker_not_found</code>, <code>credential_not_found</code>), never <code>403</code>. Other roles get <code>403</code>.</p>
