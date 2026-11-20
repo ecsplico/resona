@@ -49,6 +49,10 @@ That's it. The `Release` workflow takes over.
    - Builds `linux/amd64` (engines are CUDA — no arm64) with GHA cache
    - Pushes `ghcr.io/ecsplico/<name>:<tag>`, `…:vX.Y`, and `…:latest`
 3. **`release`** — once both above succeed, drafts a GitHub release at `vX.Y.Z` with auto-generated notes. It's a **draft**, so review and publish manually from the GitHub UI.
+4. **`npm`** (opt-in, repository variable `RESONA_PUBLISH_NPM=true`) — the TypeScript hub client `clients/hub-ts`:
+   - `bun install --frozen-lockfile`, generated-types drift check against `contract/openapi.json`, typecheck, test, build
+   - `npm version <release id> --no-git-tag-version` (the committed `0.0.0` is a placeholder; the package version is the hub release id)
+   - `npm publish --provenance --access public` as `@ecsplico/resona-hub-client`, authenticated by OIDC trusted publishing (no npm token anywhere — see one-time setup below)
 
 If a job fails mid-release, you can re-run individual jobs from the Actions UI. The PyPI publish step has `skip-existing: true` so re-runs won't error on already-uploaded versions.
 
@@ -70,6 +74,34 @@ The `pypi` job uses PyPI's [trusted publishing](https://docs.pypi.org/trusted-pu
    - **Environment name**: *(leave blank)*
 
 Until trusted publishing is configured for a given package, the publish step for that package will fail with `invalid-publisher`. Other packages in the matrix continue independently (`fail-fast: false`).
+
+### npm trusted publishing (OIDC)
+
+The `npm` job publishes `@ecsplico/resona-hub-client` with npm's [trusted publishing](https://docs.npmjs.com/trusted-publishers): npm accepts the GitHub Actions OIDC token of `ecsplico/resona`'s `release.yml` instead of a token. The repository holds **no** `NPM_TOKEN` secret; do not add one. The job needs Node 24 (npm ≥ 11.5.1) and `permissions: id-token: write`, both set in `release.yml`.
+
+A trust link can only be attached to a package that exists, so a new package needs one manual publish first. Run every npm command below on a **temporary web login** (2FA approved in the browser), from a directory without an `.npmrc` of its own, never with a stored automation token:
+
+```bash
+cd /tmp && npm login --auth-type=web --userconfig /tmp/npmrc-trust
+export NPM_CONFIG_USERCONFIG=/tmp/npmrc-trust
+```
+
+1. **First publish** (only while `npm view @ecsplico/resona-hub-client` answers 404): in `clients/hub-ts`, `bun install && bun run build`, then `npm version 0.0.0-bootstrap.0 --no-git-tag-version && npm publish --access public --tag bootstrap`. Do not commit the version change. A prerelease under its own dist-tag keeps the release versions free for CI and leaves `latest` to the first CI publish.
+2. **Trust link**: `npm trust github @ecsplico/resona-hub-client --file release.yml --repository ecsplico/resona --allow-publish` (no `--environment`: the job sets none). `--allow-publish` is required; without it the link only grants staged publishes. `npm trust list @ecsplico/resona-hub-client` shows it.
+3. **Log out**: `npm logout; rm -f /tmp/npmrc-trust; unset NPM_CONFIG_USERCONFIG`.
+4. **Enable the job**: repository variable `RESONA_PUBLISH_NPM=true` (Settings → Secrets and variables → Actions → Variables).
+5. **Use the link within 2 days**: a new trust link expires unless a CI publish uses it within 2 days (a dry run does not count); an expired link can only be deleted and recreated. Push the next release tag within that window.
+
+Done when `npm view @ecsplico/resona-hub-client@X.Y.Z _npmUser` names `GitHub Actions <npm-oidc-no-reply@github.com>`.
+
+When the `npm` job fails:
+
+- **`E404 … PUT https://registry.npmjs.org/@ecsplico%2fresona-hub-client`** (with `--loglevel verbose`: `OIDC token exchange error - package not found`): no trust link matches package, repository, workflow file and environment. Compare with `npm trust list` (temporary web login). Renaming `release.yml` or adding an `environment:` to the job breaks the link; recreate it with the new values. An expired link (never used within 2 days) shows the same error: delete and recreate it.
+- **`E403 Granular access tokens that bypass two-factor authentication`**: a token was used instead of OIDC — a local command picked up a stored `.npmrc` token, or someone added `NODE_AUTH_TOKEN`/`NPM_TOKEN` to the workflow. Remove the token; CI must authenticate by OIDC only.
+- **`E403 … cannot publish over the previously published versions`**: this release id is already on npm (e.g. the job is re-run after it succeeded). Nothing to do; npm versions are immutable, a fix needs a new release.
+- **`npm publish` complains about provenance or the repository**: `repository.url` in `clients/hub-ts/package.json` must stay `git+https://github.com/ecsplico/resona.git`, the repository the workflow runs in.
+
+The rest of the release does not depend on this job: wheels, images and the draft GitHub release complete when it fails, and the job can be re-run alone from the Actions UI.
 
 ### GHCR permissions
 

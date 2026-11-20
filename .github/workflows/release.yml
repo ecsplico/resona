@@ -17,10 +17,14 @@ name: Release
 #              revision), validated against release/manifest.schema.json; draft GitHub
 #              release with wheels + manifest + tool-inventory.json as assets
 #   notify-downstream - optional SKAILE `mcp-release` dispatch (see the job)
+#   npm      - optional: @ecsplico/resona-hub-client (clients/hub-ts) to npm at the release
+#              version, OIDC trusted publishing with provenance (see the job)
 #
 # Repository variables (Settings > Variables), all optional:
 #   RESONA_IMAGE_NAMESPACE        registry/namespace for images (default ghcr.io/ecsplico)
 #   RESONA_PUBLISH_PYPI           'true' to also publish wheels to PyPI (OIDC trusted publishing)
+#   RESONA_PUBLISH_NPM            'true' to publish clients/hub-ts to npm (OIDC trusted publishing;
+#                                 needs the one-time trust link, see RELEASING.md)
 #   RESONA_DISPATCH_MCP_RELEASE   'true' to dispatch mcp-release to skaile-ai/ai-assets;
 #                                 needs repo secrets RELEASE_DISPATCH_APP_ID / RELEASE_DISPATCH_APP_KEY
 
@@ -233,6 +237,59 @@ jobs:
         with:
           packages-dir: dist/
           skip-existing: true
+
+  # npm is opt-in (RESONA_PUBLISH_NPM) like PyPI. Trusted publishing (OIDC): no npm token
+  # exists anywhere; npm matches the package's trust link on repository ecsplico/resona and
+  # workflow FILE release.yml (renaming this file breaks the link → E404). Needs npm >= 11.5.1,
+  # hence Node 24. One-time setup and failure modes: RELEASING.md "npm trusted publishing".
+  npm:
+    name: Publish @ecsplico/resona-hub-client to npm
+    needs: [verify, eval-cpu]
+    if: startsWith(github.ref, 'refs/tags/v') && vars.RESONA_PUBLISH_NPM == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write   # npm trusted-publishing OIDC + provenance
+    defaults:
+      run:
+        working-directory: clients/hub-ts
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generated types match contract/openapi.json
+        run: |
+          bun run generate
+          git diff --exit-code -- src/schema.d.ts || {
+            echo "::error::clients/hub-ts/src/schema.d.ts is stale; run just contract"
+            exit 1
+          }
+
+      - name: Typecheck, test, build
+        run: |
+          bun run typecheck
+          bun run test
+          bun run build
+
+      # The committed version is a placeholder; the package carries the hub release id.
+      - name: Set the version from the tag
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version
+
+      - name: Publish
+        run: npm publish --provenance --access public
 
   manifest:
     name: Release manifest and draft GitHub release
