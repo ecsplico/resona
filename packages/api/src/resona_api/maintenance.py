@@ -11,8 +11,9 @@ periodically (and once at startup, which doubles as crash recovery):
 * result files are deleted once ``result_expires_at`` passes (24 hours); the job
   row and its hash-only ``result_manifest`` stay, so the result route answers
   410 ``result_expired`` from ``result_expires_at`` alone;
-* terminal job rows with their job directory, consumed upload rows and
-  idempotency records are deleted seven days after completion/creation;
+* terminal job rows with their job directory, consumed upload rows,
+  idempotency records and webhook delivery rows are deleted seven days after
+  completion/creation;
 * staging files untouched for an hour, abandoned attempt directories, inputs or
   unaccepted results left behind by terminal jobs, and orphaned job directories
   are removed. Testbench items and captured run results are kept until deleted.
@@ -29,7 +30,7 @@ from pathlib import Path
 
 from sqlmodel import Session, select
 
-from . import broker, clock, storage, testbench
+from . import broker, clock, storage, testbench, webhooks
 from .db import engine as db_engine
 from .db.models import IdempotencyRecord, Job, JobStatus, Organization, Upload, UploadLink
 
@@ -198,6 +199,7 @@ def run_once() -> dict[str, int]:
         results = _expire_results(session, storage_ids, now)
         metadata = _delete_metadata(session, storage_ids, now)
         staging, reconciled = _sweep_files(session, storage_ids, now)
+        deliveries = webhooks.delete_old_deliveries(session, now)
     return {
         "leases_swept": leases,
         "testbench_runs_settled": testbench_runs,
@@ -207,6 +209,7 @@ def run_once() -> dict[str, int]:
         "metadata_deleted": metadata,
         "staging_swept": staging,
         "files_reconciled": reconciled,
+        "webhook_deliveries_deleted": deliveries,
     }
 
 

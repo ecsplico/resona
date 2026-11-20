@@ -10,26 +10,38 @@ module only through the create and rotate responses and is never logged.
 
 :func:`enqueue_job_event` writes the outbox row for a job's terminal transition;
 callers run it inside the transaction that makes the job terminal.
+:func:`dispatch_loop` (a lifespan task beside the maintenance loop) sends those
+rows: Standard Webhooks headers, retries by :data:`RETRY_DELAYS` then hourly,
+abandonment 24 h after creation or when the endpoint is revoked, one delivery at
+a time per endpoint in creation order, endpoints concurrently.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import ipaddress
+import logging
 import re
 import secrets
 import socket
 import uuid
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
+import httpx
 from decouple import config
+from sqlalchemy import func, literal_column, or_
 from sqlmodel import Session, select
 
-from resona_job_core.webhooks import EVENT_OF_STATUS, SECRET_PREFIX, JobEvent
+from resona_job_core.webhooks import EVENT_OF_STATUS, SECRET_PREFIX, JobEvent, sign
 
-from . import clock
+from . import clock, releases
+from .db import engine as db_engine
 from .db.models import Job, JobStatus, WebhookDelivery, WebhookEndpoint
+
+log = logging.getLogger(__name__)
 
 MAX_URL_CHARS = 2048
 WEBHOOK_PURPOSE = "production"
@@ -213,3 +225,277 @@ def enqueue_job_event(session: Session, job: Job, now: datetime) -> WebhookDeliv
     )
     session.add(delivery)
     return delivery
+
+
+def recent_deliveries(session: Session, endpoint_id: str, limit: int) -> list[WebhookDelivery]:
+    """The endpoint's last ``limit`` delivery rows, newest first."""
+    return list(
+        session.exec(
+            select(WebhookDelivery)
+            .where(WebhookDelivery.endpoint_id == endpoint_id)
+            .order_by(WebhookDelivery.created_at.desc(), _ROWID.desc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def delete_old_deliveries(session: Session, now: datetime) -> int:
+    """Delete delivery rows created :data:`DELIVERY_RETENTION` or longer before ``now``; commit."""
+    cutoff = now - DELIVERY_RETENTION
+    rows = session.exec(select(WebhookDelivery).where(WebhookDelivery.created_at <= cutoff)).all()
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return len(rows)
+
+
+# ── dispatcher ──────────────────────────────────────────────────────────
+
+RETRY_DELAYS = (
+    timedelta(seconds=5),
+    timedelta(seconds=30),
+    timedelta(minutes=2),
+    timedelta(minutes=10),
+    timedelta(minutes=30),
+)
+"""Wait after the 1st … 5th failed attempt; every later failure waits :data:`RETRY_INTERVAL`."""
+RETRY_INTERVAL = timedelta(hours=1)
+DELIVERY_TTL = timedelta(hours=24)
+"""A delivery still unsent this long after its creation is abandoned (``last_error`` ``expired``)."""
+DELIVERY_RETENTION = timedelta(days=7)
+"""Maintenance deletes delivery rows (any state) this long after their creation."""
+SEND_TIMEOUT_SECONDS = 10.0
+DISPATCH_INTERVAL_SECONDS = 1.0
+DISPATCH_BATCH = 100
+"""At most this many endpoints start sending per pass."""
+EXPIRED = "expired"
+ENDPOINT_REVOKED = "endpoint_revoked"
+_ABANDONED = (EXPIRED, ENDPOINT_REVOKED)
+_ROWID = literal_column("webhookdelivery.rowid")
+"""Tie-break for rows created in the same instant: insertion order."""
+
+
+class _RedactRequestUrls(logging.Filter):
+    """httpx logs every request URL at INFO; keep only its part before the query string."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                str(arg).split("?", 1)[0] if isinstance(arg, httpx.URL) else arg for arg in record.args
+            )
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactRequestUrls())
+
+
+def retry_delay(attempts: int) -> timedelta:
+    """Wait before the next attempt once ``attempts`` (≥ 1) attempts have failed."""
+    return RETRY_DELAYS[attempts - 1] if attempts <= len(RETRY_DELAYS) else RETRY_INTERVAL
+
+
+def _pending():
+    """Not delivered and not abandoned."""
+    return (
+        WebhookDelivery.delivered_at.is_(None),
+        or_(WebhookDelivery.last_error.is_(None), WebhookDelivery.last_error.not_in(_ABANDONED)),
+    )
+
+
+def _abandon_reason(row: WebhookDelivery, endpoint: WebhookEndpoint, now: datetime) -> str | None:
+    if endpoint.revoked_at is not None:
+        return ENDPOINT_REVOKED
+    if clock.as_utc(row.created_at) <= now - DELIVERY_TTL:
+        return EXPIRED
+    return None
+
+
+def _abandon(session: Session, row: WebhookDelivery, endpoint: WebhookEndpoint, reason: str) -> None:
+    row.last_error = reason
+    session.add(row)
+    log.info("Webhook %s delivery %s: abandoned (%s)", endpoint.name, row.id, reason)
+
+
+def abandon_stale(session: Session, now: datetime) -> int:
+    """Abandon pending rows of revoked endpoints and rows older than :data:`DELIVERY_TTL`; commit."""
+    rows = session.exec(
+        select(WebhookDelivery, WebhookEndpoint)
+        .join(WebhookEndpoint, WebhookEndpoint.id == WebhookDelivery.endpoint_id)
+        .where(*_pending())
+        .where(or_(WebhookEndpoint.revoked_at.is_not(None), WebhookDelivery.created_at <= now - DELIVERY_TTL))
+    ).all()
+    for row, endpoint in rows:
+        _abandon(session, row, endpoint, _abandon_reason(row, endpoint, now) or EXPIRED)
+    session.commit()
+    return len(rows)
+
+
+def due_endpoints(session: Session, now: datetime, busy: set[str], limit: int = DISPATCH_BATCH) -> list[str]:
+    """Endpoints (not in ``busy``) with a pending row due at ``now``, longest-waiting first."""
+    stmt = (
+        select(WebhookDelivery.endpoint_id)
+        .where(*_pending())
+        .where(WebhookDelivery.next_attempt_at <= now)
+        .group_by(WebhookDelivery.endpoint_id)
+        .order_by(func.min(WebhookDelivery.next_attempt_at))
+        .limit(limit)
+    )
+    if busy:
+        stmt = stmt.where(WebhookDelivery.endpoint_id.not_in(sorted(busy)))
+    return list(session.exec(stmt).all())
+
+
+@dataclass(frozen=True)
+class _Message:
+    delivery_id: str
+    endpoint_name: str
+    url: str
+    secret: str
+    body: bytes
+
+
+def _next_message(endpoint_id: str, now: datetime) -> _Message | None:
+    """The endpoint's oldest pending delivery if it is due, else None.
+
+    Later rows never overtake it: while the oldest one waits for its retry, the
+    endpoint sends nothing. Rows that must not be sent any more are abandoned here.
+    """
+    with Session(db_engine.engine) as session:
+        endpoint = session.get(WebhookEndpoint, endpoint_id)
+        if endpoint is None:
+            return None
+        while True:
+            row = session.exec(
+                select(WebhookDelivery)
+                .where(WebhookDelivery.endpoint_id == endpoint_id)
+                .where(*_pending())
+                .order_by(WebhookDelivery.created_at, _ROWID)
+                .limit(1)
+            ).first()
+            if row is None or clock.as_utc(row.next_attempt_at) > now:
+                return None
+            reason = _abandon_reason(row, endpoint, now)
+            if reason is None:
+                return _Message(row.id, endpoint.name, endpoint.url, endpoint.secret, row.payload_json.encode("utf-8"))
+            _abandon(session, row, endpoint, reason)
+            session.commit()
+
+
+def _record(message: _Message, status: int | None, error: str | None, now: datetime) -> bool:
+    """Store one attempt's outcome; return whether the delivery is now delivered."""
+    with Session(db_engine.engine) as session:
+        row = session.get(WebhookDelivery, message.delivery_id)
+        if row is None:  # deleted by retention meanwhile
+            return False
+        row.attempts += 1
+        row.last_status = status
+        if error is None:
+            row.delivered_at = now
+            row.last_error = None
+        elif row.last_error not in _ABANDONED:
+            row.last_error = error
+            row.next_attempt_at = now + retry_delay(row.attempts)
+        session.add(row)
+        session.commit()
+    log.info("Webhook %s delivery %s: %s", message.endpoint_name, message.delivery_id,
+             "delivered" if error is None else error)
+    return error is None
+
+
+async def _post(client: httpx.AsyncClient, message: _Message) -> tuple[int | None, str | None]:
+    """POST one message; return ``(status, error)``, ``error`` None on a 2xx answer.
+
+    The URL is validated again first (its host may resolve elsewhere by now).
+    Redirects are not followed and count as failures; the answer body is not read.
+    """
+    try:
+        await asyncio.to_thread(validate_url, message.url)
+    except InvalidWebhookUrl:
+        return None, "invalid_url"
+    timestamp = int(clock.now().timestamp())
+    headers = {
+        "content-type": "application/json",
+        "user-agent": f"resona-hub/{releases.hub_release_id()}",
+        "webhook-id": message.delivery_id,
+        "webhook-timestamp": str(timestamp),
+        "webhook-signature": sign(message.secret, message.delivery_id, timestamp, message.body),
+    }
+    try:
+        async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+            async with client.stream("POST", message.url, content=message.body, headers=headers) as response:
+                status = response.status_code
+    except (TimeoutError, httpx.TimeoutException):
+        return None, "timeout"
+    except httpx.HTTPError:
+        return None, "connection_error"
+    return (status, None) if 200 <= status < 300 else (status, f"http_{status}")
+
+
+class Dispatcher:
+    """Sends due deliveries: per endpoint one task at a time, endpoints concurrently.
+
+    All state is in the outbox; a new dispatcher (after a restart) resumes every
+    pending row. A delivery interrupted mid-send is sent again (at-least-once).
+    """
+
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self._client = httpx.AsyncClient(
+            timeout=SEND_TIMEOUT_SECONDS, follow_redirects=False, transport=transport
+        )
+        self._sending: dict[str, asyncio.Task] = {}
+
+    def _due(self, now: datetime, busy: set[str]) -> list[str]:
+        with Session(db_engine.engine) as session:
+            abandon_stale(session, now)
+            return due_endpoints(session, now, busy)
+
+    async def tick(self) -> int:
+        """Abandon stale rows and start a sender for every idle endpoint with due rows."""
+        endpoint_ids = await asyncio.to_thread(self._due, clock.now(), set(self._sending))
+        for endpoint_id in endpoint_ids:
+            task = asyncio.create_task(self._drain(endpoint_id))
+            self._sending[endpoint_id] = task
+            task.add_done_callback(lambda _task, key=endpoint_id: self._sending.pop(key, None))
+        return len(endpoint_ids)
+
+    async def _drain(self, endpoint_id: str) -> None:
+        """Send the endpoint's due rows in creation order until one fails or none is due."""
+        try:
+            while True:
+                message = await asyncio.to_thread(_next_message, endpoint_id, clock.now())
+                if message is None:
+                    return
+                status, error = await _post(self._client, message)
+                if not await asyncio.to_thread(_record, message, status, error, clock.now()):
+                    return
+        except Exception as exc:  # never the URL or secret: only the exception type
+            log.error("Webhook dispatch for endpoint %s failed: %s", endpoint_id, type(exc).__name__)
+
+    async def wait_idle(self) -> None:
+        """Wait until every running sender has finished."""
+        while self._sending:
+            await asyncio.gather(*list(self._sending.values()), return_exceptions=True)
+
+    async def aclose(self) -> None:
+        """Cancel running senders (their rows stay pending) and close the HTTP client."""
+        tasks = list(self._sending.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await self._client.aclose()
+
+
+async def dispatch_loop(
+    interval: float = DISPATCH_INTERVAL_SECONDS, *, transport: httpx.AsyncBaseTransport | None = None
+) -> None:
+    """Run :meth:`Dispatcher.tick` every ``interval`` seconds until cancelled."""
+    dispatcher = Dispatcher(transport)
+    try:
+        while True:
+            try:
+                await dispatcher.tick()
+            except Exception as exc:
+                log.error("Webhook dispatch pass failed: %s", type(exc).__name__)
+            await asyncio.sleep(interval)
+    finally:
+        await dispatcher.aclose()
