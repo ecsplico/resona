@@ -1,10 +1,26 @@
 [
   {
+    "name": "delete_document",
+    "deferred": false
+  },
+  {
     "name": "get_dictation",
     "deferred": false
   },
   {
+    "name": "get_document",
+    "deferred": false
+  },
+  {
     "name": "list_dictations",
+    "deferred": false
+  },
+  {
+    "name": "list_documents",
+    "deferred": false
+  },
+  {
+    "name": "rename_document",
     "deferred": false
   },
   {

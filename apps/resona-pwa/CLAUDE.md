@@ -131,7 +131,11 @@ is the only Directus client, list queries go in a `SEARCH` body so they reach no
 Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
 `list_dictations` (cursor = last `date_created` + count of rows already returned at that
 instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
-(`transcripts.text` in ranges ≤ 32768). Logs: `tool= user= outcome= ids= ms=`, never text,
+(`transcripts.text` in ranges ≤ 32768); `document_tools.py` (`register(server, caller_for)`):
+`list_documents` (same cursor), `get_document` (`documents.markdown` in ranges ≤ 32768),
+`rename_document` (needs `title` in the `documents` update permission), `delete_document`
+(`confirm: true` required, else `confirm_required:` before any Directus call; deletes the
+row like the app, the file stays); writes return metadata only. Logs: `tool= user= outcome= ids= ms=`, never text,
 titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa test-mcp`)
 start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
 compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running

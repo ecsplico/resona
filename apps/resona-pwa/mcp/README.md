@@ -1,7 +1,8 @@
 # resona-dictations-mcp
 
 MCP server that gives a user of the Resona app access to **their own dictations**
-(recordings and transcripts in the app's Directus). It is a service of the app's
+(recordings and transcripts in the app's Directus) and **documents** (converted PDFs and
+images with their Markdown). It is a service of the app's
 compose stack and is reached at `<app origin>/mcp` (Streamable HTTP), proxied by the
 PWA (`server/routes/mcp.ts`). `resona-mcp` in the Resona monorepo is a different
 server: it exposes hub jobs, not dictations.
@@ -31,9 +32,15 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 | `list_dictations(limit≤50, cursor, status?, review_status?, since?)` | Newest first: id, title, created, duration, language, status, review status, text length. `next_cursor` for the next page. |
 | `search_dictations(query, limit≤50)` | Dictations whose title or transcript text contains the query (case-insensitive), with `matched_in`. No text. |
 | `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars`. |
+| `list_documents(limit≤50, cursor)` | The user's documents (converted PDFs/images), newest first: id, title, created, updated, status, Markdown length. `next_cursor` for the next page. |
+| `get_document(id, offset=0, limit≤32768)` | Metadata (plus `error_message`, `page_count`) and one range of the document's Markdown, with `next_offset` / `total_chars`. |
+| `rename_document(id, title)` | Sets the title; returns metadata only (id, title, created, updated, status). |
+| `delete_document(id, confirm)` | Deletes the document row as the app does (the uploaded file stays in `directus_files`); `{id, title, deleted}`. Without `confirm: true` it deletes nothing (`confirm_required:` error). |
 
 Everything a tool returns goes to the model of the client that calls it; the tool
 descriptions say so. Another user's id and a missing id give the same "not found" error.
+Writes return metadata, never text. Renaming a document needs `title` in the `user`
+policy's `documents` update fields (`directus/bootstrap.mjs`).
 
 `tool-inventory.json` lists the tools; regenerate it with
 `uv run python scripts/gen_tool_inventory.py` (`--check` in the tests).
