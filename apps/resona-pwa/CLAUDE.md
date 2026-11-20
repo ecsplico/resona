@@ -143,7 +143,17 @@ is the only Directus client, list queries go in a `SEARCH` body so they reach no
 Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
 `list_dictations` (cursor = last `date_created` + count of rows already returned at that
 instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
-(`transcripts.text` in ranges ≤ 32768); `document_tools.py` (`register(server, caller_for)`):
+(`transcripts.text` in ranges ≤ 32768, plus `text_sha256` of the whole text). Write tools
+(`edit_tools.py`, metadata-only results) make the app's writes: `update_dictation_text`
+(`transcripts.text` only, or a new transcript row when there is none; optional
+`expected_sha256` → `conflict`, `busy` while `postprocessRunning`), `rename_dictation`
+(`renamePatch`: trimmed title + `title_auto=false`), `set_review_status`
+(`reviewStatusPatch`), `delete_dictation` (`confirm: true` required, else
+`confirm_required`; one `DELETE recordings/<id>` like `deleteRecording`, transcripts,
+corrections and parts cascade, audio files stay as after an app delete). The patches live
+in `app/utils/dictationEdit.ts`; `shared/dictationEdit.cases.json` drives
+`test/dictationEdit.spec.ts` and `mcp/tests/test_edit_tools.py`, so change both sides and
+the fixture together. `document_tools.py` (`register(server, caller_for)`):
 `list_documents` (same cursor), `get_document` (`documents.markdown` in ranges ≤ 32768),
 `rename_document` (needs `title` in the `documents` update permission), `delete_document`
 (`confirm: true` required, else `confirm_required:` before any Directus call; deletes the
