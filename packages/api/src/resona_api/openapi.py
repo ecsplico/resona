@@ -11,11 +11,11 @@ the route; every other route gets :func:`operation_id` from its method and path.
 
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 
 CLIENT = "client"
@@ -87,21 +87,36 @@ class ResonaAPI(FastAPI):
         return self.openapi_schema
 
     def openapi_client(self) -> dict[str, Any]:
-        """The OpenAPI document of the ``client`` routes only, with just the schemas they use."""
+        """The OpenAPI document of the ``client`` routes only, with just the schemas they use.
+
+        Filtered from the full document rather than built from ``self.routes``: newer
+        FastAPI releases keep included routers as lazy entries in ``self.routes``.
+        """
         if self._client_schema is None:
-            routes = [r for r in self.routes if isinstance(r, APIRoute) and CLIENT in r.tags]
-            used = {tag for route in routes for tag in route.tags}
-            self._client_schema = drop_unreachable_validation_errors(get_openapi(
-                title=self.title,
-                version=self.version,
-                openapi_version=self.openapi_version,
-                summary=self.summary,
-                description=self.description,
-                routes=routes,
-                tags=[tag for tag in self.openapi_tags or [] if tag["name"] in used],
-                servers=self.servers,
-                separate_input_output_schemas=self.separate_input_output_schemas,
-            ))
+            schema = copy.deepcopy(self.openapi())
+            paths = {}
+            for path, item in schema.get("paths", {}).items():
+                kept = {m: op for m, op in item.items() if m in _METHODS and CLIENT in op.get("tags", [])}
+                if kept:
+                    paths[path] = kept
+            schema["paths"] = paths
+            schema.pop("webhooks", None)
+            used = {tag for item in paths.values() for op in item.values() for tag in op.get("tags", [])}
+            if "tags" in schema:
+                schema["tags"] = [tag for tag in schema["tags"] if tag["name"] in used]
+            models = schema.get("components", {}).get("schemas")
+            if models is not None:
+                prefix = "#/components/schemas/"
+                reachable: set[str] = set()
+                frontier = {ref.removeprefix(prefix) for ref in _refs(paths) if ref.startswith(prefix)}
+                while frontier:
+                    name = frontier.pop()
+                    if name in reachable or name not in models:
+                        continue
+                    reachable.add(name)
+                    frontier |= {ref.removeprefix(prefix) for ref in _refs(models[name]) if ref.startswith(prefix)}
+                schema["components"]["schemas"] = {name: model for name, model in models.items() if name in reachable}
+            self._client_schema = schema
         return self._client_schema
 
 
