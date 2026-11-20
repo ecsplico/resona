@@ -1,4 +1,5 @@
-"""The dictation tool surface: read access to the calling user's own dictations.
+"""The dictation tool surface: the calling user's own dictations (read tools here,
+create tools and the audio link in ``create_tools.py``).
 
 Every tool runs as the caller (``Caller.directus`` carries their Directus token); the
 server has no ownership logic. A dictation is a ``recordings`` row plus its
@@ -20,6 +21,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from .directus import Directus, DirectusError, DirectusUnavailable, NotFound, Unauthorized
+from .links import Links
 
 log = logging.getLogger(__name__)
 
@@ -30,15 +32,22 @@ TOOL_NAMES = (
     "list_dictations",
     "search_dictations",
     "get_dictation",
+    # create_tools.py
+    "create_dictation_from_text",
+    "create_audio_upload",
+    "get_audio_link",
 )
 
 INSTRUCTIONS = (
-    "Read access to the signed-in user's own dictations in the Resona app (recordings "
+    "Access to the signed-in user's own dictations in the Resona app (recordings "
     "with their transcripts). list_dictations pages through them newest first, "
     "search_dictations finds them by title or transcript text, get_dictation returns "
     "one dictation's metadata and its text in ranges (follow next_offset until it is "
-    "null). Everything these tools return, including dictated text, is sent to the "
-    "model of the client that calls them. Dictations kept only in a browser "
+    "null). create_dictation_from_text saves text as a finished dictation; "
+    "create_audio_upload returns a single-use upload command so audio reaches the app "
+    "without passing through the model; get_audio_link returns a 10-minute link to a "
+    "dictation's audio. Everything these tools return, including dictated text, is sent "
+    "to the model of the client that calls them. Dictations kept only in a browser "
     "(standalone mode) are not reachable."
 )
 
@@ -163,8 +172,11 @@ async def _as_caller(
                  ",".join(ids) or "-", (time.monotonic() - started) * 1000)
 
 
-def build_server(caller_for: CallerFactory) -> MCPServer:
-    """Create the MCP server; ``caller_for(ctx)`` identifies the user behind a tool call."""
+def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MCPServer:
+    """Create the MCP server; ``caller_for(ctx)`` identifies the user behind a tool call.
+    ``links`` issues the upload/audio links; None (no link secret) disables those tools."""
+    from . import create_tools  # it imports this module's helpers
+
     server = MCPServer("resona-dictations", instructions=INSTRUCTIONS)
 
     @server.tool()
@@ -288,4 +300,5 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
 
         return await _as_caller("get_dictation", caller, call)
 
+    create_tools.register(server, caller_for, links)
     return server

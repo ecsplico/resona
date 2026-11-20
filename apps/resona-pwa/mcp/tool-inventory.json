@@ -1,5 +1,17 @@
 [
   {
+    "name": "create_audio_upload",
+    "deferred": false
+  },
+  {
+    "name": "create_dictation_from_text",
+    "deferred": false
+  },
+  {
+    "name": "get_audio_link",
+    "deferred": false
+  },
+  {
     "name": "get_dictation",
     "deferred": false
   },

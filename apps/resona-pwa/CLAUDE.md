@@ -128,10 +128,16 @@ only with the caller's Directus token (`Authorization: Bearer`, verified via `GE
 Directus 401 in a tool call drops the cache entry), holds no admin/worker token, never
 calls the hub, and adds no owner filter (the `user` policy scopes every read; `directus.py`
 is the only Directus client, list queries go in a `SEARCH` body so they reach no URL log).
-Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
+Tools (`server.py` read tools, `create_tools.py` create tools; `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
 `list_dictations` (cursor = last `date_created` + count of rows already returned at that
 instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
-(`transcripts.text` in ranges ≤ 32768). Logs: `tool= user= outcome= ids= ms=`, never text,
+(`transcripts.text` in ranges ≤ 32768), `create_dictation_from_text` (recording `live`/`done`
+and its transcript as the caller, `title_auto` without title), `create_audio_upload` and
+`get_audio_link` (`links.py`: HMAC-signed 10-minute links under `/mcp/links/`, secret
+`DICTATIONS_MCP_LINK_SECRET`, base `DICTATIONS_MCP_PUBLIC_URL`; grant = user + their Directus
+client held in memory per link id, single instance assumed; upload links single use, size
+cap + magic bytes before storing, then file upload + recording `pending` as the user for the
+project worker; proxied by `server/routes/mcp/links/[...path].ts`). Logs: `tool= user= outcome= ids= ms=`, never text,
 titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa test-mcp`)
 start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
 compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running
