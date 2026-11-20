@@ -30,10 +30,19 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 |------|-----------------|
 | `list_dictations(limit≤50, cursor, status?, review_status?, since?)` | Newest first: id, title, created, duration, language, status, review status, text length. `next_cursor` for the next page. |
 | `search_dictations(query, limit≤50)` | Dictations whose title or transcript text contains the query (case-insensitive), with `matched_in`. No text. |
-| `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars`. |
+| `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars` and `text_sha256` (SHA-256 hex of the whole UTF-8 text). |
+| `update_dictation_text(id, text, expected_sha256?)` | Replaces the text the app shows (`transcripts.text`; raw and profile output stay), or creates the transcript when there is none, as the app's editor does. A stale `expected_sha256` → `conflict`, nothing written; while a postprocess profile runs → `busy`. Metadata + new `text_sha256`. |
+| `rename_dictation(id, title)` | Sets the trimmed title and `title_auto=false` (no automatic title replaces it). Metadata. |
+| `set_review_status(id, "editing"\|"ready")` | Sets the review status. Metadata. |
+| `delete_dictation(id, confirm)` | Cannot be undone. Without `confirm: true` → `confirm_required`, nothing deleted. Deletes the recording like the app (transcript, corrections and parts cascade; the audio files stay in file storage, which the `user` role cannot delete). Metadata of the deleted dictation. |
 
 Everything a tool returns goes to the model of the client that calls it; the tool
 descriptions say so. Another user's id and a missing id give the same "not found" error.
+Write tools return metadata only, never text. Error codes prefix the tool error text
+(`conflict: …`). The fields each write tool changes are the app's
+(`app/utils/dictationEdit.ts`, `useTranscriptEdit.ts`, `deleteRecording`):
+`shared/dictationEdit.cases.json` drives both `tests/test_edit_tools.py` and the app's
+`test/dictationEdit.spec.ts`.
 
 `tool-inventory.json` lists the tools; regenerate it with
 `uv run python scripts/gen_tool_inventory.py` (`--check` in the tests).

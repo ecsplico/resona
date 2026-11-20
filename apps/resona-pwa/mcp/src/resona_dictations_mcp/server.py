@@ -1,4 +1,4 @@
-"""The dictation tool surface: read access to the calling user's own dictations.
+"""The dictation tool surface: the calling user's own dictations (reads here, writes in ``edit_tools``).
 
 Every tool runs as the caller (``Caller.directus`` carries their Directus token); the
 server has no ownership logic. A dictation is a ``recordings`` row plus its
@@ -7,6 +7,7 @@ Log lines carry the tool name, the user id, row ids and the duration, never text
 """
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import time
@@ -30,6 +31,10 @@ TOOL_NAMES = (
     "list_dictations",
     "search_dictations",
     "get_dictation",
+    "update_dictation_text",
+    "rename_dictation",
+    "set_review_status",
+    "delete_dictation",
 )
 
 INSTRUCTIONS = (
@@ -39,7 +44,9 @@ INSTRUCTIONS = (
     "one dictation's metadata and its text in ranges (follow next_offset until it is "
     "null). Everything these tools return, including dictated text, is sent to the "
     "model of the client that calls them. Dictations kept only in a browser "
-    "(standalone mode) are not reachable."
+    "(standalone mode) are not reachable. update_dictation_text, rename_dictation, "
+    "set_review_status and delete_dictation change a dictation the way the app does; "
+    "deleting cannot be undone."
 )
 
 _SUMMARY_FIELDS = ["id", "title", "date_created", "duration_seconds", "language", "status", "review_status"]
@@ -97,6 +104,11 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
     except (ValueError, binascii.Error, UnicodeDecodeError):
         raise ToolError("cursor must be the next_cursor of an earlier list_dictations page") from None
     return created, skip
+
+
+def text_sha256(text: str) -> str:
+    """SHA-256 hex of the UTF-8 text; a dictation without transcript has the empty text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _iso(value: str) -> datetime:
@@ -262,8 +274,9 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
     ) -> dict[str, Any]:
         """Read one dictation: its metadata and one range of its text, the text the app
         shows (a postprocess profile's output when one was applied, see applied_profile).
-        Follow next_offset until it is null; total_chars is the whole length. The text
-        is sent to the model of the client that calls this tool."""
+        Follow next_offset until it is null; total_chars is the whole length and
+        text_sha256 identifies the whole text (expected_sha256 of update_dictation_text).
+        The text is sent to the model of the client that calls this tool."""
         caller = caller_for(ctx)
 
         async def call() -> tuple[dict[str, Any], list[str]]:
@@ -283,9 +296,12 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
                 "offset": offset,
                 "next_offset": end if end < len(text) else None,
                 "total_chars": len(text),
+                "text_sha256": text_sha256(text),
             }
             return result, [id]
 
         return await _as_caller("get_dictation", caller, call)
 
+    from . import edit_tools
+    edit_tools.register(server, caller_for)
     return server

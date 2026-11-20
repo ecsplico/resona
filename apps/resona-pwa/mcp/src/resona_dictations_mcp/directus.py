@@ -67,6 +67,8 @@ class Directus:
             raise NotFound()
         if resp.status_code >= 500:
             raise DirectusUnavailable()
+        if resp.status_code == 204:
+            return None
         if resp.status_code != 200:
             raise DirectusError(resp.status_code)
         return resp.json()["data"]
@@ -99,3 +101,16 @@ class Directus:
 
     async def item(self, collection: str, item_id: str, *, fields: list[str]) -> dict[str, Any]:
         return await self._request("GET", f"/items/{collection}/{item_id}", params={"fields": ",".join(fields)})
+
+    async def create(self, collection: str, data: dict[str, Any], *, fields: list[str]) -> dict[str, Any]:
+        """Create one row; returns ``fields`` of it."""
+        return await self._request("POST", f"/items/{collection}", params={"fields": ",".join(fields)}, json=data)
+
+    async def update(self, collection: str, item_id: str, data: dict[str, Any], *, fields: list[str]) -> dict[str, Any]:
+        """Patch one row; returns ``fields`` of the updated row."""
+        return await self._request(
+            "PATCH", f"/items/{collection}/{item_id}", params={"fields": ",".join(fields)}, json=data)
+
+    async def delete(self, collection: str, item_id: str) -> None:
+        """Delete one row (Directus answers 204)."""
+        await self._request("DELETE", f"/items/{collection}/{item_id}")
