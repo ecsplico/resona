@@ -36,7 +36,7 @@ from resona_job_core import (
 )
 from resona_job_core.features import required_features, worker_features
 
-from . import clock, releases, storage
+from . import clock, releases, storage, webhooks
 from .auth import hash_token
 from .db.models import Job, JobStatus, Organization, Worker
 from .settings_store import current_settings
@@ -184,7 +184,8 @@ def _settings_or_none(session: Session, organization_id: str) -> OrganizationSet
     return settings
 
 
-def _finish_terminal(job: Job, status: JobStatus, code: str, now: datetime) -> None:
+def _finish_terminal(session: Session, job: Job, status: JobStatus, code: str, now: datetime) -> None:
+    """End ``job`` as failed or cancelled and queue its webhook event in the caller's transaction."""
     job.status = status
     job.error_code = code
     job.completed_at = now
@@ -192,9 +193,10 @@ def _finish_terminal(job: Job, status: JobStatus, code: str, now: datetime) -> N
     job.lease_until = None
     job.input_deleted = True
     job.updated_at = now
+    webhooks.enqueue_job_event(session, job, now)
 
 
-def _release(job: Job, now: datetime, *, code: str, retryable: bool) -> None:
+def _release(session: Session, job: Job, now: datetime, *, code: str, retryable: bool) -> None:
     """Requeue a released assignment, or fail the job when no attempt or time remains."""
     deadline_passed = _utc(job.deadline_at) <= now
     if retryable and not deadline_passed and job.attempt < job.max_attempts:
@@ -211,7 +213,7 @@ def _release(job: Job, now: datetime, *, code: str, retryable: bool) -> None:
         final = "attempts_exhausted"
     else:
         final = code
-    _finish_terminal(job, JobStatus.FAILED, final, now)
+    _finish_terminal(session, job, JobStatus.FAILED, final, now)
 
 
 def _remove_input(storage_id: str, job_id: int) -> None:
@@ -226,17 +228,21 @@ def purge_job(session: Session, job: Job) -> None:
     A pending or terminal job's row goes at once. A processing job is cancelled
     first: its lease is fenced, its row kept as an invisible ``deleted`` tombstone
     until the replaced lease would have expired (so a late worker cannot resurrect
-    it), and :func:`sweep_leases` purges it afterwards.
+    it), and :func:`sweep_leases` purges it afterwards. A pending or processing job
+    ends ``cancelled`` (code ``deleted``) here, so its webhook event is written once;
+    the later tombstone purge writes none.
     """
     if job.status == JobStatus.PROCESSING:
         lease_until = job.lease_until
-        _finish_terminal(job, JobStatus.CANCELLED, JOB_DELETED, _now())
+        _finish_terminal(session, job, JobStatus.CANCELLED, JOB_DELETED, _now())
         job.cancel_requested = True
         job.error_message = "deleted by client"
         job.lease_until = lease_until
         session.add(job)
-    else:
-        session.delete(job)
+        return
+    if job.status == JobStatus.PENDING:
+        _finish_terminal(session, job, JobStatus.CANCELLED, JOB_DELETED, _now())
+    session.delete(job)
 
 
 def _accepted_duplicate(job: Job, lease: LeaseRef, sha256: str) -> None:
@@ -590,6 +596,7 @@ def finish_result(session: Session, lease: LeaseRef, *, sha256: str, temp_path: 
         job.input_deleted = True
         job.updated_at = now
         session.add(job)
+        webhooks.enqueue_job_event(session, job, now)
     _remove_input(storage_id, lease.job_id)
     return "completed"
 
@@ -621,9 +628,9 @@ def fail_job(
         job = _lease_job(session, lease, allow_cancel=True)
         job.error_message = message[:MAX_MESSAGE_CHARS]
         if job.cancel_requested:
-            _finish_terminal(job, JobStatus.CANCELLED, code, now)
+            _finish_terminal(session, job, JobStatus.CANCELLED, code, now)
         else:
-            _release(job, now, code=code, retryable=retryable)
+            _release(session, job, now, code=code, retryable=retryable)
         session.add(job)
         status = job.status.value
     if status in (JobStatus.FAILED.value, JobStatus.CANCELLED.value):
@@ -644,22 +651,22 @@ def sweep_leases(session: Session) -> int:
             if job.lease_until is None or _utc(job.lease_until) > now:
                 continue
             if job.cancel_requested:
-                _finish_terminal(job, JobStatus.CANCELLED, "cancelled", now)
+                _finish_terminal(session, job, JobStatus.CANCELLED, "cancelled", now)
             else:
-                _release(job, now, code="lease_expired", retryable=True)
+                _release(session, job, now, code="lease_expired", retryable=True)
             session.add(job)
             changed += 1
             if job.status in (JobStatus.FAILED, JobStatus.CANCELLED):
                 ended.append((storage_ids[job.organization_id], job.id))
         for job in session.exec(select(Job).where(Job.status == JobStatus.PENDING)).all():
             if _utc(job.deadline_at) <= now:
-                _finish_terminal(job, JobStatus.FAILED, "deadline_exceeded", now)
+                _finish_terminal(session, job, JobStatus.FAILED, "deadline_exceeded", now)
             elif not job.private:
                 if job.organization_id not in settings:
                     settings[job.organization_id] = _settings_or_none(session, job.organization_id)
                 if not cloud_denied(job, settings[job.organization_id]):
                     continue
-                _finish_terminal(job, JobStatus.FAILED, "policy_denied", now)
+                _finish_terminal(session, job, JobStatus.FAILED, "policy_denied", now)
                 job.error_message = "cloud processing is disabled for this organization"
             else:
                 continue

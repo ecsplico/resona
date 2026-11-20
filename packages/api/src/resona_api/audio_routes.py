@@ -197,6 +197,7 @@ def _job_request(fields: dict[str, str], upload_id: str) -> tuple[jobs_routes.Jo
         "model": None if model in _DEFAULT_MODEL_ALIASES else model,
         "profile": fields.get("profile") or None,
         "private": _form_bool(fields.get("private"), default=True),
+        "webhook": (fields.get("webhook") or "").strip() or None,
     }
     if fields.get("diarize") is not None:
         # Part of the request, so the Idempotency-Key hash tells a diarized replay apart;
@@ -289,7 +290,8 @@ async def create_transcription(
     ``response_format`` (json|text|verbose_json), ``prompt``/``temperature``
     (ignored) and Resona ``engine``, ``execution_profile``, ``profile``,
     ``private`` (default true), ``diarize`` (label speakers, needs a worker that
-    diarizes; default: the execution profile's ``diarize``). Admission is identical to
+    diarizes; default: the execution profile's ``diarize``), ``webhook`` (name of an
+    active webhook endpoint notified when the job ends). Admission is identical to
     ``POST /v1/jobs``.
     """
     organization_id = principal.organization_id
