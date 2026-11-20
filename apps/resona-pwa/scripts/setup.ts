@@ -57,6 +57,7 @@ function genSecret(key: string, bytes: number): void {
 
 genSecret("DIRECTUS_TOKEN", 24); // worker static token (pinned by bootstrap)
 genSecret("DIRECTUS_SECRET", 32); // Directus instance secret (JWT signing)
+genSecret("DICTATIONS_MCP_LINK_SECRET", 32); // dictation MCP upload/audio link signing
 
 const args = process.argv.slice(2);
 const flags = new Set(["--setup-only", "--down"]);

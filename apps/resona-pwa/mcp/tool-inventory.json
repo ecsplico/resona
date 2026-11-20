@@ -1,10 +1,22 @@
 [
   {
+    "name": "create_audio_upload",
+    "deferred": false
+  },
+  {
+    "name": "create_dictation_from_text",
+    "deferred": false
+  },
+  {
     "name": "delete_dictation",
     "deferred": false
   },
   {
     "name": "delete_document",
+    "deferred": false
+  },
+  {
+    "name": "get_audio_link",
     "deferred": false
   },
   {

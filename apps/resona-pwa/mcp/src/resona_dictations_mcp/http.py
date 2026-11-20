@@ -8,6 +8,9 @@ Protocol sessions are bound to the token hash that opened them (the SDK answers 
 for a session id presented with another token). Host/Origin headers are checked
 against ``DICTATIONS_MCP_ALLOWED_HOSTS`` / ``DICTATIONS_MCP_ALLOWED_ORIGINS`` before
 authentication. Nothing here logs a token or a request body.
+
+``/mcp/links/…`` (``links.py``) takes no bearer token: a signed link is the credential
+there, and the user's Directus client is held server-side for the link's lifetime.
 """
 import contextlib
 import hashlib
@@ -31,13 +34,15 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .directus import Directus, DirectusError, DirectusUnavailable, new_http_client
+from .links import DEFAULT_MAX_UPLOAD_BYTES, LINKS_PATH, Links
 from .server import Caller, build_server
 
 log = logging.getLogger(__name__)
 
 MCP_PATH = "/mcp"
-# Read tools only: requests are small JSON-RPC envelopes.
-MAX_REQUEST_BODY_BYTES = 256 * 1024
+# JSON-RPC envelopes; the largest is create_dictation_from_text's text (≤ 200000 chars,
+# escaped). Audio never comes this way (upload links).
+MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
 DEFAULT_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*", "127.0.0.1", "localhost"]
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
 
@@ -161,8 +166,14 @@ def create_app(
     allowed_hosts: Optional[list[str]] = None,
     allowed_origins: Optional[list[str]] = None,
     token_ttl: float = 30.0,
+    link_secret: Optional[str] = None,
+    public_url: Optional[str] = None,
+    max_upload_bytes: Optional[int] = None,
 ) -> ASGIApp:
-    """The ASGI app serving Streamable HTTP at ``/mcp``; serve it as the top-level app."""
+    """The ASGI app serving Streamable HTTP at ``/mcp`` and the links under
+    ``/mcp/links/``; serve it as the top-level app. Unset arguments come from the
+    environment (``DICTATIONS_MCP_LINK_SECRET``, ``DICTATIONS_MCP_PUBLIC_URL``, …)."""
+    links = _links(link_secret, public_url, max_upload_bytes)
     url = directus_url or config("DIRECTUS_URL", default="http://127.0.0.1:7700")
     hosts = allowed_hosts if allowed_hosts is not None else (
         config("DICTATIONS_MCP_ALLOWED_HOSTS", default="", cast=Csv()) or DEFAULT_ALLOWED_HOSTS
@@ -187,7 +198,7 @@ def create_app(
             token_rejected=lambda: verifier.forget(token),
         )
 
-    app: Starlette = build_server(caller_for).streamable_http_app(
+    app: Starlette = build_server(caller_for, links).streamable_http_app(
         streamable_http_path=MCP_PATH,
         transport_security=security,
         max_request_body_size=MAX_REQUEST_BODY_BYTES,
@@ -203,4 +214,44 @@ def create_app(
                 await http.aclose()
 
     app.router.lifespan_context = lifespan
-    return BearerAuth(app, verifier, security)
+    return LinkRoutes(BearerAuth(app, verifier, security), links, security)
+
+
+def _links(secret: Optional[str], public_url: Optional[str], max_upload_bytes: Optional[int]) -> Optional[Links]:
+    """The link issuer, or None without a link secret (link routes and tools then refuse)."""
+    secret = secret if secret is not None else config("DICTATIONS_MCP_LINK_SECRET", default="")
+    if not secret:
+        log.info("DICTATIONS_MCP_LINK_SECRET is not set: upload and audio links are disabled")
+        return None
+    return Links(
+        secret=secret,
+        public_url=public_url if public_url is not None else config("DICTATIONS_MCP_PUBLIC_URL", default=""),
+        max_upload_bytes=max_upload_bytes if max_upload_bytes is not None else config(
+            "DICTATIONS_MCP_MAX_UPLOAD_BYTES", default=DEFAULT_MAX_UPLOAD_BYTES, cast=int),
+    )
+
+
+class LinkRoutes:
+    """ASGI: ``/mcp/links/…`` goes to the link handler, everything else to ``app``.
+
+    A link is its own credential (no bearer token); Host/Origin are checked like for
+    ``/mcp``. Without links (no secret) the paths are 404."""
+
+    def __init__(self, app: ASGIApp, links: Optional[Links], security: TransportSecuritySettings):
+        self.app = app
+        self.links = links
+        self.security = TransportSecurityMiddleware(security)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith(LINKS_PATH + "/"):
+            await self.app(scope, receive, send)
+            return
+        rejected = await self.security.validate_request(Request(scope), is_post=False)
+        if rejected is not None:
+            await rejected(scope, receive, send)
+            return
+        if self.links is None:
+            await JSONResponse({"error": "links_disabled", "message": "links are not enabled on this server"},
+                               status_code=404)(scope, receive, send)
+            return
+        await self.links(scope, receive, send)
