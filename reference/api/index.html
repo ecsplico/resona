@@ -3424,6 +3424,12 @@
 <td>no</td>
 <td><code>project_id</code>, <code>session_id</code>, <code>source</code> (informational only)</td>
 </tr>
+<tr>
+<td><code>webhook</code></td>
+<td>string</td>
+<td>no</td>
+<td>Name of an unrevoked <a href="#webhook-endpoints-role-org_admin">webhook endpoint</a> of the organization, notified when the job completes, fails or is cancelled; unknown or revoked → <code>422 unknown_webhook</code>. Production jobs only (<code>422 invalid_request</code> otherwise). Part of the <code>Idempotency-Key</code> match only when set. Not part of the execution snapshot</td>
+</tr>
 </tbody>
 </table>
 <p>Returns <code>202 {"job_id": 42, "status": "pending"}</code>. The <code>Idempotency-Key</code> header is required: the same key with the same request returns the same job; the same key with a different request returns <code>409 idempotency_conflict</code>.</p>
@@ -3536,7 +3542,7 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>POST   /v1/jobs/{id}/cancel                      → JobView
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>DELETE /v1/jobs/{id}                             → 204
 </code></pre></div>
-<p>JobView fields: <code>job_id</code>, <code>kind</code>, <code>status</code>, <code>queue_reason</code> (null unless <code>pending</code>), <code>private</code>, <code>execution_profile</code>, <code>candidate</code>, <code>attempt</code>, <code>error</code> (<code>{code, message}</code> or null), <code>result_available</code>, <code>created_at</code>, <code>updated_at</code>, <code>deadline_at</code>.</p>
+<p>JobView fields: <code>job_id</code>, <code>kind</code>, <code>status</code>, <code>queue_reason</code> (null unless <code>pending</code>), <code>private</code>, <code>execution_profile</code>, <code>candidate</code>, <code>attempt</code>, <code>error</code> (<code>{code, message}</code> or null), <code>result_available</code>, <code>created_at</code>, <code>updated_at</code>, <code>deadline_at</code>, <code>webhook</code> (endpoint name or null; a later revoked endpoint keeps its name here).</p>
 <p><code>queue_reason</code> of a pending job:</p>
 <table>
 <thead>
@@ -3604,21 +3610,25 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <p><code>secret</code> is the signing secret (<code>whsec_</code> + 32 random bytes in base64). It appears only in the create and rotate responses: store it then, listings never contain it. Rotation replaces it at once. The hub keeps it in plaintext in its database, because signing needs it.</p>
 <p>URL rules (<code>422 invalid_webhook_url</code>): scheme <code>https</code>, no user or password, at most 2048 characters, and the host must resolve and must not resolve to a loopback, private (RFC 1918 and similar), link-local or unspecified address. When the hub operator sets <code>RESONA_WEBHOOK_ALLOW_PRIVATE=true</code>, such internal hosts are accepted, and for them also <code>http</code>; <code>http</code> to a public host is never accepted.</p>
 <p>Other errors: <code>422 invalid_webhook_name</code>, <code>409 webhook_exists</code> (an unrevoked endpoint has that name), <code>404 webhook_not_found</code> (unknown or revoked). <code>resona-admin restore</code> revokes every restored endpoint; register them again afterwards.</p>
+<p>Job events: a production job created with <code>webhook</code> (<code>POST /v1/jobs</code>, or the <code>webhook</code> form field of <code>/v1/audio/transcriptions</code>) gets one outbox row (<code>WebhookDelivery</code>) in the same transaction that makes it <code>completed</code>, <code>failed</code> or <code>cancelled</code>, deleting a pending or processing job included (<code>cancelled</code>, <code>error_code: deleted</code>); the later purge of a deleted job's tombstone writes none, nor do retries that requeue the job. An endpoint revoked before the job ends gets no event. Evaluation and testbench jobs never notify. The payload (<code>resona_job_core.webhooks.JobEvent</code>) carries identifiers only, never content or error messages:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;job.completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;error_code&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;finished_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-11-20T12:00:00Z&quot;</span><span class="p">}</span>
+</code></pre></div>
+<p><code>type</code> is <code>job.completed</code>, <code>job.failed</code> or <code>job.cancelled</code>; <code>error_code</code> is the job's error code (null when completed). Signatures follow Standard Webhooks (<code>resona_job_core.webhooks.sign</code>: <code>v1,</code> + base64 HMAC-SHA256 over <code>&lt;msg_id&gt;.&lt;timestamp&gt;.&lt;body&gt;</code>, keyed with the base64-decoded part of the <code>whsec_</code> secret).</p>
 <hr />
 <h3 id="management-v1admin-roles-org_admin-hub_operator">Management (<code>/v1/admin</code>, roles <code>org_admin</code>, <code>hub_operator</code>)<a class="headerlink" href="#management-v1admin-roles-org_admin-hub_operator" title="Permanent link">&para;</a></h3>
 <p>An org admin manages only its own organization: any other <code>{org}</code> returns <code>404 organization_not_found</code>. A hub operator manages every organization. Worker and credential IDs of another organization return <code>404</code> (<code>worker_not_found</code>, <code>credential_not_found</code>), never <code>403</code>. Other roles get <code>403</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>GET  /v1/admin/me                                        → {role, organization_id, credential_id}
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>GET  /v1/admin/organizations                             → {items: [{id, created_at}]}  (org admin: own only)
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>POST /v1/admin/organizations          {id}               → 201 {id, created_at}  (hub_operator only; 409 conflict if it exists)
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>GET  /v1/admin/organizations/{org}/workers              → {items: [Worker]}  (active first, then by name)
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>POST /v1/admin/organizations/{org}/workers/{id}/approve {private: bool} → Worker
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>POST /v1/admin/organizations/{org}/workers/{id}/revoke  → Worker  (idempotent)
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>GET  /v1/admin/organizations/{org}/credentials          → {items: [{id, role, worker_id, created_at, revoked_at}]}  (newest first)
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>POST /v1/admin/organizations/{org}/credentials  {role: &quot;client&quot;|&quot;org_admin&quot;} → 201 {id, role, token}
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>POST /v1/admin/organizations/{org}/credentials/{id}/revoke → credential item
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>GET  /v1/admin/organizations/{org}/jobs?cursor=&amp;limit=  → same page as GET /v1/jobs (metadata only)
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>GET  /v1/admin/organizations/{org}/settings             → {revision, settings}  (read-only)
-<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>GET  /v1/admin/organizations/{org}/baselines            → {items: [...], approved_releases: [...]}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>GET  /v1/admin/me                                        → {role, organization_id, credential_id}
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>GET  /v1/admin/organizations                             → {items: [{id, created_at}]}  (org admin: own only)
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>POST /v1/admin/organizations          {id}               → 201 {id, created_at}  (hub_operator only; 409 conflict if it exists)
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>GET  /v1/admin/organizations/{org}/workers              → {items: [Worker]}  (active first, then by name)
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>POST /v1/admin/organizations/{org}/workers/{id}/approve {private: bool} → Worker
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>POST /v1/admin/organizations/{org}/workers/{id}/revoke  → Worker  (idempotent)
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>GET  /v1/admin/organizations/{org}/credentials          → {items: [{id, role, worker_id, created_at, revoked_at}]}  (newest first)
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>POST /v1/admin/organizations/{org}/credentials  {role: &quot;client&quot;|&quot;org_admin&quot;} → 201 {id, role, token}
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>POST /v1/admin/organizations/{org}/credentials/{id}/revoke → credential item
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>GET  /v1/admin/organizations/{org}/jobs?cursor=&amp;limit=  → same page as GET /v1/jobs (metadata only)
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>GET  /v1/admin/organizations/{org}/settings             → {revision, settings}  (read-only)
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>GET  /v1/admin/organizations/{org}/baselines            → {items: [...], approved_releases: [...]}
 </code></pre></div>
 <p>Worker fields: <code>id</code>, <code>name</code>, <code>approved</code>, <code>approved_private</code>, <code>online</code> (seen within 90 s and not revoked), <code>last_seen</code>, <code>runtime_version</code>, <code>revoked</code>, <code>reported_capabilities</code>, <code>approved_capabilities</code>. Approval grants exactly the worker's reported capabilities: none reported → <code>409 no_reported_capabilities</code> (run the worker once after <code>resona-worker prepare</code>); a revoked worker → <code>409 conflict</code>. Partial approval stays with <code>resona-admin worker approve --capabilities-file</code>.</p>
 <p>An issued token appears only in the <code>201</code> response; listings never contain tokens or hashes. Any other role in the body (including <code>hub_operator</code>) → <code>422</code>. Revoking your own credential → <code>409 cannot_revoke_self</code>; a worker credential → <code>409 use_worker_revoke</code> (revoke the worker instead).</p>
@@ -3629,31 +3639,31 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <hr />
 <h3 id="engine-catalogue">Engine catalogue<a class="headerlink" href="#engine-catalogue" title="Permanent link">&para;</a></h3>
 <h4 id="list-engines">List engines<a class="headerlink" href="#list-engines" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>GET /v1/engines
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>GET /v1/engines
 </code></pre></div>
 <p>Returns the engines the caller's organization can use. Nothing is probed over the network. An audio/document engine appears when a candidate tuple of one of the organization's execution profiles is both approved for and reported as tested (prepared) by at least one approved, unrevoked worker of the organization. Cloud ASR candidates (deepgram, openai, elevenlabs) appear only when the organization has <code>cloud_enabled=true</code> and an approved <code>cloud-asr:&lt;provider&gt;</code> endpoint, and only through a non-private worker. Synchronous TTS engines of <code>POST /v1/audio/speech</code> follow the same cloud rule.</p>
 <p>Response:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="p">{</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">      </span><span class="nt">&quot;job_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">],</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">],</span>
-<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="w">      </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="w">        </span><span class="p">{</span>
-<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="w">          </span><span class="nt">&quot;candidate&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">                        </span><span class="nt">&quot;model_revision&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;accelerator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ocr_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">},</span>
-<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="w">          </span><span class="nt">&quot;execution_profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mac-private&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;private-auto&quot;</span><span class="p">]</span>
-<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="w">        </span><span class="p">}</span>
-<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="w">      </span><span class="p">]</span>
-<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="w">  </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span>
-<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">      </span><span class="nt">&quot;job_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">],</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">],</span>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">      </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">          </span><span class="nt">&quot;candidate&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="w">                        </span><span class="nt">&quot;model_revision&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;accelerator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ocr_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">},</span>
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">          </span><span class="nt">&quot;execution_profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mac-private&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;private-auto&quot;</span><span class="p">]</span>
+<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">      </span><span class="p">]</span>
+<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a><span class="w">  </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span>
+<a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="p">}</span>
 </code></pre></div>
 <table>
 <thead>
@@ -3710,8 +3720,8 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <hr />
 <h3 id="audio-v1-openai-compatible">Audio (v1 — OpenAI-compatible)<a class="headerlink" href="#audio-v1-openai-compatible" title="Permanent link">&para;</a></h3>
 <h4 id="transcribe">Transcribe<a class="headerlink" href="#transcribe" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>POST /v1/audio/transcriptions
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>Content-Type: multipart/form-data
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>POST /v1/audio/transcriptions
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>Content-Type: multipart/form-data
 </code></pre></div>
 <p>OpenAI-compatible speech-to-text, implemented as an adapter onto the job path. The hub never runs
 STT itself: it creates an audio job with the same admission and policy checks as <code>POST /v1/jobs</code>,
@@ -3793,6 +3803,12 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 <td>no</td>
 <td>Default: the execution profile's <code>diarize</code> setting (off unless the organization turned it on); <code>true</code> labels speakers (<code>AudioOptions.diarize</code>), <code>false</code> turns it off: <code>verbose_json</code> segments carry <code>speaker</code>, the text has <code>**Sprecher N:**</code>/<code>**Speaker N:**</code> paragraphs. Part of the request an <code>Idempotency-Key</code> is matched against. A hub predating diarization ignores the field (unlabelled result, no error). <a href="../../guide/cli/#diarization-limits">Limits</a></td>
 </tr>
+<tr>
+<td><code>webhook</code></td>
+<td>string</td>
+<td>no</td>
+<td>Name of an unrevoked webhook endpoint notified when the job ends (<code>422 unknown_webhook</code> otherwise); part of the <code>Idempotency-Key</code> match only when sent</td>
+</tr>
 </tbody>
 </table>
 <p>Errors:</p>
@@ -3802,39 +3818,39 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 <li>Timeout: <code>504</code> with <code>Location: /v1/jobs/&lt;job_id&gt;</code>; the job keeps running and its result can be
   fetched from the job routes.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;timeout&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;timeout&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">}</span>
 </code></pre></div>
 <p>With the Python client, <code>ResonaClient.create_transcription(...)</code> raises <code>SyncWaitTimeout</code> (with
 <code>.job_id</code>) on <code>504</code>.</p>
 <p><code>response_format</code> responses:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1">// json (default)</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1">// text</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="err">Das</span><span class="w"> </span><span class="err">is</span><span class="kc">t</span><span class="w"> </span><span class="err">ei</span><span class="kc">n</span><span class="w"> </span><span class="err">Tes</span><span class="kc">t</span><span class="err">.</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1">// verbose_json</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="p">{</span>
-<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span>
-<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}]</span>
-<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="p">}</span>
-<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>
-<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="c1">// verbose_json with diarize=true: each segment is one speaker section</span>
-<a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="p">{</span>
-<a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;**Sprecher 1:** Guten Tag.\n\n**Sprecher 2:** Hallo.&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span>
-<a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Guten Tag.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
-<a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hallo.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
-<a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1">// json (default)</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1">// text</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="err">Das</span><span class="w"> </span><span class="err">is</span><span class="kc">t</span><span class="w"> </span><span class="err">ei</span><span class="kc">n</span><span class="w"> </span><span class="err">Tes</span><span class="kc">t</span><span class="err">.</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1">// verbose_json</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="p">{</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}]</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="p">}</span>
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a><span class="c1">// verbose_json with diarize=true: each segment is one speaker section</span>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="p">{</span>
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;**Sprecher 1:** Guten Tag.\n\n**Sprecher 2:** Hallo.&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span>
+<a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Guten Tag.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hallo.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
+<a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-19-24" name="__codelineno-19-24" href="#__codelineno-19-24"></a><span class="p">}</span>
 </code></pre></div>
 <h4 id="synthesise-speech">Synthesise speech<a class="headerlink" href="#synthesise-speech" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>POST /v1/audio/speech
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>Content-Type: application/json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>POST /v1/audio/speech
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>Content-Type: application/json
 </code></pre></div>
 <p>OpenAI-compatible text-to-speech. Only cloud engines support TTS; requesting a local-only engine returns <code>400</code>.</p>
 <table>
@@ -3900,26 +3916,26 @@ of steps (replacements, LLM formatting, structured extraction). Named profiles a
 replacements automatically.</p>
 <p>See <a href="../../guide/postprocessing/">Postprocessing Profiles</a> for the profile file format.</p>
 <h4 id="list-profiles">List profiles<a class="headerlink" href="#list-profiles" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>GET /profiles/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>GET /profiles/
 </code></pre></div>
 <p>Returns an array of profile summaries:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="p">[</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bundled German medical dictation defaults&quot;</span><span class="p">},</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with LLM formatting&quot;</span><span class="p">}</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="p">[</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bundled German medical dictation defaults&quot;</span><span class="p">},</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with LLM formatting&quot;</span><span class="p">}</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="p">]</span>
 </code></pre></div>
 <h4 id="get-profile">Get profile<a class="headerlink" href="#get-profile" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>GET /profiles/{name}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>GET /profiles/{name}
 </code></pre></div>
 <p>Returns the full profile JSON. Returns <code>404</code> if not found.</p>
 <h4 id="create-or-replace-profile">Create or replace profile<a class="headerlink" href="#create-or-replace-profile" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>PUT /profiles/{name}
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>Content-Type: application/json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>PUT /profiles/{name}
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>Content-Type: application/json
 </code></pre></div>
 <p>Upload a profile object. The <code>name</code> field in the body must match the URL <code>{name}</code>. Returns the
 stored profile.</p>
 <h4 id="delete-profile">Delete profile<a class="headerlink" href="#delete-profile" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>DELETE /profiles/{name}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>DELETE /profiles/{name}
 </code></pre></div>
 <p>Returns <code>{"ok": true}</code>. Returns <code>404</code> if not found.</p>
 <hr />
@@ -4034,7 +4050,7 @@ stored profile.</p>
 </tbody>
 </table>
 <p>Error body:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;human-readable message&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;human-readable message&quot;</span><span class="p">}</span>
 </code></pre></div>
 
 
