@@ -627,6 +627,8 @@
       
         
       
+        
+      
     
     
     
@@ -830,6 +832,34 @@
     
   
     MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/webhooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Webhooks
   
 
     
@@ -1601,6 +1631,17 @@
     <span class="md-ellipsis">
       
         Job states
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#webhook-outbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook outbox
       
     </span>
   </a>
@@ -2661,6 +2702,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#webhook-outbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook outbox
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#retention" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2724,9 +2776,13 @@
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  runs the engine in an isolated subprocess, heartbeats every 30 s
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  asks /policy right before any external stage
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  uploads JobResult (POST /v1/workers/jobs/{id}/result)
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>Client → GET /v1/jobs/{id}          → JobView {status: &quot;completed&quot;, result_available: true}
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>Client → GET /v1/jobs/{id}/result   → {raw_text, markdown, segments, pages, provenance, ...}
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    hub: job → completed (+ webhook outbox row, same transaction)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>hub webhook dispatcher (only for jobs created with `webhook`):
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>  POST signed {type, job_id, kind, status, error_code, finished_at} → endpoint URL
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>Client → GET /v1/jobs/{id}          → JobView {status: &quot;completed&quot;, result_available: true}
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>Client → GET /v1/jobs/{id}/result   → {raw_text, markdown, segments, pages, provenance, ...}
 </code></pre></div>
 <h3 id="job-states">Job states<a class="headerlink" href="#job-states" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pending → processing → completed | failed | cancelled
@@ -2764,6 +2820,9 @@
 <p>If a lease expires (worker offline or asleep), the job returns to <code>pending</code> and another worker can claim it. A late result from the old lease gets <code>409 stale_lease</code>. Execution is at-least-once; the hub accepts one result.</p>
 <p>Private jobs go only to workers that an admin approved with <code>resona-admin worker approve --private</code>; cloud opt-in jobs (<code>private: false</code>) go only to workers approved with <code>--non-private</code>, so a private execution environment never receives cloud work. A worker cannot change its approval through its heartbeat, and an OOM failure withdraws a tuple only on that worker, never its hub approval. A job whose endpoint is assigned to one worker (its secret file lives there) is claimed only by that worker. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.</p>
 <p><code>DELETE /v1/jobs/{id}</code> in any state removes the job and its files at once; for a processing job it first fences the lease, so the worker's next call gets <code>409 stale_lease</code> and its output is rejected.</p>
+<h3 id="webhook-outbox">Webhook outbox<a class="headerlink" href="#webhook-outbox" title="Permanent link">&para;</a></h3>
+<p>A job admitted with <code>webhook</code> (an endpoint name, production jobs only) records that endpoint. Every transition into a terminal state writes the job's event into the outbox table <code>WebhookDelivery</code> in the <strong>same transaction</strong> that changes the status: the accepted result (<code>completed</code>), a worker failure or a lease-sweep failure such as <code>attempts_exhausted</code> or <code>deadline_exceeded</code> (<code>failed</code>), a cancel or a delete of a pending or processing job (<code>cancelled</code>). So a job never ends without its event, and an event never exists for a status change that was rolled back. A lease expiry that requeues the job is not terminal and writes nothing; neither does purging a deleted job's tombstone later. An endpoint revoked before the job ends gets no row.</p>
+<p>Sending happens afterwards and outside that transaction: the hub's dispatcher loop polls the outbox about once a second, signs each due row (Standard Webhooks headers) and POSTs it, retrying failures with backoff until a <code>2xx</code>, 24 hours or revocation of the endpoint. A slow or unreachable receiver therefore never delays or blocks a job transition, and a hub restart resumes pending deliveries (at least once, same <code>webhook-id</code>). The payload carries identifiers only; the result stays behind <code>GET /v1/jobs/{id}/result</code>. Receiver side: <a href="../../guide/webhooks/">Webhooks guide</a>; wire contract: <a href="../../reference/api/#webhook-endpoints-role-org_admin">HTTP API</a>.</p>
 <h3 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">&para;</a></h3>
 <p>Content is stored as files under <code>/data/organizations/&lt;storage_id&gt;/jobs/&lt;job_id&gt;/</code>, not in the database. A maintenance loop on the hub applies retention:</p>
 <ul>

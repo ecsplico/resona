@@ -627,6 +627,8 @@
       
         
       
+        
+      
     
     
     
@@ -830,6 +832,34 @@
     
   
     MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/webhooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Webhooks
   
 
     
@@ -2852,7 +2882,7 @@
 <tr>
 <td><code>RESONA_WEBHOOK_ALLOW_PRIVATE</code></td>
 <td><code>false</code></td>
-<td>Allow webhook endpoint URLs whose host is a loopback, private or link-local address, and plain <code>http</code> to such hosts. Off: <code>https</code> to public hosts only (see <a href="../../reference/api/#webhook-endpoints-role-org_admin">Webhook endpoints</a>)</td>
+<td>Allow webhook endpoint URLs whose host is a loopback, private or link-local address, and plain <code>http</code> to such hosts; checked at registration and before every delivery attempt. Off: <code>https</code> to public hosts only (see <a href="../../guide/webhooks/#private-addresses">Webhooks guide</a> and <a href="../../reference/api/#webhook-endpoints-role-org_admin">Webhook endpoints</a>). The only webhook env var the hub reads</td>
 </tr>
 <tr>
 <td><code>LOGLEVEL</code></td>

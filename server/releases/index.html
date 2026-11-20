@@ -627,6 +627,8 @@
       
         
       
+        
+      
     
     
     
@@ -830,6 +832,34 @@
     
   
     MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/webhooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Webhooks
   
 
     
@@ -1302,6 +1332,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Release pipeline (.github/workflows/release.yml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#npm-ecsplicoresona-hub-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        npm: @ecsplico/resona-hub-client
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2684,6 +2731,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Release pipeline (.github/workflows/release.yml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#npm-ecsplicoresona-hub-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        npm: @ecsplico/resona-hub-client
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2776,9 +2840,11 @@ whatever the index serves that day (observed: a newer <code>huggingface_hub</cod
 <p>On a <code>v*</code> tag: version check, privacy/lease/release/update tests, <code>tool-inventory.json</code> check →
 <code>uv build --all-packages</code> → hub CPU, worker CPU and worker CUDA images (plus legacy engine images), pushed by version tag and recorded by digest →
 <code>resona eval --profile cpu-private</code> on <code>eval/corpus</code> against <code>eval/baselines.json</code> → manifest + draft GitHub release
-with wheels, manifest, <code>worker-constraints.txt</code>, schema and <code>tool-inventory.json</code> as assets.</p>
+with wheels, manifest, <code>worker-constraints.txt</code>, schema and <code>tool-inventory.json</code> as assets. With <code>RESONA_PUBLISH_NPM=true</code>,
+the <code>npm</code> job also publishes the TypeScript hub client <code>clients/hub-ts</code> as <code>@ecsplico/resona-hub-client</code> at the release id.</p>
 <p>Repository variables (all optional): <code>RESONA_IMAGE_NAMESPACE</code> (default <code>ghcr.io/ecsplico</code>, unverified),
 <code>RESONA_PUBLISH_PYPI=true</code> (PyPI trusted publishing; namespace unverified, so GitHub release assets are canonical),
+<code>RESONA_PUBLISH_NPM=true</code> (npm trusted publishing of the hub client, see below),
 <code>RESONA_DISPATCH_MCP_RELEASE=true</code> with repo secrets <code>RELEASE_DISPATCH_APP_ID</code>/<code>RELEASE_DISPATCH_APP_KEY</code> to dispatch
 <code>mcp-release</code> (<code>{mcp: "resona-hub", version, tools}</code>, same shape as <code>skaile-ai/excel-mcp</code>) to <code>skaile-ai/ai-assets</code>, whose
 <code>mcp-release-bump.yml</code> opens the catalog bump PR for <code>mcp/resona-hub/MCP.md</code> and diffs its tool block against <code>tools</code>.
@@ -2786,6 +2852,26 @@ Not to <code>skaile-ai/platform</code>: its <code>mcp-release</code> handler onl
 <code>skaile-release-dispatch</code> GitHub App's id and private key; in <code>skaile-ai</code> they are organization secrets, which this
 <code>ecsplico</code> repository does not inherit, so a <code>skaile-ai</code> org owner must add them here (unset as of 2026-11-01).
 Regenerate the inventory with <code>uv run python scripts/gen_tool_inventory.py</code> after changing MCP tools.</p>
+<h3 id="npm-ecsplicoresona-hub-client">npm: <code>@ecsplico/resona-hub-client</code><a class="headerlink" href="#npm-ecsplicoresona-hub-client" title="Permanent link">&para;</a></h3>
+<p>The <code>npm</code> job (after <code>verify</code> and the <code>eval-cpu</code> gate, like PyPI) installs <code>clients/hub-ts</code> with <code>bun install --frozen-lockfile</code>, checks the generated types
+against <code>contract/openapi.json</code>, typechecks, tests and builds, sets the package version to the release id
+(<code>npm version X.Y.Z --no-git-tag-version</code>; the committed <code>0.0.0</code> is a placeholder) and runs
+<code>npm publish --provenance --access public</code>. It authenticates by OIDC trusted publishing (Node 24, npm ≥ 11.5.1,
+<code>id-token: write</code>); the repository holds no npm token. The package ships only <code>dist/</code>, <code>package.json</code>, <code>README.md</code> and <code>LICENSE</code>.</p>
+<p>One-time human setup, each step on a temporary web login (<code>npm login --auth-type=web</code>, 2FA in the browser), never with a
+stored automation token:</p>
+<ol>
+<li>A new package has to exist before it can be linked: build <code>clients/hub-ts</code> and publish a placeholder prerelease by hand
+   (<code>npm version 0.0.0-bootstrap.0 --no-git-tag-version &amp;&amp; npm publish --access public --tag bootstrap</code>, version change not committed).</li>
+<li>Link it to this workflow:
+   <code>npm trust github @ecsplico/resona-hub-client --file release.yml --repository ecsplico/resona --allow-publish</code>.</li>
+<li>Set the repository variable <code>RESONA_PUBLISH_NPM=true</code>.</li>
+<li>Push a release tag within 2 days: a new link expires unless a CI publish uses it in that time.</li>
+</ol>
+<p>Failures: <code>E404</code> on the <code>PUT</code> = no trust link matches package, repository, workflow file (a renamed <code>release.yml</code> breaks it)
+and environment, or the link expired; recreate it. <code>E403 … bypass two-factor authentication</code> = a token was used instead of
+OIDC; remove it. <code>E403 … cannot publish over the previously published versions</code> = this release id is already published.
+The full checklist is in <code>RELEASING.md</code> at the repository root.</p>
 <h2 id="hub-staging-evaluation-approval">Hub: staging, evaluation, approval<a class="headerlink" href="#hub-staging-evaluation-approval" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>resona-admin<span class="w"> </span>release<span class="w"> </span>stage<span class="w"> </span>--manifest<span class="w"> </span>release-manifest.json<span class="w">   </span><span class="c1"># admits the release for evaluation jobs only</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>resona-admin<span class="w"> </span>release<span class="w"> </span>list<span class="w">                                     </span><span class="c1"># releases and approved (org, profile, platform) tuples</span>
