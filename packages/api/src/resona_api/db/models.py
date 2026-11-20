@@ -148,6 +148,8 @@ class Job(SQLModel, table=True):
     profile: Optional[str] = Field(default=None)
     language: Optional[str] = Field(default=None)
     translate: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    # Unrevoked endpoint the job named at admission (``JobRequest.webhook``); not in the snapshot.
+    webhook_endpoint_id: Optional[str] = Field(default=None)
     created_at: datetime = Field(
         default_factory=lambda: clock.now(),
         sa_column=Column(DateTime, nullable=False),
@@ -364,3 +366,27 @@ class WebhookEndpoint(SQLModel, table=True):
     revoked_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime, nullable=True)
     )
+
+
+class WebhookDelivery(SQLModel, table=True):
+    """Outbox row: one job event for one endpoint, written in the transaction that ended the job.
+
+    ``payload_json`` is a ``resona_job_core.webhooks.JobEvent`` (identifiers only, no
+    content). ``job_id`` has no foreign key: the event outlives the job row. The
+    dispatcher sends rows with ``delivered_at`` NULL once ``next_attempt_at`` passes.
+    """
+
+    __table_args__ = (Index("ix_webhookdelivery_pending", "delivered_at", "next_attempt_at"),)
+
+    id: str = Field(primary_key=True)  # uuid4 hex; the Standard Webhooks ``webhook-id``
+    organization_id: str = Field(foreign_key="organization.id", nullable=False)
+    endpoint_id: str = Field(foreign_key="webhookendpoint.id", nullable=False)
+    job_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
+    event: str  # job.completed | job.failed | job.cancelled
+    payload_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime, nullable=False))
+    next_attempt_at: datetime = Field(sa_column=Column(DateTime, nullable=False))
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
+    delivered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    last_status: Optional[int] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)

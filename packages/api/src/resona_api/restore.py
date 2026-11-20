@@ -152,9 +152,9 @@ def _fence(session: Session, report: RestoreReport) -> list[tuple[str, int]]:
 
         for job in session.exec(select(Job).where(Job.status == JobStatus.PROCESSING)).all():
             if job.cancel_requested:
-                broker._finish_terminal(job, JobStatus.CANCELLED, "cancelled", now)
+                broker._finish_terminal(session, job, JobStatus.CANCELLED, "cancelled", now)
             else:
-                broker._release(job, now, code="lease_expired", retryable=True)
+                broker._release(session, job, now, code="lease_expired", retryable=True)
             session.add(job)
             report.leases_invalidated += 1
             if job.status != JobStatus.PENDING:
@@ -166,7 +166,7 @@ def _fence(session: Session, report: RestoreReport) -> list[tuple[str, int]]:
                 _has_postprocess(job) and not storage.postprocess_path(storage_id, job.id).is_file()
             )
             if missing:
-                broker._finish_terminal(job, JobStatus.FAILED, CONTENT_UNAVAILABLE, now)
+                broker._finish_terminal(session, job, JobStatus.FAILED, CONTENT_UNAVAILABLE, now)
                 job.error_message = "job input was not restored"
                 session.add(job)
                 report.inputs_unavailable += 1

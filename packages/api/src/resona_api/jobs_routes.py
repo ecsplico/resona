@@ -57,7 +57,7 @@ from resona_job_core import (
 from resona_postprocess.pipeline import build_pipeline, endpoint_ids
 from resona_postprocess.profile import ProfileError
 
-from . import clock, releases, storage
+from . import clock, releases, storage, webhooks
 from .auth import ROLE_ORG_ADMIN, Principal, client_principal, hash_token
 from .broker import (
     JOB_DELETED,
@@ -146,6 +146,8 @@ class JobRequest(BaseModel):
     purpose: Literal["production", "evaluation"] = "production"
     # Evaluation jobs name the staged release under test; workers on exactly that release run them.
     release_id: Optional[str] = Field(default=None, pattern=r"^[0-9][0-9A-Za-z.+-]{0,63}$")
+    # Name of an unrevoked webhook endpoint of the organization, notified when the job ends.
+    webhook: Optional[str] = Field(default=None, min_length=1, max_length=64)
 
 
 _OPTIONS_MODEL: dict[str, type[BaseModel]] = {"audio": AudioOptions, "document": DocumentOptions, "text": TextOptions}
@@ -304,7 +306,7 @@ def _result_available(job: Job, now: datetime) -> bool:
     return job.result_expires_at is None or clock.as_utc(job.result_expires_at) > now
 
 
-def _view(job: Job, ctx: QueueContext, now: datetime) -> dict[str, Any]:
+def _view(job: Job, ctx: QueueContext, now: datetime, webhook_names: dict[str, str]) -> dict[str, Any]:
     error = None
     if job.error_code and (job.status != JobStatus.COMPLETED or job.error_code == CONTENT_UNAVAILABLE):
         error = {"code": job.error_code, "message": job.error_message or job.error_code}
@@ -322,12 +324,17 @@ def _view(job: Job, ctx: QueueContext, now: datetime) -> dict[str, Any]:
         "created_at": _iso(job.created_at),
         "updated_at": _iso(job.updated_at),
         "deadline_at": _iso(job.deadline_at),
+        "webhook": webhook_names.get(job.webhook_endpoint_id) if job.webhook_endpoint_id else None,
     }
+
+
+def _webhook_names(session: Session, jobs: list[Job]) -> dict[str, str]:
+    return webhooks.endpoint_names(session, {job.webhook_endpoint_id for job in jobs if job.webhook_endpoint_id})
 
 
 def _single_view(session: Session, job: Job) -> dict[str, Any]:
     now = clock.now()
-    return _view(job, _queue_context(session, job.organization_id, now), now)
+    return _view(job, _queue_context(session, job.organization_id, now), now, _webhook_names(session, [job]))
 
 
 # ── Uploads ───────────────────────────────────────────────────────────────
@@ -958,8 +965,11 @@ def _request_hash(req: JobRequest, upload: Upload | None) -> str:
 
     A client that re-uploads the same file and replays the same key must get
     the same job; only a different file or different parameters conflict.
+    ``webhook`` counts only when set, so keys recorded before it existed keep their hash.
     """
     fields = req.model_dump(mode="json")
+    if fields.get("webhook") is None:
+        fields.pop("webhook", None)
     fields["upload_id"] = None
     fields["input_sha256"] = upload.sha256 if upload is not None else req.upload_id
     canonical = json.dumps(fields, sort_keys=True, separators=(",", ":"))
@@ -995,6 +1005,12 @@ def _admit(organization_id: str, key: str, req: JobRequest,
                     raise api_error(404, "upload_not_found", "upload not found")
                 if upload.media_family != req.kind:
                     raise api_error(422, "kind_mismatch", f"upload is not {req.kind} media")
+                webhook_endpoint_id = None
+                if req.webhook is not None:
+                    endpoint = webhooks.get_endpoint(session, organization_id, req.webhook)
+                    if endpoint is None:
+                        raise api_error(422, "unknown_webhook", "no active webhook endpoint has this name")
+                    webhook_endpoint_id = endpoint.id
 
                 snapshot, profile_document = _execution_snapshot(
                     session, organization_id, req, options, upload.media_type
@@ -1015,6 +1031,7 @@ def _admit(organization_id: str, key: str, req: JobRequest,
                     profile=(snapshot["postprocess"] or {}).get("name"),
                     language=snapshot["language"],
                     translate=bool(options.get("translate", False)),
+                    webhook_endpoint_id=webhook_endpoint_id,
                     created_at=now,
                     updated_at=now,
                 )
@@ -1105,6 +1122,8 @@ async def submit_job(
             raise api_error(422, "release_not_staged", "evaluation jobs need the release_id of a staged release")
     elif req.release_id is not None:
         raise api_error(422, "invalid_request", "release_id is only valid for evaluation jobs")
+    if req.purpose != webhooks.WEBHOOK_PURPOSE and req.webhook is not None:
+        raise api_error(422, "invalid_request", "webhook is only valid for production jobs")
 
     code, body = await run_in_threadpool(_admit, principal.organization_id, key, req, options)
     return JSONResponse(body, status_code=code)
@@ -1140,8 +1159,9 @@ def jobs_page(session: Session, organization_id: str, cursor: Optional[str], lim
     page = rows[:limit]
     now = clock.now()
     ctx = _queue_context(session, organization_id, now)
+    names = _webhook_names(session, list(page))
     return {
-        "items": [_view(job, ctx, now) for job in page],
+        "items": [_view(job, ctx, now, names) for job in page],
         "next_cursor": _encode_cursor(page[-1].id) if len(rows) > limit else None,
     }
 
@@ -1259,7 +1279,7 @@ def cancel_job(
         job = _owned_job(session, principal.organization_id, job_id)
         now = clock.now()
         if job.status == JobStatus.PENDING:
-            _finish_terminal(job, JobStatus.CANCELLED, "cancelled", now)
+            _finish_terminal(session, job, JobStatus.CANCELLED, "cancelled", now)
             job.error_message = "cancelled by client"
             removed = True
         elif job.status == JobStatus.PROCESSING and not job.cancel_requested:

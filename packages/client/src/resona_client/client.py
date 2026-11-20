@@ -120,6 +120,8 @@ class JobView:
     error: Optional[dict]
     result_available: bool
     raw: Mapping[str, Any]
+    # Name of the webhook endpoint notified when the job ends; None on hubs predating webhooks.
+    webhook: Optional[str] = None
 
     @property
     def terminal(self) -> bool:
@@ -139,6 +141,7 @@ class JobView:
             error=data.get("error"),
             result_available=bool(data.get("result_available", False)),
             raw=dict(data),
+            webhook=data.get("webhook"),
         )
 
 

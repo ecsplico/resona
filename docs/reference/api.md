@@ -102,6 +102,7 @@ Content-Type: application/json
 | `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`, `diarize` (label speakers; result segments carry `speaker`, only workers that diarize claim the job; left out, a production job takes the execution profile's `diarize` setting, default off). Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
+| `webhook` | string | no | Name of an unrevoked [webhook endpoint](#webhook-endpoints-role-org_admin) of the organization, notified when the job completes, fails or is cancelled; unknown or revoked → `422 unknown_webhook`. Production jobs only (`422 invalid_request` otherwise). Part of the `Idempotency-Key` match only when set. Not part of the execution snapshot |
 
 Returns `202 {"job_id": 42, "status": "pending"}`. The `Idempotency-Key` header is required: the same key with the same request returns the same job; the same key with a different request returns `409 idempotency_conflict`.
 
@@ -183,7 +184,7 @@ POST   /v1/jobs/{id}/cancel                      → JobView
 DELETE /v1/jobs/{id}                             → 204
 ```
 
-JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending`), `private`, `execution_profile`, `candidate`, `attempt`, `error` (`{code, message}` or null), `result_available`, `created_at`, `updated_at`, `deadline_at`.
+JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending`), `private`, `execution_profile`, `candidate`, `attempt`, `error` (`{code, message}` or null), `result_available`, `created_at`, `updated_at`, `deadline_at`, `webhook` (endpoint name or null; a later revoked endpoint keeps its name here).
 
 `queue_reason` of a pending job:
 
@@ -262,6 +263,14 @@ DELETE /v1/webhooks/{name}                      → 204  (revoked; the name is f
 URL rules (`422 invalid_webhook_url`): scheme `https`, no user or password, at most 2048 characters, and the host must resolve and must not resolve to a loopback, private (RFC 1918 and similar), link-local or unspecified address. When the hub operator sets `RESONA_WEBHOOK_ALLOW_PRIVATE=true`, such internal hosts are accepted, and for them also `http`; `http` to a public host is never accepted.
 
 Other errors: `422 invalid_webhook_name`, `409 webhook_exists` (an unrevoked endpoint has that name), `404 webhook_not_found` (unknown or revoked). `resona-admin restore` revokes every restored endpoint; register them again afterwards.
+
+Job events: a production job created with `webhook` (`POST /v1/jobs`, or the `webhook` form field of `/v1/audio/transcriptions`) gets one outbox row (`WebhookDelivery`) in the same transaction that makes it `completed`, `failed` or `cancelled`, deleting a pending or processing job included (`cancelled`, `error_code: deleted`); the later purge of a deleted job's tombstone writes none, nor do retries that requeue the job. An endpoint revoked before the job ends gets no event. Evaluation and testbench jobs never notify. The payload (`resona_job_core.webhooks.JobEvent`) carries identifiers only, never content or error messages:
+
+```json
+{"type": "job.completed", "job_id": 42, "kind": "audio", "status": "completed", "error_code": null, "finished_at": "2026-11-20T12:00:00Z"}
+```
+
+`type` is `job.completed`, `job.failed` or `job.cancelled`; `error_code` is the job's error code (null when completed). Signatures follow Standard Webhooks (`resona_job_core.webhooks.sign`: `v1,` + base64 HMAC-SHA256 over `<msg_id>.<timestamp>.<body>`, keyed with the base64-decoded part of the `whsec_` secret).
 
 ---
 
@@ -377,6 +386,7 @@ then waits up to `RESONA_SYNC_WAIT_SECONDS` (default `60`) for a worker to finis
 | `profile` | string | no | Stored organization profile name; omit to use the organization default |
 | `private` | bool | no | Default `true`; `false` needs `cloud_enabled=true` for the organization |
 | `diarize` | bool | no | Default: the execution profile's `diarize` setting (off unless the organization turned it on); `true` labels speakers (`AudioOptions.diarize`), `false` turns it off: `verbose_json` segments carry `speaker`, the text has `**Sprecher N:**`/`**Speaker N:**` paragraphs. Part of the request an `Idempotency-Key` is matched against. A hub predating diarization ignores the field (unlabelled result, no error). [Limits](../guide/cli.md#diarization-limits) |
+| `webhook` | string | no | Name of an unrevoked webhook endpoint notified when the job ends (`422 unknown_webhook` otherwise); part of the `Idempotency-Key` match only when sent |
 
 Errors:
 

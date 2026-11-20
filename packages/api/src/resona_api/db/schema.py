@@ -40,7 +40,7 @@ from resona_job_core import JobResult, Provenance, Segment, default_settings
 
 from .. import clock, storage
 from ..paths import FILE_PATH
-from .models import Job, Organization, SettingsRevision, WebhookEndpoint
+from .models import Job, Organization, SettingsRevision, WebhookDelivery, WebhookEndpoint
 
 log = logging.getLogger(__name__)
 
@@ -493,6 +493,31 @@ def _v9_webhook_endpoints(conn: sqlite3.Connection) -> AfterCommit | None:
     return None
 
 
+# ── migration 10: job webhooks and the delivery outbox ──────────────────
+#
+# A job may name a webhook endpoint (``job.webhook_endpoint_id``); every terminal
+# transition of such a job writes a ``webhookdelivery`` row in the same
+# transaction. On a fresh database migration 1 already created the column and the
+# table from the ORM metadata; the indexes are created here.
+
+def _v10_webhook_deliveries(conn: sqlite3.Connection) -> AfterCommit | None:
+    if "webhook_endpoint_id" not in {r[1] for r in conn.execute("PRAGMA table_info(job)")}:
+        conn.execute("ALTER TABLE job ADD COLUMN webhook_endpoint_id VARCHAR")
+    if "webhook_endpoint_id" not in {r[1] for r in conn.execute("PRAGMA table_info(job)")}:
+        raise SchemaError("migration 10 did not add job.webhook_endpoint_id")
+    _create_missing_tables(conn)
+    table = WebhookDelivery.__table__
+    if table.name not in _table_names(conn):
+        raise SchemaError("migration 10 did not create the webhookdelivery table")
+    dialect = sqlite_dialect.dialect()
+    for index in table.indexes:
+        conn.execute(str(CreateIndex(index, if_not_exists=True).compile(dialect=dialect)))
+    present = {r[1] for r in conn.execute(f"PRAGMA index_list({table.name})")}
+    missing = {index.name for index in table.indexes} - present
+    if missing:
+        raise SchemaError(f"migration 10 did not create indexes: {sorted(missing)}")
+    return None
+
 
 # Ordered. Append new migrations; never reorder or edit shipped ones.
 MIGRATIONS: list[tuple[int, MigrationFn]] = [
@@ -505,6 +530,7 @@ MIGRATIONS: list[tuple[int, MigrationFn]] = [
     (7, _v7_worker_diarize),
     (8, _v8_worker_features),
     (9, _v9_webhook_endpoints),
+    (10, _v10_webhook_deliveries),
 ]
 
 TARGET_VERSION: int = MIGRATIONS[-1][0]

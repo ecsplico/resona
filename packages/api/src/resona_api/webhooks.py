@@ -1,4 +1,4 @@
-"""Webhook endpoint registry: naming, signing secrets and the URL rules.
+"""Webhook endpoint registry, URL rules and the delivery outbox.
 
 An organization registers the URLs the hub may notify when a job finishes; a
 job later names one of them. :func:`validate_url` is the single gate for those
@@ -7,6 +7,9 @@ before every send, because a host name can change its address in between.
 
 The signing secret is stored in plaintext (HMAC needs it). It leaves this
 module only through the create and rotate responses and is never logged.
+
+:func:`enqueue_job_event` writes the outbox row for a job's terminal transition;
+callers run it inside the transaction that makes the job terminal.
 """
 
 from __future__ import annotations
@@ -16,16 +19,21 @@ import ipaddress
 import re
 import secrets
 import socket
+import uuid
+from datetime import datetime
 from urllib.parse import urlsplit
 
 from decouple import config
 from sqlmodel import Session, select
 
+from resona_job_core.webhooks import EVENT_OF_STATUS, SECRET_PREFIX, JobEvent
+
 from . import clock
-from .db.models import WebhookEndpoint
+from .db.models import Job, JobStatus, WebhookDelivery, WebhookEndpoint
 
 MAX_URL_CHARS = 2048
-SECRET_PREFIX = "whsec_"
+WEBHOOK_PURPOSE = "production"
+"""Only client jobs notify: evaluation and testbench jobs never write deliveries."""
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 _UNSAFE_CHARS = re.compile(r"[\x00-\x20\x7f]")
 
@@ -157,3 +165,51 @@ def new_endpoint(organization_id: str, name: str, url: str) -> WebhookEndpoint:
         secret=new_secret(),
         created_at=clock.now(),
     )
+
+
+def endpoint_names(session: Session, endpoint_ids: set[str]) -> dict[str, str]:
+    """``id -> name`` of the given endpoints, revoked ones included (a job keeps the name it named)."""
+    if not endpoint_ids:
+        return {}
+    rows = session.exec(select(WebhookEndpoint).where(WebhookEndpoint.id.in_(sorted(endpoint_ids)))).all()
+    return {row.id: row.name for row in rows}
+
+
+# ── outbox ──────────────────────────────────────────────────────────────
+
+def enqueue_job_event(session: Session, job: Job, now: datetime) -> WebhookDelivery | None:
+    """Add the delivery row for ``job``'s terminal transition to the caller's transaction.
+
+    Writes nothing for a job without an endpoint, for evaluation and testbench jobs,
+    for a non-terminal status, and when the endpoint was revoked since admission.
+    The payload is a :class:`~resona_job_core.webhooks.JobEvent`: identifiers only.
+    """
+    if job.webhook_endpoint_id is None or job.purpose != WEBHOOK_PURPOSE:
+        return None
+    status = job.status.value if isinstance(job.status, JobStatus) else str(job.status)
+    event_type = EVENT_OF_STATUS.get(status)
+    if event_type is None:
+        return None
+    endpoint = session.get(WebhookEndpoint, job.webhook_endpoint_id)
+    if endpoint is None or endpoint.revoked_at is not None:
+        return None
+    event = JobEvent(
+        type=event_type,
+        job_id=job.id,
+        kind=job.kind,
+        status=status,
+        error_code=None if status == JobStatus.COMPLETED.value else job.error_code,
+        finished_at=now,
+    )
+    delivery = WebhookDelivery(
+        id=uuid.uuid4().hex,
+        organization_id=job.organization_id,
+        endpoint_id=endpoint.id,
+        job_id=job.id,
+        event=event.type,
+        payload_json=event.model_dump_json(),
+        created_at=now,
+        next_attempt_at=now,
+    )
+    session.add(delivery)
+    return delivery

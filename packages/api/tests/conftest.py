@@ -54,6 +54,7 @@ def clean_db(create_tables):
     with Session(engine) as session:
         session.execute(text("DELETE FROM testbenchrun"))
         session.execute(text("DELETE FROM testbenchitem"))
+        session.execute(text("DELETE FROM webhookdelivery"))
         session.execute(text("DELETE FROM job"))
         session.commit()
 
