@@ -26,7 +26,7 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 | `RESONA_MAX_TEXT_UPLOAD_BYTES` | `2097152` (2 MiB) | Maximum size of one UTF-8 text upload (text jobs, postprocess only); larger text gets `413` |
 | `RESONA_PROFILES_DIR` | `<DATA_PATH>/profiles` | Directory where the bundled and file-backed profile sources are resolved for CLI and postprocessing; hosted profile revisions are stored in the database per organization and served by `GET /profiles` |
 | `RESONA_SYNC_WAIT_SECONDS` | `60` | Seconds `POST /v1/audio/transcriptions` waits for a worker to finish the job; on timeout it answers `504` with the `job_id` while the job keeps running |
-| `RESONA_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow webhook endpoint URLs whose host is a loopback, private or link-local address, and plain `http` to such hosts. Off: `https` to public hosts only (see [Webhook endpoints](../reference/api.md#webhook-endpoints-role-org_admin)) |
+| `RESONA_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow webhook endpoint URLs whose host is a loopback, private or link-local address, and plain `http` to such hosts; checked at registration and before every delivery attempt. Off: `https` to public hosts only (see [Webhooks guide](../guide/webhooks.md#private-addresses) and [Webhook endpoints](../reference/api.md#webhook-endpoints-role-org_admin)). The only webhook env var the hub reads |
 | `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-client / resona CLI

@@ -19,6 +19,10 @@ resona-worker (outbound only, long-polls POST /v1/workers/claim):
   runs the engine in an isolated subprocess, heartbeats every 30 s
   asks /policy right before any external stage
   uploads JobResult (POST /v1/workers/jobs/{id}/result)
+    hub: job → completed (+ webhook outbox row, same transaction)
+
+hub webhook dispatcher (only for jobs created with `webhook`):
+  POST signed {type, job_id, kind, status, error_code, finished_at} → endpoint URL
 
 Client → GET /v1/jobs/{id}          → JobView {status: "completed", result_available: true}
 Client → GET /v1/jobs/{id}/result   → {raw_text, markdown, segments, pages, provenance, ...}
@@ -43,6 +47,12 @@ If a lease expires (worker offline or asleep), the job returns to `pending` and 
 Private jobs go only to workers that an admin approved with `resona-admin worker approve --private`; cloud opt-in jobs (`private: false`) go only to workers approved with `--non-private`, so a private execution environment never receives cloud work. A worker cannot change its approval through its heartbeat, and an OOM failure withdraws a tuple only on that worker, never its hub approval. A job whose endpoint is assigned to one worker (its secret file lives there) is claimed only by that worker. If no capable worker is online, the job waits; the hub never weakens privacy or swaps the model.
 
 `DELETE /v1/jobs/{id}` in any state removes the job and its files at once; for a processing job it first fences the lease, so the worker's next call gets `409 stale_lease` and its output is rejected.
+
+### Webhook outbox
+
+A job admitted with `webhook` (an endpoint name, production jobs only) records that endpoint. Every transition into a terminal state writes the job's event into the outbox table `WebhookDelivery` in the **same transaction** that changes the status: the accepted result (`completed`), a worker failure or a lease-sweep failure such as `attempts_exhausted` or `deadline_exceeded` (`failed`), a cancel or a delete of a pending or processing job (`cancelled`). So a job never ends without its event, and an event never exists for a status change that was rolled back. A lease expiry that requeues the job is not terminal and writes nothing; neither does purging a deleted job's tombstone later. An endpoint revoked before the job ends gets no row.
+
+Sending happens afterwards and outside that transaction: the hub's dispatcher loop polls the outbox about once a second, signs each due row (Standard Webhooks headers) and POSTs it, retrying failures with backoff until a `2xx`, 24 hours or revocation of the endpoint. A slow or unreachable receiver therefore never delays or blocks a job transition, and a hub restart resumes pending deliveries (at least once, same `webhook-id`). The payload carries identifiers only; the result stays behind `GET /v1/jobs/{id}/result`. Receiver side: [Webhooks guide](../guide/webhooks.md); wire contract: [HTTP API](../reference/api.md#webhook-endpoints-role-org_admin).
 
 ### Retention
 
