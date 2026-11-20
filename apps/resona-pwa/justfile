@@ -29,6 +29,11 @@ test:
 test-worker:
     cd worker && uv run pytest -q
 
+# Run the dictation MCP service's tests (own uv environment in mcp/; starts a throwaway
+# Directus from docker-compose.backend.yml on a free port for the two-user isolation tests)
+test-mcp:
+    cd mcp && uv run pytest -q
+
 # Lint and type-check the frontend
 check:
     bun run lint

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resona-dictations-mcp"
+version = "0.1.0"
+description = "MCP server giving a Resona PWA user access to their own dictations (Directus), over Streamable HTTP"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "mortegro", email = "495066+mortegro@users.noreply.github.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    # Same SDK version as resona-mcp (apps/resona-mcp in the Resona monorepo).
+    "mcp==2.3.0",
+    "httpx>=0.28.1",
+    "python-decouple>=3.8",
+    "starlette>=0.46",
+    "uvicorn>=0.31.1",
+]
+
+[project.scripts]
+resona-dictations-mcp = "resona_dictations_mcp.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resona_dictations_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.14.0",
+    "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
+    "respx>=0.23.1",
+]

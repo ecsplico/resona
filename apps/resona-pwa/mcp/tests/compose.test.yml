@@ -1,0 +1,11 @@
+# Test override for ../../docker-compose.backend.yml (used by tests/conftest.py only):
+# the app's own Directus image and bootstrap, on a free loopback port instead of 7700,
+# under a throwaway compose project that the test session removes with its volumes.
+services:
+  directus:
+    ports: !override
+      - "127.0.0.1:${DMC_TEST_DIRECTUS_PORT:?set by tests/conftest.py}:8055"
+    healthcheck:
+      interval: 2s
+      start_period: 60s
+    restart: "no"

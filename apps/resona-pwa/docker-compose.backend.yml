@@ -75,6 +75,28 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # MCP access to a user's own dictations (mcp/, resona-dictations-mcp). It acts only
+  # with the Directus token the caller sends: no admin or worker token, no hub access.
+  # No PWA container in this file: the port is published on loopback only, for the dev
+  # server's /mcp proxy (NUXT_DICTATIONS_MCP_INTERNAL_URL=http://127.0.0.1:7740).
+  dictations-mcp:
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${DICTATIONS_MCP_PORT:-7740}:8000"
+    environment:
+      DIRECTUS_URL: http://directus:8055
+      DICTATIONS_MCP_HOST: 0.0.0.0
+      DICTATIONS_MCP_PORT: "8000"
+      DICTATIONS_MCP_ALLOWED_HOSTS: 127.0.0.1:*,localhost:*
+      DICTATIONS_MCP_ALLOWED_ORIGINS: ${PWA_ORIGIN:-http://localhost:3000}
+      LOGLEVEL: ${LOGLEVEL:-info}
+    depends_on:
+      directus:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   directus-db:
   directus-uploads:
