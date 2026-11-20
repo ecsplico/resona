@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
-import { dayOf, formatDayLabel, formatTime, isDay, shiftDay } from "~~/shared/termine";
+import { computed, onMounted, watch } from "vue";
+import type { TerminEvent } from "~~/shared/termine";
+import { dayOf, formatDayLabel, formatTerminWhen, formatTime, isDay, isOffenWindow, liveQuery, OFFEN_WINDOWS, shiftDay } from "~~/shared/termine";
 
-type Tab = "termine" | "diktat";
+type Tab = "termine" | "offen" | "diktat";
 
 const route = useRoute();
 const router = useRouter();
 
 const todayDay = dayOf(new Date());
 const day = computed(() => (isDay(route.query.date) ? route.query.date : todayDay));
-const tab = computed<Tab>(() => (route.query.tab === "diktat" ? "diktat" : "termine"));
+const tab = computed<Tab>(() => (route.query.tab === "diktat" || route.query.tab === "offen" ? route.query.tab : "termine"));
 const isToday = computed(() => day.value === todayDay);
 const dayLabel = computed(() => formatDayLabel(day.value));
+// `?zeitraum=3m|6m` (default 4 Wochen) of the "Offen" tab.
+const offenWindow = computed(() => (isOffenWindow(route.query.zeitraum) ? route.query.zeitraum : "4w"));
 
 const termine = useTermine(day);
+const offen = useOffeneTermine(offenWindow);
 
 // Notice after the Google consent round trip (`/api/termine` redirects to `/?kalender=…`).
 const KALENDER_NOTICES: Record<string, string> = {
@@ -38,6 +42,19 @@ function selectTab(next: Tab): void {
 	setQuery({ tab: next === "termine" ? undefined : next });
 }
 
+function selectWindow(value: string): void {
+	setQuery({ zeitraum: isOffenWindow(value) && value !== "4w" ? value : undefined });
+}
+
+function startDictation(event: TerminEvent): void {
+	void navigateTo({ path: "/live", query: liveQuery(event) });
+}
+
+// A "Kein Diktat" in the Offen tab also shows in Termine: reload it on return.
+watch(tab, (next, previous) => {
+	if (next === "termine" && previous === "offen") void termine.refresh();
+});
+
 function openTermin(id: string): void {
 	void navigateTo({ name: "termin-id", params: { id }, query: { date: day.value } });
 }
@@ -48,12 +65,17 @@ async function connect(): Promise<void> {
 
 onMounted(() => {
 	void termine.refresh();
+	// Also on the other tabs: the Offen tab's count badge.
+	void offen.refresh();
 });
 </script>
 
 <template>
 	<section class="home">
-		<div class="home__day">
+		<div
+			v-if="tab !== 'offen'"
+			class="home__day"
+		>
 			<button
 				class="home__day-step"
 				type="button"
@@ -105,6 +127,21 @@ onMounted(() => {
 				@click="selectTab('termine')"
 			>
 				Termine
+			</button>
+			<button
+				class="h-tab home__tab"
+				type="button"
+				role="tab"
+				:aria-selected="tab === 'offen'"
+				data-testid="tab-offen"
+				@click="selectTab('offen')"
+			>
+				Offen
+				<span
+					v-if="offen.view.value?.connected && offen.events.value.length > 0"
+					class="home__badge"
+					data-testid="tab-offen-count"
+				>{{ offen.events.value.length }}</span>
 			</button>
 			<button
 				class="h-tab"
@@ -204,6 +241,13 @@ onMounted(() => {
 							Diktiert{{ row.dictations.length > 1 ? ` (${row.dictations.length})` : "" }}
 						</HChip>
 						<HChip
+							v-else-if="row.event.declined"
+							tone="neutral"
+							data-testid="termin-status-declined"
+						>
+							Kein Diktat
+						</HChip>
+						<HChip
 							v-else
 							tone="neutral"
 							data-testid="termin-status-open"
@@ -211,6 +255,114 @@ onMounted(() => {
 							Offen
 						</HChip>
 					</button>
+				</li>
+			</ul>
+		</div>
+
+		<div
+			v-else-if="tab === 'offen'"
+			class="home__panel"
+			role="tabpanel"
+			data-testid="panel-offen"
+		>
+			<div class="offen__bar">
+				<label class="offen__window">
+					<span class="offen__window-label">Zeitraum</span>
+					<select
+						class="offen__window-input"
+						:value="offenWindow"
+						data-testid="offen-window"
+						@change="selectWindow(($event.target as HTMLSelectElement).value)"
+					>
+						<option
+							v-for="option in OFFEN_WINDOWS"
+							:key="option.value"
+							:value="option.value"
+						>
+							{{ option.label }}
+						</option>
+					</select>
+				</label>
+			</div>
+
+			<p
+				v-if="offen.lastDeclined.value"
+				class="home__notice offen__undo"
+				role="status"
+				data-testid="offen-undo-notice"
+			>
+				<span>„Kein Diktat“ vermerkt: {{ formatTerminWhen(offen.lastDeclined.value) }}</span>
+				<button
+					class="offen__undo-button"
+					type="button"
+					data-testid="offen-undo"
+					@click="offen.undoDecline()"
+				>
+					Rückgängig
+				</button>
+			</p>
+
+			<p
+				v-if="offen.error.value"
+				class="home__error"
+				role="alert"
+				data-testid="offen-error"
+			>
+				{{ offen.error.value }}
+			</p>
+
+			<p
+				v-if="offen.view.value && !offen.connected.value"
+				class="home__hint"
+				data-testid="offen-not-connected"
+			>
+				Kalender nicht verbunden. Im Reiter „Termine“ verbinden.
+			</p>
+
+			<p
+				v-else-if="offen.loading.value && !offen.view.value"
+				class="home__hint"
+				data-testid="offen-loading"
+			>
+				Offene Termine werden geladen…
+			</p>
+
+			<p
+				v-else-if="offen.connected.value && offen.events.value.length === 0 && !offen.error.value"
+				class="home__hint"
+				data-testid="offen-empty"
+			>
+				Keine offenen Termindiktate in diesem Zeitraum.
+			</p>
+
+			<ul
+				v-if="offen.events.value.length > 0"
+				class="h-list home__list"
+				data-testid="offen-list"
+			>
+				<li
+					v-for="event in offen.events.value"
+					:key="event.id"
+					class="offen-row"
+				>
+					<button
+						class="termin-row offen-row__main"
+						type="button"
+						data-testid="offen-row"
+						@click="startDictation(event)"
+					>
+						<span class="offen-row__when">{{ formatTerminWhen(event) }}</span>
+						<span class="termin-row__title">{{ event.title }}</span>
+					</button>
+					<HButton
+						class="offen-row__decline"
+						variant="secondary"
+						type="button"
+						data-testid="offen-decline"
+						@click="offen.decline(event)"
+					>
+						Kein Diktat
+					</HButton>
 				</li>
 			</ul>
 		</div>
@@ -258,6 +410,18 @@ onMounted(() => {
 .termin-row:active { background:var(--row-active); }
 .termin-row__time { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:var(--fs-sm); color:var(--fg2); min-width:5ch; }
 .termin-row__title { font-size:var(--fs-md); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.home__tab { display:inline-flex; align-items:center; gap:6px; }
+.home__badge { min-width:20px; padding:1px 6px; border-radius:var(--r-full); background:var(--accent); color:var(--white); font-size:var(--fs-xs); font-weight:600; line-height:1.4; text-align:center; }
+.offen__bar { display:flex; justify-content:flex-end; padding:0 16px; }
+.offen__window { display:flex; align-items:center; gap:8px; }
+.offen__window-label { font-size:var(--fs-sm); font-weight:600; color:var(--fg2); }
+.offen__window-input { border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:8px 12px; background:var(--bg-raised); font-family:var(--font-body); font-size:var(--fs-sm); color:var(--fg1); }
+.offen__undo { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.offen__undo-button { border:none; background:none; padding:4px 0; color:var(--accent-ink); font:inherit; font-weight:600; cursor:pointer; }
+.offen-row { display:flex; align-items:center; gap:8px; padding-right:12px; }
+.offen-row__main { flex:1; min-width:0; grid-template-columns:auto 1fr; }
+.offen-row__when { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:var(--fs-sm); color:var(--fg2); white-space:nowrap; }
+.offen-row__decline { flex-shrink:0; }
 .home__free { padding:0 16px; }
 .home__free-button { width:100%; }
 @media (min-width:960px) {

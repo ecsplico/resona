@@ -54,6 +54,31 @@ describe("createDirectusStore", () => {
 		expect(state.readItems).toHaveBeenCalledWith("recordings", { sort: ["-date_created"], limit: 100 });
 	});
 
+	it("lists every recording of the given calendar events, 100 ids per request", async () => {
+		const ids = Array.from({ length: 101 }, (_, i) => `e${i}`);
+		state.request
+			.mockResolvedValueOnce([{ id: "r1", date_created: "2026-01-01T00:00:00Z" }])
+			.mockResolvedValueOnce([{ id: "r2", date_created: "2026-02-01T00:00:00Z" }]);
+		const rows = await createDirectusStore().listRecordings({ eventIds: [...ids, "e0"] });
+		expect(rows.map(r => r.id)).toEqual(["r2", "r1"]);
+		expect(state.readItems).toHaveBeenCalledTimes(2);
+		expect(state.readItems).toHaveBeenNthCalledWith(1, "recordings", {
+			sort: ["-date_created"],
+			limit: -1,
+			filter: { calendar_event_id: { _in: ids.slice(0, 100) } },
+		});
+		expect(state.readItems).toHaveBeenNthCalledWith(2, "recordings", {
+			sort: ["-date_created"],
+			limit: -1,
+			filter: { calendar_event_id: { _in: ["e100"] } },
+		});
+	});
+
+	it("asks nothing for an empty event id list", async () => {
+		expect(await createDirectusStore().listRecordings({ eventIds: [] })).toEqual([]);
+		expect(state.request).not.toHaveBeenCalled();
+	});
+
 	it("createRecording uploads the blob then creates with audio_file", async () => {
 		state.request.mockResolvedValueOnce({ id: "file-1" }).mockResolvedValueOnce({ id: "rec-1" });
 		const created = await createDirectusStore().createRecording(input, new Blob(["a"]), "Visite.webm");

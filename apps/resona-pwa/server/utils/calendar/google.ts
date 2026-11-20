@@ -13,8 +13,8 @@ const USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const CALENDAR_LIST_ENDPOINT = `${CALENDAR_BASE}/users/me/calendarList`;
 
-/** events.list URL for a calendar id (defaults to the primary calendar). */
-function eventsEndpoint(calendarId?: string): string {
+/** events.list URL for a calendar id (defaults to the primary calendar; exported for Resona Verlauf). */
+export function eventsEndpoint(calendarId?: string): string {
 	const id = calendarId?.trim() || "primary";
 	return `${CALENDAR_BASE}/calendars/${encodeURIComponent(id)}/events`;
 }

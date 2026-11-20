@@ -1,7 +1,7 @@
 // The practice's one Google connection: the refresh token, sealed (iron,
 // NUXT_SESSION_PASSWORD) in Nitro storage `verlauf`, an fs-lite mount on
 // NUXT_VERLAUF_DATA_DIR (a volume in production). The short-lived access token
-// stays in memory only.
+// stays in memory only. The "Kein Diktat" marks (event ids only) live here too.
 import { resolve } from "node:path";
 import fsLiteDriver from "unstorage/drivers/fs-lite";
 import { defaults as ironDefaults, seal, unseal } from "iron-webcrypto";
@@ -57,4 +57,31 @@ export async function writeConnection(config: VerlaufConfig, connection: GoogleC
 
 export async function clearConnection(config: VerlaufConfig): Promise<void> {
 	await verlaufStorage(config).removeItem(KEY);
+}
+
+/** "Kein Diktat" marks, keyed by Google event id. Never holds a title. */
+export interface Decline {
+	declinedAt: string;
+	/** Lower-cased Directus email of whoever declined. */
+	declinedBy: string;
+}
+
+const DECLINES_KEY = "declines";
+// Read-modify-write of the one declines item, one at a time.
+let declineQueue: Promise<unknown> = Promise.resolve();
+
+export async function readDeclines(config: VerlaufConfig): Promise<Record<string, Decline>> {
+	const value = await verlaufStorage(config).getItem<Record<string, Decline>>(DECLINES_KEY);
+	return value && typeof value === "object" ? value : {};
+}
+
+/** Mark (`declined`) or unmark `eventId` as "Kein Diktat". */
+export function writeDecline(config: VerlaufConfig, eventId: string, declined: boolean, email: string): Promise<void> {
+	const run = declineQueue.then(async () => {
+		const others = Object.fromEntries(Object.entries(await readDeclines(config)).filter(([id]) => id !== eventId));
+		const next = declined ? { ...others, [eventId]: { declinedAt: new Date().toISOString(), declinedBy: email } } : others;
+		await verlaufStorage(config).setItem(DECLINES_KEY, next);
+	});
+	declineQueue = run.catch(() => undefined);
+	return run;
 }

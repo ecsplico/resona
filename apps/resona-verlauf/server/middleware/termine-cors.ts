@@ -10,8 +10,8 @@ export default defineEventHandler((event) => {
 	if (!origin || !APP_ORIGINS.includes(origin)) return;
 	setResponseHeaders(event, {
 		"Access-Control-Allow-Origin": origin,
-		"Access-Control-Allow-Methods": "GET, OPTIONS",
-		"Access-Control-Allow-Headers": "Authorization",
+		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+		"Access-Control-Allow-Headers": "Authorization, Content-Type",
 		"Access-Control-Max-Age": "600",
 		"Vary": "Origin",
 	});

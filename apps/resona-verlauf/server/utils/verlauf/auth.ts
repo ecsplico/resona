@@ -19,8 +19,14 @@ export function requestToken(event: H3Event, allowQuery: boolean): string {
 	return "";
 }
 
-/** Throws 401 (no/invalid token) or 403 (not allow-listed); returns the user's id. */
-export async function requireVerlaufUser(config: VerlaufConfig, token: string): Promise<string> {
+export interface VerlaufUser {
+	id: string;
+	/** Lower-cased; "" when Directus has none. */
+	email: string;
+}
+
+/** Throws 401 (no/invalid token) or 403 (not allow-listed); returns the user's id and email. */
+export async function requireVerlaufUser(config: VerlaufConfig, token: string): Promise<VerlaufUser> {
 	if (!token) {
 		throw createError({ statusCode: 401, statusMessage: "Nicht angemeldet." });
 	}
@@ -42,5 +48,5 @@ export async function requireVerlaufUser(config: VerlaufConfig, token: string): 
 	if (config.allowedEmails.length > 0 && !config.allowedEmails.includes(email)) {
 		throw createError({ statusCode: 403, statusMessage: "Dieses Konto ist für den Kalender nicht freigegeben." });
 	}
-	return user.id;
+	return { id: user.id, email };
 }

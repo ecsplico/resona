@@ -14,9 +14,13 @@ const pwaDir = fileURLToPath(new URL("../resona-pwa/", import.meta.url));
 export default defineNuxtConfig({
 	extends: ["../resona-pwa"],
 	ssr: false,
+	// This app's components override the layer's same-named ones (e.g. the /live
+	// extension point `LiveEventContext`): Nuxt gives every dir of this config the
+	// app's layer priority (2), so the layer dir is pinned lower; a higher priority
+	// wins without the duplicate-name warning.
 	components: [
 		{ path: "~/components", pathPrefix: false },
-		{ path: `${pwaDir}app/components`, pathPrefix: false },
+		{ path: `${pwaDir}app/components`, pathPrefix: false, priority: 1 },
 	],
 	app: {
 		head: {

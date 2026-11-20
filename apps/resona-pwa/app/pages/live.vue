@@ -605,6 +605,11 @@ onMounted(async () => {
 
 		<div class="live__body">
 			<div class="live__column">
+				<LiveEventContext
+					v-if="eventLink.calendar_event_id"
+					part="before"
+					:event-id="eventLink.calendar_event_id"
+				/>
 				<p
 					v-if="(sessionActive || showTitlePrompt) && shownSuggestion"
 					class="live__suggestion"
@@ -674,6 +679,11 @@ onMounted(async () => {
 						class="live__hint"
 					>Sprich jetzt…</span>
 				</p>
+				<LiveEventContext
+					v-if="eventLink.calendar_event_id"
+					part="after"
+					:event-id="eventLink.calendar_event_id"
+				/>
 			</div>
 		</div>
 
