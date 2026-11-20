@@ -1,11 +1,21 @@
 import type { Transcript } from "~/types/directus";
 import type { TranscriptPatch } from "~/data/types";
+import catalogue from "#shared/postprocessProfiles.json";
 
 /**
  * Re-processing a stored transcript with a hub postprocess profile ("Nachbearbeiten"):
  * shared by the standalone processor, the detail page and (same messages) the
- * project worker (`worker/src/resona_project_worker/worker.py`).
+ * project worker (`worker/src/resona_project_worker/worker.py`). The dictations MCP
+ * server (`mcp/src/resona_dictations_mcp/postprocess_tools.py`) writes the same
+ * request and restore; `shared/dictationEdit.cases.json` pins both sides.
  */
+
+/**
+ * The profiles this app offers under "Nachbearbeiten" (`shared/postprocessProfiles.json`,
+ * pushed by `scripts/push-profiles.sh`). The dialog lists the hub's live profiles; the
+ * dictations MCP server, which never calls the hub, offers exactly these.
+ */
+export const POSTPROCESS_PROFILES: readonly { name: string; instructions: boolean; description: string }[] = catalogue.profiles;
 
 /** German messages for the hub error codes of a text job. */
 const ERRORS: Record<string, string> = {
@@ -13,6 +23,7 @@ const ERRORS: Record<string, string> = {
 	profile_not_found: "Profil auf dem Hub nicht gefunden.",
 	invalid_profile: "Das Profil auf dem Hub ist ungültig.",
 	policy_denied: "Von der Richtlinie der Organisation abgelehnt.",
+	invalid_instructions: "Das Profil nimmt keine Anweisungen an.",
 };
 
 /** German message for a text-job error code; null for codes without one. `policy_denied` carries the hub's reason. */
@@ -43,11 +54,13 @@ export function postprocessRunning(t: Pick<Transcript, "postprocess_status"> | n
 }
 
 /**
- * Fields that request a run of `profile`. The processor's claim clears the previous
- * run's job, error and queue reason (users may not write those fields).
+ * Fields that request a run of `profile`, with the user's `instructions` for its
+ * llm/extract steps (null = none, so an earlier run's never carry over). The
+ * processor's claim clears the previous run's job, error and queue reason (users may
+ * not write those fields); the run's end clears the instructions.
  */
-export function postprocessRequest(profile: string): TranscriptPatch {
-	return { postprocess_status: "pending", postprocess_profile: profile };
+export function postprocessRequest(profile: string, instructions?: string | null): TranscriptPatch {
+	return { postprocess_status: "pending", postprocess_profile: profile, postprocess_instructions: instructions ?? null };
 }
 
 /** Fields that make the raw transcript the text again (undo a profile). */
@@ -89,6 +102,7 @@ export function postprocessDone(t: Pick<Transcript, "text" | "raw_text">, markdo
 		postprocess_queue_reason: null,
 		postprocess_job_id: null,
 		postprocess_job_key: null,
+		postprocess_instructions: null,
 	};
 }
 
@@ -100,5 +114,6 @@ export function postprocessFailed(message: string): Partial<Transcript> {
 		postprocess_queue_reason: null,
 		postprocess_job_id: null,
 		postprocess_job_key: null,
+		postprocess_instructions: null,
 	};
 }

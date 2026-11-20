@@ -1,10 +1,22 @@
 [
   {
+    "name": "create_audio_upload",
+    "deferred": false
+  },
+  {
+    "name": "create_dictation_from_text",
+    "deferred": false
+  },
+  {
     "name": "delete_dictation",
     "deferred": false
   },
   {
     "name": "delete_document",
+    "deferred": false
+  },
+  {
+    "name": "get_audio_link",
     "deferred": false
   },
   {
@@ -24,11 +36,23 @@
     "deferred": false
   },
   {
+    "name": "list_profiles",
+    "deferred": false
+  },
+  {
+    "name": "postprocess_dictation",
+    "deferred": false
+  },
+  {
     "name": "rename_dictation",
     "deferred": false
   },
   {
     "name": "rename_document",
+    "deferred": false
+  },
+  {
+    "name": "restore_raw_transcript",
     "deferred": false
   },
   {

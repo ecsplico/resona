@@ -256,6 +256,7 @@ GET    /v1/webhooks                             → {items: [{name, url, created
 GET    /v1/webhooks/{name}                      → {name, url, created_at}
 POST   /v1/webhooks/{name}/rotate               → {name, url, created_at, secret}
 DELETE /v1/webhooks/{name}                      → 204  (revoked; the name is free again)
+GET    /v1/webhooks/{name}/deliveries?limit=50  → {items: [{id, job_id, event, attempts, last_status, delivered_at, last_error}]}
 ```
 
 `secret` is the signing secret (`whsec_` + 32 random bytes in base64). It appears only in the create and rotate responses: store it then, listings never contain it. Rotation replaces it at once. The hub keeps it in plaintext in its database, because signing needs it.
@@ -270,7 +271,23 @@ Job events: a production job created with `webhook` (`POST /v1/jobs`, or the `we
 {"type": "job.completed", "job_id": 42, "kind": "audio", "status": "completed", "error_code": null, "finished_at": "2026-11-20T12:00:00Z"}
 ```
 
-`type` is `job.completed`, `job.failed` or `job.cancelled`; `error_code` is the job's error code (null when completed). Signatures follow Standard Webhooks (`resona_job_core.webhooks.sign`: `v1,` + base64 HMAC-SHA256 over `<msg_id>.<timestamp>.<body>`, keyed with the base64-decoded part of the `whsec_` secret). TypeScript receivers verify with `verifyWebhook(headers, body, secret)` from `@ecsplico/resona-hub-client` (`clients/hub-ts`).
+`type` is `job.completed`, `job.failed` or `job.cancelled`; `error_code` is the job's error code (null when completed).
+
+Delivery: the hub POSTs the payload to the endpoint URL within about a second of the job ending, with the [Standard Webhooks](https://www.standardwebhooks.com/) headers
+
+| Header | Value |
+|---|---|
+| `webhook-id` | delivery id (string); the same on every retry of this event, use it to drop duplicates |
+| `webhook-timestamp` | Unix seconds of this attempt |
+| `webhook-signature` | `v1,` + base64 HMAC-SHA256 over `<webhook-id>.<webhook-timestamp>.<body>`, keyed with the base64-decoded part of the `whsec_` secret (`resona_job_core.webhooks.sign`) |
+| `content-type` | `application/json` |
+| `user-agent` | `resona-hub/<release>` |
+
+Verify the signature over the raw body bytes before parsing them. Any `2xx` answer counts as delivered; anything else, including a redirect (never followed), a timeout (10 s) or a refused connection, is retried after 5 s, 30 s, 2 min, 10 min and 30 min, then hourly. The URL is checked against the URL rules again before every attempt. A delivery still unsent 24 hours after the job ended is abandoned (`last_error: expired`); revoking the endpoint abandons its pending deliveries (`endpoint_revoked`). One endpoint receives its events one at a time in the order the jobs ended: while the oldest pending event waits for a retry, later ones wait behind it. Delivery is at least once: a hub restart during a send repeats it with the same `webhook-id`. Pull (`GET /v1/jobs/{id}`) stays the source of truth.
+
+`GET /v1/webhooks/{name}/deliveries` lists the endpoint's deliveries newest first (`limit` 1–100, default 50): metadata only, never the payload, URL or secret. `delivered_at` is null until a `2xx`; `last_status` is the last HTTP status (null when no answer came); `last_error` is null, `http_<status>`, `timeout`, `connection_error`, `invalid_url` (the URL broke the URL rules at send time), `expired` or `endpoint_revoked`. Delivery rows are deleted seven days after creation.
+
+TypeScript receivers verify with `verifyWebhook(headers, body, secret)` from `@ecsplico/resona-hub-client` (`clients/hub-ts`).
 
 ---
 

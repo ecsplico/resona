@@ -34,15 +34,21 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 |------|-----------------|
 | `list_dictations(limit≤50, cursor, status?, review_status?, since?)` | Newest first: id, title, created, duration, language, status, review status, text length. `next_cursor` for the next page. |
 | `search_dictations(query, limit≤50)` | Dictations whose title or transcript text contains the query (case-insensitive), with `matched_in`. No text. |
-| `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars` and `text_sha256` (SHA-256 hex of the whole UTF-8 text). |
+| `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars` and `text_sha256` (SHA-256 hex of the whole UTF-8 text), and the state of a postprocess run (`postprocess_status` `pending`/`processing`/`done`/`error`/null, `postprocess_profile`, `postprocess_error`, `postprocess_queue_reason`). |
 | `update_dictation_text(id, text, expected_sha256?)` | Replaces the text the app shows (`transcripts.text`; raw and profile output stay), or creates the transcript when there is none, as the app's editor does. A stale `expected_sha256` → `conflict`, nothing written; while a postprocess profile runs → `busy`. Metadata + new `text_sha256`. |
 | `rename_dictation(id, title)` | Sets the trimmed title and `title_auto=false` (no automatic title replaces it). Metadata. |
 | `set_review_status(id, "editing"\|"ready")` | Sets the review status. Metadata. |
 | `delete_dictation(id, confirm)` | Cannot be undone. Without `confirm: true` → `confirm_required`, nothing deleted. Deletes the recording like the app (transcript, corrections and parts cascade; the audio files stay in file storage, which the `user` role cannot delete). Metadata of the deleted dictation. |
+| `list_profiles()` | The postprocess profiles `postprocess_dictation` accepts: the app's catalogue (`shared/postprocessProfiles.json`: name, description, whether it takes `instructions`), not the hub's live list. |
+| `postprocess_dictation(id, profile, instructions?, confirm=false)` | Queues the app's "Nachbearbeiten" request (`postprocess_status=pending`, `postprocess_profile`, `postprocess_instructions`) and returns at once with `postprocess_status: "pending"`; the app's project worker runs the hub text job and writes the output to the text, keeping the raw transcript. Poll `get_dictation` until `done` or `error`. Unknown profile → `unknown_profile`, instructions for a profile without a language model step → `invalid_instructions`, no transcript → `no_transcript`, a run in progress → `busy`, text edited since the last profile ran → `confirm_required` unless `confirm: true`; all before any write. Metadata. |
+| `restore_raw_transcript(id, confirm=false)` | The app's "restore raw": the raw transcript becomes the text again, the profile's output is dropped. No applied profile → `nothing_to_restore`, a run in progress → `busy`, text edited since the profile ran → `confirm_required` unless `confirm: true`. Metadata + new `text_sha256`. |
 | `list_documents(limit≤50, cursor)` | The user's documents (converted PDFs/images), newest first: id, title, created, updated, status, Markdown length. `next_cursor` for the next page. |
 | `get_document(id, offset=0, limit≤32768)` | Metadata (plus `error_message`, `page_count`) and one range of the document's Markdown, with `next_offset` / `total_chars`. |
 | `rename_document(id, title)` | Sets the title; returns metadata only (id, title, created, updated, status). |
 | `delete_document(id, confirm)` | Deletes the document row as the app does (the uploaded file stays in `directus_files`); `{id, title, deleted}`. Without `confirm: true` it deletes nothing (`confirm_required:` error). |
+| `create_dictation_from_text(text, title?, language?)` | Saves the text as a finished dictation (`source` `live`, `status` `done`, like a saved live dictation) plus its transcript; no title → dated placeholder `Diktat DD.MM.YYYY HH:MM`, `title_auto` true. Text ≤ 200000 characters. |
+| `create_audio_upload(filename, language?, profile?)` | The new dictation's `id`, a single-use `upload_url` (10 min), `max_bytes` and a `curl -T <file> <url>` command: the audio never passes the model. The upload creates the recording `pending` (`source` `batch`, `title_auto` true) and the project worker transcribes it. |
+| `get_audio_link(id)` | `audio_url` to the dictation's audio, valid 10 minutes (Range requests work). |
 
 Everything a tool returns goes to the model of the client that calls it; the tool
 descriptions say so. Another user's id and a missing id give the same "not found" error.
@@ -55,6 +61,34 @@ policy's `documents` update fields (`directus/bootstrap.mjs`).
 
 `tool-inventory.json` lists the tools; regenerate it with
 `uv run python scripts/gen_tool_inventory.py` (`--check` in the tests).
+
+## Upload and audio links
+
+`create_audio_upload` and `get_audio_link` hand out `<DICTATIONS_MCP_PUBLIC_URL>/mcp/links/<upload|audio>/<token>`
+(the PWA proxies `/mcp/links/*` with `server/routes/mcp/links/[...path].ts`, streaming the body).
+
+- The token is `<kind>.<link id>.<expiry>.<HMAC-SHA256>` keyed with
+  `DICTATIONS_MCP_LINK_SECRET`; forged, altered, expired or other-kind tokens are refused.
+  It carries no identity and no Directus token: the user, a Directus client with their
+  token and the recording id stay in this process, keyed by the link id, until expiry.
+  The link route takes no `Authorization` header; it acts with that held token, so a
+  token revoked in the meantime makes the link `401`.
+- An upload link is spent by the first request that presents it, whatever its outcome
+  (a second use is `410 link_used`). Before anything reaches Directus: `Content-Length`
+  required (`411`), ≤ `DICTATIONS_MCP_MAX_UPLOAD_BYTES` (`413`), not empty (`422`), and the
+  first bytes must be audio the hub admits (WAV, MP3, AAC/ADTS, Ogg, FLAC, MP4/M4A,
+  WebM; else `415`). Then the body streams into Directus files as the user (type and
+  extension from the sniffed format) and the recording row is created `pending`; `201`
+  `{id, status: "pending"}`.
+- An audio link is checked against the owner when it is issued (`get_audio_link` reads the
+  row as the caller: another user's id is "not found") and read again as that user on
+  every request; it works any number of times until it expires (`410 link_expired`).
+- **Single instance assumed**: the link state lives in memory (at most 10000 open links).
+  After a restart, or on another replica, a link is unknown and refused like a used one.
+- Without `DICTATIONS_MCP_LINK_SECRET` the link routes answer `404 links_disabled` and the
+  two link tools return an error; a secret shorter than 32 characters or a missing/invalid
+  `DICTATIONS_MCP_PUBLIC_URL` stops the service at start. Access log lines show
+  `/mcp/links/<kind>/…`, never the token; the service logs `link=<kind> user= outcome= ids= ms=`.
 
 ## Logs
 
@@ -72,6 +106,9 @@ the MCP SDK logs message bodies at DEBUG).
 | `DICTATIONS_MCP_HOST` / `DICTATIONS_MCP_PORT` | `127.0.0.1` / `8000` | Listen address (`0.0.0.0` in the image) |
 | `DICTATIONS_MCP_ALLOWED_HOSTS` | loopback | Accepted `Host` headers (comma-separated, `host:*` for any port) |
 | `DICTATIONS_MCP_ALLOWED_ORIGINS` | loopback | Accepted `Origin` headers (requests without `Origin` pass) |
+| `DICTATIONS_MCP_LINK_SECRET` | (empty = links off) | Signs upload/audio links; ≥ 32 characters (`openssl rand -hex 32`, `bun run setup` fills it). A new value voids open links |
+| `DICTATIONS_MCP_PUBLIC_URL` | (required with a secret) | The app origin the links start with (`PWA_ORIGIN` in the compose files) |
+| `DICTATIONS_MCP_MAX_UPLOAD_BYTES` | `209715200` (200 MiB, the hub's upload cap) | Largest audio upload |
 | `LOGLEVEL` | `info` | Log level of this package |
 
 In the compose files the service has no published port (`docker-compose.backend.yml`

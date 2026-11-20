@@ -126,7 +126,8 @@ export interface paths {
          *     ``response_format`` (json|text|verbose_json), ``prompt``/``temperature``
          *     (ignored) and Resona ``engine``, ``execution_profile``, ``profile``,
          *     ``private`` (default true), ``diarize`` (label speakers, needs a worker that
-         *     diarizes; default: the execution profile's ``diarize``). Admission is identical to
+         *     diarizes; default: the execution profile's ``diarize``), ``webhook`` (name of an
+         *     active webhook endpoint notified when the job ends). Admission is identical to
          *     ``POST /v1/jobs``.
          */
         post: operations["audio_transcriptions_create"];
@@ -674,6 +675,11 @@ export interface components {
             status: "pending" | "processing" | "completed" | "failed" | "cancelled";
             /** Updated At */
             updated_at: string | null;
+            /**
+             * Webhook
+             * @description Name of the webhook endpoint notified when the job ends.
+             */
+            webhook?: string | null;
         };
         /** ListenEngineList */
         ListenEngineList: {
@@ -1537,7 +1543,7 @@ export interface operations {
                     "application/json": components["schemas"]["JobErrorBody"];
                 };
             };
-            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`. */
+            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1728,7 +1734,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `profile_required`, `release_not_staged`. */
+            /** @description Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`. */
             422: {
                 headers: {
                     [name: string]: unknown;

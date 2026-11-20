@@ -27,7 +27,7 @@ export interface SaveRequest { title: string; titleAuto: boolean; language: stri
  * Directus mode the `user` policy refuses them.
  */
 export type TranscriptPatch = Partial<Pick<Transcript,
-	"text" | "raw_text" | "applied_profile" | "processed_text" | "postprocess_status" | "postprocess_profile">>;
+	"text" | "raw_text" | "applied_profile" | "processed_text" | "postprocess_status" | "postprocess_profile" | "postprocess_instructions">>;
 export interface RecordingPatch { title?: string; title_auto?: boolean; status?: Recording["status"]; error_message?: string | null; review_status?: "editing" | "ready" }
 /** A new re-dictation part; it starts `pending`, the processor runs its job. `id` is the editor chip's `partId`. */
 export type NewRecordingPart = Pick<RecordingPart, "id" | "recording" | "seq" | "language" | "profile" | "anchor_offset" | "anchor_text_sha">;

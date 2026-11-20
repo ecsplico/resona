@@ -37,8 +37,8 @@ def free_port() -> int:
 
 
 @contextmanager
-def serve(app):
-    port = free_port()
+def serve(app, port: int | None = None):
+    port = port or free_port()
     # log_config=None: uvicorn's lines go through the root logger, so caplog sees them.
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info", log_config=None))
     thread = threading.Thread(target=server.run, daemon=True)

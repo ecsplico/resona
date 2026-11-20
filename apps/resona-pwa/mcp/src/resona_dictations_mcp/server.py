@@ -1,4 +1,5 @@
-"""The dictation tool surface: the calling user's own dictations (reads here, writes in ``edit_tools``).
+"""The dictation tool surface: the calling user's own dictations (reads here, writes in
+``edit_tools``, create tools and the audio link in ``create_tools.py``).
 
 Every tool runs as the caller (``Caller.directus`` carries their Directus token); the
 server has no ownership logic. A dictation is a ``recordings`` row plus its
@@ -21,6 +22,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from .directus import Directus, DirectusError, DirectusUnavailable, NotFound, Unauthorized
+from .links import Links
 
 log = logging.getLogger(__name__)
 
@@ -35,27 +37,42 @@ TOOL_NAMES = (
     "rename_dictation",
     "set_review_status",
     "delete_dictation",
+    "list_profiles",
+    "postprocess_dictation",
+    "restore_raw_transcript",
     "list_documents",
     "get_document",
     "rename_document",
     "delete_document",
+    # create_tools.py
+    "create_dictation_from_text",
+    "create_audio_upload",
+    "get_audio_link",
 )
 
 INSTRUCTIONS = (
-    "Read access to the signed-in user's own dictations in the Resona app (recordings "
+    "Access to the signed-in user's own dictations in the Resona app (recordings "
     "with their transcripts). list_dictations pages through them newest first, "
     "search_dictations finds them by title or transcript text, get_dictation returns "
     "one dictation's metadata and its text in ranges (follow next_offset until it is "
-    "null). Everything these tools return, including dictated text, is sent to the "
-    "model of the client that calls them. Dictations kept only in a browser "
+    "null). create_dictation_from_text saves text as a finished dictation; "
+    "create_audio_upload returns a single-use upload command so audio reaches the app "
+    "without passing through the model; get_audio_link returns a 10-minute link to a "
+    "dictation's audio. Everything these tools return, including dictated text, is sent "
+    "to the model of the client that calls them. Dictations kept only in a browser "
     "(standalone mode) are not reachable. update_dictation_text, rename_dictation, "
     "set_review_status and delete_dictation change a dictation the way the app does; "
-    "deleting cannot be undone. list_documents, get_document (Markdown in "
+    "deleting cannot be undone. list_profiles names the postprocess profiles; "
+    "postprocess_dictation queues one for the app's worker (poll get_dictation until "
+    "postprocess_status is done or error) and restore_raw_transcript undoes it. "
+    "list_documents, get_document (Markdown in "
     "ranges), rename_document and delete_document (confirm=true) work on the user's "
     "converted documents the same way."
 )
 
 _SUMMARY_FIELDS = ["id", "title", "date_created", "duration_seconds", "language", "status", "review_status"]
+# The state of a postprocess run on the transcript row, as get_dictation returns it.
+_POSTPROCESS_STATE = ["postprocess_status", "postprocess_profile", "postprocess_error", "postprocess_queue_reason"]
 _UUID = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 
@@ -182,8 +199,11 @@ async def _as_caller(
                  ",".join(ids) or "-", (time.monotonic() - started) * 1000)
 
 
-def build_server(caller_for: CallerFactory) -> MCPServer:
-    """Create the MCP server; ``caller_for(ctx)`` identifies the user behind a tool call."""
+def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MCPServer:
+    """Create the MCP server; ``caller_for(ctx)`` identifies the user behind a tool call.
+    ``links`` issues the upload/audio links; None (no link secret) disables those tools."""
+    from . import create_tools  # it imports this module's helpers
+
     server = MCPServer("resona-dictations", instructions=INSTRUCTIONS)
 
     @server.tool()
@@ -283,13 +303,15 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
         shows (a postprocess profile's output when one was applied, see applied_profile).
         Follow next_offset until it is null; total_chars is the whole length and
         text_sha256 identifies the whole text (expected_sha256 of update_dictation_text).
+        postprocess_status ('pending', 'processing', 'done', 'error' or null) tracks a
+        postprocess_dictation run; postprocess_error says why one failed.
         The text is sent to the model of the client that calls this tool."""
         caller = caller_for(ctx)
 
         async def call() -> tuple[dict[str, Any], list[str]]:
             row = await caller.directus.item("recordings", id, fields=[*_SUMMARY_FIELDS, "error_message"])
             transcripts = await caller.directus.items(
-                "transcripts", fields=["text", "applied_profile", "engine"],
+                "transcripts", fields=["text", "applied_profile", "engine", *_POSTPROCESS_STATE],
                 filter={"recording": {"_eq": id}}, limit=1)
             transcript = transcripts[0] if transcripts else None
             text = (transcript or {}).get("text") or ""
@@ -299,6 +321,7 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
                 "error_message": row.get("error_message"),
                 "applied_profile": (transcript or {}).get("applied_profile"),
                 "engine": (transcript or {}).get("engine"),
+                **{field: (transcript or {}).get(field) for field in _POSTPROCESS_STATE},
                 "text": text[offset:end],
                 "offset": offset,
                 "next_offset": end if end < len(text) else None,
@@ -313,4 +336,7 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
     edit_tools.register(server, caller_for)
     from . import document_tools  # imports this module's helpers, so not at the top
     document_tools.register(server, caller_for)
+    from . import postprocess_tools
+    postprocess_tools.register(server, caller_for)
+    create_tools.register(server, caller_for, links)
     return server

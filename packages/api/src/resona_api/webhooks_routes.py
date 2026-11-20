@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
@@ -45,6 +45,22 @@ class WebhookWithSecret(WebhookView):
 
 class WebhookList(BaseModel):
     items: list[WebhookView]
+
+
+class DeliveryView(BaseModel):
+    """Delivery metadata. Never the payload body, the URL or the secret."""
+
+    id: str
+    job_id: int
+    event: str
+    attempts: int
+    last_status: int | None
+    delivered_at: datetime | None
+    last_error: str | None
+
+
+class DeliveryList(BaseModel):
+    items: list[DeliveryView]
 
 
 def _view(row: WebhookEndpoint) -> WebhookView:
@@ -113,6 +129,34 @@ def get_webhook_route(
 ):
     """One unrevoked endpoint, without its secret."""
     return _view(_found(session, principal, name))
+
+
+@router.get("/{name}/deliveries", response_model=DeliveryList, summary="List recent webhook deliveries")
+def list_deliveries_route(
+    name: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    principal: Principal = Depends(admin_principal),
+    session: Session = Depends(get_db_session),
+):
+    """The endpoint's last ``limit`` deliveries, newest first: metadata only.
+
+    ``last_error`` is ``expired`` (unsent 24 h after creation) or ``endpoint_revoked``
+    for abandoned rows, else the last failed attempt's reason (``http_<status>``,
+    ``timeout``, ``connection_error``, ``invalid_url``). Rows are kept seven days.
+    """
+    endpoint = _found(session, principal, name)
+    return DeliveryList(items=[
+        DeliveryView(
+            id=row.id,
+            job_id=row.job_id,
+            event=row.event,
+            attempts=row.attempts,
+            last_status=row.last_status,
+            delivered_at=clock.as_utc(row.delivered_at) if row.delivered_at is not None else None,
+            last_error=row.last_error,
+        )
+        for row in webhooks.recent_deliveries(session, endpoint.id, limit)
+    ])
 
 
 @router.post("/{name}/rotate", response_model=WebhookWithSecret, summary="Rotate a webhook signing secret")

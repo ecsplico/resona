@@ -140,24 +140,43 @@ only with the caller's Directus token (`Authorization: Bearer`, verified via `GE
 Directus 401 in a tool call drops the cache entry), holds no admin/worker token, never
 calls the hub, and adds no owner filter (the `user` policy scopes every read; `directus.py`
 is the only Directus client, list queries go in a `SEARCH` body so they reach no URL log).
-Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
+Tools (`server.py` read tools, `create_tools.py` create tools; `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
 `list_dictations` (cursor = last `date_created` + count of rows already returned at that
 instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
-(`transcripts.text` in ranges ≤ 32768, plus `text_sha256` of the whole text). Write tools
+(`transcripts.text` in ranges ≤ 32768, plus `text_sha256` of the whole text and the
+postprocess state `postprocess_status`/`_profile`/`_error`/`_queue_reason`). Write tools
 (`edit_tools.py`, metadata-only results) make the app's writes: `update_dictation_text`
 (`transcripts.text` only, or a new transcript row when there is none; optional
 `expected_sha256` → `conflict`, `busy` while `postprocessRunning`), `rename_dictation`
 (`renamePatch`: trimmed title + `title_auto=false`), `set_review_status`
 (`reviewStatusPatch`), `delete_dictation` (`confirm: true` required, else
 `confirm_required`; one `DELETE recordings/<id>` like `deleteRecording`, transcripts,
-corrections and parts cascade, audio files stay as after an app delete). The patches live
-in `app/utils/dictationEdit.ts`; `shared/dictationEdit.cases.json` drives
+corrections and parts cascade, audio files stay as after an app delete). Postprocess tools
+(`postprocess_tools.py`, metadata-only results): `list_profiles` (`PROFILES`, a copy of
+`shared/postprocessProfiles.json` since the image is built from `mcp/` alone; the app's
+`POSTPROCESS_PROFILES`), `postprocess_dictation(id, profile, instructions?, confirm)`
+(writes `postprocessRequest`: `pending` + `postprocess_profile` + `postprocess_instructions`,
+returns at once; the project worker runs the hub text job; `unknown_profile` /
+`invalid_instructions` (profile without llm/extract step) before any Directus call, then
+`no_transcript`, `busy`, `confirm_required` when `editedSinceProfile`) and
+`restore_raw_transcript(id, confirm)` (writes `rawRestore`; `nothing_to_restore`, `busy`,
+`confirm_required`). The service has no hub client (`test_the_service_has_no_hub_client`).
+The patches live in `app/utils/dictationEdit.ts` and `app/utils/postprocess.ts`;
+`shared/dictationEdit.cases.json` drives
 `test/dictationEdit.spec.ts` and `mcp/tests/test_edit_tools.py`, so change both sides and
-the fixture together. `document_tools.py` (`register(server, caller_for)`):
+the fixture together; `test/postprocessProfiles.spec.ts` keeps the catalogue equal to the
+profiles `scripts/push-profiles.sh` uploads. `document_tools.py` (`register(server, caller_for)`):
 `list_documents` (same cursor), `get_document` (`documents.markdown` in ranges ≤ 32768),
 `rename_document` (needs `title` in the `documents` update permission), `delete_document`
 (`confirm: true` required, else `confirm_required:` before any Directus call; deletes the
-row like the app, the file stays); writes return metadata only. Logs: `tool= user= outcome= ids= ms=`, never text,
+row like the app, the file stays); writes return metadata only. `create_tools.py`:
+`create_dictation_from_text` (recording `live`/`done`
+and its transcript as the caller, `title_auto` without title), `create_audio_upload` and
+`get_audio_link` (`links.py`: HMAC-signed 10-minute links under `/mcp/links/`, secret
+`DICTATIONS_MCP_LINK_SECRET`, base `DICTATIONS_MCP_PUBLIC_URL`; grant = user + their Directus
+client held in memory per link id, single instance assumed; upload links single use, size
+cap + magic bytes before storing, then file upload + recording `pending` as the user for the
+project worker; proxied by `server/routes/mcp/links/[...path].ts`). Logs: `tool= user= outcome= ids= ms=`, never text,
 titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa test-mcp`)
 start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
 compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running
@@ -287,8 +306,10 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   error, raw transcript) inline; its profile choice, run and restore live in a dialog the
   header's ⋯ menu opens (closed after a request is written). It lists `GET /profiles`
   (`useProfiles`, which exposes a load `error` instead of a fake one-entry list) and writes
-  `postprocessRequest(profile)` (`app/utils/postprocess.ts`: only `postprocess_status:
-  "pending"` + `postprocess_profile`) onto the transcript row; it is enabled only when the
+  `postprocessRequest(profile, instructions?)` (`app/utils/postprocess.ts`: only
+  `postprocess_status: "pending"` + `postprocess_profile` + `postprocess_instructions`,
+  null from the dialog, which has no instructions input; the dictations MCP sets them)
+  onto the transcript row; it is enabled only when the
   transcript is saved, no dictation / continue-recording is running and this device has a
   hub token (`useHubTokenGate`; standalone needs it to run the job). The editor is
   read-only (`TranscriptEditor` `editable`) while the run is `pending|processing`. The
@@ -655,7 +676,9 @@ through `$fetch`. Don't add further routes. Keep client calls to the **literal**
   date_updated` — the `engine` field lives **HERE**, not on recordings. Re-processing
   ("Nachbearbeiten") adds `raw_text` (the raw transcript a profile ran on; null while `text`
   is raw), `applied_profile`, `postprocess_status (pending|processing|done|error)`,
-  `postprocess_profile`, `postprocess_error`, `postprocess_queue_reason`,
+  `postprocess_profile`, `postprocess_instructions` (text, user instructions for the run's
+  llm/extract steps, sent as hub job `instructions` only when set, cleared when the run
+  ends), `postprocess_error`, `postprocess_queue_reason`,
   `postprocess_job_id`, `postprocess_job_key` (bootstrap adds them to existing installs).
 - **recordings** also has `hub_job_id` (integer, the in-flight hub job) and `hub_job_key`
   (string, the hub Idempotency-Key of the current submission attempt; persisted before

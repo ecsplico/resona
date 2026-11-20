@@ -188,7 +188,7 @@ export function useHub() {
 
 	async function createJob(
 		// `text`: postprocess-only job on an uploaded transcript; `profile` is required.
-		body: { kind: "audio" | "document" | "text"; upload_id: string; language?: string; profile?: string; engine?: string },
+		body: { kind: "audio" | "document" | "text"; upload_id: string; language?: string; profile?: string; engine?: string; instructions?: string },
 		idempotencyKey: string,
 	): Promise<number> {
 		const res = await json<{ job_id: number }>("/v1/jobs", {

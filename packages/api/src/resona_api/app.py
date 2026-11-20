@@ -9,7 +9,7 @@ from decouple import config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import hublock
+from . import hublock, webhooks
 from .db.engine import create_db_and_tables
 from .errors import install_error_handlers
 from .maintenance import maintenance_loop
@@ -98,15 +98,20 @@ async def lifespan(app: FastAPI):
         if removed:
             log.info("Removed %d legacy result export files", removed)
 
-        log.info("Starting maintenance loop...")
-        maintenance = asyncio.create_task(maintenance_loop())
+        log.info("Starting maintenance loop and webhook dispatcher...")
+        tasks = [
+            asyncio.create_task(maintenance_loop()),
+            asyncio.create_task(webhooks.dispatch_loop()),
+        ]
 
         yield
 
         log.info("Shutting down...")
-        maintenance.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await maintenance
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         log.info("Background tasks stopped")
     finally:
         lock.release()

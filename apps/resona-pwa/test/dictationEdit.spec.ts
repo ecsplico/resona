@@ -4,7 +4,7 @@ import fixture from "#shared/dictationEdit.cases.json";
 import { createDirectusStore } from "~/data/directusStore";
 import { useTranscriptEdit } from "~/composables/useTranscriptEdit";
 import { renamePatch, reviewStatusPatch } from "~/utils/dictationEdit";
-import { postprocessRunning } from "~/utils/postprocess";
+import { editedSinceProfile, postprocessRequest, postprocessRunning, rawRestore } from "~/utils/postprocess";
 import type { Transcript } from "~/types/directus";
 
 // The same cases pin the dictations MCP server (mcp/tests/test_edit_tools.py):
@@ -41,14 +41,26 @@ describe("dictation edits (shared/dictationEdit.cases.json)", () => {
 	for (const c of fixture.cases.filter(c => !("mcp_only" in c && c.mcp_only))) {
 		it(c.name, async () => {
 			const input = c.input as Record<string, unknown>;
-			const transcript = ("transcript" in c ? c.transcript : null) as Pick<Transcript, "text" | "postprocess_status"> | null;
+			const transcript = ("transcript" in c ? c.transcript : null) as Pick<
+				Transcript, "text" | "raw_text" | "processed_text" | "applied_profile" | "postprocess_status"
+			> | null;
 			const store = createDirectusStore();
+			// The postprocess panel's guards: locked while a profile runs, asks before
+			// replacing edits made since the profile ran (`confirm: true` = the user agreed).
+			const edited = transcript !== null && editedSinceProfile(transcript, transcript.text ?? "");
 			if ("error" in c) {
-				// The app never gets there: the editor is locked while a profile runs.
-				expect(c.error).toBe("busy");
-				expect(postprocessRunning(transcript)).toBe(true);
+				// The app never gets there: its guard stops it before any write.
+				if (c.error === "busy") expect(postprocessRunning(transcript)).toBe(true);
+				else if (c.error === "confirm_required") expect(edited && input.confirm !== true).toBe(true);
+				else if (c.error === "nothing_to_restore") expect(transcript?.applied_profile ?? null).toBeNull();
+				else throw new Error(`no app guard for ${c.error}`);
 				expect(c.writes).toEqual([]);
 				return;
+			}
+			if (c.action === "postprocess" || c.action === "restore_raw") {
+				expect(transcript).not.toBeNull();
+				expect(postprocessRunning(transcript)).toBe(false);
+				expect(!edited || input.confirm === true).toBe(true);
 			}
 			if (c.action === "update_text") {
 				expect(postprocessRunning(transcript)).toBe(false);
@@ -67,6 +79,13 @@ describe("dictation edits (shared/dictationEdit.cases.json)", () => {
 			}
 			else if (c.action === "delete") {
 				await store.deleteRecording(fixture.recording);
+			}
+			else if (c.action === "postprocess") {
+				const instructions = typeof input.instructions === "string" ? input.instructions : null;
+				await store.updateTranscript(fixture.transcript, postprocessRequest(String(input.profile), instructions));
+			}
+			else if (c.action === "restore_raw") {
+				await store.updateTranscript(fixture.transcript, rawRestore(transcript!));
 			}
 			else {
 				throw new Error(`unknown action ${c.action}`);

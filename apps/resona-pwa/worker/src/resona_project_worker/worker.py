@@ -58,6 +58,7 @@ POSTPROCESS_ERRORS = {
     "profile_not_found": "Profil auf dem Hub nicht gefunden.",
     "invalid_profile": "Das Profil auf dem Hub ist ungültig.",
     "policy_denied": "Von der Richtlinie der Organisation abgelehnt.",
+    "invalid_instructions": "Das Profil nimmt keine Anweisungen an.",
 }
 
 
@@ -248,6 +249,8 @@ async def _submit_text(row: dict, directus: DirectusClient, hub: HubClient) -> b
         upload_id = await hub.upload_text(source, "transcript.md")
         job_id = await hub.create_job(
             kind="text", upload_id=upload_id, idempotency_key=key, profile=profile,
+            # the user's instructions for the profile's llm/extract steps, only when set
+            instructions=row.get("postprocess_instructions") or None,
         )
     except HubError as exc:
         mapped = postprocess_error_message(exc.code, exc.detail)

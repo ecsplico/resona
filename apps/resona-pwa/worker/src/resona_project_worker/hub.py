@@ -91,9 +91,11 @@ class HubClient:
     async def create_job(
         self, *, kind: str, upload_id: str, idempotency_key: str,
         language: str | None = None, profile: str | None = None, engine: str | None = None,
+        instructions: str | None = None,
     ) -> int:
         body: dict = {"kind": kind, "upload_id": upload_id, "private": True}
-        for key, val in (("language", language), ("profile", profile), ("engine", engine)):
+        for key, val in (("language", language), ("profile", profile), ("engine", engine),
+                         ("instructions", instructions)):
             if val is not None:
                 body[key] = val
         resp = await self._request(

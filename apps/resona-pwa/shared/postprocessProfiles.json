@@ -1,0 +1,7 @@
+{
+	"_doc": "The hub postprocess profiles this app offers under \"Nachbearbeiten\" (pushed by scripts/push-profiles.sh, which also pushes the transcription default dictation-medical-de). The app's dialog lists the hub's live /profiles; the dictations MCP server (mcp/src/resona_dictations_mcp/postprocess_tools.py, PROFILES) offers exactly these, since it never calls the hub. `instructions`: the profile has an llm/extract step, so the hub accepts user instructions for it (else 422 invalid_instructions). test/postprocessProfiles.spec.ts and mcp/tests/test_postprocess_tools.py keep the copies in step.",
+	"profiles": [
+		{ "name": "transcript-markdown-de", "instructions": false, "description": "German dictation commands to Markdown (rules only, no language model): headings, paragraphs, punctuation." },
+		{ "name": "transcript-polish-de", "instructions": true, "description": "The same rules, then a language model fixes capitalization, punctuation and whitespace only; no word changes." }
+	]
+}
