@@ -934,6 +934,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dictation-medical-de" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        dictation-medical-de
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#transcript-markdown-de-and-transcript-polish-de" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2897,6 +2908,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dictation-medical-de" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        dictation-medical-de
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#transcript-markdown-de-and-transcript-polish-de" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3304,10 +3326,9 @@ punctuation command absorbs the punctuation right before and after it, so the re
 </ul>
 <p>Otherwise the text stays exactly as spoken: <code>Kapitel Anamnese der Patient berichtet Komma er habe
 Schmerzen Punkt</code> becomes <code>Kapitel Anamnese der Patient berichtet, er habe Schmerzen.</code>, not a
-heading. The medical section headings <code>Verlauf</code>, <code>Medikation</code>, <code>Psychopathologischer Befund</code> and
-<code>Procedere</code> (also spoken <code>Prozedere</code>) need no terminator; a spoken <code>Absatz</code>, <code>Punkt</code>,
-<code>Doppelpunkt</code> or <code>Komma</code> right after them is dropped. Leading and trailing blank lines are
-removed. The <code>default</code> profile also carries a few name corrections.</p>
+heading. Leading and trailing blank lines are removed. <code>default</code> holds only these generic
+commands; the medical section headings and name corrections are in the catalogue profile
+<a href="#dictation-medical-de"><code>dictation-medical-de</code></a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
 </code></pre></div>
 <p>becomes</p>
@@ -3354,6 +3375,11 @@ only after an org admin pushed them:</p>
 </thead>
 <tbody>
 <tr>
+<td><code>dictation-medical-de</code></td>
+<td>Name corrections, medical section headings, then the generic commands of <code>default</code> (rules only; what <code>default</code> did up to 0.2.7)</td>
+<td>Nothing</td>
+</tr>
+<tr>
 <td><code>transcript-markdown-de</code></td>
 <td>Dictation commands → Markdown, rules only</td>
 <td>Nothing</td>
@@ -3371,10 +3397,26 @@ only after an org admin pushed them:</p>
 </tbody>
 </table>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/ecsplico/resona<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>resona<span class="w">   </span><span class="c1"># or download the files of your release tag</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-markdown-de<span class="w"> </span>profiles/transcript-markdown-de.json
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-polish-de<span class="w"> </span>profiles/transcript-polish-de.json
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>document-polish-de<span class="w"> </span>profiles/document-polish-de.json
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>dictation-medical-de<span class="w"> </span>profiles/dictation-medical-de.json
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-markdown-de<span class="w"> </span>profiles/transcript-markdown-de.json
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-polish-de<span class="w"> </span>profiles/transcript-polish-de.json
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>document-polish-de<span class="w"> </span>profiles/document-polish-de.json
 </code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Release note: <code>default</code> lost its medical headings and name corrections</p>
+<p>Up to 0.2.7 the bundled <code>default</code> also turned <code>Kapitel Verlauf</code>, <code>Kapitel Medikation</code>,
+<code>Kapitel Psychopathologischer Befund</code> and <code>Kapitel Procedere</code>/<code>Prozedere</code> into headings without
+a terminator and corrected a few names (<code>Monique</code> → <code>Monic</code>, …). These rules moved to the
+catalogue profile <code>dictation-medical-de</code>; <code>default</code> keeps the generic commands, whose output is
+unchanged. A medical dictation with <code>profile=default</code> (or <code>postprocess_profile</code> <code>default</code>) now
+keeps the names uncorrected, and a medical heading without a terminator stays text:
+<code>Kapitel Verlauf Komma stabil Punkt</code> gave <code>## Verlauf</code> + <code>stabil.</code> and now gives
+<code>Kapitel Verlauf, stabil.</code> (with a terminator, <code>Kapitel Verlauf Absatz</code>, the generic rule still
+makes the heading). Fix: push <code>profiles/dictation-medical-de.json</code> and select
+<code>dictation-medical-de</code> (<code>--profile</code>, or the organization's <code>postprocess_profile</code>). The
+reference app selects it by default (<code>NUXT_PUBLIC_DEFAULT_PROFILE</code>) and pushes it with
+<code>just pwa push-profiles</code>.</p>
+</div>
 <div class="admonition note">
 <p class="admonition-title">Release note: product profiles left the wheel</p>
 <p>Up to 0.2.7 the wheel also contained <code>transcript-markdown-de.json</code>, <code>transcript-polish-de.json</code>,
@@ -3385,9 +3427,18 @@ from changed: the three above from <code>profiles/</code>, <code>title-de</code>
 them from <code>resona_postprocess/profiles/</code> must read the catalogue instead, and a hub that never
 pushed them has to push them once.</p>
 </div>
+<h3 id="dictation-medical-de">dictation-medical-de<a class="headerlink" href="#dictation-medical-de" title="Permanent link">&para;</a></h3>
+<p><code>profiles/dictation-medical-de.json</code> is one <code>replacements</code> step with inline rules, in this order:
+name corrections (<code>Monique</code> → <code>Monic</code>, <code>Serafine</code>/<code>Serafina</code> → <code>Seraphine</code>, <code>Lucy</code> → <code>Lucie</code>,
+<code>Nele</code>/<code>Mele</code> → <code>Neele</code>), the medical section headings, then the generic commands of <code>default</code>.
+The headings <code>Kapitel Verlauf</code>, <code>Kapitel Medikation</code>, <code>Kapitel Psychopathologischer Befund</code> and
+<code>Kapitel Procedere</code> (also spoken <code>Prozedere</code>) need no terminator; a spoken <code>Absatz</code>, <code>Punkt</code>,
+<code>Doppelpunkt</code> or <code>Komma</code> right after them is dropped. They run before the general <code>Kapitel</code> rule,
+so <code>Kapitel Verlauf der Patient ist stabil Punkt</code> gives <code>## Verlauf</code> + <code>der Patient ist stabil.</code>.
+Its output is what <code>default</code> produced up to 0.2.7.</p>
 <h3 id="transcript-markdown-de-and-transcript-polish-de">transcript-markdown-de and transcript-polish-de<a class="headerlink" href="#transcript-markdown-de-and-transcript-polish-de" title="Permanent link">&para;</a></h3>
-<p><code>profiles/transcript-markdown-de.json</code> holds the same dictation rules as <code>default</code>, without the
-name corrections and without any LLM step, so it runs on every worker.
+<p><code>profiles/transcript-markdown-de.json</code> holds the rules of <code>dictation-medical-de</code> without its name
+corrections and without any LLM step, so it runs on every worker.
 <code>profiles/transcript-polish-de.json</code> runs the same rules, then a chunked <code>llm</code> step on the endpoint
 id <code>local-llm</code>. Its prompt allows the model to change only capitalization (sentence starts, after
 headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any
