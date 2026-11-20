@@ -49,6 +49,17 @@ def test_hub_apps_and_root_build_files_are_scanned(tmp_path):
     ]
 
 
+def test_typescript_client_is_hub_side(tmp_path):
+    _write(tmp_path, "clients/hub-ts/src/client.ts", "const url = 'http://directus:8055';\n")
+    _write(tmp_path, "clients/hub-ts/test/client.test.ts", "// directus\n")
+    _write(tmp_path, "clients/hub-ts/node_modules/x/index.js", "// directus\n")
+    result = _run(tmp_path)
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == [
+        "clients/hub-ts/src/client.ts:1: mentions Directus (reference app data layer)"
+    ]
+
+
 def test_hub_tests_and_docs_are_not_scanned(tmp_path):
     _write(tmp_path, "packages/api/tests/test_x.py", "# directus\n")
     _write(tmp_path, "packages/api/README.md", "See apps/resona-pwa.\n")

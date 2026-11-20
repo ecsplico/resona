@@ -32,6 +32,9 @@ resona/
 ├── profiles/               ← profile catalogue: postprocess profiles that need org setup, pushed with `resona profiles push` (not in any wheel); profiles/README.md
 ├── eval/                   ← evaluation corpus (eval/corpus, synthetic, CC0) + promoted baselines (eval/baselines.json)
 ├── contract/               ← contract/openapi.json: the committed client contract (`just contract`); docs/reference/http-api.md
+├── clients/
+│   └── hub-ts/             ← @ecsplico/resona-hub-client: TypeScript client generated from contract/openapi.json (bun, openapi-fetch);
+│                             own toolchain, NOT a uv workspace member, hub side of the boundary check; CI clients.yml
 ├── apps/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
@@ -295,6 +298,13 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `webhooks.py` — `verify(headers, body, secret, *, tolerance_seconds=300, now=None) -> JobEvent`: pure receiver-side check of the Standard Webhooks headers `webhook-id`/`webhook-timestamp`/`webhook-signature` (case-insensitive; space-separated `v1,<b64>` list, one match suffices, `hmac.compare_digest`); recomputes with job-core `sign` (key via `secret_key`), the hub's own function, so both sides cannot drift; rejects a timestamp outside ± tolerance and a body that is not a `JobEvent`; every failure is `InvalidWebhookSignature`
 - `config.py` — `EngineConfig`: `~/.resona/config.json`, auto-start (SSH tunnel, docker compose), `default_engine`, `default_profile`; `EngineEntry`: one Resona hub (resona-api) — `name`, `api_url`, `api_key`, `compose_dir`, `ssh_host`, `ssh_remote_port`; legacy `type: "cloud"` entries are dropped on load with a warning and obsolete keys (`private`, `provider`, …) ignored; `resolve_engine()` — probes priority-ordered hub entries, auto-starting unreachable ones
 
+### @ecsplico/resona-hub-client (lives in `clients/hub-ts/`)
+- bun package, ESM + types, browser / Node 20+ / Bun; runtime dependency `openapi-fetch` only (dev: `openapi-typescript`, `typescript`, `vitest`). Own `bun.lock`; not a uv workspace member, excluded from ruff and pytest; scanned as hub side by `scripts/check_boundary.py`. CI `.github/workflows/clients.yml`: `bun install --frozen-lockfile`, `bun run generate` + `git diff --exit-code` (drift), typecheck, build, test
+- `src/schema.d.ts` — generated from `contract/openapi.json` by `openapi-typescript` (`bun run generate`; `just contract` regenerates contract and types). Never edit by hand. `POST /v1/jobs` has no request body in the contract, so `JobRequest` is written in `client.ts`
+- `src/client.ts` — `createHubClient({baseUrl, token, fetch?, retryDelayMs?})`: `api` (typed `openapi-fetch` client, `Authorization: Bearer`), `upload(blob, filename?)`, `submitJob(request | {file, filename, …})` (uploads when given a file; one `crypto.randomUUID()` `Idempotency-Key` per call or `idempotencyKey`, reused on up to 3 attempts after transport errors / 502–504; an abort is never retried), `getJob`, `waitForJob(id, {signal, pollMs})`, `resultMarkdown(id, {source})` (32768-char range reads joined). Non-2xx → `HubError{status, code, message}` (`{error, message}` or FastAPI `{detail}`)
+- `src/listen.ts` — hand-written `WS /v1/listen` types (`ListenParams`, `ListenResults`/`ListenMetadata`/`ListenError`), `listenUrl` (`ws(s)`, token as `?token=`), `parseListenMessage`, `CLOSE_STREAM`, `toLinear16`, `audioFrame` (JSON `{type: "audio", data, sample_rate}`), `openListen` (binary PCM up, parsed messages down; injectable `createSocket`)
+- `src/webhooks.ts` — `verifyWebhook(headers, body, secret, {toleranceSeconds=300, now})` → `JobEvent`: Standard Webhooks (`webhook-id`/`-timestamp`/`-signature`, space-separated `v1,<b64>`), key as job-core `secret_key` (`whsec_` base64, else UTF-8), WebCrypto HMAC verify; `WebhookVerificationError` otherwise. Test vector produced by `resona_job_core.webhooks.sign`
+
 ### resona-cli (lives in `apps/resona-cli/`)
 - `main.py` — typer app root, `resona` command
 - `hub.py` — hub selection and errors shared by hub commands: `connect_hub()` and `hub_identity()` resolve the same hub (`RESONA_API_URL`/`RESONA_API_KEY`, then `WS_API_URL`/`WS_API_KEY`, else the first `resona-api` entry with a URL in `~/.resona/config.json`); an unreachable chosen hub → exit 1, never another entry and never local. `fail()`, exit codes (`EXIT_ERROR=1`, `EXIT_POLICY_DENIED=2`), `check_privacy_flags(private, allow_cloud)` (`--private`/`--allow-cloud` mutually exclusive; default private), `policy_summary(job)` (one stderr line: job, private, execution profile, candidate, status)
@@ -531,13 +541,14 @@ uv run pytest packages/tts-local/tests/            # local TTS engines
 uv run pytest -k test_transcribe                   # one test
 just pwa test                                      # reference app (vitest, from apps/resona-pwa)
 just pwa test-worker                               # reference app project worker (own uv env)
+(cd clients/hub-ts && bun run test)                # TypeScript hub client (vitest)
 ```
 
-Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the reference app and its worker run through `just pwa …` or from `apps/resona-pwa/`.
+Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the reference app and its worker run through `just pwa …` or from `apps/resona-pwa/`, the TypeScript client from `clients/hub-ts/`.
 
 Lint: `uv run ruff check .` (pyflakes + pycodestyle error classes, config in the root `pyproject.toml`; CI runs it before the tests). Not a formatter policy: do not run `ruff format` over existing files.
 
-Hub/app boundary ([ADR 0001](docs/adr/0001-hub-and-app-boundary.md)): `uv run python scripts/check_boundary.py` (in `just lint`, `test.yml` after ruff, and `pwa.yml`; stdlib only, `--root` for another tree; tests in `scripts/tests/`). Hub source under `packages/`, `apps/resona-{cli,worker,mcp}` and the root `justfile`/`pyproject.toml`/`docker-compose*.yml`/`.dockerignore` (tests and docs skipped) must not mention `directus`, `resona_project_worker`, `resona_dictations_mcp`, `resona-pwa` or `resona-verlauf`; the consumer apps `apps/resona-pwa` and `apps/resona-verlauf` (a Nuxt layer on the PWA, so app side) must not import hub Python packages (`resona_client` excepted) or path-reference `packages/` / hub `apps/`. Prints `path:line: message`, exit 1. Sanctioned mentions go into its `ALLOWLIST` (file + line regex + reason).
+Hub/app boundary ([ADR 0001](docs/adr/0001-hub-and-app-boundary.md)): `uv run python scripts/check_boundary.py` (in `just lint`, `test.yml` after ruff, and `pwa.yml`; stdlib only, `--root` for another tree; tests in `scripts/tests/`). Hub source under `packages/`, `apps/resona-{cli,worker,mcp}`, `clients/hub-ts` and the root `justfile`/`pyproject.toml`/`docker-compose*.yml`/`.dockerignore` (tests and docs skipped) must not mention `directus`, `resona_project_worker`, `resona_dictations_mcp`, `resona-pwa` or `resona-verlauf`; the consumer apps `apps/resona-pwa` and `apps/resona-verlauf` (a Nuxt layer on the PWA, so app side) must not import hub Python packages (`resona_client` excepted) or path-reference `packages/` / hub `apps/`. Prints `path:line: message`, exit 1. Sanctioned mentions go into its `ALLOWLIST` (file + line regex + reason).
 
 Release id = the version of every workspace package (all equal). After a `vX.Y.Z` tag, the next change to `main` must bump it (`just bump <next>` → `scripts/release_version.py`, all `pyproject.toml` + `uv.lock`, then `scripts/gen_openapi.py`, since `contract/openapi.json` carries the release id); CI (`test.yml`) fails a commit that reuses a tagged version, because hub and workers would report an evaluated release while running other code. Tests that need the hub's own release use `releases.hub_release_id()`, never a literal. Docs: `docs/server/releases.md#version-bump`.
 

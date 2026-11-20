@@ -287,6 +287,8 @@ Verify the signature over the raw body bytes before parsing them. Any `2xx` answ
 
 `GET /v1/webhooks/{name}/deliveries` lists the endpoint's deliveries newest first (`limit` 1–100, default 50): metadata only, never the payload, URL or secret. `delivered_at` is null until a `2xx`; `last_status` is the last HTTP status (null when no answer came); `last_error` is null, `http_<status>`, `timeout`, `connection_error`, `invalid_url` (the URL broke the URL rules at send time), `expired` or `endpoint_revoked`. Delivery rows are deleted seven days after creation.
 
+TypeScript receivers verify with `verifyWebhook(headers, body, secret)` from `@ecsplico/resona-hub-client` (`clients/hub-ts`).
+
 ---
 
 ### Management (`/v1/admin`, roles `org_admin`, `hub_operator`)

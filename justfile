@@ -190,9 +190,11 @@ bump version:
     python3 scripts/release_version.py bump {{ version }}
     uv run --package resona-api python scripts/gen_openapi.py
 
-# Regenerate contract/openapi.json, the published client contract (docs/reference/http-api.md)
+# Regenerate contract/openapi.json, the published client contract (docs/reference/http-api.md),
+# and the TypeScript client's types generated from it (clients/hub-ts/src/schema.d.ts)
 contract:
     uv run python scripts/gen_openapi.py
+    cd clients/hub-ts && bun install --frozen-lockfile && bun run generate
 
 # ── Tests ─────────────────────────────────────────────────────────────
 
