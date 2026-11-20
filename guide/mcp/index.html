@@ -2602,7 +2602,7 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>get_result(12)                                 → {markdown: &quot;...&quot;, next_offset: 32768, total_chars: 51234}
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>get_result(12, offset=32768)                   → … until next_offset is null
 </code></pre></div>
-<p>Re-polishing an earlier transcript with another stored profile:</p>
+<p>Re-polishing an earlier transcript with another stored profile. <code>profile</code> names a profile stored on the hub; <code>transcript-polish-de</code> comes from the repository's <code>profiles/</code> catalogue and exists only after an org admin pushed it (<code>resona profiles push</code>, see <a href="../postprocessing/#profile-catalogue">Profile catalogue</a>); an unknown name is the tool error <code>profile_not_found</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>postprocess_text(job_id=12, profile=&quot;transcript-polish-de&quot;)  → {job_id: 13, status: &quot;pending&quot;, private: true}
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>get_job(13) … get_result(13)
 </code></pre></div>

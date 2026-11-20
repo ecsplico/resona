@@ -2690,6 +2690,11 @@
 <td>Seconds <code>POST /v1/audio/transcriptions</code> waits for a worker to finish the job; on timeout it answers <code>504</code> with the <code>job_id</code> while the job keeps running</td>
 </tr>
 <tr>
+<td><code>RESONA_WEBHOOK_ALLOW_PRIVATE</code></td>
+<td><code>false</code></td>
+<td>Allow webhook endpoint URLs whose host is a loopback, private or link-local address, and plain <code>http</code> to such hosts. Off: <code>https</code> to public hosts only (see <a href="../../reference/api/#webhook-endpoints-role-org_admin">Webhook endpoints</a>)</td>
+</tr>
+<tr>
 <td><code>LOGLEVEL</code></td>
 <td><code>info</code></td>
 <td>Log level: <code>debug</code>, <code>info</code>, <code>warning</code>, <code>error</code></td>

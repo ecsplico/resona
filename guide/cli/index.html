@@ -3453,13 +3453,14 @@ profile's <code>name</code> (<code>postprocess</code> if it has none), reduced t
 outputs are kept unless <code>--force</code>. <code>--local</code> runs the profile in-process with cached hub settings
 and the same policy checks; no execution subprocess is started.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Re-run a new profile on job 12&#39;s transcript</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>--job<span class="w"> </span><span class="m">12</span><span class="w"> </span>--profile<span class="w"> </span>transcript-markdown-de<span class="w">   </span><span class="c1"># -&gt; job-12.transcript-markdown-de.md</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Fix dictation commands in a note, next to it -&gt; befund.fix.md</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>befund.md<span class="w"> </span>--profile<span class="w"> </span>fix
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Polish exported notes with the local LLM that only the assigned worker reaches</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>./notes/*.md<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span>--output-dir<span class="w"> </span>./polished/
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># transcript-markdown-de / document-polish-de: catalogue profiles, pushed once from profiles/</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>--job<span class="w"> </span><span class="m">12</span><span class="w"> </span>--profile<span class="w"> </span>transcript-markdown-de<span class="w">   </span><span class="c1"># -&gt; job-12.transcript-markdown-de.md</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># Fix dictation commands in a note, next to it -&gt; befund.fix.md</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>befund.md<span class="w"> </span>--profile<span class="w"> </span>fix
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1"># Polish exported notes with the local LLM that only the assigned worker reaches</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>./notes/*.md<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span>--output-dir<span class="w"> </span>./polished/
 </code></pre></div>
 <hr />
 <h2 id="watch">watch<a class="headerlink" href="#watch" title="Permanent link">&para;</a></h2>

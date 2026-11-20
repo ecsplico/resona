@@ -3220,7 +3220,7 @@
 <p>The restore:</p>
 <ol>
 <li>copies the backup over the database with the SQLite backup API and migrates it to the current schema;</li>
-<li>revokes <strong>every</strong> restored credential and worker. A credential that was revoked after the backup was taken therefore cannot come back. Issue fresh credentials and re-enroll the workers afterwards;</li>
+<li>revokes <strong>every</strong> restored credential, worker and webhook endpoint. A credential that was revoked after the backup was taken therefore cannot come back. Issue fresh credentials and re-enroll the workers afterwards;</li>
 <li>invalidates every active lease: processing jobs are requeued, or failed when no attempt or time is left;</li>
 <li>marks jobs whose payload files are gone as <code>content_unavailable</code>: pending jobs without input fail with that code, and completed jobs without a result file answer <code>410 content_unavailable</code> on the result route. Results are never fabricated;</li>
 <li>runs one maintenance pass, which reapplies content and metadata retention before the hub serves requests.</li>
