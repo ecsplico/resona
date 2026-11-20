@@ -6,7 +6,14 @@ import typer
 from pydantic import ValidationError
 from resona_client.client import DocumentOptions
 
-from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, check_privacy_flags, fail, instructions_arg
+from .hub import (
+    INSTRUCTIONS_FILE_HELP,
+    INSTRUCTIONS_HELP,
+    WEBHOOK_HELP,
+    check_privacy_flags,
+    fail,
+    instructions_arg,
+)
 from .media import MediaRequest, run_media
 from .transcribe import expand_inputs
 
@@ -74,6 +81,7 @@ def doc_files(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
+    webhook: Optional[str] = typer.Option(None, "--webhook", help=WEBHOOK_HELP),
     ocr: Optional[str] = typer.Option(None, "--ocr",
         help="auto (OCR bitmap regions only), force (full-page OCR) or off."),
     ocr_engine: Optional[str] = typer.Option(None, "--ocr-engine",
@@ -121,4 +129,5 @@ def doc_files(
         options=options,
         local=local,
         instructions=user_instructions,
+        webhook=webhook,
     ))

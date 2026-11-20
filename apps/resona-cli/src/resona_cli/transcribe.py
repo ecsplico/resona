@@ -6,7 +6,7 @@ from typing import Optional
 import typer
 from resona_client.client import AudioOptions
 
-from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, check_privacy_flags, instructions_arg
+from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, WEBHOOK_HELP, check_privacy_flags, instructions_arg
 from .media import MediaRequest, run_media
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
@@ -76,6 +76,7 @@ def transcribe_files(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
+    webhook: Optional[str] = typer.Option(None, "--webhook", help=WEBHOOK_HELP),
     translate: bool = typer.Option(False, "--translate", help="Translate to English."),
     word_timestamps: bool = typer.Option(False, "--word-timestamps", help="Request word timestamps."),
     diarize: Optional[bool] = typer.Option(None, "--diarize/--no-diarize",
@@ -115,4 +116,5 @@ def transcribe_files(
                              **({} if diarize is None else {"diarize": diarize})),
         local=local,
         instructions=user_instructions,
+        webhook=webhook,
     ))

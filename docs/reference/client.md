@@ -99,6 +99,38 @@ with open("out.mp3", "wb") as f:
 engines = client.list_engines()
 ```
 
+## Webhooks
+
+Instead of polling, a job can name a webhook endpoint the hub notifies when the job ends. Endpoints are managed with an org-admin credential; the signing secret is returned only by `create_webhook` and `rotate_webhook`.
+
+```python
+hook = client.create_webhook("backend", "https://app.example.com/resona-hook")  # WebhookCreated(name, url, created_at, secret)
+store_secret(hook.secret)                                    # shown once; not part of repr()
+client.list_webhooks()                                       # [Webhook(name, url, created_at)], no secrets
+client.rotate_webhook("backend").secret                      # new secret; the old one stops signing at once
+client.list_webhook_deliveries("backend", limit=20)          # [WebhookDelivery(id, job_id, event, attempts, last_status, delivered_at, last_error)], newest first
+client.delete_webhook("backend")
+
+ref = client.submit_job("memo.m4a", kind="audio", webhook="backend")   # also submit_upload / create_transcription
+```
+
+`webhook` is sent only when set. Errors are `ResonaAPIError` codes: 422 `invalid_webhook_name` / `invalid_webhook_url` and 409 `webhook_exists` on create, 404 `webhook_not_found` on rotate/delete/deliveries, 422 `unknown_webhook` on a job naming no active endpoint.
+
+The receiving backend verifies each request with `resona_client.webhooks.verify` (pure, no network). It checks the Standard Webhooks headers `webhook-id`, `webhook-timestamp` and `webhook-signature` against the raw body with the same `sign` function (`resona_job_core.webhooks`) the hub uses, compares in constant time, rejects a timestamp more than `tolerance_seconds` (default 300) away from now, and returns the `JobEvent` (`type`, `job_id`, `kind`, `status`, `error_code`, `finished_at`; identifiers only, never content). Any failure raises `InvalidWebhookSignature`.
+
+```python
+from resona_client.webhooks import InvalidWebhookSignature, verify
+
+def handle(request):                                          # any web framework
+    try:
+        event = verify(request.headers, request.body, secret)  # body: the exact bytes received
+    except InvalidWebhookSignature:
+        return 400
+    if event.type == "job.completed":
+        result = client.get_result(event.job_id)
+    return 204
+```
+
 ## Testbench
 
 ```python
