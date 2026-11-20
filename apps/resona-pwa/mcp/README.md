@@ -43,6 +43,9 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 | `get_document(id, offset=0, limit≤32768)` | Metadata (plus `error_message`, `page_count`) and one range of the document's Markdown, with `next_offset` / `total_chars`. |
 | `rename_document(id, title)` | Sets the title; returns metadata only (id, title, created, updated, status). |
 | `delete_document(id, confirm)` | Deletes the document row as the app does (the uploaded file stays in `directus_files`); `{id, title, deleted}`. Without `confirm: true` it deletes nothing (`confirm_required:` error). |
+| `create_dictation_from_text(text, title?, language?)` | Saves the text as a finished dictation (`source` `live`, `status` `done`, like a saved live dictation) plus its transcript; no title → dated placeholder `Diktat DD.MM.YYYY HH:MM`, `title_auto` true. Text ≤ 200000 characters. |
+| `create_audio_upload(filename, language?, profile?)` | The new dictation's `id`, a single-use `upload_url` (10 min), `max_bytes` and a `curl -T <file> <url>` command: the audio never passes the model. The upload creates the recording `pending` (`source` `batch`, `title_auto` true) and the project worker transcribes it. |
+| `get_audio_link(id)` | `audio_url` to the dictation's audio, valid 10 minutes (Range requests work). |
 
 Everything a tool returns goes to the model of the client that calls it; the tool
 descriptions say so. Another user's id and a missing id give the same "not found" error.
@@ -55,6 +58,34 @@ policy's `documents` update fields (`directus/bootstrap.mjs`).
 
 `tool-inventory.json` lists the tools; regenerate it with
 `uv run python scripts/gen_tool_inventory.py` (`--check` in the tests).
+
+## Upload and audio links
+
+`create_audio_upload` and `get_audio_link` hand out `<DICTATIONS_MCP_PUBLIC_URL>/mcp/links/<upload|audio>/<token>`
+(the PWA proxies `/mcp/links/*` with `server/routes/mcp/links/[...path].ts`, streaming the body).
+
+- The token is `<kind>.<link id>.<expiry>.<HMAC-SHA256>` keyed with
+  `DICTATIONS_MCP_LINK_SECRET`; forged, altered, expired or other-kind tokens are refused.
+  It carries no identity and no Directus token: the user, a Directus client with their
+  token and the recording id stay in this process, keyed by the link id, until expiry.
+  The link route takes no `Authorization` header; it acts with that held token, so a
+  token revoked in the meantime makes the link `401`.
+- An upload link is spent by the first request that presents it, whatever its outcome
+  (a second use is `410 link_used`). Before anything reaches Directus: `Content-Length`
+  required (`411`), ≤ `DICTATIONS_MCP_MAX_UPLOAD_BYTES` (`413`), not empty (`422`), and the
+  first bytes must be audio the hub admits (WAV, MP3, AAC/ADTS, Ogg, FLAC, MP4/M4A,
+  WebM; else `415`). Then the body streams into Directus files as the user (type and
+  extension from the sniffed format) and the recording row is created `pending`; `201`
+  `{id, status: "pending"}`.
+- An audio link is checked against the owner when it is issued (`get_audio_link` reads the
+  row as the caller: another user's id is "not found") and read again as that user on
+  every request; it works any number of times until it expires (`410 link_expired`).
+- **Single instance assumed**: the link state lives in memory (at most 10000 open links).
+  After a restart, or on another replica, a link is unknown and refused like a used one.
+- Without `DICTATIONS_MCP_LINK_SECRET` the link routes answer `404 links_disabled` and the
+  two link tools return an error; a secret shorter than 32 characters or a missing/invalid
+  `DICTATIONS_MCP_PUBLIC_URL` stops the service at start. Access log lines show
+  `/mcp/links/<kind>/…`, never the token; the service logs `link=<kind> user= outcome= ids= ms=`.
 
 ## Logs
 
@@ -72,6 +103,9 @@ the MCP SDK logs message bodies at DEBUG).
 | `DICTATIONS_MCP_HOST` / `DICTATIONS_MCP_PORT` | `127.0.0.1` / `8000` | Listen address (`0.0.0.0` in the image) |
 | `DICTATIONS_MCP_ALLOWED_HOSTS` | loopback | Accepted `Host` headers (comma-separated, `host:*` for any port) |
 | `DICTATIONS_MCP_ALLOWED_ORIGINS` | loopback | Accepted `Origin` headers (requests without `Origin` pass) |
+| `DICTATIONS_MCP_LINK_SECRET` | (empty = links off) | Signs upload/audio links; ≥ 32 characters (`openssl rand -hex 32`, `bun run setup` fills it). A new value voids open links |
+| `DICTATIONS_MCP_PUBLIC_URL` | (required with a secret) | The app origin the links start with (`PWA_ORIGIN` in the compose files) |
+| `DICTATIONS_MCP_MAX_UPLOAD_BYTES` | `209715200` (200 MiB, the hub's upload cap) | Largest audio upload |
 | `LOGLEVEL` | `info` | Log level of this package |
 
 In the compose files the service has no published port (`docker-compose.backend.yml`

@@ -128,9 +128,15 @@ def test_compose_service_gets_no_admin_token_and_no_hub(compose):
     env = service["environment"]
 
     assert set(env) <= {"DIRECTUS_URL", "DICTATIONS_MCP_HOST", "DICTATIONS_MCP_PORT",
-                        "DICTATIONS_MCP_ALLOWED_HOSTS", "DICTATIONS_MCP_ALLOWED_ORIGINS", "LOGLEVEL"}
+                        "DICTATIONS_MCP_ALLOWED_HOSTS", "DICTATIONS_MCP_ALLOWED_ORIGINS", "LOGLEVEL",
+                        "DICTATIONS_MCP_LINK_SECRET", "DICTATIONS_MCP_PUBLIC_URL"}
     assert env["DIRECTUS_URL"] == "http://directus:8055"
-    for value in env.values():
+    # Its own link-signing secret, from the environment: no credential of anything else.
+    assert env["DICTATIONS_MCP_LINK_SECRET"] == "${DICTATIONS_MCP_LINK_SECRET:-}"
+    assert env["DICTATIONS_MCP_PUBLIC_URL"].startswith("${PWA_ORIGIN")
+    for name, value in env.items():
+        if name == "DICTATIONS_MCP_LINK_SECRET":
+            continue
         for secret in ("DIRECTUS_TOKEN", "ADMIN", "RESONA_API", "SECRET", "PASSWORD"):
             assert secret not in str(value)
     assert "env_file" not in service and "volumes" not in service
