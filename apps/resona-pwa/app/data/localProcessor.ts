@@ -228,7 +228,8 @@ async function submitText(t: Transcript, hub: ReturnType<typeof useHub>): Promis
 		if (superseded !== null) await deleteJobQuietly(hub, superseded);
 		const file = new File([source], "transcript.md", { type: "text/markdown" });
 		const uploadId = await hub.upload(file, file.name);
-		const jobId = await hub.createJob({ kind: "text", upload_id: uploadId, profile }, key);
+		const instructions = t.postprocess_instructions ?? null;
+		const jobId = await hub.createJob({ kind: "text", upload_id: uploadId, profile, ...(instructions ? { instructions } : {}) }, key);
 		await patchTranscriptInternal(t.id, { postprocess_status: "processing", postprocess_job_id: jobId, postprocess_error: null });
 	}
 	catch (err) {

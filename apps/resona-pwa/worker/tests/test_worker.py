@@ -151,6 +151,7 @@ async def test_completed_job_writes_transcript_and_deletes(base_url, tmp_path, r
         "raw_text": None, "applied_profile": None, "processed_text": None,
         "postprocess_status": None, "postprocess_profile": None, "postprocess_job_id": None,
         "postprocess_job_key": None, "postprocess_error": None, "postprocess_queue_reason": None,
+        "postprocess_instructions": None,
     }
     assert bodies(patch) == [{"status": "done", "hub_job_id": None, "hub_job_key": None}]
     assert delete.called
@@ -300,6 +301,7 @@ async def test_retranscription_resets_reprocessing_and_deletes_its_hub_job(
     assert {k: v for k, v in body.items() if k.startswith("postprocess_")} == {
         "postprocess_status": None, "postprocess_profile": None, "postprocess_job_id": None,
         "postprocess_job_key": None, "postprocess_error": None, "postprocess_queue_reason": None,
+        "postprocess_instructions": None,
     }
     assert body["raw_text"] is None and body["applied_profile"] is None
     assert old_text_job.called

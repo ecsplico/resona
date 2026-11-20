@@ -36,11 +36,23 @@
     "deferred": false
   },
   {
+    "name": "list_profiles",
+    "deferred": false
+  },
+  {
+    "name": "postprocess_dictation",
+    "deferred": false
+  },
+  {
     "name": "rename_dictation",
     "deferred": false
   },
   {
     "name": "rename_document",
+    "deferred": false
+  },
+  {
+    "name": "restore_raw_transcript",
     "deferred": false
   },
   {

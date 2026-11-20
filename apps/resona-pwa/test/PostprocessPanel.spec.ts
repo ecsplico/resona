@@ -82,6 +82,7 @@ describe("PostprocessPanel", () => {
 		expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
 			postprocess_status: "pending",
 			postprocess_profile: "transcript-markdown-de",
+			postprocess_instructions: null,
 		});
 		expect(w.emitted("changed")).toHaveLength(1);
 		expect(w.emitted("update:open")).toEqual([[false]]);
@@ -165,7 +166,7 @@ describe("PostprocessPanel", () => {
 		await w.find(run).trigger("click");
 		await flushPromises();
 		expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
-			postprocess_status: "pending", postprocess_profile: "transcript-markdown-de",
+			postprocess_status: "pending", postprocess_profile: "transcript-markdown-de", postprocess_instructions: null,
 		});
 	});
 

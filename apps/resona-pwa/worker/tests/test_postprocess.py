@@ -148,6 +148,7 @@ async def test_text_job_round_trip_keeps_raw_transcript(tmp_path):
         "text": MARKDOWN, "raw_text": RAW, "applied_profile": "transcript-markdown-de",
         "processed_text": MARKDOWN, "postprocess_status": "done", "postprocess_error": None,
         "postprocess_queue_reason": None, "postprocess_job_id": None, "postprocess_job_key": None,
+        "postprocess_instructions": None,
     }]
     assert hub.deleted == [100]
 
@@ -194,7 +195,9 @@ async def test_first_run_without_raw_text_keeps_text_as_raw(tmp_path):
      "Profil auf dem Hub nicht gefunden."),
     (httpx.Response(403, json={"error": "policy_denied", "message": "llm stage needs cloud_llm"}),
      "Von der Richtlinie der Organisation abgelehnt: llm stage needs cloud_llm"),
-], ids=["profile_required", "profile_not_found", "policy_denied"])
+    (httpx.Response(422, json={"error": "invalid_instructions", "message": "profile has no llm step"}),
+     "Das Profil nimmt keine Anweisungen an."),
+], ids=["profile_required", "profile_not_found", "policy_denied", "invalid_instructions"])
 async def test_create_errors_are_surfaced_in_german(tmp_path, reply, message):
     cms = FakeDirectus(transcript())
     FakeHub(create_error=reply)
@@ -222,6 +225,46 @@ async def test_job_failing_on_policy_is_surfaced(tmp_path):
     assert row["postprocess_error"] == (
         "Von der Richtlinie der Organisation abgelehnt: endpoint local-llm not allowed"
     )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_instructions_go_to_the_hub_and_are_cleared_with_the_run(tmp_path):
+    cms = FakeDirectus(transcript(postprocess_instructions="Abkürzungen ausschreiben."))
+    hub = FakeHub(queue=["waiting_capacity"])
+
+    await cycle(tmp_path)
+    assert hub.jobs[100]["body"] == {
+        "kind": "text", "upload_id": "up-1", "private": True, "profile": "transcript-markdown-de",
+        "instructions": "Abkürzungen ausschreiben.",
+    }
+    # The claim keeps them: a reclaimed row resubmits the same request.
+    assert cms.rows["t-1"]["postprocess_instructions"] == "Abkürzungen ausschreiben."
+
+    await cycle(tmp_path)
+    assert cms.rows["t-1"]["postprocess_status"] == "done"
+    assert cms.rows["t-1"]["postprocess_instructions"] is None
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_empty_instructions_are_not_sent(tmp_path):
+    FakeDirectus(transcript(postprocess_instructions=""))
+    hub = FakeHub(queue=["waiting_capacity"])
+
+    await cycle(tmp_path)
+    assert "instructions" not in hub.jobs[100]["body"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_a_failed_run_clears_its_instructions(tmp_path):
+    cms = FakeDirectus(transcript(postprocess_instructions="Kurz fassen."))
+    FakeHub(job_error={"code": "engine_error", "message": "boom"})
+
+    await cycle(tmp_path)  # submitted, then polled: failed
+    assert cms.rows["t-1"]["postprocess_status"] == "error"
+    assert cms.rows["t-1"]["postprocess_instructions"] is None
 
 
 @respx.mock

@@ -806,7 +806,7 @@ describe("recording detail page", () => {
 			await w.find("[data-testid=\"postprocess-run\"]").trigger("click");
 			await flushPromises();
 			expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
-				postprocess_status: "pending", postprocess_profile: "transcript-markdown-de",
+				postprocess_status: "pending", postprocess_profile: "transcript-markdown-de", postprocess_instructions: null,
 			});
 			expect(startPolling).toHaveBeenCalledTimes(2);
 			expect(area(w).readOnly).toBe(true);
@@ -935,7 +935,7 @@ describe("recording detail page", () => {
 				await flushPromises();
 				expect(confirm).not.toHaveBeenCalled();
 				expect(store.updateTranscript).toHaveBeenCalledWith("t-1", {
-					postprocess_status: "pending", postprocess_profile: "transcript-markdown-de",
+					postprocess_status: "pending", postprocess_profile: "transcript-markdown-de", postprocess_instructions: null,
 				});
 			});
 

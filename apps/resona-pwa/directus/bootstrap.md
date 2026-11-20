@@ -92,6 +92,7 @@ snapshot (§4).
 | processed_text | text | nullable — that profile's output as delivered (the PWA asks before a re-run/restore replaces edits made since) |
 | postprocess_status | string | nullable — pending / processing / done / error; the PWA sets `pending` + `postprocess_profile`, the project-worker runs the hub text job |
 | postprocess_profile | string | nullable — requested hub profile name |
+| postprocess_instructions | text | nullable — user instructions for the requested run's llm/extract steps (hub job `instructions`, ≤ 8000 chars); written with the request (null = none), cleared by the project-worker when the run ends |
 | postprocess_error | text | nullable — German message of a failed run |
 | postprocess_queue_reason | string | nullable — hub `queue_reason` while the text job waits (`no_capable_worker`, …) |
 | postprocess_job_id / postprocess_job_key | integer / string | nullable — in-flight hub text job and its Idempotency-Key (like `hub_job_*` on recordings) |

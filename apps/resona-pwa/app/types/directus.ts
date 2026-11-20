@@ -62,6 +62,8 @@ export interface Transcript {
 	/** Re-processing as a hub text job: pending -> processing -> done | error. */
 	postprocess_status?: "pending" | "processing" | "done" | "error" | null;
 	postprocess_profile?: string | null;
+	/** User instructions for the profile's llm/extract steps (hub job `instructions`); cleared with the job. */
+	postprocess_instructions?: string | null;
 	postprocess_error?: string | null;
 	/** Hub `queue_reason` while the text job waits (e.g. `no_capable_worker`). */
 	postprocess_queue_reason?: string | null;

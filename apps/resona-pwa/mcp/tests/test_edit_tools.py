@@ -24,6 +24,8 @@ TOOLS = {
     "rename": "rename_dictation",
     "set_review_status": "set_review_status",
     "delete": "delete_dictation",
+    "postprocess": "postprocess_dictation",
+    "restore_raw": "restore_raw_transcript",
 }
 
 
@@ -102,6 +104,10 @@ def test_each_tool_writes_exactly_what_the_app_writes(case):
         assert payload["text_length"] == len(case["input"]["text"])
     if case["action"] == "delete":
         assert payload["deleted"] is True
+    if case["action"] == "postprocess":
+        assert (payload["postprocess_status"], payload["postprocess_profile"]) == ("pending", case["input"]["profile"])
+    if case["action"] == "restore_raw":
+        assert payload["text_sha256"] == text_sha256(case["transcript"]["raw_text"])
 
 
 def test_delete_without_confirm_deletes_nothing():
