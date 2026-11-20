@@ -184,9 +184,15 @@ pull:
 # ── Release ───────────────────────────────────────────────────────────
 # Release id = workspace version (docs/server/releases.md#version-bump)
 
-# Set every workspace package and uv.lock to VERSION (e.g. just bump 0.3.0)
+# Set every workspace package and uv.lock to VERSION (e.g. just bump 0.3.0), then
+# regenerate contract/openapi.json, whose info.version is the release id
 bump version:
     python3 scripts/release_version.py bump {{ version }}
+    uv run --package resona-api python scripts/gen_openapi.py
+
+# Regenerate contract/openapi.json, the published client contract (docs/reference/http-api.md)
+contract:
+    uv run python scripts/gen_openapi.py
 
 # ── Tests ─────────────────────────────────────────────────────────────
 

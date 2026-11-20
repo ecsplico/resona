@@ -6,6 +6,8 @@ on:
     # PWA-only changes run in pwa.yml.
     paths-ignore: ['apps/resona-pwa/**']
   pull_request:
+    # labeled/unlabeled: re-run the contract gate when `contract-break` is added or removed.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths-ignore: ['apps/resona-pwa/**']
 
 jobs:
@@ -13,6 +15,8 @@ jobs:
     # Pinned: on ubuntu-26.04 libportaudio2 uses the PulseAudio backend and fails
     # to initialize without an audio server, so importing `sounddevice` errors.
     runs-on: ubuntu-24.04
+    # A label change re-runs only the contract job.
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -62,3 +66,59 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+  # The committed client contract (contract/openapi.json, kept fresh by test_contract.py in
+  # pytest) against the one at the latest release tag. A breaking change fails a pull request
+  # unless it carries the label `contract-break`; on pushes to main the result is only reported.
+  contract:
+    runs-on: ubuntu-24.04
+    env:
+      OASDIFF_VERSION: 1.39.0
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # tags
+
+      - name: Contract at the latest release tag
+        id: base
+        run: |
+          tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          if [ -z "$tag" ]; then
+            echo "::notice::no v* tag yet; no contract to compare against"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          elif ! git cat-file -e "$tag:contract/openapi.json" 2>/dev/null; then
+            echo "::notice::$tag predates contract/openapi.json; breaking-change check skipped"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            git show "$tag:contract/openapi.json" > "$RUNNER_TEMP/base-openapi.json"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install oasdiff
+        if: steps.base.outputs.found == 'true'
+        run: |
+          cd "$RUNNER_TEMP"
+          archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}"
+          curl -fsSLO "$url/$archive"
+          curl -fsSLO "$url/checksums.txt"
+          grep " $archive\$" checksums.txt | sha256sum --check -
+          tar -xzf "$archive" oasdiff
+          sudo install oasdiff /usr/local/bin/oasdiff
+
+      - name: No breaking change since ${{ steps.base.outputs.tag }}
+        if: steps.base.outputs.found == 'true'
+        env:
+          GATE: ${{ github.event_name == 'pull_request' }}
+          ALLOW_BREAK: ${{ contains(github.event.pull_request.labels.*.name, 'contract-break') }}
+        run: |
+          base="$RUNNER_TEMP/base-openapi.json"
+          if [ "$GATE" = "true" ] && [ "$ALLOW_BREAK" != "true" ]; then
+            oasdiff breaking "$base" contract/openapi.json --fail-on ERR
+          else
+            oasdiff breaking "$base" contract/openapi.json
+            if [ "$GATE" = "true" ]; then
+              echo "::notice::label contract-break: breaking changes are allowed"
+            fi
+          fi
