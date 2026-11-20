@@ -270,7 +270,7 @@ Job events: a production job created with `webhook` (`POST /v1/jobs`, or the `we
 {"type": "job.completed", "job_id": 42, "kind": "audio", "status": "completed", "error_code": null, "finished_at": "2026-11-20T12:00:00Z"}
 ```
 
-`type` is `job.completed`, `job.failed` or `job.cancelled`; `error_code` is the job's error code (null when completed). Signatures follow Standard Webhooks (`resona_job_core.webhooks.sign`: `v1,` + base64 HMAC-SHA256 over `<msg_id>.<timestamp>.<body>`, keyed with the base64-decoded part of the `whsec_` secret).
+`type` is `job.completed`, `job.failed` or `job.cancelled`; `error_code` is the job's error code (null when completed). Signatures follow Standard Webhooks (`resona_job_core.webhooks.sign`: `v1,` + base64 HMAC-SHA256 over `<msg_id>.<timestamp>.<body>`, keyed with the base64-decoded part of the `whsec_` secret). TypeScript receivers verify with `verifyWebhook(headers, body, secret)` from `@ecsplico/resona-hub-client` (`clients/hub-ts`).
 
 ---
 

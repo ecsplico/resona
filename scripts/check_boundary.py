@@ -6,10 +6,11 @@ reaches the hub over HTTP only.
 Two directions, each one rule set:
 
 - Hub side: source files under ``packages/``, ``apps/resona-cli``, ``apps/resona-worker``,
-  ``apps/resona-mcp`` and the root build files (``justfile``, ``pyproject.toml``,
-  ``docker-compose*.yml``, ``.dockerignore``) must not mention the app's internals:
-  Directus, the app's Python packages (``resona_project_worker``,
-  ``resona_dictations_mcp``) or the app directories. Tests and docs are not scanned.
+  ``apps/resona-mcp``, ``clients/hub-ts`` (the published TypeScript client) and the root
+  build files (``justfile``, ``pyproject.toml``, ``docker-compose*.yml``, ``.dockerignore``)
+  must not mention the app's internals: Directus, the app's Python packages
+  (``resona_project_worker``, ``resona_dictations_mcp``) or the app directories. Tests and
+  docs are not scanned.
 - App side (only while the apps live in this repo, until #97 moves them out): files under
   the consumer apps must not import hub Python packages or path-reference ``packages/``
   or the hub ``apps/``. ``resona_client`` is allowed: the app may depend on hub code only
@@ -32,7 +33,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-HUB_DIRS = ("packages", "apps/resona-cli", "apps/resona-worker", "apps/resona-mcp")
+HUB_DIRS = ("packages", "apps/resona-cli", "apps/resona-worker", "apps/resona-mcp", "clients/hub-ts")
 HUB_ROOT_FILES = ("justfile", "pyproject.toml", ".dockerignore")
 HUB_ROOT_GLOBS = ("docker-compose*.yml",)
 APP_DIRS = ("apps/resona-pwa", "apps/resona-verlauf")

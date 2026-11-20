@@ -1,0 +1,56 @@
+name: Clients
+
+# clients/hub-ts (@ecsplico/resona-hub-client): its types are generated from the
+# committed client contract, so a contract change re-runs the drift check here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'clients/hub-ts/**'
+      - 'contract/openapi.json'
+      - '.github/workflows/clients.yml'
+  pull_request:
+    paths:
+      - 'clients/hub-ts/**'
+      - 'contract/openapi.json'
+      - '.github/workflows/clients.yml'
+
+defaults:
+  run:
+    working-directory: clients/hub-ts
+
+jobs:
+  hub-ts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # vitest needs Node 22.12+; the runner image ships Node 20.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generated types match contract/openapi.json
+        run: |
+          bun run generate
+          git diff --exit-code -- src/schema.d.ts || {
+            echo "::error::clients/hub-ts/src/schema.d.ts is stale; run just contract"
+            exit 1
+          }
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Test
+        run: bun run test
