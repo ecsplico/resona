@@ -133,6 +133,10 @@ const COLLECTIONS = {
 		plain("postprocess_queue_reason", "string"),
 		plain("postprocess_job_id", "integer"),
 		plain("postprocess_job_key", "string"),
+		// user instructions for the requested run's llm/extract steps (hub job
+		// `instructions`); the project-worker sends them only when set and clears them
+		// with the job
+		plain("postprocess_instructions", "text"),
 		sysField("date_created", ["date-created"]),
 		sysField("date_updated", ["date-updated"]),
 	],
@@ -320,7 +324,7 @@ const PERMISSIONS = [
 		// the text plus the "Nachbearbeiten" request (status `pending`) and undo (null);
 		// `processing`/`done`/`error` are the project-worker's
 		validation: { _or: [{ postprocess_status: { _null: true } }, { postprocess_status: { _eq: "pending" } }] },
-		fields: ["text", "raw_text", "applied_profile", "processed_text", "postprocess_status", "postprocess_profile"],
+		fields: ["text", "raw_text", "applied_profile", "processed_text", "postprocess_status", "postprocess_profile", "postprocess_instructions"],
 	},
 	{ collection: "transcripts", action: "delete", permissions: { recording: { user_created: OWNER } } },
 	// corrections: write + read own; never updated or deleted by users. Create: see

@@ -512,6 +512,18 @@ describe("runLocalCycle: re-processing a transcript (text job)", () => {
 		expect(hub.createJob.mock.calls[0]![0]).toMatchObject({ profile: "transcript-polish-de" });
 	});
 
+	it("sends the request's instructions with the text job and clears them with the run", async () => {
+		text({ postprocess_instructions: "Abkürzungen ausschreiben." });
+		await runLocalCycle();
+		expect(hub.createJob.mock.calls[0]![0]).toEqual({
+			kind: "text", upload_id: "up-1", profile: "transcript-markdown-de", instructions: "Abkürzungen ausschreiben.",
+		});
+		hub.getJob.mockResolvedValueOnce(job("completed"));
+		hub.getResult.mockResolvedValueOnce({ ...RESULT, markdown: "## Befund" });
+		await runLocalCycle();
+		expect(db.texts.get("t-1")).toMatchObject({ postprocess_status: "done", postprocess_instructions: null });
+	});
+
 	it("maps profile_required and policy_denied at submit to German messages", async () => {
 		text();
 		hub.createJob.mockRejectedValueOnce(new HubError(403, "policy_denied", "cloud stage not allowed"));

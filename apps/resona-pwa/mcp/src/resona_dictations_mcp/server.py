@@ -37,6 +37,9 @@ TOOL_NAMES = (
     "rename_dictation",
     "set_review_status",
     "delete_dictation",
+    "list_profiles",
+    "postprocess_dictation",
+    "restore_raw_transcript",
     "list_documents",
     "get_document",
     "rename_document",
@@ -59,12 +62,17 @@ INSTRUCTIONS = (
     "to the model of the client that calls them. Dictations kept only in a browser "
     "(standalone mode) are not reachable. update_dictation_text, rename_dictation, "
     "set_review_status and delete_dictation change a dictation the way the app does; "
-    "deleting cannot be undone. list_documents, get_document (Markdown in "
+    "deleting cannot be undone. list_profiles names the postprocess profiles; "
+    "postprocess_dictation queues one for the app's worker (poll get_dictation until "
+    "postprocess_status is done or error) and restore_raw_transcript undoes it. "
+    "list_documents, get_document (Markdown in "
     "ranges), rename_document and delete_document (confirm=true) work on the user's "
     "converted documents the same way."
 )
 
 _SUMMARY_FIELDS = ["id", "title", "date_created", "duration_seconds", "language", "status", "review_status"]
+# The state of a postprocess run on the transcript row, as get_dictation returns it.
+_POSTPROCESS_STATE = ["postprocess_status", "postprocess_profile", "postprocess_error", "postprocess_queue_reason"]
 _UUID = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 
@@ -295,13 +303,15 @@ def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MC
         shows (a postprocess profile's output when one was applied, see applied_profile).
         Follow next_offset until it is null; total_chars is the whole length and
         text_sha256 identifies the whole text (expected_sha256 of update_dictation_text).
+        postprocess_status ('pending', 'processing', 'done', 'error' or null) tracks a
+        postprocess_dictation run; postprocess_error says why one failed.
         The text is sent to the model of the client that calls this tool."""
         caller = caller_for(ctx)
 
         async def call() -> tuple[dict[str, Any], list[str]]:
             row = await caller.directus.item("recordings", id, fields=[*_SUMMARY_FIELDS, "error_message"])
             transcripts = await caller.directus.items(
-                "transcripts", fields=["text", "applied_profile", "engine"],
+                "transcripts", fields=["text", "applied_profile", "engine", *_POSTPROCESS_STATE],
                 filter={"recording": {"_eq": id}}, limit=1)
             transcript = transcripts[0] if transcripts else None
             text = (transcript or {}).get("text") or ""
@@ -311,6 +321,7 @@ def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MC
                 "error_message": row.get("error_message"),
                 "applied_profile": (transcript or {}).get("applied_profile"),
                 "engine": (transcript or {}).get("engine"),
+                **{field: (transcript or {}).get(field) for field in _POSTPROCESS_STATE},
                 "text": text[offset:end],
                 "offset": offset,
                 "next_offset": end if end < len(text) else None,
@@ -325,5 +336,7 @@ def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MC
     edit_tools.register(server, caller_for)
     from . import document_tools  # imports this module's helpers, so not at the top
     document_tools.register(server, caller_for)
+    from . import postprocess_tools
+    postprocess_tools.register(server, caller_for)
     create_tools.register(server, caller_for, links)
     return server

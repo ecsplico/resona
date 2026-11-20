@@ -18,6 +18,10 @@ class JobFields:
     error: str
     # Why a queued job waits (hub `queue_reason`); None when the row keeps none.
     queue_reason: str | None = None
+    # Fields of the user's request the run consumes (e.g. `postprocess_instructions`):
+    # cleared when the run ends (done or error), not by the claim, so a reclaimed
+    # row resubmits them.
+    request: tuple[str, ...] = ()
 
     def cleared(self) -> dict:
         """Payload that clears a run's job, error and queue reason."""
@@ -26,13 +30,17 @@ class JobFields:
             payload[self.queue_reason] = None
         return payload
 
+    def ended(self) -> dict:
+        """Payload that clears a run that ended: its job state and the request it consumed."""
+        return {**self.cleared(), **dict.fromkeys(self.request)}
+
 
 # recordings / documents: the row's own transcription or conversion job
 ROW_JOB = JobFields("status", "hub_job_id", "hub_job_key", "error_message")
 # transcripts: re-processing the stored raw transcript with a postprocess profile
 POSTPROCESS_JOB = JobFields(
     "postprocess_status", "postprocess_job_id", "postprocess_job_key", "postprocess_error",
-    "postprocess_queue_reason",
+    "postprocess_queue_reason", request=("postprocess_instructions",),
 )
 
 
@@ -170,7 +178,7 @@ class DirectusClient:
             "processed_text": None,
             "postprocess_status": None,
             "postprocess_profile": None,
-            **POSTPROCESS_JOB.cleared(),
+            **POSTPROCESS_JOB.ended(),
         }
         existing = await self._client.get(
             f"{self.base_url}/items/transcripts",
@@ -202,7 +210,7 @@ class DirectusClient:
             "applied_profile": profile,
             "processed_text": text,
             "postprocess_status": "done",
-            **POSTPROCESS_JOB.cleared(),
+            **POSTPROCESS_JOB.ended(),
         })
 
     async def write_document(
@@ -263,5 +271,5 @@ class DirectusClient:
     ) -> None:
         await self.patch(
             collection, item_id,
-            {**fields.cleared(), fields.status: "error", fields.error: message[:1000]},
+            {**fields.ended(), fields.status: "error", fields.error: message[:1000]},
         )

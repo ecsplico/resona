@@ -1,5 +1,5 @@
 {
-	"_doc": "Shared cases for editing a dictation: the app (useTranscriptEdit + app/utils/dictationEdit.ts + app/data/directusStore.ts, tested in test/dictationEdit.spec.ts) and the dictations MCP server (mcp/src/resona_dictations_mcp/edit_tools.py, tested in mcp/tests/test_edit_tools.py) must make exactly `writes` for `action` with `input` on a dictation whose transcript is `transcript` (null = none yet). `id` of a write names the row: \"recording\" or \"transcript\" (the ids below); create has none. `error`: the MCP tool fails with that code and writes nothing. `mcp_only`: the app has no such input (it asks before deleting and holds the text it edits). `busy`: the app locks the editor while a profile runs (postprocessRunning).",
+	"_doc": "Shared cases for editing a dictation: the app (useTranscriptEdit + app/utils/dictationEdit.ts + app/utils/postprocess.ts + app/data/directusStore.ts, tested in test/dictationEdit.spec.ts) and the dictations MCP server (mcp/src/resona_dictations_mcp/edit_tools.py and postprocess_tools.py, tested in mcp/tests/test_edit_tools.py) must make exactly `writes` for `action` with `input` on a dictation whose transcript is `transcript` (null = none yet). `id` of a write names the row: \"recording\" or \"transcript\" (the ids below); create has none. `error`: the MCP tool fails with that code and writes nothing. `mcp_only`: the app has no such input (it asks before deleting, holds the text it edits, offers only known profiles and needs a transcript to postprocess). The app's own guards for the other errors: `busy` = it locks the editor and the Nachbearbeiten actions while a profile runs (postprocessRunning); `confirm_required` on postprocess/restore_raw = it asks before replacing edits made since the profile ran (editedSinceProfile), `confirm: true` = the user agreed; `nothing_to_restore` = it shows no restore without an applied profile.",
 	"recording": "1f0c6a52-3a7e-4c41-9d0e-5b8f2a1c7e01",
 	"transcript": "6b2d9e14-8c3f-4a57-b1e2-0d9c4f7a3b02",
 	"cases": [
@@ -79,6 +79,115 @@
 			"mcp_only": true,
 			"input": { "confirm": false },
 			"error": "confirm_required",
+			"writes": []
+		},
+		{
+			"name": "Nachbearbeiten",
+			"action": "postprocess",
+			"transcript": { "text": "Kapitel Befund unauffällig", "raw_text": null, "processed_text": null, "applied_profile": null, "postprocess_status": null },
+			"input": { "profile": "transcript-markdown-de" },
+			"writes": [{ "op": "update", "collection": "transcripts", "id": "transcript", "data": { "postprocess_status": "pending", "postprocess_profile": "transcript-markdown-de", "postprocess_instructions": null } }]
+		},
+		{
+			"name": "Nachbearbeiten mit Anweisungen",
+			"action": "postprocess",
+			"transcript": { "text": "Kapitel Befund unauffällig", "raw_text": null, "processed_text": null, "applied_profile": null, "postprocess_status": "error" },
+			"input": { "profile": "transcript-polish-de", "instructions": "Abkürzungen ausschreiben." },
+			"writes": [{ "op": "update", "collection": "transcripts", "id": "transcript", "data": { "postprocess_status": "pending", "postprocess_profile": "transcript-polish-de", "postprocess_instructions": "Abkürzungen ausschreiben." } }]
+		},
+		{
+			"name": "Erneut nachbearbeiten, Profilausgabe unverändert",
+			"action": "postprocess",
+			"transcript": { "text": "## Befund\n\nUnauffällig.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "done" },
+			"input": { "profile": "transcript-polish-de" },
+			"writes": [{ "op": "update", "collection": "transcripts", "id": "transcript", "data": { "postprocess_status": "pending", "postprocess_profile": "transcript-polish-de", "postprocess_instructions": null } }]
+		},
+		{
+			"name": "Erneut nachbearbeiten nach Änderungen: Rückfrage",
+			"action": "postprocess",
+			"transcript": { "text": "## Befund\n\nUnauffällig, Kontrolle in vier Wochen.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "done" },
+			"input": { "profile": "transcript-polish-de" },
+			"error": "confirm_required",
+			"writes": []
+		},
+		{
+			"name": "Erneut nachbearbeiten nach Änderungen, bestätigt",
+			"action": "postprocess",
+			"transcript": { "text": "## Befund\n\nUnauffällig, Kontrolle in vier Wochen.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "done" },
+			"input": { "profile": "transcript-polish-de", "confirm": true },
+			"writes": [{ "op": "update", "collection": "transcripts", "id": "transcript", "data": { "postprocess_status": "pending", "postprocess_profile": "transcript-polish-de", "postprocess_instructions": null } }]
+		},
+		{
+			"name": "Nachbearbeiten während ein Profil läuft",
+			"action": "postprocess",
+			"transcript": { "text": "Kapitel Befund unauffällig", "raw_text": null, "processed_text": null, "applied_profile": null, "postprocess_status": "processing" },
+			"input": { "profile": "transcript-markdown-de" },
+			"error": "busy",
+			"writes": []
+		},
+		{
+			"name": "Unbekanntes Profil",
+			"action": "postprocess",
+			"mcp_only": true,
+			"transcript": { "text": "Kapitel Befund unauffällig", "raw_text": null, "processed_text": null, "applied_profile": null, "postprocess_status": null },
+			"input": { "profile": "gibt-es-nicht" },
+			"error": "unknown_profile",
+			"writes": []
+		},
+		{
+			"name": "Anweisungen für ein Profil ohne Sprachmodell",
+			"action": "postprocess",
+			"mcp_only": true,
+			"transcript": { "text": "Kapitel Befund unauffällig", "raw_text": null, "processed_text": null, "applied_profile": null, "postprocess_status": null },
+			"input": { "profile": "transcript-markdown-de", "instructions": "Kurz fassen." },
+			"error": "invalid_instructions",
+			"writes": []
+		},
+		{
+			"name": "Nachbearbeiten ohne Transkript",
+			"action": "postprocess",
+			"mcp_only": true,
+			"transcript": null,
+			"input": { "profile": "transcript-markdown-de" },
+			"error": "no_transcript",
+			"writes": []
+		},
+		{
+			"name": "Rohtranskript wiederherstellen",
+			"action": "restore_raw",
+			"transcript": { "text": "## Befund\n\nUnauffällig.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "done" },
+			"input": {},
+			"writes": [{ "op": "update", "collection": "transcripts", "id": "transcript", "data": { "text": "Kapitel Befund unauffällig", "raw_text": null, "applied_profile": null, "processed_text": null, "postprocess_status": null } }]
+		},
+		{
+			"name": "Rohtranskript wiederherstellen nach Änderungen: Rückfrage",
+			"action": "restore_raw",
+			"transcript": { "text": "## Befund\n\nUnauffällig, Kontrolle in vier Wochen.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "done" },
+			"input": {},
+			"error": "confirm_required",
+			"writes": []
+		},
+		{
+			"name": "Rohtranskript wiederherstellen nach Änderungen, bestätigt",
+			"action": "restore_raw",
+			"transcript": { "text": "## Befund\n\nUnauffällig, Kontrolle in vier Wochen.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "done" },
+			"input": { "confirm": true },
+			"writes": [{ "op": "update", "collection": "transcripts", "id": "transcript", "data": { "text": "Kapitel Befund unauffällig", "raw_text": null, "applied_profile": null, "processed_text": null, "postprocess_status": null } }]
+		},
+		{
+			"name": "Wiederherstellen ohne angewandtes Profil",
+			"action": "restore_raw",
+			"transcript": { "text": "Kapitel Befund unauffällig", "raw_text": null, "processed_text": null, "applied_profile": null, "postprocess_status": null },
+			"input": { "confirm": true },
+			"error": "nothing_to_restore",
+			"writes": []
+		},
+		{
+			"name": "Wiederherstellen während ein Profil läuft",
+			"action": "restore_raw",
+			"transcript": { "text": "## Befund\n\nUnauffällig.", "raw_text": "Kapitel Befund unauffällig", "processed_text": "## Befund\n\nUnauffällig.", "applied_profile": "transcript-markdown-de", "postprocess_status": "pending" },
+			"input": { "confirm": true },
+			"error": "busy",
 			"writes": []
 		}
 	]

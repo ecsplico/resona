@@ -41,7 +41,9 @@ A third pass runs over `transcripts` rows whose `postprocess_status` the PWA set
 `pending` (with `postprocess_profile`). Same reclaim/submit/poll rules, on the
 `postprocess_*` fields (active status `processing`, job in `postprocess_job_id`, key
 in `postprocess_job_key`): the raw transcript (`raw_text`, else `text`) is uploaded as
-`transcript.md` and submitted as `POST /v1/jobs {kind: "text", profile}`. On
+`transcript.md` and submitted as `POST /v1/jobs {kind: "text", profile}` (plus
+`instructions` when `postprocess_instructions` is set; the run's end, done or error,
+clears it). On
 `completed`, `text` becomes the result `markdown`, `raw_text` keeps the raw
 transcript, `applied_profile` the profile and `processed_text` the output. While the
 job waits, its `queue_reason` (e.g. `no_capable_worker` when the worker serving a
