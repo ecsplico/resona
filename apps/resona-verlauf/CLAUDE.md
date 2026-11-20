@@ -12,14 +12,19 @@ only for confidential OAuth). Read it first. This file lists only the difference
   `?date=YYYY-MM-DD`, default today in Europe/Berlin; hidden on Offen) and tabs
   (`?tab=offen|diktat`):
   - **Termine**: the day's appointments whose title starts with `EG`/`FG`
-    (`NUXT_VERLAUF_TITLE_PREFIXES`), each with "Diktiert (n)" / "Kein Diktat" / "Offen" from
-    the user's recordings joined on `recordings.calendar_event_id` (`useTermine`). Not
-    connected → "Google-Kalender verbinden".
+    (`NUXT_VERLAUF_TITLE_PREFIXES`), each with "Diktiert (n)" / "Erledigt" / "Abgesagt" /
+    "Offen" (`TerminStatusChip`) from the user's recordings joined on
+    `recordings.calendar_event_id` (`useTermine`). Not connected → "Google-Kalender verbinden".
   - **Offen** (count badge): past EG/FG appointments of the last 4 Wochen / 3 Monate /
-    6 Monate (`?zeitraum=3m|6m`) with no linked dictation and no "Kein Diktat" mark, newest
-    first (`useOffeneTermine`: `?from=&to=` range, then `store.listRecordings({ eventIds })`
-    so the join does not depend on the 100 newest recordings). Row → `/live` (`liveQuery`);
-    "Kein Diktat" → `POST /api/termine` decline, with "Rückgängig" for the last one.
+    6 Monate (`?zeitraum=3m|6m`) with no linked dictation and no mark, newest first
+    (`useOffeneTermine`: `?from=&to=` range, then `store.listRecordings({ eventIds })` so the
+    join does not depend on the 100 newest recordings).
+  - Rows of both lists open `/termin/:id?date=<day of the event>`. Beside each row
+    (`TerminActions`, clicks stop there): mic icon "Diktieren" → `/live` (`liveQuery`) and
+    the "Aktionen" menu (`HMenu`): "Als erledigt markieren" / "Termin abgesagt", or
+    "Markierung aufheben" on a marked row. A mark counts as dictated (out of Offen and its
+    count). `useTerminMarks` patches both lists optimistically and offers "Rückgängig"
+    for the last mark.
   - **Diktat**: "Diktat ohne Termin" (`/live`) plus the layer's `RecordingsPane`.
 - `/live` context (`app/components/LiveEventContext.vue`, overrides the layer's empty
   extension point; `nuxt.config.ts` pins the layer components dir to priority 1 so this
@@ -29,7 +34,8 @@ only for confidential OAuth). Read it first. This file lists only the difference
   newest last) and "Folgende Termine" below. No links, so nothing leads away from a running
   dictation. Data: `loadTerminContext` (`?context=<id>` + `listRecordings({ eventIds })`).
 - `/termin/:id?date=` (`app/pages/termin/[id].vue`): refetches the day and picks the event
-  (no patient name in this URL), lists its dictations, "Diktat starten" →
+  (no patient name in this URL), shows the status chip and the "Aktionen" menu next to the
+  title, lists its dictations, "Diktat starten" →
   `/live?title=<title – dd.mm.yyyy>&event=<id>&eventStart=<iso>&eventTitle=<title>`
   (`liveQuery`); the layer's live page stores the three `calendar_*` fields.
 - `/desktop` (`app/pages/desktop.vue`): table Datum · Termin · Titel · Text (200-char
@@ -47,7 +53,7 @@ only for confidential OAuth). Read it first. This file lists only the difference
 `tokenStore`, `google`) + `server/middleware/termine-cors.ts`:
 
 - `GET /api/termine?date=YYYY-MM-DD` → `{ connected, events: TerminEvent[], error? }`;
-  `TerminEvent.declined: true` marks "Kein Diktat".
+  `TerminEvent.mark?: "erledigt" | "abgesagt"`.
 - `GET /api/termine?from=YYYY-MM-DD&to=YYYY-MM-DD` → same shape, inclusive Berlin days,
   at most 200 days (`MAX_RANGE_DAYS`), else 400.
 - `GET /api/termine?context=<event id>` → `{ connected, before, after, error? }`: the
@@ -56,9 +62,10 @@ only for confidential OAuth). Read it first. This file lists only the difference
   server-side; the client sends only the id) plus the instances of its recurring series.
   Same patient = same series (`recurringEventId`, or the id before `_`) or the same
   title without prefix (whitespace collapsed, case-insensitive), so `EG X` and `FG X` match.
-- `POST /api/termine` `{ action: "decline" | "undecline", event: "<id>" }` →
-  `{ event, declined }`: "Kein Diktat" marks in storage `verlauf` key `declines`
-  (`{ [eventId]: { declinedAt, declinedBy: email } }`, never a title), shared by all users.
+- `POST /api/termine` `{ action: "mark", event: "<id>", status: "erledigt" | "abgesagt" }` or
+  `{ action: "unmark", event: "<id>" }` → `{ event, mark }` (`mark: null` after unmark).
+  Storage `verlauf` key `marks`: `{ [eventId]: { status, markedAt, markedBy: email } }`,
+  never a title, shared by all users; entries without a valid status are ignored.
 - `GET /api/termine?action=connect` → 302 to Google consent (offline, `prompt=consent`).
 - `GET /api/termine?code=…&state=…` → OAuth callback, then `/?kalender=verbunden|abgebrochen|fehler`.
 - Auth: `Authorization: Bearer <Directus access token>` (connect: also `?access_token=`),

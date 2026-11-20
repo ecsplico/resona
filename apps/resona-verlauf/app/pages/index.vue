@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted } from "vue";
 import type { TerminEvent } from "~~/shared/termine";
-import { dayOf, formatDayLabel, formatTerminWhen, formatTime, isDay, isOffenWindow, liveQuery, OFFEN_WINDOWS, shiftDay } from "~~/shared/termine";
+import { dayOf, formatDayLabel, formatTerminWhen, formatTime, isDay, isOffenWindow, OFFEN_WINDOWS, shiftDay, TERMIN_MARK_LABELS, terminDay } from "~~/shared/termine";
 
 type Tab = "termine" | "offen" | "diktat";
 
@@ -18,6 +18,8 @@ const offenWindow = computed(() => (isOffenWindow(route.query.zeitraum) ? route.
 
 const termine = useTermine(day);
 const offen = useOffeneTermine(offenWindow);
+// Marks patch both lists at once, so the Offen count and the day's chips stay in step.
+const marks = useTerminMarks([termine.view, offen.view]);
 
 // Notice after the Google consent round trip (`/api/termine` redirects to `/?kalender=…`).
 const KALENDER_NOTICES: Record<string, string> = {
@@ -46,17 +48,9 @@ function selectWindow(value: string): void {
 	setQuery({ zeitraum: isOffenWindow(value) && value !== "4w" ? value : undefined });
 }
 
-function startDictation(event: TerminEvent): void {
-	void navigateTo({ path: "/live", query: liveQuery(event) });
-}
-
-// A "Kein Diktat" in the Offen tab also shows in Termine: reload it on return.
-watch(tab, (next, previous) => {
-	if (next === "termine" && previous === "offen") void termine.refresh();
-});
-
-function openTermin(id: string): void {
-	void navigateTo({ name: "termin-id", params: { id }, query: { date: day.value } });
+// Same target from both lists: the appointment's detail page on its own day.
+function openTermin(event: TerminEvent): void {
+	void navigateTo({ name: "termin-id", params: { id: event.id }, query: { date: terminDay(event) } });
 }
 
 async function connect(): Promise<void> {
@@ -164,6 +158,32 @@ onMounted(() => {
 			{{ kalenderNotice }}
 		</p>
 
+		<p
+			v-if="marks.lastMark.value && tab !== 'diktat'"
+			class="home__notice home__undo"
+			role="status"
+			data-testid="mark-undo-notice"
+		>
+			<span>„{{ TERMIN_MARK_LABELS[marks.lastMark.value.status] }}“ vermerkt: {{ formatTerminWhen(marks.lastMark.value.event) }}</span>
+			<button
+				class="home__undo-button"
+				type="button"
+				data-testid="mark-undo"
+				@click="marks.undo()"
+			>
+				Rückgängig
+			</button>
+		</p>
+
+		<p
+			v-if="marks.error.value && tab !== 'diktat'"
+			class="home__error"
+			role="alert"
+			data-testid="mark-error"
+		>
+			{{ marks.error.value }}
+		</p>
+
 		<div
 			v-if="tab === 'termine'"
 			class="home__panel"
@@ -223,38 +243,26 @@ onMounted(() => {
 				<li
 					v-for="row in termine.rows.value"
 					:key="row.event.id"
+					class="termin-item"
 				>
 					<button
 						class="termin-row"
 						type="button"
 						data-testid="termin-row"
-						@click="openTermin(row.event.id)"
+						@click="openTermin(row.event)"
 					>
 						<span class="termin-row__time">{{ formatTime(row.event) }}</span>
 						<span class="termin-row__title">{{ row.event.title }}</span>
-						<HChip
-							v-if="row.dictations.length > 0"
-							tone="success"
-							dot
-							data-testid="termin-status-done"
-						>
-							Diktiert{{ row.dictations.length > 1 ? ` (${row.dictations.length})` : "" }}
-						</HChip>
-						<HChip
-							v-else-if="row.event.declined"
-							tone="neutral"
-							data-testid="termin-status-declined"
-						>
-							Kein Diktat
-						</HChip>
-						<HChip
-							v-else
-							tone="neutral"
-							data-testid="termin-status-open"
-						>
-							Offen
-						</HChip>
+						<TerminStatusChip
+							:dictations="row.dictations.length"
+							:mark="row.event.mark"
+						/>
 					</button>
+					<TerminActions
+						:event="row.event"
+						@mark="marks.mark(row.event, $event)"
+						@unmark="marks.unmark(row.event)"
+					/>
 				</li>
 			</ul>
 		</div>
@@ -284,23 +292,6 @@ onMounted(() => {
 					</select>
 				</label>
 			</div>
-
-			<p
-				v-if="offen.lastDeclined.value"
-				class="home__notice offen__undo"
-				role="status"
-				data-testid="offen-undo-notice"
-			>
-				<span>„Kein Diktat“ vermerkt: {{ formatTerminWhen(offen.lastDeclined.value) }}</span>
-				<button
-					class="offen__undo-button"
-					type="button"
-					data-testid="offen-undo"
-					@click="offen.undoDecline()"
-				>
-					Rückgängig
-				</button>
-			</p>
 
 			<p
 				v-if="offen.error.value"
@@ -343,26 +334,22 @@ onMounted(() => {
 				<li
 					v-for="event in offen.events.value"
 					:key="event.id"
-					class="offen-row"
+					class="termin-item"
 				>
 					<button
-						class="termin-row offen-row__main"
+						class="termin-row offen-row"
 						type="button"
 						data-testid="offen-row"
-						@click="startDictation(event)"
+						@click="openTermin(event)"
 					>
 						<span class="offen-row__when">{{ formatTerminWhen(event) }}</span>
 						<span class="termin-row__title">{{ event.title }}</span>
 					</button>
-					<HButton
-						class="offen-row__decline"
-						variant="secondary"
-						type="button"
-						data-testid="offen-decline"
-						@click="offen.decline(event)"
-					>
-						Kein Diktat
-					</HButton>
+					<TerminActions
+						:event="event"
+						@mark="marks.mark(event, $event)"
+						@unmark="marks.unmark(event)"
+					/>
 				</li>
 			</ul>
 		</div>
@@ -405,7 +392,8 @@ onMounted(() => {
 .home__connect-title { margin:0; font-family:var(--font-display); font-size:var(--fs-lg); font-weight:600; color:var(--fg1); }
 .home__connect-text { margin:0; color:var(--fg2); font-size:var(--fs-sm); line-height:1.5; }
 .home__list { margin:0 16px; padding:0; list-style:none; }
-.termin-row { width:100%; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; padding:14px 16px; border:none; background:none; text-align:left; font:inherit; color:var(--fg1); cursor:pointer; }
+.termin-item { display:flex; align-items:center; gap:4px; padding-right:8px; }
+.termin-row { flex:1; min-width:0; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; padding:14px 16px; border:none; background:none; text-align:left; font:inherit; color:var(--fg1); cursor:pointer; }
 .termin-row:hover { background:var(--row-hover); }
 .termin-row:active { background:var(--row-active); }
 .termin-row__time { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:var(--fs-sm); color:var(--fg2); min-width:5ch; }
@@ -416,12 +404,10 @@ onMounted(() => {
 .offen__window { display:flex; align-items:center; gap:8px; }
 .offen__window-label { font-size:var(--fs-sm); font-weight:600; color:var(--fg2); }
 .offen__window-input { border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:8px 12px; background:var(--bg-raised); font-family:var(--font-body); font-size:var(--fs-sm); color:var(--fg1); }
-.offen__undo { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
-.offen__undo-button { border:none; background:none; padding:4px 0; color:var(--accent-ink); font:inherit; font-weight:600; cursor:pointer; }
-.offen-row { display:flex; align-items:center; gap:8px; padding-right:12px; }
-.offen-row__main { flex:1; min-width:0; grid-template-columns:auto 1fr; }
+.home__undo { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.home__undo-button { border:none; background:none; padding:4px 0; color:var(--accent-ink); font:inherit; font-weight:600; cursor:pointer; }
+.offen-row { grid-template-columns:auto 1fr; }
 .offen-row__when { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:var(--fs-sm); color:var(--fg2); white-space:nowrap; }
-.offen-row__decline { flex-shrink:0; }
 .home__free { padding:0 16px; }
 .home__free-button { width:100%; }
 @media (min-width:960px) {

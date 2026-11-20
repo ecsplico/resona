@@ -3,10 +3,22 @@
 // resona-pwa layer's shared dir, see nuxt.config.ts).
 import type { CalendarEvent } from "#shared/calendar";
 
+/** Manual mark of an appointment; either counts as "dictation done" (never open again). */
+export type TerminMark = "erledigt" | "abgesagt";
+
+export const TERMIN_MARK_LABELS: Record<TerminMark, string> = {
+	erledigt: "Erledigt",
+	abgesagt: "Abgesagt",
+};
+
+export function isTerminMark(value: unknown): value is TerminMark {
+	return value === "erledigt" || value === "abgesagt";
+}
+
 /** One appointment as `/api/termine` returns it. Times are ISO strings. */
 export type TerminEvent = Pick<CalendarEvent, "id" | "title" | "start" | "end" | "allDay" | "htmlLink"> & {
-	/** Marked "Kein Diktat" (no dictation expected anymore) via `POST /api/termine`. */
-	declined?: true;
+	/** Set via `POST /api/termine` ("Als erledigt markieren" / "Termin abgesagt"). */
+	mark?: TerminMark;
 };
 
 /** Response of `GET /api/termine?date=YYYY-MM-DD` and `?from=…&to=…`. */
@@ -29,10 +41,9 @@ export interface TermineContextView {
 }
 
 /** Body of `POST /api/termine`. */
-export interface TerminAction {
-	action: "decline" | "undecline";
-	event: string;
-}
+export type TerminAction
+	= | { action: "mark"; event: string; status: TerminMark }
+		| { action: "unmark"; event: string };
 
 /** Longest `from`…`to` span (inclusive days) `GET /api/termine` accepts. */
 export const MAX_RANGE_DAYS = 200;
@@ -176,10 +187,15 @@ export function groupByEvent<T extends { calendar_event_id?: string | null }>(re
 	return groups;
 }
 
+/** The Berlin calendar day (`YYYY-MM-DD`) the appointment falls on. */
+export function terminDay(event: Pick<TerminEvent, "start" | "allDay">): string {
+	return event.allDay ? event.start.slice(0, 10) : dayOf(new Date(event.start));
+}
+
 /** Query of `/live` for a dictation on `event`: preset title plus the event link. */
 export function liveQuery(event: TerminEvent): { title: string; event: string; eventStart: string; eventTitle: string } {
 	const name = event.title.trim() || "Termin";
-	const day = event.allDay ? event.start.slice(0, 10) : dayOf(new Date(event.start));
+	const day = terminDay(event);
 	const date = isDay(day) ? `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}` : "";
 	return {
 		title: date ? `${name} – ${date}` : name,
@@ -222,13 +238,13 @@ export function offenRange(window: OffenWindow, today: string): { from: string; 
 }
 
 /**
- * Past appointments still waiting for a dictation: started before `now`, not declined,
- * no recording linked. Newest first.
+ * Past appointments still waiting for a dictation: started before `now`, not marked
+ * (erledigt/abgesagt), no recording linked. Newest first.
  */
 export function openTermine(events: readonly TerminEvent[], dictated: ReadonlySet<string>, now: Date): TerminEvent[] {
 	const limit = now.getTime();
 	return events
-		.filter(event => !event.declined && !dictated.has(event.id) && Date.parse(event.start) < limit)
+		.filter(event => !event.mark && !dictated.has(event.id) && Date.parse(event.start) < limit)
 		.sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
 }
 

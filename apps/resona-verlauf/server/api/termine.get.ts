@@ -4,7 +4,7 @@
 //   GET /api/termine?context=<event id>             → { connected, before, after } (same patient)
 //   GET /api/termine?action=connect                 → 302 to Google consent (token also as ?access_token=)
 //   GET /api/termine?code=…&state=…                 → OAuth callback (redirect URI <origin>/api/termine)
-//   POST /api/termine (termine.post.ts)             → "Kein Diktat" marks
+//   POST /api/termine (termine.post.ts)             → marks "erledigt" / "abgesagt"
 // Event titles carry patient names: nothing here logs them, and no query carries one.
 import { dayBounds, isDay, isEventId, MAX_RANGE_DAYS, rangeBounds } from "~~/shared/termine";
 import { requestToken, requireVerlaufUser } from "../utils/verlauf/auth";

@@ -10,8 +10,8 @@ import type { OAuthConfig } from "../../../../resona-pwa/server/utils/calendar/t
 import { filterTermine, matchesPrefix, splitContext, stripPrefix } from "~~/shared/termine";
 import type { TermineContextView, TerminEvent, TermineView } from "~~/shared/termine";
 import type { VerlaufConfig } from "./config";
-import { clearConnection, readConnection, readDeclines, sealValue, unsealValue, writeConnection } from "./tokenStore";
-import type { Decline } from "./tokenStore";
+import { clearConnection, readConnection, readMarks, sealValue, unsealValue, writeConnection } from "./tokenStore";
+import type { StoredMark } from "./tokenStore";
 
 const STATE_COOKIE = "verlauf_oauth";
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -202,18 +202,21 @@ async function getEvent(token: string, config: VerlaufConfig, id: string): Promi
 	}
 }
 
-/** Flag the events marked "Kein Diktat". */
-function markDeclined(events: TerminEvent[], declines: Record<string, Decline>): TerminEvent[] {
-	return events.map(event => (declines[event.id] ? { ...event, declined: true } : event));
+/** Attach each event's stored mark (erledigt/abgesagt). */
+function applyMarks(events: TerminEvent[], marks: Record<string, StoredMark>): TerminEvent[] {
+	return events.map((event) => {
+		const mark = marks[event.id];
+		return mark ? { ...event, mark: mark.status } : event;
+	});
 }
 
 /** EG/FG appointments between `timeMin` and `timeMax`; `connected: false` without a usable connection. */
 export async function listTermine(event: H3Event, config: VerlaufConfig, bounds: { timeMin: string; timeMax: string }): Promise<TermineView> {
-	const declines = await readDeclines(config);
+	const marks = await readMarks(config);
 	const read = await withCalendar(event, config, token => fetchPaged(token, eventsEndpoint(config.calendarId), googleEventParams(bounds)));
 	if (!read.connected) return { connected: false, events: [] };
 	if (read.failed) return { connected: true, events: [], error: "load_failed" };
-	return { connected: true, events: markDeclined(filterTermine(read.value, config.titlePrefixes), declines) };
+	return { connected: true, events: applyMarks(filterTermine(read.value, config.titlePrefixes), marks) };
 }
 
 /**
@@ -222,7 +225,7 @@ export async function listTermine(event: H3Event, config: VerlaufConfig, bounds:
  * instances of its recurring series. The search term never leaves the server.
  */
 export async function termineContext(event: H3Event, config: VerlaufConfig, eventId: string): Promise<TermineContextView> {
-	const declines = await readDeclines(config);
+	const marks = await readMarks(config);
 	const read = await withCalendar(event, config, async (token) => {
 		const anchor = await getEvent(token, config, eventId);
 		if (!anchor) return { before: [], after: [] };
@@ -243,6 +246,6 @@ export async function termineContext(event: H3Event, config: VerlaufConfig, even
 	});
 	if (!read.connected) return { connected: false, before: [], after: [] };
 	if (read.failed) return { connected: true, before: [], after: [], error: "load_failed" };
-	const wire = (events: SeriesCalendarEvent[]) => markDeclined(filterTermine(events, config.titlePrefixes), declines);
+	const wire = (events: SeriesCalendarEvent[]) => applyMarks(filterTermine(events, config.titlePrefixes), marks);
 	return { connected: true, before: wire(read.value.before), after: wire(read.value.after) };
 }

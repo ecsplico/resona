@@ -2,7 +2,7 @@ import { computed, ref, watch } from "vue";
 import type { Ref } from "vue";
 import type { Recording } from "~/types/directus";
 import { dayBounds, dayOf, groupByEvent, offenRange, openTermine } from "~~/shared/termine";
-import type { OffenWindow, TerminAction, TerminEvent, TermineContextView, TermineView } from "~~/shared/termine";
+import type { OffenWindow, TerminAction, TerminEvent, TermineContextView, TermineView, TerminMark } from "~~/shared/termine";
 
 /** One appointment of the day with the dictations linked to it. */
 export interface TerminRow {
@@ -100,7 +100,7 @@ export function useTermine(date: Readonly<Ref<string>>) {
 
 /**
  * Past EG/FG appointments of the window without a linked dictation and not marked
- * "Kein Diktat". Recordings are joined by event id (`listRecordings({ eventIds })`),
+ * (erledigt/abgesagt). Recordings are joined by event id (`listRecordings({ eventIds })`),
  * so the join does not depend on the 100 newest recordings.
  */
 export function useOffeneTermine(span: Readonly<Ref<OffenWindow>>) {
@@ -110,8 +110,6 @@ export function useOffeneTermine(span: Readonly<Ref<OffenWindow>>) {
 	const dictated = ref<ReadonlySet<string>>(new Set());
 	const loading = ref(false);
 	const error = ref<string | null>(null);
-	/** The last appointment marked "Kein Diktat", for "Rückgängig". */
-	const lastDeclined = ref<TerminEvent | null>(null);
 	const loadedAt = ref(new Date());
 	let seq = 0;
 
@@ -142,57 +140,74 @@ export function useOffeneTermine(span: Readonly<Ref<OffenWindow>>) {
 		}
 	}
 
-	function setDeclined(id: string, declined: boolean): void {
-		if (!view.value) return;
-		view.value = {
-			...view.value,
-			events: view.value.events.map((event) => {
-				if (event.id !== id) return event;
-				const next = { ...event };
-				if (declined) next.declined = true;
-				else delete next.declined;
-				return next;
-			}),
-		};
+	watch(span, () => void refresh());
+
+	return { view, events, connected, loading, error, refresh };
+}
+
+/** The last mark set through `useTerminMarks`, for "Rückgängig". */
+export interface LastMark {
+	event: TerminEvent;
+	status: TerminMark;
+}
+
+/**
+ * Set or remove an appointment's mark (`POST /api/termine`). Optimistic: every given
+ * view showing the event is patched at once and restored when the server refuses.
+ */
+export function useTerminMarks(views: Ref<TermineView | null>[]) {
+	const lastMark = ref<LastMark | null>(null);
+	const error = ref<string | null>(null);
+
+	function patch(id: string, mark: TerminMark | undefined): void {
+		for (const view of views) {
+			if (!view.value?.events.some(event => event.id === id)) continue;
+			view.value = {
+				...view.value,
+				events: view.value.events.map((event) => {
+					if (event.id !== id) return event;
+					const next = { ...event };
+					delete next.mark;
+					if (mark) next.mark = mark;
+					return next;
+				}),
+			};
+		}
 	}
 
-	/** Mark `event` "Kein Diktat" (optimistic; reverted when the server refuses). */
-	async function decline(event: TerminEvent): Promise<void> {
-		setDeclined(event.id, true);
-		lastDeclined.value = event;
+	async function send(event: TerminEvent, mark: TerminMark | undefined, previous: TerminMark | undefined): Promise<boolean> {
+		patch(event.id, mark);
 		error.value = null;
 		try {
-			await requestTermine({ body: { action: "decline", event: event.id } });
+			await requestTermine({ body: mark ? { action: "mark", event: event.id, status: mark } : { action: "unmark", event: event.id } });
+			return true;
 		}
 		catch {
-			setDeclined(event.id, false);
-			if (lastDeclined.value?.id === event.id) lastDeclined.value = null;
-			error.value = "„Kein Diktat“ konnte nicht gespeichert werden.";
+			patch(event.id, previous);
+			error.value = "Markierung konnte nicht gespeichert werden.";
+			return false;
 		}
 	}
 
-	/** Undo the last "Kein Diktat". */
-	async function undoDecline(): Promise<void> {
-		const event = lastDeclined.value;
-		if (!event) return;
-		lastDeclined.value = null;
-		setDeclined(event.id, false);
-		error.value = null;
-		try {
-			await requestTermine({ body: { action: "undecline", event: event.id } });
-		}
-		catch {
-			setDeclined(event.id, true);
-			error.value = "Rückgängig machen fehlgeschlagen.";
-		}
+	async function mark(event: TerminEvent, status: TerminMark): Promise<void> {
+		lastMark.value = { event, status };
+		if (!await send(event, status, event.mark) && lastMark.value?.event.id === event.id) lastMark.value = null;
 	}
 
-	watch(span, () => {
-		lastDeclined.value = null;
-		void refresh();
-	});
+	async function unmark(event: TerminEvent): Promise<void> {
+		if (lastMark.value?.event.id === event.id) lastMark.value = null;
+		await send(event, undefined, event.mark);
+	}
 
-	return { view, events, connected, loading, error, lastDeclined, refresh, decline, undoDecline };
+	/** Undo the last mark. */
+	async function undo(): Promise<void> {
+		const last = lastMark.value;
+		if (!last) return;
+		lastMark.value = null;
+		await send(last.event, last.event.mark, last.status);
+	}
+
+	return { lastMark, error, mark, unmark, undo };
 }
 
 /** One earlier appointment with its dictations (live page context). */
