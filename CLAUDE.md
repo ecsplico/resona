@@ -596,4 +596,4 @@ The default triage labels, plus `epic` and at least one `area:*` label per issue
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the root, created lazily. See `docs/agents/domain.md`.
+Single-context: [`CONTEXT.md`](CONTEXT.md) (glossary: hub terms vs. app terms) + `docs/adr/` at the root, starting with [ADR 0001: hub and app boundary](docs/adr/0001-hub-and-app-boundary.md). See `docs/agents/domain.md`.
