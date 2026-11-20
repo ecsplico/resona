@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPBearer
 from sqlmodel import Session, select
 
 from .db.engine import engine
@@ -67,6 +68,15 @@ def resolve_token(session: Session, token: str | None) -> Principal | None:
     )
 
 
+# Schema only: declares the one security scheme of ``/openapi.json``. ``auto_error=False``
+# keeps every rejection in :func:`get_principal`, which also reads ``X-API-Key``.
+bearer_scheme = HTTPBearer(
+    scheme_name="bearerAuth",
+    description="Organization credential as `Authorization: Bearer <token>` (`X-API-Key: <token>` is accepted too).",
+    auto_error=False,
+)
+
+
 def _unauthorized(message: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -97,9 +107,10 @@ def _bearer_token(authorization: str | None) -> str | None:
 
 
 async def get_principal(
-    authorization: Optional[str] = Header(default=None),
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(default=None, include_in_schema=False),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key", include_in_schema=False),
     session: Session = Depends(_db_session),
+    _scheme: object = Depends(bearer_scheme),
 ) -> Principal:
     """Authenticate the request from its credential headers."""
     bearer = _bearer_token(authorization)

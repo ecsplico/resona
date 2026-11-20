@@ -13,15 +13,19 @@ from . import hublock
 from .db.engine import create_db_and_tables
 from .errors import install_error_handlers
 from .maintenance import maintenance_loop
+from .openapi import AUDIENCE_TAGS, ResonaAPI
 
 log = logging.getLogger(__name__)
 
 tags_metadata = [
+    *AUDIENCE_TAGS,
     {"name": "Job", "description": "Transcription jobs."},
     {"name": "Config", "description": "Postprocessing profiles configuration."},
     {"name": "Audio", "description": "OpenAI-compatible speech API."},
     {"name": "Engines", "description": "Engine discovery."},
     {"name": "Health", "description": "Liveness and readiness probes."},
+    {"name": "Settings", "description": "Revisioned organization settings."},
+    {"name": "Streaming", "description": "Live streaming engines."},
 ]
 
 
@@ -108,7 +112,7 @@ async def lifespan(app: FastAPI):
         lock.release()
 
 
-app = FastAPI(openapi_tags=tags_metadata, lifespan=lifespan, title="resona-api")
+app = ResonaAPI(openapi_tags=tags_metadata, lifespan=lifespan, title="resona-api")
 install_error_handlers(app)
 
 CORS_ORIGINS = config("CORS_ORIGINS", default="*")

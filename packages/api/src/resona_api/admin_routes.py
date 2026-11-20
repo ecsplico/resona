@@ -31,12 +31,13 @@ from .auth import ROLE_CLIENT, ROLE_HUB_OPERATOR, ROLE_ORG_ADMIN, ROLE_WORKER, P
 from .db.models import ApprovedReleaseTuple, Baseline, Credential, Evaluation, Organization, Worker
 from .deps import get_db_session
 from .errors import api_error
+from .openapi import ADMIN
 from .jobs_routes import DEFAULT_PAGE_SIZE, WORKER_ONLINE_WINDOW, jobs_page
 from .settings_store import current_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1/admin", tags=["Admin"])
+router = APIRouter(prefix="/v1/admin", tags=[ADMIN])
 static_router = APIRouter(include_in_schema=False)
 
 STATIC_DIR = Path(__file__).parent / "static" / "admin"

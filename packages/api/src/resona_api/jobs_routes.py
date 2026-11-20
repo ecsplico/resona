@@ -83,13 +83,15 @@ from .db.models import (
     Worker,
 )
 from .deps import get_db_session
+from . import schemas
 from .errors import api_error, validation_message
+from .openapi import CLIENT
 from .privacy import ProfileNotFound, is_profile_name, load_org_profile
 from .settings_store import current_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Job"])
+router = APIRouter(tags=[CLIENT, "Job"])
 
 MAX_UPLOAD_BYTES: int = config("RESONA_MAX_UPLOAD_BYTES", default=200 * 1024 * 1024, cast=int)
 # Text uploads (postprocess-only jobs) are far smaller than media: 2 MiB is ~300k words.
@@ -605,7 +607,10 @@ def discard_upload(organization_id: str, upload_id: str) -> None:
         storage.remove_file(storage.upload_path(_storage_id(session, organization_id), upload_id))
 
 
-@router.post("/v1/uploads", status_code=201)
+@router.post(
+    "/v1/uploads", status_code=201, operation_id="uploads_create", response_model=schemas.UploadView,
+    responses=schemas.error_responses(schemas.UPLOAD),
+)
 async def create_upload(
     request: Request,
     principal: Principal = Depends(client_principal),
@@ -643,7 +648,10 @@ def _consume_upload_link(session: Session, token: Optional[str]) -> str:
     return organization_id
 
 
-@router.post("/v1/upload-links", status_code=201)
+@router.post(
+    "/v1/upload-links", status_code=201, operation_id="upload_links_create",
+    response_model=schemas.UploadLinkView, responses=schemas.error_responses(),
+)
 def create_upload_link(
     request: Request,
     principal: Principal = Depends(client_principal),
@@ -676,7 +684,11 @@ def create_upload_link(
     }
 
 
-@router.post("/v1/upload-links/upload", status_code=201)
+@router.post(
+    "/v1/upload-links/upload", status_code=201, operation_id="upload_links_upload",
+    response_model=schemas.UploadView,
+    responses=schemas.error_responses({401: ["invalid_upload_link"], **schemas.UPLOAD}, auth=False),
+)
 async def upload_with_link(
     request: Request,
     upload_token: Optional[str] = Header(default=None, alias=UPLOAD_LINK_HEADER),
@@ -1053,7 +1065,14 @@ def _check_text_request(req: JobRequest) -> None:
         raise api_error(422, "invalid_request", "evaluation jobs are audio or document jobs")
 
 
-@router.post("/v1/jobs", status_code=202)
+@router.post(
+    "/v1/jobs", status_code=202, operation_id="jobs_create", response_model=schemas.JobAccepted,
+    responses=schemas.error_responses(schemas.merge_codes(schemas.ADMISSION, {
+        400: ["idempotency_key_required", "invalid_idempotency_key"],
+        413: ["too_large"],
+        422: ["profile_required", "release_not_staged"],
+    })),
+)
 async def submit_job(
     request: Request,
     principal: Principal = Depends(client_principal),
@@ -1127,7 +1146,10 @@ def jobs_page(session: Session, organization_id: str, cursor: Optional[str], lim
     }
 
 
-@router.get("/v1/jobs")
+@router.get(
+    "/v1/jobs", operation_id="jobs_list", response_model=schemas.JobPage,
+    responses=schemas.error_responses({422: ["invalid_cursor", "invalid_limit", schemas.VALIDATION]}),
+)
 def list_jobs(
     cursor: Optional[str] = None,
     limit: int = DEFAULT_PAGE_SIZE,
@@ -1138,7 +1160,10 @@ def list_jobs(
     return jobs_page(session, principal.organization_id, cursor, limit)
 
 
-@router.get("/v1/jobs/{job_id}")
+@router.get(
+    "/v1/jobs/{job_id}", operation_id="jobs_get", response_model=schemas.JobView,
+    responses=schemas.error_responses(schemas.JOB_ID),
+)
 def get_job(
     job_id: int,
     principal: Principal = Depends(client_principal),
@@ -1161,7 +1186,10 @@ def _result_file(session: Session, job: Job) -> Path:
     return path
 
 
-@router.get("/v1/jobs/{job_id}/result", response_model=None)
+@router.get(
+    "/v1/jobs/{job_id}/result", operation_id="jobs_result", response_model=schemas.JobResult,
+    responses=schemas.error_responses(schemas.RESULT),
+)
 def get_result(
     job_id: int,
     principal: Principal = Depends(client_principal),
@@ -1172,7 +1200,11 @@ def get_result(
     return FileResponse(path, media_type="application/json")
 
 
-@router.get("/v1/jobs/{job_id}/result/markdown")
+@router.get(
+    "/v1/jobs/{job_id}/result/markdown", operation_id="jobs_result_markdown",
+    response_model=schemas.MarkdownChunk, response_model_exclude_unset=True,
+    responses=schemas.error_responses(schemas.RESULT),
+)
 def get_result_markdown(
     job_id: int,
     offset: int = Query(default=0, ge=0),
@@ -1212,7 +1244,10 @@ def get_result_markdown(
     }
 
 
-@router.post("/v1/jobs/{job_id}/cancel")
+@router.post(
+    "/v1/jobs/{job_id}/cancel", operation_id="jobs_cancel", response_model=schemas.JobView,
+    responses=schemas.error_responses(schemas.JOB_ID),
+)
 def cancel_job(
     job_id: int,
     principal: Principal = Depends(client_principal),
@@ -1237,7 +1272,10 @@ def cancel_job(
     return _single_view(session, job)
 
 
-@router.delete("/v1/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/v1/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT, operation_id="jobs_delete",
+    responses=schemas.error_responses(schemas.JOB_ID),
+)
 def delete_job(
     job_id: int,
     principal: Principal = Depends(client_principal),

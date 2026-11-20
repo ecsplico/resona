@@ -19,8 +19,9 @@ from .auth import Principal, admin_principal
 from .db.models import WebhookEndpoint
 from .deps import get_db_session
 from .errors import api_error
+from .openapi import ADMIN
 
-router = APIRouter(prefix="/v1/webhooks", tags=["Webhooks"])
+router = APIRouter(prefix="/v1/webhooks", tags=[ADMIN, "Webhooks"])
 
 
 class WebhookCreate(BaseModel):

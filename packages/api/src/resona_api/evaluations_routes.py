@@ -32,12 +32,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints, ValidationError
 from sqlmodel import Session, select
 
-from . import clock
+from . import clock, schemas
 from .auth import Principal, admin_principal
 from .broker import PROTOCOL_VERSION, _immediate
 from .db.models import ApprovedReleaseTuple, Baseline, Evaluation, Release
 from .deps import get_db_session
 from .errors import api_error, validation_message
+from .openapi import ADMIN, CLIENT
 from .releases import Platform, hub_release_id, hub_version, is_known
 
 router = APIRouter(tags=["Evaluations"])
@@ -249,13 +250,13 @@ def _current_baseline(
 
 # ── routes ──────────────────────────────────────────────────────────────────
 
-@router.get("/v1/version")
+@router.get("/v1/version", tags=[CLIENT], operation_id="version_get", response_model=schemas.VersionView)
 def version() -> dict[str, Any]:
     """Release identifiers and the worker protocol major. No authentication."""
     return {"release_id": hub_release_id(), "hub_version": hub_version(), "worker_protocol": PROTOCOL_VERSION}
 
 
-@router.post("/v1/evaluations", status_code=201)
+@router.post("/v1/evaluations", status_code=201, tags=[ADMIN])
 async def create_evaluation(
     request: Request,
     principal: Principal = Depends(admin_principal),
@@ -287,7 +288,7 @@ async def create_evaluation(
     return JSONResponse(_view(evaluation), status_code=201)
 
 
-@router.get("/v1/evaluations/{evaluation_id}")
+@router.get("/v1/evaluations/{evaluation_id}", tags=[ADMIN])
 def get_evaluation(
     evaluation_id: int,
     principal: Principal = Depends(admin_principal),
@@ -296,7 +297,7 @@ def get_evaluation(
     return _view(_owned(session, principal.organization_id, evaluation_id))
 
 
-@router.get("/v1/baselines")
+@router.get("/v1/baselines", tags=[ADMIN])
 def get_baseline(
     execution_profile: str = Query(..., pattern=_NAME),
     platform: Platform = Query(...),
@@ -319,7 +320,7 @@ def get_baseline(
     }
 
 
-@router.post("/v1/evaluations/{evaluation_id}/promote")
+@router.post("/v1/evaluations/{evaluation_id}/promote", tags=[ADMIN])
 async def promote_evaluation(
     evaluation_id: int,
     request: Request,

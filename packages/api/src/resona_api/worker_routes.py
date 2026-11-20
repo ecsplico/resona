@@ -30,8 +30,9 @@ from . import broker, releases, storage
 from .auth import Principal, worker_principal
 from .broker import BrokerError
 from .db.models import Release
+from .openapi import WORKER
 
-router = APIRouter(prefix="/v1/workers", tags=["workers"])
+router = APIRouter(prefix="/v1/workers", tags=[WORKER])
 
 MAX_RESULT_BYTES = 200 * 1024 * 1024
 MAX_LONG_POLL_SECONDS = 25
