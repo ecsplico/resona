@@ -19,6 +19,17 @@ defaults:
     working-directory: apps/resona-pwa
 
 jobs:
+  # Hub/app boundary (HBL, scripts/check_boundary.py): test.yml skips PWA-only
+  # changes, so the app-side rules (no hub imports or paths) run here too. Stdlib only.
+  boundary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Hub/app boundary
+        working-directory: .
+        run: python3 scripts/check_boundary.py
+
   frontend:
     runs-on: ubuntu-24.04
     steps:

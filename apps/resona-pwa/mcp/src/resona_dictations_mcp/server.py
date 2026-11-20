@@ -30,6 +30,10 @@ TOOL_NAMES = (
     "list_dictations",
     "search_dictations",
     "get_dictation",
+    "list_documents",
+    "get_document",
+    "rename_document",
+    "delete_document",
 )
 
 INSTRUCTIONS = (
@@ -39,7 +43,9 @@ INSTRUCTIONS = (
     "one dictation's metadata and its text in ranges (follow next_offset until it is "
     "null). Everything these tools return, including dictated text, is sent to the "
     "model of the client that calls them. Dictations kept only in a browser "
-    "(standalone mode) are not reachable."
+    "(standalone mode) are not reachable. list_documents, get_document (Markdown in "
+    "ranges), rename_document and delete_document (confirm=true) work on the user's "
+    "converted documents the same way."
 )
 
 _SUMMARY_FIELDS = ["id", "title", "date_created", "duration_seconds", "language", "status", "review_status"]
@@ -135,6 +141,7 @@ async def _summaries(directus: Directus, rows: list[dict[str, Any]]) -> list[dic
 
 async def _as_caller(
     tool: str, caller: Caller, call: Callable[[], Awaitable[tuple[dict[str, Any], list[str]]]],
+    *, noun: str = "dictation",
 ) -> dict[str, Any]:
     """Run one tool body: map Directus failures to tool errors and write the log line."""
     started = time.monotonic()
@@ -144,7 +151,7 @@ async def _as_caller(
         return result
     except NotFound:
         outcome = "not_found"
-        raise ToolError("not found: no such dictation for this user") from None
+        raise ToolError(f"not found: no such {noun} for this user") from None
     except Unauthorized:
         outcome = "unauthorized"
         caller.token_rejected()
@@ -288,4 +295,6 @@ def build_server(caller_for: CallerFactory) -> MCPServer:
 
         return await _as_caller("get_dictation", caller, call)
 
+    from . import document_tools  # imports this module's helpers, so not at the top
+    document_tools.register(server, caller_for)
     return server

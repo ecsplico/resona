@@ -327,10 +327,10 @@ const PERMISSIONS = [
 	// transcripts.
 	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "transcript_corrections", action: "create" },
-	// documents: full CRUD scoped to owner
+	// documents: full CRUD scoped to owner; `title`: rename (dictations MCP rename_document)
 	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "documents", action: "create", permissions: {}, fields: ["title", "file", "status"] },
-	{ collection: "documents", action: "update", permissions: { user_created: OWNER }, fields: ["status", "error_message"] },
+	{ collection: "documents", action: "update", permissions: { user_created: OWNER }, fields: ["title", "status", "error_message"] },
 	{ collection: "documents", action: "delete", permissions: { user_created: OWNER } },
 	// recording parts: scoped to the parent recording's owner. Create: see transcripts
 	// (the owner guard also checks the part's audio is the user's own file). Users

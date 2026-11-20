@@ -2,19 +2,29 @@
 
 ## Project overview
 
-Resona PWA is the **browser frontend** for the Resona transcription platform: a Nuxt 4
-SPA (`ssr: false`) for medical dictation. Users record or upload audio, it gets
-transcribed by the backend, and they review/edit/export the result. Built on the Hearth
-design system (plain Vue + Tailwind v4 CSS tokens — no component library).
+Resona PWA is the **reference app** of the Resona hub: one maintained consumer of the
+hub's published HTTP/WebSocket contract (jobs, live streaming, profiles), not part of the
+hub. It is a Nuxt 4 SPA (`ssr: false`) for medical dictation, plus its Directus data layer,
+project worker and dictation MCP. Users record or upload audio, the app sends it through
+the hub as jobs, and users review/edit/export the result. Built on the Hearth design
+system (plain Vue + Tailwind v4 CSS tokens — no component library).
 
-**This app lives in the resona monorepo at `apps/resona-pwa/`, but it is a separate
-deployable with its own toolchain** (bun, own compose files, own uv envs for `worker/`
-and `mcp/`).
-It talks to its backends over HTTP/WebSocket only. Never import from `packages/*` or any
-other Python code in the monorepo, and nothing there imports from here — communicate over
-HTTP exclusively. Run every command below from `apps/resona-pwa/` (or `just pwa <recipe>`
-from the monorepo root). Issues and tickets live on GitHub (`ecsplico/resona`, label
-`area:pwa`); see the root `CLAUDE.md` → Agent skills.
+**Two layers** ([ADR 0001](../../docs/adr/0001-hub-and-app-boundary.md)): the hub is a
+transformation layer that knows organizations and credentials, not users, and keeps a
+job's result for 24 hours only. This app owns everything a user keeps: users, dictations,
+recordings, transcripts, documents, long-term storage and the UI. It gets no hub access
+another app could not have: never read hub storage, the hub database or hub source, and
+never ask the hub to store app entities. An app-only feature belongs here; a feature that
+needs new hub behaviour is a contract change in the hub first.
+
+**This app lives in the resona monorepo at `apps/resona-pwa/` until it moves to its own
+repository, and it is a separate deployable with its own toolchain** (bun, own compose
+files, own uv envs for `worker/` and `mcp/`).
+It talks to the hub and its own Directus over HTTP/WebSocket only. Never import from
+`packages/*` or any other Python code in the monorepo, and nothing there imports from
+here — communicate over HTTP exclusively. Run every command below from `apps/resona-pwa/`
+(or `just pwa <recipe>` from the monorepo root). Issues and tickets live on GitHub
+(`ecsplico/resona`, label `area:pwa`); see the root `CLAUDE.md` → Agent skills.
 
 The frontend is otherwise a pure client-rendered SPA. The **one** sanctioned server-side
 exception is a thin Nitro layer (`server/api/**`) used **only** to hold confidential OAuth
@@ -131,7 +141,11 @@ is the only Directus client, list queries go in a `SEARCH` body so they reach no
 Tools (`server.py`, `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
 `list_dictations` (cursor = last `date_created` + count of rows already returned at that
 instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
-(`transcripts.text` in ranges ≤ 32768). Logs: `tool= user= outcome= ids= ms=`, never text,
+(`transcripts.text` in ranges ≤ 32768); `document_tools.py` (`register(server, caller_for)`):
+`list_documents` (same cursor), `get_document` (`documents.markdown` in ranges ≤ 32768),
+`rename_document` (needs `title` in the `documents` update permission), `delete_document`
+(`confirm: true` required, else `confirm_required:` before any Directus call; deletes the
+row like the app, the file stays); writes return metadata only. Logs: `tool= user= outcome= ids= ms=`, never text,
 titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa test-mcp`)
 start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
 compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running

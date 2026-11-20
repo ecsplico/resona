@@ -2,9 +2,40 @@
 
 Modular audio transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation — usable for any language.
 
-Works standalone (no server needed), against a self-hosted stack, or with cloud STT/TTS providers. Engines are discovered via Python entry points; postprocessing is a separate layer the engine never sees.
+Works standalone (no server needed), against a self-hosted hub, or with cloud STT/TTS providers. Engines are discovered via Python entry points; postprocessing is a separate layer the engine never sees.
 
-## Architecture
+## Two layers
+
+Resona has two layers that meet only at a published contract ([ADR 0001: Hub and app boundary](adr/0001-hub-and-app-boundary.md)):
+
+- **The hub** is a transformation layer: `resona-api`, pull workers, engines, postprocessing, CLI and the job MCP server. It turns uploads into results (jobs), bridges live audio and holds profiles, execution policy, workers and evaluation. It knows organizations and credentials, not users, and keeps a job's result for 24 hours and nothing else on behalf of an app. Most of this site documents the hub.
+- **The reference app** (`apps/resona-pwa`: PWA, Android/iOS shell, Directus data layer, project worker) is one maintained consumer of that contract. It owns everything a user keeps: users, dictations, recordings, transcripts, documents, long-term storage and the UI. It gets no access another app could not have. See [Resona app](guide/pwa-app.md) and [PWA backups](server/pwa-backups.md).
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Reference app  (apps/resona-pwa; any other app alike)        │
+│ PWA / Android / iOS, Directus, project worker                │
+│ owns users, dictations, recordings, transcripts,             │
+│ documents, long-term storage and the UI                      │
+└────┬──────────────────┬───────────────┬────────────▲─────────┘
+     │ jobs             │ live          │ profiles   │ push
+     │ POST /v1/uploads │ WS /v1/listen │ GET/PUT    │ signed webhook
+     │ POST /v1/jobs    │               │ /profiles  │ on a terminal
+     │ pull: GET        │               │            │ job state
+     │ /v1/jobs/{id}    │               │            │ (being added)
+     ▼                  ▼               ▼            │
+┌────────────────────────────────────────────────────┴─────────┐
+│ Hub  (resona-api + workers + engines)                        │
+│ owns uploads, jobs, live streaming, profiles, policy,        │
+│ workers, evaluation; knows organizations and                 │
+│ credentials, not users; keeps a job result 24 h              │
+└──────────────────────────────────────────────────────────────┘
+     only connection: the published HTTP + WebSocket contract
+```
+
+Pull (`GET /v1/jobs/{id}`) stays the source of truth; push (signed webhooks for terminal job states) comes on top of it. An app that wants to keep a result fetches and stores it itself.
+
+## Hub architecture
 
 ```
                     ┌──────────────────────┐
@@ -35,7 +66,7 @@ Works standalone (no server needed), against a self-hosted stack, or with cloud 
           └───────────────┘
 ```
 
-## Packages
+## Hub packages
 
 | Package | Port | Description |
 |---------|------|-------------|
@@ -66,7 +97,7 @@ Works standalone (no server needed), against a self-hosted stack, or with cloud 
 
 === "Docker"
 
-    Full stack with job queue, persistence, and postprocessing.
+    Full hub with job queue, pull workers and postprocessing.
 
     ```bash
     docker compose -f docker-compose.resona.yml up
