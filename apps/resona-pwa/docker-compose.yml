@@ -125,6 +125,9 @@ services:
       DICTATIONS_MCP_PORT: "8000"
       DICTATIONS_MCP_ALLOWED_HOSTS: dictations-mcp:8000,127.0.0.1:8000
       DICTATIONS_MCP_ALLOWED_ORIGINS: ${PWA_ORIGIN:-http://localhost:7730}
+      # Upload/audio links (create_audio_upload, get_audio_link); empty = links off.
+      DICTATIONS_MCP_LINK_SECRET: ${DICTATIONS_MCP_LINK_SECRET:-}
+      DICTATIONS_MCP_PUBLIC_URL: ${PWA_ORIGIN:-http://localhost:7730}
       LOGLEVEL: ${LOGLEVEL:-info}
     depends_on:
       directus:
