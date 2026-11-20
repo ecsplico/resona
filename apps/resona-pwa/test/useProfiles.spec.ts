@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useProfiles } from "~/composables/useProfiles";
 import { useHubSettings } from "~/composables/useHubSettings";
 
-// resonaApiUrl ("http://localhost:7710") + defaultProfile ("default") come from
+// resonaApiUrl ("http://localhost:7710") + defaultProfile ("dictation-medical-de") come from
 // the real nuxt.config runtimeConfig; the hub token from useHubSettings.
 const fetchMock = vi.fn();
 const realFetch = globalThis.fetch;
@@ -38,14 +38,14 @@ describe("useProfiles", () => {
 	it("falls back to [defaultProfile] on an HTTP error", async () => {
 		fetchMock.mockResolvedValue(jsonResponse({ error: "unauthorized", message: "bad token" }, 401));
 		const p = useProfiles();
-		expect(await p.list()).toEqual(["default"]);
+		expect(await p.list()).toEqual(["dictation-medical-de"]);
 		expect(p.error.value).toBe("bad token");
 	});
 
 	it("falls back to [defaultProfile] on a network error", async () => {
 		fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 		const p = useProfiles();
-		expect(await p.list()).toEqual(["default"]);
+		expect(await p.list()).toEqual(["dictation-medical-de"]);
 		expect(p.error.value).toBe("Server nicht erreichbar.");
 	});
 });

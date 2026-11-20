@@ -90,7 +90,7 @@ const COLLECTIONS = {
 		{ field: "audio_file", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
 		plain("duration_seconds", "float"),
 		plain("language", "string", { default_value: "de" }),
-		plain("profile", "string", { default_value: "default" }),
+		plain("profile", "string", { default_value: "dictation-medical-de" }),
 		plain("status", "string", { default_value: "pending" }),
 		plain("error_message", "text"),
 		plain("source", "string", { default_value: "batch" }),

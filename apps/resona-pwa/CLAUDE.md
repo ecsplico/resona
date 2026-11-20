@@ -94,7 +94,8 @@ CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 `profiles/title-de.json` is this app's own postprocess profile (one `extract` step `title` on
 endpoint `local-llm`; `useTitleJob` reads `structured.title.title`). A hub knows it only after
 `just push-profiles` (`scripts/push-profiles.sh`: `resona profiles push` for `profiles/*.json`,
-then the catalogue profiles offered under Nachbearbeiten, `transcript-markdown-de` and
+then the catalogue profiles the app uses: `dictation-medical-de` (the `defaultProfile` of new
+recordings) and those offered under Nachbearbeiten, `transcript-markdown-de` and
 `transcript-polish-de`, from `RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI`
 names the `resona` command; needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
 checks the file against the hub's documented profile format and `titleFromResult`, without
@@ -665,7 +666,7 @@ URLs. No token or engine is configured at build time — the hub token is per de
 | `NUXT_PUBLIC_SSO_DIRECTUS_URL` | `` (= Directus URL) | Directus base URL used only to start the SSO login (set by the Verlauf app to the PWA origin's `/directus`) |
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Resona hub base URL |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
-| `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
+| `NUXT_PUBLIC_DEFAULT_PROFILE` | `dictation-medical-de` | default postprocessing profile (catalogue, pushed with `just push-profiles`) |
 | `NUXT_PUBLIC_DATA_MODE` | `directus` | data backend: `directus` \| `standalone` |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `false` | enable the calendar integration (nav link, settings tab, `/calendar`, `/api/calendar`) |
 

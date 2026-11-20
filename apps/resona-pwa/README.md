@@ -158,7 +158,9 @@ There are **two transcription paths**:
 **Nachbearbeiten**: on a recording's detail page a stored transcript can be re-processed
 with a postprocess profile stored on the hub (e.g. `transcript-markdown-de` for chapter
 headings and paragraphs, `transcript-polish-de` for an LLM polish on the worker host).
-These two and the app's own `title-de` (title suggestion after a live dictation,
+New recordings are transcribed with the catalogue profile `dictation-medical-de` (German
+dictation commands, medical chapter headings, name corrections; `NUXT_PUBLIC_DEFAULT_PROFILE`).
+These three and the app's own `title-de` (title suggestion after a live dictation,
 `profiles/title-de.json`) are not on a hub by default: an org admin uploads them once with
 `RESONA_API_URL=… RESONA_API_KEY=<org-admin token> just push-profiles` (see
 `profiles/README.md`).
@@ -220,7 +222,7 @@ Verbindung).
 | `NUXT_PUBLIC_DIRECTUS_URL` | `http://localhost:7700` | Base URL of the Directus instance (auth, data, file storage). |
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Base URL of the Resona hub. |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | Default transcription language. |
-| `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | Default postprocessing profile name. |
+| `NUXT_PUBLIC_DEFAULT_PROFILE` | `dictation-medical-de` | Default postprocessing profile name (pushed with `just push-profiles`). |
 | `NUXT_PUBLIC_DATA_MODE` | `directus` | Data backend: `directus` \| `standalone`. |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `false` | Enable the calendar integration (nav link, settings tab, `/calendar`, `/api/calendar`; all 404 when off). Needs the `NUXT_GOOGLE_*` keys and `NUXT_SESSION_PASSWORD`. |
 

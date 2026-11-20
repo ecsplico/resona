@@ -14,7 +14,8 @@ profile with `--profile <name>` (or the organization's `postprocess_profile`).
 
 | Profile | What it does | Needs |
 |---------|--------------|-------|
-| `transcript-markdown-de` | German dictation commands → Markdown (the command rules of `default`, without its name corrections). Rules only | Nothing: runs on every worker |
+| `dictation-medical-de` | German medical dictation → Markdown: name corrections, the headings `Kapitel Verlauf`/`Medikation`/`Psychopathologischer Befund`/`Procedere` (no terminator needed), then the generic commands of `default`. Rules only; what `default` did before the split | Nothing: runs on every worker |
+| `transcript-markdown-de` | The command rules of `dictation-medical-de` (medical headings + generic commands), without its name corrections. Rules only | Nothing: runs on every worker |
 | `transcript-polish-de` | The same rules, then a chunked LLM pass that may change only capitalization, punctuation and whitespace | A `local_llm` endpoint with the id `local-llm` |
 | `document-polish-de` | Chunked LLM pass over document Markdown: OCR corrections only | A `local_llm` endpoint with the id `local-llm` |
 
@@ -24,8 +25,9 @@ see [LLM polish on the worker host](../docs/server/linux-worker.md#llm-polish-on
 Until then the hub refuses a job that names one of the two polish profiles (`policy_denied`).
 
 Profiles carry their rules inline: hosted profiles reject `source`.
-`packages/postprocess/tests/test_dictation_rules.py` keeps the inline command rules equal to the
-tail of the wheel's `default_replacements.json`, and `test_profile_catalogue.py` in this directory
+`packages/postprocess/tests/test_dictation_rules.py` keeps `dictation-medical-de` equal to the rule
+list `default` used before the split and the transcript profiles' inline rules equal to its tail
+(everything after the name corrections), and `test_profile_catalogue.py` in this directory
 validates every file with `Profile.from_dict`.
 
 Stored profile revisions on a hub are never touched by a release. A hub that resolved these

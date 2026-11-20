@@ -164,10 +164,9 @@ punctuation command absorbs the punctuation right before and after it, so the re
 
 Otherwise the text stays exactly as spoken: `Kapitel Anamnese der Patient berichtet Komma er habe
 Schmerzen Punkt` becomes `Kapitel Anamnese der Patient berichtet, er habe Schmerzen.`, not a
-heading. The medical section headings `Verlauf`, `Medikation`, `Psychopathologischer Befund` and
-`Procedere` (also spoken `Prozedere`) need no terminator; a spoken `Absatz`, `Punkt`,
-`Doppelpunkt` or `Komma` right after them is dropped. Leading and trailing blank lines are
-removed. The `default` profile also carries a few name corrections.
+heading. Leading and trailing blank lines are removed. `default` holds only these generic
+commands; the medical section headings and name corrections are in the catalogue profile
+[`dictation-medical-de`](#dictation-medical-de).
 
 ```text
 Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
@@ -218,16 +217,32 @@ only after an org admin pushed them:
 
 | Profile | What it does | Needs |
 |---------|--------------|-------|
+| `dictation-medical-de` | Name corrections, medical section headings, then the generic commands of `default` (rules only; what `default` did up to 0.2.7) | Nothing |
 | `transcript-markdown-de` | Dictation commands → Markdown, rules only | Nothing |
 | `transcript-polish-de` | The same rules, then an LLM pass limited to capitalization, punctuation and whitespace | `local_llm` endpoint `local-llm` |
 | `document-polish-de` | OCR corrections on document Markdown ([Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)) | `local_llm` endpoint `local-llm` |
 
 ```bash
 git clone https://github.com/ecsplico/resona && cd resona   # or download the files of your release tag
+resona profiles push dictation-medical-de profiles/dictation-medical-de.json
 resona profiles push transcript-markdown-de profiles/transcript-markdown-de.json
 resona profiles push transcript-polish-de profiles/transcript-polish-de.json
 resona profiles push document-polish-de profiles/document-polish-de.json
 ```
+
+!!! warning "Release note: `default` lost its medical headings and name corrections"
+    Up to 0.2.7 the bundled `default` also turned `Kapitel Verlauf`, `Kapitel Medikation`,
+    `Kapitel Psychopathologischer Befund` and `Kapitel Procedere`/`Prozedere` into headings without
+    a terminator and corrected a few names (`Monique` → `Monic`, …). These rules moved to the
+    catalogue profile `dictation-medical-de`; `default` keeps the generic commands, whose output is
+    unchanged. A medical dictation with `profile=default` (or `postprocess_profile` `default`) now
+    keeps the names uncorrected, and a medical heading without a terminator stays text:
+    `Kapitel Verlauf Komma stabil Punkt` gave `## Verlauf` + `stabil.` and now gives
+    `Kapitel Verlauf, stabil.` (with a terminator, `Kapitel Verlauf Absatz`, the generic rule still
+    makes the heading). Fix: push `profiles/dictation-medical-de.json` and select
+    `dictation-medical-de` (`--profile`, or the organization's `postprocess_profile`). The
+    reference app selects it by default (`NUXT_PUBLIC_DEFAULT_PROFILE`) and pushes it with
+    `just pwa push-profiles`.
 
 !!! note "Release note: product profiles left the wheel"
     Up to 0.2.7 the wheel also contained `transcript-markdown-de.json`, `transcript-polish-de.json`,
@@ -238,10 +253,21 @@ resona profiles push document-polish-de profiles/document-polish-de.json
     them from `resona_postprocess/profiles/` must read the catalogue instead, and a hub that never
     pushed them has to push them once.
 
+### dictation-medical-de
+
+`profiles/dictation-medical-de.json` is one `replacements` step with inline rules, in this order:
+name corrections (`Monique` → `Monic`, `Serafine`/`Serafina` → `Seraphine`, `Lucy` → `Lucie`,
+`Nele`/`Mele` → `Neele`), the medical section headings, then the generic commands of `default`.
+The headings `Kapitel Verlauf`, `Kapitel Medikation`, `Kapitel Psychopathologischer Befund` and
+`Kapitel Procedere` (also spoken `Prozedere`) need no terminator; a spoken `Absatz`, `Punkt`,
+`Doppelpunkt` or `Komma` right after them is dropped. They run before the general `Kapitel` rule,
+so `Kapitel Verlauf der Patient ist stabil Punkt` gives `## Verlauf` + `der Patient ist stabil.`.
+Its output is what `default` produced up to 0.2.7.
+
 ### transcript-markdown-de and transcript-polish-de
 
-`profiles/transcript-markdown-de.json` holds the same dictation rules as `default`, without the
-name corrections and without any LLM step, so it runs on every worker.
+`profiles/transcript-markdown-de.json` holds the rules of `dictation-medical-de` without its name
+corrections and without any LLM step, so it runs on every worker.
 `profiles/transcript-polish-de.json` runs the same rules, then a chunked `llm` step on the endpoint
 id `local-llm`. Its prompt allows the model to change only capitalization (sentence starts, after
 headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any

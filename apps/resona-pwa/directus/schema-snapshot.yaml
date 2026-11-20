@@ -1774,7 +1774,7 @@ fields:
       name: profile
       table: recordings
       data_type: varchar
-      default_value: default
+      default_value: dictation-medical-de
       max_length: 255
       numeric_precision: null
       numeric_scale: null

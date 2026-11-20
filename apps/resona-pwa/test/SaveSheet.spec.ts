@@ -11,7 +11,7 @@ mockNuxtImport("useShell", () => () => ({ wide: ref(viewport.wide), paneInLayout
 const list = vi.hoisted(() => vi.fn(async () => ["default", "medical"]));
 
 mockNuxtImport("useProfiles", () => () => ({ list }));
-// runtimeConfig defaults (defaultLanguage "de", defaultProfile "default") come
+// runtimeConfig defaults (defaultLanguage "de", defaultProfile "dictation-medical-de") come
 // from the real nuxt.config — no need to mock useRuntimeConfig here.
 
 describe("SaveSheet", () => {
@@ -37,6 +37,14 @@ describe("SaveSheet", () => {
 		await flushPromises();
 		expect(document.activeElement).not.toBe(w.find("[data-testid=\"title\"] input").element);
 		w.unmount();
+	});
+
+	it("preselects the catalogue profile dictation-medical-de, not the bundled default", async () => {
+		list.mockResolvedValue(["default", "dictation-medical-de", "medical"]);
+		const w = await mountSuspended(SaveSheet);
+		await flushPromises();
+		await w.find("[data-testid=\"save\"]").trigger("click");
+		expect(w.emitted("save")![0]![0]).toMatchObject({ profile: "dictation-medical-de" });
 	});
 
 	it("renders title, language, profile pickers and a transcribe toggle", async () => {

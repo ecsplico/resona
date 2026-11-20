@@ -7,9 +7,10 @@ RESONA_API_URL=https://<hub-host> RESONA_API_KEY=<org-admin token> just push-pro
 ```
 
 (`just pwa push-profiles` from the monorepo root.) The recipe runs `resona profiles push` for
-every file here and for the catalogue profiles the app offers under "Nachbearbeiten"
-(`transcript-markdown-de`, `transcript-polish-de`, from the hub repository's `profiles/`;
-`RESONA_PROFILE_CATALOGUE` names that directory, `RESONA_CLI` the `resona` command).
+every file here and for the catalogue profiles the app uses: `dictation-medical-de` (the
+`defaultProfile` new recordings are transcribed with) and those offered under "Nachbearbeiten"
+(`transcript-markdown-de`, `transcript-polish-de`), all from the hub repository's `profiles/`;
+`RESONA_PROFILE_CATALOGUE` names that directory, `RESONA_CLI` the `resona` command.
 
 | Profile | Used by | Needs |
 |---------|---------|-------|
