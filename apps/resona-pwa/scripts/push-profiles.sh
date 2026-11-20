@@ -6,13 +6,14 @@
 #   RESONA_PROFILE_CATALOGUE          the hub repository's profiles/ directory (default: ../../profiles)
 #
 # The app's own profiles (profiles/*.json: title-de) are pushed first, then the catalogue
-# profiles it offers under "Nachbearbeiten". Pushing stores a new revision; it changes nothing else.
+# profiles it uses: dictation-medical-de (defaultProfile of new recordings) and those it offers
+# under "Nachbearbeiten". Pushing stores a new revision; it changes nothing else.
 set -euo pipefail
 
 app_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 read -r -a resona <<<"${RESONA_CLI:-resona}"
 catalogue="${RESONA_PROFILE_CATALOGUE:-$app_dir/../../profiles}"
-catalogue_profiles=(transcript-markdown-de transcript-polish-de)
+catalogue_profiles=(dictation-medical-de transcript-markdown-de transcript-polish-de)
 
 if ! command -v "${resona[0]}" >/dev/null 2>&1; then
 	echo "push-profiles: '${resona[0]}' not found; install resona-cli or set RESONA_CLI" >&2

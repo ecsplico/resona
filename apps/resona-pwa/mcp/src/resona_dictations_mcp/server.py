@@ -1,5 +1,5 @@
-"""The dictation tool surface: the calling user's own dictations (read tools here,
-create tools and the audio link in ``create_tools.py``).
+"""The dictation tool surface: the calling user's own dictations (reads here, writes in
+``edit_tools``, create tools and the audio link in ``create_tools.py``).
 
 Every tool runs as the caller (``Caller.directus`` carries their Directus token); the
 server has no ownership logic. A dictation is a ``recordings`` row plus its
@@ -8,6 +8,7 @@ Log lines carry the tool name, the user id, row ids and the duration, never text
 """
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import time
@@ -32,6 +33,14 @@ TOOL_NAMES = (
     "list_dictations",
     "search_dictations",
     "get_dictation",
+    "update_dictation_text",
+    "rename_dictation",
+    "set_review_status",
+    "delete_dictation",
+    "list_documents",
+    "get_document",
+    "rename_document",
+    "delete_document",
     # create_tools.py
     "create_dictation_from_text",
     "create_audio_upload",
@@ -48,7 +57,11 @@ INSTRUCTIONS = (
     "without passing through the model; get_audio_link returns a 10-minute link to a "
     "dictation's audio. Everything these tools return, including dictated text, is sent "
     "to the model of the client that calls them. Dictations kept only in a browser "
-    "(standalone mode) are not reachable."
+    "(standalone mode) are not reachable. update_dictation_text, rename_dictation, "
+    "set_review_status and delete_dictation change a dictation the way the app does; "
+    "deleting cannot be undone. list_documents, get_document (Markdown in "
+    "ranges), rename_document and delete_document (confirm=true) work on the user's "
+    "converted documents the same way."
 )
 
 _SUMMARY_FIELDS = ["id", "title", "date_created", "duration_seconds", "language", "status", "review_status"]
@@ -108,6 +121,11 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
     return created, skip
 
 
+def text_sha256(text: str) -> str:
+    """SHA-256 hex of the UTF-8 text; a dictation without transcript has the empty text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -144,6 +162,7 @@ async def _summaries(directus: Directus, rows: list[dict[str, Any]]) -> list[dic
 
 async def _as_caller(
     tool: str, caller: Caller, call: Callable[[], Awaitable[tuple[dict[str, Any], list[str]]]],
+    *, noun: str = "dictation",
 ) -> dict[str, Any]:
     """Run one tool body: map Directus failures to tool errors and write the log line."""
     started = time.monotonic()
@@ -153,7 +172,7 @@ async def _as_caller(
         return result
     except NotFound:
         outcome = "not_found"
-        raise ToolError("not found: no such dictation for this user") from None
+        raise ToolError(f"not found: no such {noun} for this user") from None
     except Unauthorized:
         outcome = "unauthorized"
         caller.token_rejected()
@@ -274,8 +293,9 @@ def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MC
     ) -> dict[str, Any]:
         """Read one dictation: its metadata and one range of its text, the text the app
         shows (a postprocess profile's output when one was applied, see applied_profile).
-        Follow next_offset until it is null; total_chars is the whole length. The text
-        is sent to the model of the client that calls this tool."""
+        Follow next_offset until it is null; total_chars is the whole length and
+        text_sha256 identifies the whole text (expected_sha256 of update_dictation_text).
+        The text is sent to the model of the client that calls this tool."""
         caller = caller_for(ctx)
 
         async def call() -> tuple[dict[str, Any], list[str]]:
@@ -295,10 +315,15 @@ def build_server(caller_for: CallerFactory, links: Optional[Links] = None) -> MC
                 "offset": offset,
                 "next_offset": end if end < len(text) else None,
                 "total_chars": len(text),
+                "text_sha256": text_sha256(text),
             }
             return result, [id]
 
         return await _as_caller("get_dictation", caller, call)
 
+    from . import edit_tools
+    edit_tools.register(server, caller_for)
+    from . import document_tools  # imports this module's helpers, so not at the top
+    document_tools.register(server, caller_for)
     create_tools.register(server, caller_for, links)
     return server

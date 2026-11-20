@@ -1,7 +1,8 @@
 # resona-dictations-mcp
 
 MCP server that gives a user of the Resona app access to **their own dictations**
-(recordings and transcripts in the app's Directus). It is a service of the app's
+(recordings and transcripts in the app's Directus) and **documents** (converted PDFs and
+images with their Markdown). It is a service of the app's
 compose stack and is reached at `<app origin>/mcp` (Streamable HTTP), proxied by the
 PWA (`server/routes/mcp.ts`). `resona-mcp` in the Resona monorepo is a different
 server: it exposes hub jobs, not dictations.
@@ -13,6 +14,9 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 - Every request needs `Authorization: Bearer <token>`: a Directus token of the user
   (a static token of their own user row, or an access token). No token, or one that
   Directus rejects, is `401` before any tool runs.
+- Users create, replace and revoke their static token in the app under Einstellungen
+  → MCP, which also shows setup snippets for Claude Code, Claude Desktop and Cursor.
+  The token has the same rights as the user's login.
 - The server checks the token with Directus `GET /users/me` and keeps an accepted
   token for 30 s (by SHA-256 hash). Each Directus call of a tool runs with the token
   itself, so a revoked token gets no data at once; the first such rejection drops the
@@ -30,13 +34,27 @@ Standalone mode keeps its data in the browser's IndexedDB; this server cannot re
 |------|-----------------|
 | `list_dictations(limit≤50, cursor, status?, review_status?, since?)` | Newest first: id, title, created, duration, language, status, review status, text length. `next_cursor` for the next page. |
 | `search_dictations(query, limit≤50)` | Dictations whose title or transcript text contains the query (case-insensitive), with `matched_in`. No text. |
-| `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars`. |
+| `get_dictation(id, offset=0, limit≤32768)` | Metadata plus one range of the text the app shows, with `next_offset` / `total_chars` and `text_sha256` (SHA-256 hex of the whole UTF-8 text). |
+| `update_dictation_text(id, text, expected_sha256?)` | Replaces the text the app shows (`transcripts.text`; raw and profile output stay), or creates the transcript when there is none, as the app's editor does. A stale `expected_sha256` → `conflict`, nothing written; while a postprocess profile runs → `busy`. Metadata + new `text_sha256`. |
+| `rename_dictation(id, title)` | Sets the trimmed title and `title_auto=false` (no automatic title replaces it). Metadata. |
+| `set_review_status(id, "editing"\|"ready")` | Sets the review status. Metadata. |
+| `delete_dictation(id, confirm)` | Cannot be undone. Without `confirm: true` → `confirm_required`, nothing deleted. Deletes the recording like the app (transcript, corrections and parts cascade; the audio files stay in file storage, which the `user` role cannot delete). Metadata of the deleted dictation. |
+| `list_documents(limit≤50, cursor)` | The user's documents (converted PDFs/images), newest first: id, title, created, updated, status, Markdown length. `next_cursor` for the next page. |
+| `get_document(id, offset=0, limit≤32768)` | Metadata (plus `error_message`, `page_count`) and one range of the document's Markdown, with `next_offset` / `total_chars`. |
+| `rename_document(id, title)` | Sets the title; returns metadata only (id, title, created, updated, status). |
+| `delete_document(id, confirm)` | Deletes the document row as the app does (the uploaded file stays in `directus_files`); `{id, title, deleted}`. Without `confirm: true` it deletes nothing (`confirm_required:` error). |
 | `create_dictation_from_text(text, title?, language?)` | Saves the text as a finished dictation (`source` `live`, `status` `done`, like a saved live dictation) plus its transcript; no title → dated placeholder `Diktat DD.MM.YYYY HH:MM`, `title_auto` true. Text ≤ 200000 characters. |
 | `create_audio_upload(filename, language?, profile?)` | The new dictation's `id`, a single-use `upload_url` (10 min), `max_bytes` and a `curl -T <file> <url>` command: the audio never passes the model. The upload creates the recording `pending` (`source` `batch`, `title_auto` true) and the project worker transcribes it. |
 | `get_audio_link(id)` | `audio_url` to the dictation's audio, valid 10 minutes (Range requests work). |
 
 Everything a tool returns goes to the model of the client that calls it; the tool
 descriptions say so. Another user's id and a missing id give the same "not found" error.
+Write tools return metadata only, never text. Error codes prefix the tool error text
+(`conflict: …`). The fields each dictation write tool changes are the app's
+(`app/utils/dictationEdit.ts`, `useTranscriptEdit.ts`, `deleteRecording`):
+`shared/dictationEdit.cases.json` drives both `tests/test_edit_tools.py` and the app's
+`test/dictationEdit.spec.ts`. Renaming a document needs `title` in the `user`
+policy's `documents` update fields (`directus/bootstrap.mjs`).
 
 `tool-inventory.json` lists the tools; regenerate it with
 `uv run python scripts/gen_tool_inventory.py` (`--check` in the tests).

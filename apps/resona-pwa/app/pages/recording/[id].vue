@@ -7,6 +7,7 @@ import type { Recording, RecordingPart, Transcript } from "~/types/directus";
 import type { HMenuItem } from "~/components/hearth/HMenu.vue";
 import { appendToRaw, postprocessRunning } from "~/utils/postprocess";
 import { rebaseInsertion, rebaseOffset, sha256Hex } from "~/utils/correction";
+import { renamePatch, reviewStatusPatch } from "~/utils/dictationEdit";
 
 const route = useRoute();
 const id = String(route.params.id);
@@ -354,7 +355,7 @@ async function commitTitle(): Promise<void> {
 		return;
 	}
 	try {
-		await store.updateRecording(id, { title: next, title_auto: false });
+		await store.updateRecording(id, renamePatch(next));
 		recording.value.title = next;
 		recording.value.title_auto = false;
 		recordingsList.request();
@@ -377,7 +378,7 @@ async function setReviewStatus(value: "editing" | "ready"): Promise<void> {
 	}
 	settingStatus.value = true;
 	try {
-		await store.updateRecording(id, { review_status: value });
+		await store.updateRecording(id, reviewStatusPatch(value));
 		recording.value.review_status = value;
 	}
 	finally {

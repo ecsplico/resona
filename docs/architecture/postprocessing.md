@@ -1,6 +1,6 @@
 # Postprocessing Pipeline
 
-Postprocessing is the layer between raw engine output and the final stored transcript. The engine returns exactly what the model produced; everything else — text normalisation, dictation-command expansion, LLM reformatting, structured data extraction — is the pipeline's responsibility.
+Postprocessing is the layer between raw engine output and the job's final result. The engine returns exactly what the model produced; everything else — text normalisation, dictation-command expansion, LLM reformatting, structured data extraction — is the pipeline's responsibility.
 
 ## Profiles
 
@@ -94,7 +94,7 @@ Without `chunk_chars` an `llm` step keeps its single-call behaviour: a failure i
 
 ### extract
 
-Sends the current text to a language model and returns **structured JSON data**. The text is not modified; instead the extracted data is stored alongside the transcript (in `job.structured` server-side).
+Sends the current text to a language model and returns **structured JSON data**. The text is not modified; instead the extracted data is returned alongside the text (in `JobResult.structured` on the hub).
 
 ```json
 {
@@ -137,7 +137,7 @@ A text step may return a `StepOutput(text, warnings)` instead of a string; chunk
 | Kapitel *Titel* | `\n\n## Titel\n\n` |
 | Klammer auf / zu, Eckige Klammer auf / zu | `(` `)` `[` `]` |
 
-Every command pattern has word boundaries (`\b`); rules run case-insensitively, so without them `Zeitpunkt` became `Zeit.`. Order matters: the four medical heading rules (`Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere`, no terminator needed, an immediately spoken `Absatz`/`Punkt`/`Doppelpunkt`/`Komma` is swallowed) run first, then the general `Kapitel` rule, then brackets, then `Doppelpunkt` before `Punkt`, then `Absatz`. Three cleanup rules close the list: trailing spaces before a newline, runs of 3+ newlines → one blank line, leading/trailing whitespace of the whole text removed. Name corrections (`Monique` → `Monic`, …) come first and are part of `default` only.
+Every command pattern has word boundaries (`\b`); rules run case-insensitively, so without them `Zeitpunkt` became `Zeit.`. Order matters: the general `Kapitel` rule runs first, then brackets, then `Doppelpunkt` before `Punkt`, then `Absatz`. Three cleanup rules close the list: trailing spaces before a newline, runs of 3+ newlines → one blank line, leading/trailing whitespace of the whole text removed. `default` holds only these generic commands; the medical headings and name corrections are in the catalogue profile `dictation-medical-de` (below). A golden test (`tests/test_default_profile_golden.py`) keeps `default`'s output for generic-only text byte-identical to the pre-split rule list (`tests/fixtures/pre_split_default_replacements.json`).
 
 The general `Kapitel` rule fires only for a title of one to five words (characters other than whitespace and `.,;:!?()[]`; a `.` or `,` between digits is allowed, so `F32.1` stays whole; command words like `Komma` are excluded) followed by an optional comma and a terminator: `Absatz`, `Punkt`, `Doppelpunkt`, `Fragezeichen`, `Ausrufezeichen`, `!`, `?`, `:`, or a `.` with no digit on either side (`3. Mai` is no terminator). Negative lookbehinds skip `Kapitel` after articles, prepositions and ordinals (`im`, `das`, `dem`, `vom`, `zum`, `letzten`, …), so prose such as `wie im Kapitel zuvor beschrieben.` is untouched. Without a match the text stays as spoken. The punctuation commands absorb one adjacent punctuation mark on each side (`, Komma,` → `,`, `. Punkt.` → `.`), so Whisper's own punctuation is not doubled. Rules that consume leading whitespace use `(?<![ \t])[ \t]*` instead of `\s*`: they never cross a newline (only `Absatz` and the heading rules produce line breaks) and stay linear on long space runs. Whole-word commands still hit ordinary words (`der wichtigste Punkt`, `im dritten Absatz`); rules cannot avoid that.
 
@@ -147,7 +147,9 @@ This is a behaviour change for every organization using the bundled `default` (s
 
 The wheel bundles only `default`: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) catalogue and reach a hub with `resona profiles push`; none of them is resolved by name from the package.
 
-`profiles/transcript-markdown-de.json` (`transcript-markdown-de`) is one `replacements` step with the dictation command rules of `default_replacements.json` (without the name corrections), inline because hosted profiles reject `source`; a test keeps them equal to the tail of `default_replacements.json`. No LLM, runs on any worker.
+`profiles/dictation-medical-de.json` (`dictation-medical-de`) is one `replacements` step with inline rules, in the order the bundled `default` had them up to 0.2.7: name corrections (`Monique` → `Monic`, …), the four medical heading rules (`Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere`, no terminator needed, an immediately spoken `Absatz`/`Punkt`/`Doppelpunkt`/`Komma` is swallowed; they run before the general `Kapitel` rule), then the generic rules of `default_replacements.json`. A test keeps it equal to the pre-split rule list. The reference app selects it as its default profile.
+
+`profiles/transcript-markdown-de.json` (`transcript-markdown-de`) is one `replacements` step with the rules of `dictation-medical-de` without its name corrections, inline because hosted profiles reject `source`; a test keeps them equal to the tail of `dictation-medical-de`. No LLM, runs on any worker.
 
 `profiles/transcript-polish-de.json` (`transcript-polish-de`) runs the same rules, then a chunked `llm` step on endpoint `local-llm`. Its German prompt allows only changes to capitalization (sentence starts, after headings, list items, nouns), punctuation and whitespace; it forbids changing, adding or removing any word, even one that looks misrecognized, and names numbers, units, doses, drug names, diagnoses, codes and proper names as untouchable. Settings: `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.1, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. `preserve_markup` (`markup_signature`) compares only HTML comments, the heading-level sequence, per-row table cell counts and the ordered speaker labels of a diarized transcript (`**Sprecher N:** ` at a line start); merged paragraphs, joined list items, changed heading text or a changed word or number pass it and are only bounded by the length guard. The endpoint registration is the same as for `document-polish-de` below.
 

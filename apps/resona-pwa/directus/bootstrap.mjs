@@ -90,7 +90,7 @@ const COLLECTIONS = {
 		{ field: "audio_file", type: "uuid", schema: {}, meta: { interface: "file", special: ["file"] } },
 		plain("duration_seconds", "float"),
 		plain("language", "string", { default_value: "de" }),
-		plain("profile", "string", { default_value: "default" }),
+		plain("profile", "string", { default_value: "dictation-medical-de" }),
 		plain("status", "string", { default_value: "pending" }),
 		plain("error_message", "text"),
 		plain("source", "string", { default_value: "batch" }),
@@ -327,10 +327,10 @@ const PERMISSIONS = [
 	// transcripts.
 	{ collection: "transcript_corrections", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "transcript_corrections", action: "create" },
-	// documents: full CRUD scoped to owner
+	// documents: full CRUD scoped to owner; `title`: rename (dictations MCP rename_document)
 	{ collection: "documents", action: "read", permissions: { user_created: OWNER } },
 	{ collection: "documents", action: "create", permissions: {}, fields: ["title", "file", "status"] },
-	{ collection: "documents", action: "update", permissions: { user_created: OWNER }, fields: ["status", "error_message"] },
+	{ collection: "documents", action: "update", permissions: { user_created: OWNER }, fields: ["title", "status", "error_message"] },
 	{ collection: "documents", action: "delete", permissions: { user_created: OWNER } },
 	// recording parts: scoped to the parent recording's owner. Create: see transcripts
 	// (the owner guard also checks the part's audio is the user's own file). Users
@@ -354,9 +354,12 @@ const PERMISSIONS = [
 	{ collection: "directus_files", action: "create", permissions: {} },
 	{ collection: "directus_files", action: "read", permissions: { uploaded_by: OWNER } },
 	{ collection: "directus_files", action: "update", permissions: { uploaded_by: OWNER } },
-	// users: the own hub token only (never anyone else's row, no other fields)
-	{ collection: "directus_users", action: "read", permissions: { id: OWNER }, fields: ["id", "hub_token"] },
-	{ collection: "directus_users", action: "update", permissions: { id: OWNER }, fields: ["hub_token"] },
+	// users: the own hub token and the own static Directus token (the personal MCP
+	// token, Einstellungen → MCP), never anyone else's row, no other fields. `token` is
+	// a concealed system field: a read returns `**********` (or null), never the value;
+	// read access only lets the PWA ask "is one set?" with `filter[token][_nnull]`.
+	{ collection: "directus_users", action: "read", permissions: { id: OWNER }, fields: ["id", "hub_token", "token"] },
+	{ collection: "directus_users", action: "update", permissions: { id: OWNER }, fields: ["hub_token", "token"] },
 ];
 
 async function ensureUserRole() {

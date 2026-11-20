@@ -1,16 +1,27 @@
 # Resona PWA
 
-A Nuxt 4 progressive web app for medical dictation and transcription, built on the
-Hearth design system. It is a multi-user, installable, offline-capable front end that
-records or uploads audio, runs it through Resona's transcription backend, and lets you
-review, edit, and export the resulting transcripts. The app is browser-only
-(`ssr: false`) and talks to its backends over HTTP/WebSocket — it holds no server
-logic of its own.
+The **reference app** of the Resona hub: a Nuxt 4 progressive web app for medical
+dictation and transcription, built on the Hearth design system. It is a multi-user,
+installable, offline-capable front end that records or uploads audio, sends it through
+the Resona hub as jobs, and lets you review, edit, and export the resulting transcripts.
+The app is browser-only (`ssr: false`) and talks to its backends over HTTP/WebSocket — it
+holds no server logic of its own.
+
+## Reference app, not hub
+
+Resona has two layers ([ADR 0001: Hub and app boundary](../../docs/adr/0001-hub-and-app-boundary.md)).
+The hub is a transformation layer: uploads, jobs, live streaming, profiles, policy and
+workers; it knows organizations and credentials, not users, and keeps a job's result for
+24 hours. This app is one maintained consumer of the hub's published HTTP/WebSocket
+contract and owns everything a user keeps: users, dictations, recordings, transcripts,
+documents and their long-term storage (Directus), and the UI. It gets no hub access
+another app could not have and never reads hub storage, the hub database or hub source.
 
 ## Quick start
 
-This app lives at `apps/resona-pwa/` in the resona monorepo; run the commands below from
-this directory. The platform is split across **two stacks**:
+This app lives at `apps/resona-pwa/` in the resona monorepo until it moves to its own
+repository; run the commands below from this directory. It is split across **two
+stacks**, one per layer:
 
 1. **Resona hub** — resona-api from the monorepo root (e.g. `docker-compose.mac.yml`,
    see `docs/server/mac-stack.md`) or Coolify (`https://resona.ecsplico.de`). This app
@@ -121,8 +132,8 @@ image runs the **Nitro server** (`nuxt build` → `node .output/server`), not st
 
 ## Architecture
 
-Resona PWA is a **separate deployable inside the resona monorepo** (`apps/resona-pwa/`,
-own toolchain, no imports from the Python packages) and
+Resona PWA is the hub's reference app, a **separate deployable inside the resona
+monorepo** (`apps/resona-pwa/`, own toolchain, no imports from the Python packages), and
 communicates with two backend services over HTTP only:
 
 - **Directus** (`:7700`) — auth, data, and file storage via `@directus/sdk`. Holds the
@@ -158,7 +169,9 @@ There are **two transcription paths**:
 **Nachbearbeiten**: on a recording's detail page a stored transcript can be re-processed
 with a postprocess profile stored on the hub (e.g. `transcript-markdown-de` for chapter
 headings and paragraphs, `transcript-polish-de` for an LLM polish on the worker host).
-These two and the app's own `title-de` (title suggestion after a live dictation,
+New recordings are transcribed with the catalogue profile `dictation-medical-de` (German
+dictation commands, medical chapter headings, name corrections; `NUXT_PUBLIC_DEFAULT_PROFILE`).
+These three and the app's own `title-de` (title suggestion after a live dictation,
 `profiles/title-de.json`) are not on a hub by default: an org admin uploads them once with
 `RESONA_API_URL=… RESONA_API_KEY=<org-admin token> just push-profiles` (see
 `profiles/README.md`).
@@ -220,7 +233,7 @@ Verbindung).
 | `NUXT_PUBLIC_DIRECTUS_URL` | `http://localhost:7700` | Base URL of the Directus instance (auth, data, file storage). |
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Base URL of the Resona hub. |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | Default transcription language. |
-| `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | Default postprocessing profile name. |
+| `NUXT_PUBLIC_DEFAULT_PROFILE` | `dictation-medical-de` | Default postprocessing profile name (pushed with `just push-profiles`). |
 | `NUXT_PUBLIC_DATA_MODE` | `directus` | Data backend: `directus` \| `standalone`. |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `false` | Enable the calendar integration (nav link, settings tab, `/calendar`, `/api/calendar`; all 404 when off). Needs the `NUXT_GOOGLE_*` keys and `NUXT_SESSION_PASSWORD`. |
 

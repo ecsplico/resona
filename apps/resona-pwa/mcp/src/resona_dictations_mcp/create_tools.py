@@ -78,14 +78,14 @@ def register(server: MCPServer, caller_for: CallerFactory, links: Optional[Links
             }
             if language:
                 data["language"] = language
-            row = await caller.directus.create_item(
+            row = await caller.directus.create(
                 "recordings", data, fields=["id", "title", "title_auto", "language", "status", "date_created"])
             try:
-                await caller.directus.create_item("transcripts", {"recording": row["id"], "text": text}, fields=["id"])
+                await caller.directus.create("transcripts", {"recording": row["id"], "text": text}, fields=["id"])
             except Exception:
                 # No finished dictation without its text: the user's own row goes again.
                 try:
-                    await caller.directus.delete_item("recordings", row["id"])
+                    await caller.directus.delete("recordings", row["id"])
                 except Exception:  # noqa: BLE001 - the original failure is the one to report
                     pass
                 raise

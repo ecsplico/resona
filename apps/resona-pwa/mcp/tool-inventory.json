@@ -8,6 +8,14 @@
     "deferred": false
   },
   {
+    "name": "delete_dictation",
+    "deferred": false
+  },
+  {
+    "name": "delete_document",
+    "deferred": false
+  },
+  {
     "name": "get_audio_link",
     "deferred": false
   },
@@ -16,11 +24,35 @@
     "deferred": false
   },
   {
+    "name": "get_document",
+    "deferred": false
+  },
+  {
     "name": "list_dictations",
     "deferred": false
   },
   {
+    "name": "list_documents",
+    "deferred": false
+  },
+  {
+    "name": "rename_dictation",
+    "deferred": false
+  },
+  {
+    "name": "rename_document",
+    "deferred": false
+  },
+  {
     "name": "search_dictations",
+    "deferred": false
+  },
+  {
+    "name": "set_review_status",
+    "deferred": false
+  },
+  {
+    "name": "update_dictation_text",
     "deferred": false
   }
 ]

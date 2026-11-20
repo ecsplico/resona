@@ -326,6 +326,35 @@ def test_v8_database_gains_webhook_endpoints_and_keeps_jobs(legacy_db, monkeypat
     assert jobs == 2
 
 
+def test_v9_database_gains_job_webhooks_and_the_outbox(legacy_db, monkeypatch):
+    monkeypatch.setenv("RESONA_BOOTSTRAP_ORGANIZATION_ID", "bootstrap-org")
+    monkeypatch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:9])
+    monkeypatch.setattr(schema, "TARGET_VERSION", 9)
+    migrate(_engine_for(legacy_db))
+    monkeypatch.undo()
+    raw = sqlite3.connect(legacy_db)  # a v9 hub's models had neither
+    raw.execute("DROP TABLE webhookdelivery")
+    raw.execute("ALTER TABLE job DROP COLUMN webhook_endpoint_id")
+    raw.commit()
+    raw.close()
+
+    migrate(_engine_for(legacy_db))
+
+    raw = sqlite3.connect(legacy_db)
+    versions = [r[0] for r in raw.execute("SELECT version FROM schema_version ORDER BY version")]
+    job_columns = {r[1] for r in raw.execute("PRAGMA table_info(job)")}
+    outbox_columns = {r[1] for r in raw.execute("PRAGMA table_info(webhookdelivery)")}
+    hooks = [r[0] for r in raw.execute("SELECT webhook_endpoint_id FROM job")]
+    raw.close()
+    assert versions == list(range(1, schema.TARGET_VERSION + 1)) and schema.TARGET_VERSION >= 10
+    assert "webhook_endpoint_id" in job_columns
+    assert hooks == [None, None]  # existing jobs notify nobody
+    assert outbox_columns == {
+        "id", "organization_id", "endpoint_id", "job_id", "event", "payload_json", "created_at",
+        "next_attempt_at", "attempts", "delivered_at", "last_status", "last_error",
+    }
+
+
 def test_fresh_database_has_the_unique_webhook_name_index(tmp_path):
     path = tmp_path / "fresh.db"
     migrate(_engine_for(path))

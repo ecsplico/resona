@@ -1,8 +1,11 @@
-"""Bundled German dictation rules and the catalogue's transcript Markdown profiles."""
+"""German medical dictation rules (catalogue `dictation-medical-de`) and the transcript Markdown profiles.
+
+Every rule test runs `dictation-medical-de` and checks its output against the rule list the bundled
+`default` used before the split (`fixtures/pre_split_default_replacements.json`).
+"""
 
 import json
 import time
-from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,9 +17,11 @@ from resona_postprocess.pipeline import build_pipeline
 from resona_postprocess.profile import resolve_profile
 from resona_postprocess.replacements import apply_replacements
 
-PACKAGE = resources.files("resona_postprocess")
 CATALOGUE = Path(__file__).resolve().parents[3] / "profiles"
-DEFAULT_RULES = json.loads(PACKAGE.joinpath("default_replacements.json").read_text("utf-8"))
+PRE_SPLIT_RULES = json.loads(
+    (Path(__file__).parent / "fixtures" / "pre_split_default_replacements.json").read_text("utf-8")
+)
+MEDICAL_RULES = json.loads((CATALOGUE / "dictation-medical-de.json").read_text("utf-8"))["steps"][0]["rules"]
 TRANSCRIPT_PROFILES = ("transcript-markdown-de", "transcript-polish-de")
 
 LOCAL_LLM = Endpoint(
@@ -31,7 +36,10 @@ LOCAL_POLICY = ExecutionPolicy(
 
 
 def _rules(text: str) -> str:
-    return apply_replacements(text, DEFAULT_RULES)
+    out = apply_replacements(text, MEDICAL_RULES)
+    # dictation-medical-de produces what `default` produced before the split.
+    assert out == apply_replacements(text, PRE_SPLIT_RULES)
+    return out
 
 
 def _catalogue_profile(name: str):
@@ -169,12 +177,23 @@ def test_question_and_exclamation_commands() -> None:
     assert _rules("Wirklich Fragezeichen Ja Ausrufezeichen") == "Wirklich? Ja!"
 
 
+def test_dictation_medical_profile_is_the_pre_split_default() -> None:
+    # Name corrections, the medical headings, then the generic commands, in the pre-split order.
+    assert MEDICAL_RULES == PRE_SPLIT_RULES
+    profile = _catalogue_profile("dictation-medical-de")
+    pipe = build_pipeline(profile, policy=ExecutionPolicy(private=True))
+    assert pipe.run("Monique Punkt Kapitel Verlauf stabil Punkt").text == "Monic.\n\n## Verlauf\n\nstabil."
+
+
 @pytest.mark.parametrize("name", TRANSCRIPT_PROFILES)
-def test_transcript_profiles_reuse_the_default_command_rules(name: str) -> None:
+def test_transcript_profiles_reuse_the_medical_command_rules(name: str) -> None:
     profile = _catalogue_profile(name)
     rules = profile.steps[0]["rules"]
-    # Inline rules (hosted profiles reject 'source'); they must stay the command part of the defaults.
-    assert DEFAULT_RULES[-len(rules):] == rules
+    # Inline rules (hosted profiles reject 'source'); they are dictation-medical-de without its
+    # leading name corrections (one `\bName\b` rule each).
+    head, tail = MEDICAL_RULES[:-len(rules)], MEDICAL_RULES[-len(rules):]
+    assert tail == rules
+    assert head and all(r["pattern"].startswith("\\b") and r["pattern"].endswith("\\b") for r in head)
     assert not any("Monique" in r["pattern"] for r in rules)
 
 

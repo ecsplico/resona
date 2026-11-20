@@ -114,10 +114,16 @@ class Directus:
     async def item(self, collection: str, item_id: str, *, fields: list[str]) -> dict[str, Any]:
         return await self._request("GET", f"/items/{collection}/{item_id}", params={"fields": ",".join(fields)})
 
-    async def create_item(self, collection: str, data: dict[str, Any], *, fields: list[str]) -> dict[str, Any]:
+    async def create(self, collection: str, data: dict[str, Any], *, fields: list[str]) -> dict[str, Any]:
+        """Create one row; returns ``fields`` of it."""
         return await self._request("POST", f"/items/{collection}", params={"fields": ",".join(fields)}, json=data)
 
-    async def delete_item(self, collection: str, item_id: str) -> None:
+    async def update(self, collection: str, item_id: str, data: dict[str, Any], *, fields: list[str]) -> dict[str, Any]:
+        """Patch one row; returns ``fields`` of the updated row."""
+        return await self._request("PATCH", f"/items/{collection}/{item_id}", params={"fields": ",".join(fields)}, json=data)
+
+    async def delete(self, collection: str, item_id: str) -> None:
+        """Delete one row (Directus answers 204)."""
         await self._request("DELETE", f"/items/{collection}/{item_id}")
 
     async def upload_file(

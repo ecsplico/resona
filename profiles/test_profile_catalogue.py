@@ -12,7 +12,9 @@ FILES = sorted(CATALOGUE.glob("*.json"))
 
 
 def test_catalogue_holds_the_documented_profiles() -> None:
-    assert [path.stem for path in FILES] == ["document-polish-de", "transcript-markdown-de", "transcript-polish-de"]
+    assert [path.stem for path in FILES] == [
+        "dictation-medical-de", "document-polish-de", "transcript-markdown-de", "transcript-polish-de",
+    ]
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda path: path.stem)

@@ -292,7 +292,7 @@ class Links:
                 row["language"] = grant.language
             if grant.profile:
                 row["profile"] = grant.profile
-            await grant.directus.create_item("recordings", row, fields=["id"])
+            await grant.directus.create("recordings", row, fields=["id"])
         except (_BodyMismatch, ClientDisconnect):
             return _error(400, "upload_incomplete", "the body did not match its Content-Length")
         except Exception as exc:  # noqa: BLE001 - mapped to a status, logged by outcome only

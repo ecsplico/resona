@@ -53,7 +53,7 @@ class FakeDirectus:
         self.uploads.append({"data": data, "length": length, "filename": filename, "type": content_type})
         return "file-1"
 
-    async def create_item(self, collection, data, *, fields):
+    async def create(self, collection, data, *, fields):
         self.created.append((collection, data))
         return {"id": data.get("id", "row-1"), **data}
 

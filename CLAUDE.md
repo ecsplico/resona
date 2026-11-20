@@ -4,6 +4,19 @@
 
 Resona is a modular transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation but usable for any language.
 
+## Layer map
+
+Two layers, one rule ([ADR 0001: hub and app boundary](docs/adr/0001-hub-and-app-boundary.md)):
+
+|Layer|Paths|Owns|
+|---|---|---|
+|**Hub** (transformation layer)|`packages/*`, `apps/resona-cli`, `apps/resona-worker`, `apps/resona-mcp`, root compose files, `profiles/`, `eval/`|uploads, jobs, live streaming, profiles, execution policy, workers, evaluation; organizations and credentials, not users; a job's result for 24 h, nothing else on behalf of an app|
+|**Reference app**|`apps/resona-pwa` (moving to its own repository)|users, dictations, recordings, transcripts, documents, long-term storage, UI|
+
+- The only connection is the hub's published HTTP/WebSocket contract: jobs (`/v1/uploads`, `/v1/jobs`, pull via `GET /v1/jobs/{id}`; push via signed webhooks next to pull), live (`WS /v1/listen`), profiles (`/profiles`).
+- The hub never stores app entities (no users, no dictations) and never calls app code; the reference app never reads hub storage, the hub database or hub source, and gets no access another app could not have.
+- Placing a feature: user-facing data or UI → reference app; a new transformation or contract field → hub first, then the app.
+
 ## Project structure
 
 ```
@@ -22,8 +35,8 @@ resona/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
 │   ├── resona-mcp/         ← resona-mcp: MCP server (stdio + hosted Streamable HTTP /mcp) over the hub job API
-│   │                         (no bundled web UI; browser use goes through the Resona PWA standalone mode)
-│   └── resona-pwa/         ← Resona PWA: Nuxt 4 SPA (bun) + Directus data layer + resona-project-worker. Own toolchain,
+│   │                         (no bundled web UI; browser use goes through the reference app's standalone mode)
+│   └── resona-pwa/         ← reference app (PWA): Nuxt 4 SPA (bun) + Directus data layer + resona-project-worker. Own toolchain,
 │                             own CLAUDE.md; NOT a uv workspace member. Capacitor app shell (android/, ios/,
 │                             native background recording): docs/guide/pwa-app.md
 └── packages/
@@ -36,7 +49,7 @@ resona/
     ├── engine-whispercpp/  ← resona-engine-whispercpp: whisper.cpp engine (Metal, via pywhispercpp)
     ├── engine-lightning-mlx/ ← resona-engine-lightning-mlx: batched MLX engine (GPU, macOS arm64)
     ├── engine-parakeet/    ← resona-engine-parakeet: NVIDIA Parakeet (NeMo FastConformer) engine (Linux CUDA/CPU, multilingual)
-    ├── job-core/           ← resona-job-core: shared job/result contracts, execution policy, PolicyDenied, job features (`features.py`). No ML deps.
+    ├── job-core/           ← resona-job-core: shared job/result contracts, execution policy, PolicyDenied, job features (`features.py`), job webhook event + Standard Webhooks `sign` (`webhooks.py`). No ML deps.
     ├── diarize/            ← resona-diarize: speaker diarization for workers (Nemotron-3-Diarization via transformers ≥ 5.22) + pure word-level speaker assignment. Worker extra `diarize`.
     ├── engine-docling/     ← resona-engine-docling: in-process Docling PDF/image/DOCX → Markdown (OCR: ocrmac/rapidocr/tesseract; DOCX via the Word backend, no OCR). Not an audio engine; not in `resona.engines`.
     ├── cloud-stt/          ← resona-cloud-stt: cloud STT providers (Deepgram, ElevenLabs, OpenAI)
@@ -48,11 +61,11 @@ resona/
     └── client/             ← resona-client: httpx client library
 ```
 
-- `apps/` contains end-user applications (CLI tool, worker, MCP server, PWA).
+- `apps/` contains end-user applications: the hub's CLI tool, worker and MCP server, and the reference app (`resona-pwa`).
 - `packages/` contains the services and libraries they depend on.
 - Each Python package follows src-layout: `<root>/src/<module>/`.
 
-`apps/resona-pwa/` is a self-contained JS/TS app with its own lockfile (`bun.lock`), compose files and Python worker (`worker/`, own `uv.lock`, excluded from the uv workspace and from root pytest). It talks to resona-api over HTTP only: never import `packages/*` from it, and never import it from Python. Its conventions live in `apps/resona-pwa/CLAUDE.md`. Directus and the project worker live there; the Python side exposes only resona-api + engines.
+`apps/resona-pwa/` is the reference app: a self-contained JS/TS app with its own lockfile (`bun.lock`), compose files and Python worker (`worker/`, own `uv.lock`, excluded from the uv workspace and from root pytest). It talks to resona-api over HTTP/WebSocket only: never import `packages/*` from it, and never import it from Python. Its conventions live in `apps/resona-pwa/CLAUDE.md`. Directus and the project worker live there; the Python side exposes only resona-api + engines.
 
 ## The stateless engine contract
 
@@ -222,13 +235,14 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `pipeline.py` — `PostprocessPipeline`: composable step chain; `PostprocessResult{text, data, warnings}` (text steps may return `StepOutput(text, warnings)`); `build_pipeline(profile, *, policy)` validates every LLM stage against the policy before returning (`PolicyDenied` on denial); `local_policy(profile, *, private)` builds the policy for local CLI runs only; `run()` re-raises `PolicyDenied` and `PostprocessStepFailed`
 - `profile.py` — `Profile` dataclass (name, description, initial_prompt, steps, instructions); `resolve_profile(ref, profiles_dir)` accepts a name, inline JSON string, file path, or `Profile`/dict; `list_profiles(dir)`, `bundled_default()`; validates the chunking keys (`chunk_chars` ≥ 1000, `max_attempts` 1–10, `max_length_deviation`, `preserve_markup`, `timeout`)
 - User instructions: `Profile.instructions` (optional profile default, ≤ job-core `MAX_INSTRUCTIONS_CHARS` = 8000; `from_dict` only validates it, because the worker rebuilds one single-step profile per step from the pinned document, so a `replacements` step must accept it) and `Profile.with_instructions(text)` (a job's instructions replace the profile's; `ProfileError` without an llm/extract step, used at job admission). `LLM_STEP_TYPES` (profile.py) is the shared llm/extract tuple. `build_pipeline` passes them to every llm/extract call; `llm._messages` keeps the step `prompt` as the system message and sends `<instructions>…</instructions>\n\n<text>…</text>` as the user message (text only when there are none); `_unwrap_text` drops a `<text>` wrapper the model echoes, on instruction calls only. Guards apply only to chunked llm steps that set them. Older workers ignore the key (no error): deploy the release to workers before sending instructions
-- `profiles/default.json` — bundled default profile: German dictation commands → Markdown via `default_replacements.json` + name corrections
-- The wheel bundles only `profiles/default.json` + `default_replacements.json` (`tests/test_package_data.py`): a bundled profile must work with no setup. The next three live in the root `profiles/` catalogue (`profiles/README.md`; `profiles/test_profile_catalogue.py` runs `Profile.from_dict` over every file), are never resolved by name and reach a hub only through `resona profiles push`; `title-de` lives in the reference app (`apps/resona-pwa/profiles/`, `just pwa push-profiles`)
-- `profiles/transcript-markdown-de.json` (catalogue) — rules only (no LLM): the dictation command rules of `default_replacements.json` inline (hosted profiles reject `source`; `tests/test_dictation_rules.py` keeps them equal to the tail of that file)
+- `profiles/default.json` — bundled default profile: generic German dictation commands → Markdown via `default_replacements.json` (no medical headings, no name corrections: those are the catalogue's `dictation-medical-de`). `tests/test_default_profile_golden.py` pins its output for generic-only text to hand-written `tests/fixtures/default_golden.json` and byte-identical to the pre-split rule list `tests/fixtures/pre_split_default_replacements.json`
+- The wheel bundles only `profiles/default.json` + `default_replacements.json` (`tests/test_package_data.py`): a bundled profile must work with no setup. The next four live in the root `profiles/` catalogue (`profiles/README.md`; `profiles/test_profile_catalogue.py` runs `Profile.from_dict` over every file), are never resolved by name and reach a hub only through `resona profiles push`; `title-de` lives in the reference app (`apps/resona-pwa/profiles/`, `just pwa push-profiles`)
+- `profiles/dictation-medical-de.json` (catalogue) — rules only: name corrections (`Monique` → `Monic`, …), the four medical `Kapitel` headings (Verlauf, Medikation, Psychopathologischer Befund, Pro[cz]edere; no terminator needed, a spoken `Absatz`/`Punkt`/`Doppelpunkt`/`Komma` after them swallowed), then the generic rules of `default_replacements.json` inline, in that order. Equals the pre-split `default` rule list (`tests/test_dictation_rules.py`, whose rule tests all run it and compare with the pre-split list). The reference app's `defaultProfile`, pushed by `just pwa push-profiles`
+- `profiles/transcript-markdown-de.json` (catalogue) — rules only (no LLM): the rules of `dictation-medical-de` without its name corrections, inline (hosted profiles reject `source`; `tests/test_dictation_rules.py` keeps them equal to the tail of `dictation-medical-de`)
 - `profiles/transcript-polish-de.json` (catalogue) — same inline rules, then a chunked llm step on endpoint `local-llm` (capitalization/punctuation/whitespace only, no word may change, numbers/units/doses/drug names/diagnoses/codes explicitly untouchable; 12000 chars, 3 attempts, 10 % length guard, markup guard, temperature 0)
 - `profiles/document-polish-de.json` (catalogue) — OCR-correction-only chunked llm step on endpoint `local-llm` (an org admin registers a loopback `local_llm` endpoint under that id on the approved worker; 12000 chars, 3 attempts, 30 % length guard, markup guard); uploaded to a hub with `resona profiles push`, see `docs/server/linux-worker.md#llm-polish-on-the-worker-host`. Polished results keep the engine's Markdown in `JobResult.raw_markdown`
 - `apps/resona-pwa/profiles/title-de.json` (reference app, not a hub package file) — single `extract` step `title` on endpoint `local-llm` (temperature 0, max_tokens 64, timeout 30): JSON `{"title": "..."}`, 3–8 topic words, no names or identifying data, the text's language. Extract data is keyed by step name, so the title lands at `JobResult.structured.title.title`; a failed step is skipped (`postprocess_step_skipped:title`), not fatal. Pushed with `just pwa push-profiles`; the PWA (`useTitleJob`) sends at most the first 4000 characters
-- `default_replacements.json` — bundled dictation rules (case-insensitive, every command `\b`-bounded). Order matters: name corrections, the four medical `Kapitel` headings, general `Kapitel <Titel>` → `\n\n## Titel\n\n` (title 1–5 words without punctuation or command words, optional comma, then `Absatz`/`Punkt`/`Doppelpunkt`/`Fragezeichen`/`Ausrufezeichen`/`!?:`/a `.` not next to a digit; lookbehinds skip prose `im/das/dem/… Kapitel`; else not applied), brackets, `Doppelpunkt` before `Punkt`, punctuation commands absorbing one adjacent mark on each side (no `,,`/`..`), `Absatz` → `\n\n`, then whitespace cleanup (3+ newlines collapsed, text stripped). Leading whitespace is `(?<![ \t])[ \t]*`, never `\s*`: commands must not eat newlines
+- `default_replacements.json` — bundled generic dictation rules (case-insensitive, every command `\b`-bounded). Order matters: general `Kapitel <Titel>` → `\n\n## Titel\n\n` (title 1–5 words without punctuation or command words, optional comma, then `Absatz`/`Punkt`/`Doppelpunkt`/`Fragezeichen`/`Ausrufezeichen`/`!?:`/a `.` not next to a digit; lookbehinds skip prose `im/das/dem/… Kapitel`; else not applied), brackets, `Doppelpunkt` before `Punkt`, punctuation commands absorbing one adjacent mark on each side (no `,,`/`..`), `Absatz` → `\n\n`, then whitespace cleanup (3+ newlines collapsed, text stripped). Leading whitespace is `(?<![ \t])[ \t]*`, never `\s*`: commands must not eat newlines
 
 ### resona-api
 - `app.py` — FastAPI lifespan: validates env, takes the single-hub lock (`hublock.acquire()`, released on shutdown), runs `migrate` (`db/engine.create_db_and_tables`), removes legacy `MD_PATH` result exports once, starts `maintenance.maintenance_loop()` as an asyncio task (cancelled on shutdown). Mounts health, jobs, worker, audio, profiles, settings, streaming, evaluations, webhooks and admin (`/v1/admin` + static `/admin`) routers; `errors.install_error_handlers` renders `{error, message}` bodies at the top level. The hub runs no inference for queued jobs
@@ -258,8 +272,9 @@ On Apple Silicon, `faster-whisper` runs CPU-only (CTranslate2 has no Metal backe
 - `engine_registry.py` — multi-backend catalogue: probes local engine `/health` endpoints, lists local TTS engines (`_local_tts_engines`, `kind="local-tts"`, private, available when `resona-tts-local` is installed), checks cloud provider API keys, `EngineInfo` dataclass, `resolve(name)`, `speech_catalogue()` (TTS engines for `/v1/engines`, no engine-server probe), `cloud_asr_endpoint_id(engine)` (`cloud-asr:<provider>` or None), `run_tts(engine, text, ...)` (dispatches `local-tts` → `resona_tts_local.get_engine().synthesize`, else cloud provider), `cloud_api_key(provider)` (public key lookup for the streaming bridge), error hierarchy
 - `privacy.py` — `admit(...)` resolves and policy-checks the synchronous audio chain; `cloud_endpoint_allowed(settings, engine)` tells whether the org's cloud policy approves an engine's cloud ASR endpoint (always true for local engines; shared by `/v1/engines` and `/v1/listen/engines`); `load_org_profile`, `is_profile_name`
 - `settings_store.py` — `current_settings(session, org) -> (revision, OrganizationSettings)`
+- Job webhooks (outbox): `JobRequest.webhook` (endpoint name, production jobs only, else 422 `invalid_request`; also the `/v1/audio/transcriptions` form field) resolves at admission via `webhooks.get_endpoint` to the org's unrevoked endpoint (else 422 `unknown_webhook`) → `Job.webhook_endpoint_id` (migration 10, with table `WebhookDelivery`). In `_request_hash` only when set (older keys keep their hash); never in `execution_snapshot`, no job feature, workers unchanged. `JobView.webhook` = endpoint name (revoked ones keep theirs). `broker._finish_terminal(session, …)` (failed/cancelled: `fail_job`, `sweep_leases`, cancel/delete routes, restore) and `finish_result` (completed) call `webhooks.enqueue_job_event` in the same transaction: one row per terminal transition, none for requeues, the tombstone purge, non-production jobs or an endpoint revoked since admission. `payload_json` is job-core `JobEvent` (identifiers only); `delivered_at` NULL = pending, for the dispatcher
 - `db/models.py` — `Job` SQLModel table (non-null `organization_id`, `kind`, `private`, `settings_revision`) plus `Organization`, `Credential` (SHA-256 hash only), `Worker`, `SettingsRevision`, `ProfileRevision`
-- `db/engine.py` — SQLite engine (WAL, `foreign_keys=ON`, `busy_timeout=5000`); `db/schema.py` runs ordered numbered migrations under `BEGIN EXCLUSIVE` with a pre-upgrade backup (`<db>.pre-v<N>.bak`); `migrate(engine)` is called at startup. Legacy job rows require `RESONA_BOOTSTRAP_ORGANIZATION_ID`. Migrations: 1 identity/settings/jobs, 2 releases/evaluations, 3 upload links, 4 `job.id` AUTOINCREMENT (rebuilds `job`, seeds `sqlite_sequence` from every job-id reference) so a deleted job's id is never reissued, 9 webhook endpoints. `_create_missing_tables` emits no indexes: a migration that needs one creates it explicitly (`CreateIndex`)
+- `db/engine.py` — SQLite engine (WAL, `foreign_keys=ON`, `busy_timeout=5000`); `db/schema.py` runs ordered numbered migrations under `BEGIN EXCLUSIVE` with a pre-upgrade backup (`<db>.pre-v<N>.bak`); `migrate(engine)` is called at startup. Legacy job rows require `RESONA_BOOTSTRAP_ORGANIZATION_ID`. Migrations: 1 identity/settings/jobs, 2 releases/evaluations, 3 upload links, 4 `job.id` AUTOINCREMENT (rebuilds `job`, seeds `sqlite_sequence` from every job-id reference) so a deleted job's id is never reissued, 9 webhook endpoints, 10 `job.webhook_endpoint_id` + `webhookdelivery` outbox. `_create_missing_tables` emits no indexes: a migration that needs one creates it explicitly (`CreateIndex`)
 - `paths.py` — `DATA_PATH`, `FILE_PATH`, `DB_PATH` resolved from env
 - `auth.py` — `Principal(credential_id, organization_id, role, worker_id)` resolved from stored, unrevoked credentials (`Authorization: Bearer` or `X-API-Key`; conflicting values → 401). `require_roles(...)` enforces roles (403 on mismatch); `websocket_principal` resolves WS tokens the same way. Roles client, org_admin, worker and `hub_operator` (cross-org management only); `manager_principal` = org_admin|hub_operator, used only by `admin_routes`; the operator is in no other principal, so it never reads job content, writes settings or promotes. No auth-disabled mode
 - `admin.py` — hub-local `resona-admin`: `organization create`, `credential issue|revoke` (`--role client|org_admin|hub_operator`; operator credentials only this way, home org required), `worker enroll|approve|revoke`, `release stage --manifest <file>|list`, `restore <backup>`. Tokens are shown once; only their hash is stored. `credential issue`/`worker enroll` accept `--token-sha256 <hex>` to register a token generated elsewhere without it ever reaching the hub
@@ -408,7 +423,7 @@ Optional top-level `instructions` (string, ≤ 8000 chars): user instructions se
 | Kapitel *Titel* | `## Titel` (own line; title ≤ 5 words, ends at Absatz/Punkt/Doppelpunkt/Fragezeichen/Ausrufezeichen/.!?:) |
 | Klammer auf/zu | ( ) |
 
-Plus medical section headings (Verlauf, Medikation, Psychopathologischer Befund, Procedere) and name corrections.
+Plus Doppelpunkt, Fragezeichen, Ausrufezeichen, Anstrich, Hashtag and brackets. The medical section headings (Verlauf, Medikation, Psychopathologischer Befund, Procedere) and name corrections are not in `default` (since 0.2.8): they are the catalogue profile `profiles/dictation-medical-de.json`, which an org admin pushes and selects (the reference app selects it by default).
 
 ### Using profiles
 
@@ -507,13 +522,15 @@ uv run pytest apps/resona-mcp/tests/               # mcp server
 uv run pytest packages/postprocess/tests/          # postprocess
 uv run pytest packages/tts-local/tests/            # local TTS engines
 uv run pytest -k test_transcribe                   # one test
-just pwa test                                      # PWA (vitest, from apps/resona-pwa)
-just pwa test-worker                               # PWA project worker (own uv env)
+just pwa test                                      # reference app (vitest, from apps/resona-pwa)
+just pwa test-worker                               # reference app project worker (own uv env)
 ```
 
-Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the PWA and its worker run through `just pwa …` or from `apps/resona-pwa/`.
+Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the reference app and its worker run through `just pwa …` or from `apps/resona-pwa/`.
 
 Lint: `uv run ruff check .` (pyflakes + pycodestyle error classes, config in the root `pyproject.toml`; CI runs it before the tests). Not a formatter policy: do not run `ruff format` over existing files.
+
+Hub/app boundary ([ADR 0001](docs/adr/0001-hub-and-app-boundary.md)): `uv run python scripts/check_boundary.py` (in `just lint`, `test.yml` after ruff, and `pwa.yml`; stdlib only, `--root` for another tree; tests in `scripts/tests/`). Hub source under `packages/`, `apps/resona-{cli,worker,mcp}` and the root `justfile`/`pyproject.toml`/`docker-compose*.yml`/`.dockerignore` (tests and docs skipped) must not mention `directus`, `resona_project_worker`, `resona_dictations_mcp`, `resona-pwa` or `resona-verlauf`; the consumer apps `apps/resona-pwa` and `apps/resona-verlauf` (a Nuxt layer on the PWA, so app side) must not import hub Python packages (`resona_client` excepted) or path-reference `packages/` / hub `apps/`. Prints `path:line: message`, exit 1. Sanctioned mentions go into its `ALLOWLIST` (file + line regex + reason).
 
 Release id = the version of every workspace package (all equal). After a `vX.Y.Z` tag, the next change to `main` must bump it (`just bump <next>` → `scripts/release_version.py`, all `pyproject.toml` + `uv.lock`); CI (`test.yml`) fails a commit that reuses a tagged version, because hub and workers would report an evaluated release while running other code. Tests that need the hub's own release use `releases.hub_release_id()`, never a literal. Docs: `docs/server/releases.md#version-bump`.
 

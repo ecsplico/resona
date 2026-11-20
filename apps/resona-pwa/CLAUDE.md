@@ -2,19 +2,29 @@
 
 ## Project overview
 
-Resona PWA is the **browser frontend** for the Resona transcription platform: a Nuxt 4
-SPA (`ssr: false`) for medical dictation. Users record or upload audio, it gets
-transcribed by the backend, and they review/edit/export the result. Built on the Hearth
-design system (plain Vue + Tailwind v4 CSS tokens — no component library).
+Resona PWA is the **reference app** of the Resona hub: one maintained consumer of the
+hub's published HTTP/WebSocket contract (jobs, live streaming, profiles), not part of the
+hub. It is a Nuxt 4 SPA (`ssr: false`) for medical dictation, plus its Directus data layer,
+project worker and dictation MCP. Users record or upload audio, the app sends it through
+the hub as jobs, and users review/edit/export the result. Built on the Hearth design
+system (plain Vue + Tailwind v4 CSS tokens — no component library).
 
-**This app lives in the resona monorepo at `apps/resona-pwa/`, but it is a separate
-deployable with its own toolchain** (bun, own compose files, own uv envs for `worker/`
-and `mcp/`).
-It talks to its backends over HTTP/WebSocket only. Never import from `packages/*` or any
-other Python code in the monorepo, and nothing there imports from here — communicate over
-HTTP exclusively. Run every command below from `apps/resona-pwa/` (or `just pwa <recipe>`
-from the monorepo root). Issues and tickets live on GitHub (`ecsplico/resona`, label
-`area:pwa`); see the root `CLAUDE.md` → Agent skills.
+**Two layers** ([ADR 0001](../../docs/adr/0001-hub-and-app-boundary.md)): the hub is a
+transformation layer that knows organizations and credentials, not users, and keeps a
+job's result for 24 hours only. This app owns everything a user keeps: users, dictations,
+recordings, transcripts, documents, long-term storage and the UI. It gets no hub access
+another app could not have: never read hub storage, the hub database or hub source, and
+never ask the hub to store app entities. An app-only feature belongs here; a feature that
+needs new hub behaviour is a contract change in the hub first.
+
+**This app lives in the resona monorepo at `apps/resona-pwa/` until it moves to its own
+repository, and it is a separate deployable with its own toolchain** (bun, own compose
+files, own uv envs for `worker/` and `mcp/`).
+It talks to the hub and its own Directus over HTTP/WebSocket only. Never import from
+`packages/*` or any other Python code in the monorepo, and nothing there imports from
+here — communicate over HTTP exclusively. Run every command below from `apps/resona-pwa/`
+(or `just pwa <recipe>` from the monorepo root). Issues and tickets live on GitHub
+(`ecsplico/resona`, label `area:pwa`); see the root `CLAUDE.md` → Agent skills.
 
 The frontend is otherwise a pure client-rendered SPA. The **one** sanctioned server-side
 exception is a thin Nitro layer (`server/api/**`) used **only** to hold confidential OAuth
@@ -72,7 +82,8 @@ Verbindung (`useHubTokenGate()`; `RecordingsPane` record/upload, `documents/inde
 upload, `share-target.vue` which keeps the stashed file until the token is entered;
 continue-recording already checks `hub.hasToken()`). In **directus mode** the token is also
 stored per user in `directus_users.hub_token` (bootstrap adds the field plus `user`-policy
-read/update with filter `id = $CURRENT_USER`, fields limited to `hub_token`; admin
+read/update with filter `id = $CURRENT_USER`, fields limited to `hub_token` (plus `token`,
+the personal MCP token, see **Dictation MCP**); admin
 unaffected). `useHubTokenSync()` (`push` on change in the settings drawer, `pull` from
 `useDirectus` after login/SSO/session restore) fills an empty local token from
 `/users/me`; a device that has a token keeps it and uploads it only if the account has
@@ -94,7 +105,8 @@ CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 `profiles/title-de.json` is this app's own postprocess profile (one `extract` step `title` on
 endpoint `local-llm`; `useTitleJob` reads `structured.title.title`). A hub knows it only after
 `just push-profiles` (`scripts/push-profiles.sh`: `resona profiles push` for `profiles/*.json`,
-then the catalogue profiles offered under Nachbearbeiten, `transcript-markdown-de` and
+then the catalogue profiles the app uses: `dictation-medical-de` (the `defaultProfile` of new
+recordings) and those offered under Nachbearbeiten, `transcript-markdown-de` and
 `transcript-polish-de`, from `RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI`
 names the `resona` command; needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
 checks the file against the hub's documented profile format and `titleFromResult`, without
@@ -131,7 +143,22 @@ is the only Directus client, list queries go in a `SEARCH` body so they reach no
 Tools (`server.py` read tools, `create_tools.py` create tools; `TOOL_NAMES`, `tool-inventory.json` via `scripts/gen_tool_inventory.py`):
 `list_dictations` (cursor = last `date_created` + count of rows already returned at that
 instant, since Directus has no `_lt` on uuid ids), `search_dictations`, `get_dictation`
-(`transcripts.text` in ranges ≤ 32768), `create_dictation_from_text` (recording `live`/`done`
+(`transcripts.text` in ranges ≤ 32768, plus `text_sha256` of the whole text). Write tools
+(`edit_tools.py`, metadata-only results) make the app's writes: `update_dictation_text`
+(`transcripts.text` only, or a new transcript row when there is none; optional
+`expected_sha256` → `conflict`, `busy` while `postprocessRunning`), `rename_dictation`
+(`renamePatch`: trimmed title + `title_auto=false`), `set_review_status`
+(`reviewStatusPatch`), `delete_dictation` (`confirm: true` required, else
+`confirm_required`; one `DELETE recordings/<id>` like `deleteRecording`, transcripts,
+corrections and parts cascade, audio files stay as after an app delete). The patches live
+in `app/utils/dictationEdit.ts`; `shared/dictationEdit.cases.json` drives
+`test/dictationEdit.spec.ts` and `mcp/tests/test_edit_tools.py`, so change both sides and
+the fixture together. `document_tools.py` (`register(server, caller_for)`):
+`list_documents` (same cursor), `get_document` (`documents.markdown` in ranges ≤ 32768),
+`rename_document` (needs `title` in the `documents` update permission), `delete_document`
+(`confirm: true` required, else `confirm_required:` before any Directus call; deletes the
+row like the app, the file stays); writes return metadata only. `create_tools.py`:
+`create_dictation_from_text` (recording `live`/`done`
 and its transcript as the caller, `title_auto` without title), `create_audio_upload` and
 `get_audio_link` (`links.py`: HMAC-signed 10-minute links under `/mcp/links/`, secret
 `DICTATIONS_MCP_LINK_SECRET`, base `DICTATIONS_MCP_PUBLIC_URL`; grant = user + their Directus
@@ -142,6 +169,21 @@ titles, queries or tokens; third-party loggers stay at INFO. Tests (`just pwa te
 start `directus` + `directus-bootstrap` from `docker-compose.backend.yml` as a throwaway
 compose project on a free port (needs Docker; `DMC_TEST_DIRECTUS_URL` reuses a running
 one). Epic #79; details `mcp/README.md`.
+
+The personal MCP token is the user's static Directus token (`directus_users.token`),
+managed in Einstellungen → MCP (`McpTokenSection.vue` + `useMcpToken()`, tab mounted only
+while open): "Token erstellen" makes 32 bytes with `crypto.getRandomValues` (base64url,
+`utils/mcpSetup.ts` `generateMcpToken`), writes it with `PATCH /users/me` (response
+`fields=id`) and shows it once, with copy buttons and snippets (`mcpSnippets`: Claude Code
+`claude mcp add --transport http resona <origin>/mcp --header …`, Claude Desktop via
+`mcp-remote`, Cursor) for `window.location.origin`; "Ersetzen" / "Widerrufen" (`token: null`)
+ask inline first. The app never requests the `token` field: existence is
+`GET /users?filter={id: $CURRENT_USER, token: _nnull}&fields=id&limit=1` (Directus allows
+only `_null`/`_nnull`/`_empty`/`_nempty` on concealed fields, and a read of `token` returns
+`**********` anyway). Bootstrap gives the `user` policy read + update on `token` of the own
+row; `verify-permissions.mjs` checks user B can neither set nor read A's token and a revoked
+token is `401`. Standalone mode shows only a one-line explanation (no account); the
+Capacitor app shows a pointer to the web app (its origin is not the server's).
 
 ### Backup
 
@@ -671,7 +713,7 @@ URLs. No token or engine is configured at build time — the hub token is per de
 | `NUXT_PUBLIC_SSO_DIRECTUS_URL` | `` (= Directus URL) | Directus base URL used only to start the SSO login (set by the Verlauf app to the PWA origin's `/directus`) |
 | `NUXT_PUBLIC_RESONA_API_URL` | `http://localhost:7710` | Resona hub base URL |
 | `NUXT_PUBLIC_DEFAULT_LANGUAGE` | `de` | default transcription language |
-| `NUXT_PUBLIC_DEFAULT_PROFILE` | `default` | default postprocessing profile |
+| `NUXT_PUBLIC_DEFAULT_PROFILE` | `dictation-medical-de` | default postprocessing profile (catalogue, pushed with `just push-profiles`) |
 | `NUXT_PUBLIC_DATA_MODE` | `directus` | data backend: `directus` \| `standalone` |
 | `NUXT_PUBLIC_CALENDAR_ENABLED` | `false` | enable the calendar integration (nav link, settings tab, `/calendar`, `/api/calendar`) |
 

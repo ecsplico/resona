@@ -105,7 +105,7 @@ ADMISSION = {
     409: ["idempotency_conflict", "settings_missing"],
     422: [
         "invalid_request", "invalid_options", "invalid_instructions", "invalid_profile", "kind_mismatch",
-        "no_candidates", "unapproved_override",
+        "no_candidates", "unapproved_override", "unknown_webhook",
     ],
 }
 """Errors of job admission, shared by ``POST /v1/jobs`` and the synchronous adapter."""
@@ -165,6 +165,7 @@ class JobView(BaseModel):
     created_at: Optional[str]
     updated_at: Optional[str]
     deadline_at: Optional[str]
+    webhook: Optional[str] = Field(default=None, description="Name of the webhook endpoint notified when the job ends.")
 
 
 class JobPage(BaseModel):

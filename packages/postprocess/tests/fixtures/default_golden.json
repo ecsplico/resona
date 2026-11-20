@@ -1,0 +1,46 @@
+[
+  {
+    "input": "Erster Satz Punkt Absatz Zweiter Satz Punkt",
+    "expected": "Erster Satz.\n\nZweiter Satz."
+  },
+  {
+    "input": "Der Patient berichtet Komma er habe Schmerzen Punkt",
+    "expected": "Der Patient berichtet, er habe Schmerzen."
+  },
+  {
+    "input": "Kapitel Anamnese Absatz Seit drei Tagen Kopfschmerzen Punkt",
+    "expected": "## Anamnese\n\nSeit drei Tagen Kopfschmerzen."
+  },
+  {
+    "input": "Kapitel Diagnosen Doppelpunkt Anstrich Hypertonie Anstrich Diabetes Absatz Ende Punkt",
+    "expected": "## Diagnosen\n\n- Hypertonie\n- Diabetes\n\nEnde."
+  },
+  {
+    "input": "Kapitel Diagnose F32.1 Absatz Text",
+    "expected": "## Diagnose F32.1\n\nText"
+  },
+  {
+    "input": "Text Klammer auf Inhalt Klammer zu Punkt",
+    "expected": "Text (Inhalt)."
+  },
+  {
+    "input": "Siehe Eckige Klammer auf eins Eckige Klammer zu Punkt",
+    "expected": "Siehe [eins]."
+  },
+  {
+    "input": "Wirklich Fragezeichen Ja Ausrufezeichen",
+    "expected": "Wirklich? Ja!"
+  },
+  {
+    "input": "Thema Hashtag Befund",
+    "expected": "Thema #Befund"
+  },
+  {
+    "input": "Ich lese das Kapitel und schreibe Absatz Neu",
+    "expected": "Ich lese das Kapitel und schreibe\n\nNeu"
+  },
+  {
+    "input": "  Anfang Komma Ende Punkt  ",
+    "expected": "Anfang, Ende."
+  }
+]

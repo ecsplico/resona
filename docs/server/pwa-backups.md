@@ -1,8 +1,8 @@
 # PWA backups and encryption at rest
 
-The PWA stack (`apps/resona-pwa/docker-compose.coolify.yml`) keeps everything a user produces in two Docker volumes: `directus-db` (Directus SQLite, `data.db`) and `directus-uploads` (recordings and documents). This page covers the opt-in encrypted off-site backup of those two volumes, the restore drill, who holds the keys, and the state of disk encryption on the host.
+The PWA stack of the reference app (`apps/resona-pwa/docker-compose.coolify.yml`) keeps everything a user produces in two Docker volumes: `directus-db` (Directus SQLite, `data.db`) and `directus-uploads` (recordings and documents). This page covers the opt-in encrypted off-site backup of those two volumes, the restore drill, who holds the keys, and the state of disk encryption on the host.
 
-The hub is a separate layer with its own data (`resona-data`: SQLite database and testbench items) and its own backup service in the root `docker-compose.coolify.yml`: see [Coolify: Backup](coolify.md#backup). The PWA backup never mounts or reads the hub volume.
+The hub is a separate layer with its own data (`resona-data`: SQLite database and testbench items) and its own backup service in the root `docker-compose.coolify.yml`: see [Coolify: Backup](coolify.md#backup). The PWA backup never mounts or reads the hub volume ([ADR 0001](../adr/0001-hub-and-app-boundary.md)).
 
 ## What the backup service does
 

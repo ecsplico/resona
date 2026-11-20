@@ -20,12 +20,34 @@ The bundled `default` profile applies these rules automatically with no configur
 | Klammer zu | `)` |
 
 In addition, the bundled defaults include `Doppelpunkt`, `Fragezeichen`, `Ausrufezeichen`,
-`Anstrich` (list item), German medical section headings
-(`Verlauf`, `Medikation`, `Psychopathologischer Befund`, `Procedere`) and common name corrections.
+`Anstrich` (list item), `Hashtag` and `Eckige Klammer auf`/`zu`. `default` holds only these
+generic commands.
 
-!!! tip "Inspecting the defaults"
-    The bundled rules live in
-    `packages/postprocess/src/resona_postprocess/default_replacements.json`.
+## Medical dictation: `dictation-medical-de`
+
+The German medical section headings (`Kapitel Verlauf`, `Kapitel Medikation`,
+`Kapitel Psychopathologischer Befund`, `Kapitel Procedere`, no terminator needed) and the name
+corrections (`Monique` → `Monic`, …) live in the catalogue profile `dictation-medical-de`
+(`profiles/dictation-medical-de.json` in the repository): name corrections first, then the
+headings, then the generic rules of `default` inline, in that order. An org admin pushes it once
+and selects it per job or as the organization's `postprocess_profile`:
+
+```bash
+resona profiles push dictation-medical-de profiles/dictation-medical-de.json
+resona transcribe dictation.mp3 --profile dictation-medical-de
+```
+
+!!! warning "Release note: the split of `default`"
+    Up to 0.2.7 `default` also carried the medical headings and the name corrections. Its output
+    for text with only generic commands is unchanged; a medical dictation with `default` now keeps
+    the names as spoken and leaves a heading without a terminator as text (`Kapitel Verlauf Komma
+    stabil Punkt` → `Kapitel Verlauf, stabil.`). Fix: push and select `dictation-medical-de`, which
+    produces the old `default` output. See [Postprocessing](postprocessing.md#dictation-medical-de).
+
+!!! tip "Inspecting the rules"
+    The generic rules live in
+    `packages/postprocess/src/resona_postprocess/default_replacements.json`, the medical ones in
+    `profiles/dictation-medical-de.json`.
 
 ---
 
