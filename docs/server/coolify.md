@@ -262,7 +262,7 @@ rm -rf restore
 The restore:
 
 1. copies the backup over the database with the SQLite backup API and migrates it to the current schema;
-2. revokes **every** restored credential and worker. A credential that was revoked after the backup was taken therefore cannot come back. Issue fresh credentials and re-enroll the workers afterwards;
+2. revokes **every** restored credential, worker and webhook endpoint. A credential that was revoked after the backup was taken therefore cannot come back. Issue fresh credentials and re-enroll the workers afterwards;
 3. invalidates every active lease: processing jobs are requeued, or failed when no attempt or time is left;
 4. marks jobs whose payload files are gone as `content_unavailable`: pending jobs without input fail with that code, and completed jobs without a result file answer `410 content_unavailable` on the result route. Results are never fabricated;
 5. runs one maintenance pass, which reapplies content and metadata retention before the hub serves requests.

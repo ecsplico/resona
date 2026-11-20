@@ -8,8 +8,9 @@ Restoring therefore never trusts the restored identities or content:
 1. refuse while the hub runs (hub lock held) or the target database is locked;
 2. copy the backup over the configured database with the SQLite backup API, then
    migrate it to the current schema;
-3. revoke **every** credential and worker in the restored database (operators
-   issue fresh ones afterwards), so a credential revoked after the backup was
+3. revoke **every** credential, worker and webhook endpoint in the restored
+   database (operators issue fresh ones afterwards, org admins register their
+   endpoints again), so a credential or endpoint revoked after the backup was
    taken can never come back;
 4. invalidate every active lease: processing jobs are requeued, or failed when no
    attempt or time is left; cancel-requested ones end as cancelled;
@@ -36,7 +37,7 @@ from sqlmodel import Session, select
 
 from . import broker, clock, hublock, maintenance, storage
 from .db import engine as db_engine
-from .db.models import Credential, Job, JobStatus, Organization, Upload, Worker
+from .db.models import Credential, Job, JobStatus, Organization, Upload, WebhookEndpoint, Worker
 from .db.schema import TARGET_VERSION
 from .jobs_routes import CONTENT_UNAVAILABLE
 
@@ -51,6 +52,7 @@ class RestoreError(RuntimeError):
 class RestoreReport:
     credentials_revoked: int = 0
     workers_revoked: int = 0
+    webhooks_revoked: int = 0
     leases_invalidated: int = 0
     inputs_unavailable: int = 0
     results_unavailable: int = 0
@@ -143,6 +145,10 @@ def _fence(session: Session, report: RestoreReport) -> list[tuple[str, int]]:
             worker.revoked_at = now
             session.add(worker)
             report.workers_revoked += 1
+        for endpoint in session.exec(select(WebhookEndpoint).where(WebhookEndpoint.revoked_at.is_(None))).all():
+            endpoint.revoked_at = now
+            session.add(endpoint)
+            report.webhooks_revoked += 1
 
         for job in session.exec(select(Job).where(Job.status == JobStatus.PROCESSING)).all():
             if job.cancel_requested:

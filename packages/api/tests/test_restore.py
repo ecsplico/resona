@@ -22,7 +22,7 @@ from resona_api import auth, clock, deps, hublock, storage
 from resona_api.admin import approve_worker, create_organization, enroll_worker, issue_credential, main, revoke_credential
 from resona_api.auth import resolve_token
 from resona_api.db import engine as db_engine
-from resona_api.db.models import Credential, Job, JobStatus, Organization, Upload, Worker
+from resona_api.db.models import Credential, Job, JobStatus, Organization, Upload, WebhookEndpoint, Worker
 from resona_api.hublock import HubRunning
 from resona_api.restore import RestoreError, restore
 
@@ -190,6 +190,27 @@ def test_restore_revokes_every_credential_fences_leases_and_flags_missing_conten
     assert kept.status_code == 200 and kept.json()["markdown"] == "Hallo"
     expired = api.get(f"/v1/jobs/{done_expired}/result")
     assert (expired.status_code, _code(expired)) == (410, "result_expired")
+
+
+def test_restore_revokes_restored_webhook_endpoints(hub, capsys):
+    now = clock.now()
+    with _session() as session:
+        create_organization(session, ORG)
+        session.add(WebhookEndpoint(id="wh_live", organization_id=ORG, name="app",
+                                    url="https://hooks.example.org/x", secret="whsec_live"))
+        session.add(WebhookEndpoint(id="wh_old", organization_id=ORG, name="old",
+                                    url="https://hooks.example.org/y", secret="whsec_old",
+                                    revoked_at=now - timedelta(days=3)))
+        session.commit()
+    backup = _backup(hub)
+
+    assert main(["restore", str(backup)]) == 0
+    out = capsys.readouterr().out
+    assert "webhooks_revoked: 1" in out and "whsec_" not in out
+    with _session() as session:
+        rows = {row.id: row for row in session.exec(select(WebhookEndpoint)).all()}
+    assert rows["wh_live"].revoked_at is not None
+    assert clock.as_utc(rows["wh_old"].revoked_at) == now - timedelta(days=3)  # earlier revocation kept
 
 
 def test_restore_refuses_while_the_hub_holds_the_lock(hub):

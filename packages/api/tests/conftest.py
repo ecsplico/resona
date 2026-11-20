@@ -214,6 +214,7 @@ def test_app():
     from resona_api.evaluations_routes import router as evaluations_router
     from resona_api.admin_routes import router as admin_router, static_router as admin_static_router
     from resona_api.testbench_routes import router as testbench_router
+    from resona_api.webhooks_routes import router as webhooks_router
     app = FastAPI()
     app.include_router(jobs_router)
     app.include_router(worker_router)
@@ -224,6 +225,7 @@ def test_app():
     app.include_router(admin_router)
     app.include_router(admin_static_router)
     app.include_router(testbench_router)
+    app.include_router(webhooks_router)
     return app
 
 
