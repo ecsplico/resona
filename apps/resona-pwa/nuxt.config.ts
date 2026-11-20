@@ -42,7 +42,8 @@ export default defineNuxtConfig({
 			directusUrl: "http://localhost:7700",
 			resonaApiUrl: "http://localhost:7710",
 			defaultLanguage: "de",
-			defaultProfile: "default",
+			// Catalogue profile (profiles/ of the hub repo), pushed with `just push-profiles`.
+			defaultProfile: "dictation-medical-de",
 			calendarEnabled: false,
 			dataMode: "directus",
 			// Directus auth provider key for single sign-on ("" = password login only).

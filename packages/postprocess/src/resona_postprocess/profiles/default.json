@@ -1,6 +1,6 @@
 {
   "name": "default",
-  "description": "Default German dictation replacements, no LLM.",
+  "description": "Generic German dictation commands → Markdown (Komma, Punkt, Absatz, Kapitel, brackets), no LLM.",
   "initial_prompt": [],
   "steps": [
     {"type": "replacements", "name": "house-defaults", "source": "default_replacements.json"}
