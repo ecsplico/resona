@@ -92,7 +92,7 @@ Uses [litellm](https://github.com/BerriAI/litellm) — any OpenAI-compatible end
 
 LLM steps add latency. Use them only when rule-based replacements are insufficient.
 
-For long documents, set `chunk_chars`. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a `polish_chunk_rejected:<n>:<reason>` warning. Details: [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown). The bundled `document-polish-de` profile uses this mode for OCR correction of German documents. It calls the endpoint id `local-llm`, which names no host: an org admin registers a `local_llm` endpoint with that id and a loopback `url` on the approved worker; [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host) shows how.
+For long documents, set `chunk_chars`. A chunk that keeps failing fails the job instead of being skipped; a chunk reply that changes the length too much or touches placeholders, headings or table shape is discarded, the raw chunk is kept and the result gets a `polish_chunk_rejected:<n>:<reason>` warning. Details: [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown). The catalogue profile `document-polish-de` (`profiles/` in the repository, see [Profile catalogue](#profile-catalogue)) uses this mode for OCR correction of German documents. It calls the endpoint id `local-llm`, which names no host: an org admin registers a `local_llm` endpoint with that id and a loopback `url` on the approved worker; [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host) shows how.
 
 When a step changes the Markdown, the job result keeps the engine's Markdown before postprocessing in `raw_markdown`; `markdown` is the postprocessed text.
 
@@ -209,6 +209,35 @@ dritten Absatz` starts a new paragraph. Dictate around these words, or correct t
     resona profiles push dictation-v0-1 dictation-v0-1.json
     ```
 
+### Profile catalogue
+
+The `resona-postprocess` wheel bundles one profile, `default`, because it works with no setup.
+Profiles that need a decision or an endpoint of the organization live in the repository's root
+directory [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) and exist on a hub
+only after an org admin pushed them:
+
+| Profile | What it does | Needs |
+|---------|--------------|-------|
+| `transcript-markdown-de` | Dictation commands → Markdown, rules only | Nothing |
+| `transcript-polish-de` | The same rules, then an LLM pass limited to capitalization, punctuation and whitespace | `local_llm` endpoint `local-llm` |
+| `document-polish-de` | OCR corrections on document Markdown ([Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)) | `local_llm` endpoint `local-llm` |
+
+```bash
+git clone https://github.com/ecsplico/resona && cd resona   # or download the files of your release tag
+resona profiles push transcript-markdown-de profiles/transcript-markdown-de.json
+resona profiles push transcript-polish-de profiles/transcript-polish-de.json
+resona profiles push document-polish-de profiles/document-polish-de.json
+```
+
+!!! note "Release note: product profiles left the wheel"
+    Up to 0.2.7 the wheel also contained `transcript-markdown-de.json`, `transcript-polish-de.json`,
+    `document-polish-de.json` and `title-de.json`. They were never resolved by name, so jobs and
+    the profile revisions stored on existing hubs are unaffected. Only the place to take the files
+    from changed: the three above from `profiles/`, `title-de` from the reference app
+    (`apps/resona-pwa/profiles/`, pushed with `just pwa push-profiles`). A setup script that read
+    them from `resona_postprocess/profiles/` must read the catalogue instead, and a hub that never
+    pushed them has to push them once.
+
 ### transcript-markdown-de and transcript-polish-de
 
 `profiles/transcript-markdown-de.json` holds the same dictation rules as `default`, without the
@@ -227,17 +256,8 @@ paragraphs, joined list items, a rewritten heading text or a changed word or num
 changes such things is kept as long as it stays within the 10 % length guard. Use the polish
 profile only where a reviewer reads the result.
 
-Both carry their rules inline, because hosted profiles reject `source`. `resona profiles push
-<name> <file>` uploads a local JSON file, so take the file from the installed package. With
-`uv tool install` the package lives in the tool's own environment:
-
-```bash
-PROFILES="$("$(uv tool dir)/resona-cli/bin/python" -c "from importlib import resources; print(resources.files('resona_postprocess') / 'profiles')")"
-resona profiles push transcript-markdown-de "$PROFILES/transcript-markdown-de.json"
-resona profiles push transcript-polish-de "$PROFILES/transcript-polish-de.json"
-```
-
-In a repository checkout use `packages/postprocess/src/resona_postprocess/profiles/` instead.
+Both carry their rules inline, because hosted profiles reject `source`. Push them from the
+catalogue as shown under [Profile catalogue](#profile-catalogue).
 
 ---
 

@@ -14,6 +14,11 @@ machine.
 `resona-postprocess` ships `profiles/default.json`. It is used automatically when no profile is
 specified and activates German medical dictation rules with no configuration needed.
 
+`default` is the only profile in the wheel. Profiles that need setup by the organization
+(`transcript-markdown-de`, `transcript-polish-de`, `document-polish-de`) are files in the
+repository's root `profiles/` directory and are uploaded with `resona profiles push`; see the
+[profile catalogue](../guide/postprocessing.md#profile-catalogue).
+
 | Spoken | Written |
 |--------|---------|
 | Komma | `,` |

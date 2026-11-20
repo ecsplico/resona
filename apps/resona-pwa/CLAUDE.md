@@ -88,6 +88,17 @@ which idempotently provisions collections, the `user` role/policy, and the
 that in `.env` first, e.g. `openssl rand -hex 24`). See `directus/bootstrap.md`.
 CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 
+### Hub profiles
+
+`profiles/title-de.json` is this app's own postprocess profile (one `extract` step `title` on
+endpoint `local-llm`; `useTitleJob` reads `structured.title.title`). A hub knows it only after
+`just push-profiles` (`scripts/push-profiles.sh`: `resona profiles push` for `profiles/*.json`,
+then the catalogue profiles offered under Nachbearbeiten, `transcript-markdown-de` and
+`transcript-polish-de`, from `RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI`
+names the `resona` command; needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
+checks the file against the hub's documented profile format and `titleFromResult`, without
+importing hub code.
+
 ### Worker
 
 The `resona-project-worker` lives in `worker/` (package `resona_project_worker`) — a
@@ -174,7 +185,7 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   model runs in the browser outside the page thread (not exposed in Web Workers), the page only
   awaits it, so capture and live transcript keep running. Only when it gives no title,
   `useTitleJob().suggestTitleRemote` (hub `kind:"text"`
-  job, profile `title-de`, first 4000 chars, reads `structured.title.title`, always deletes the
+  job, profile `title-de` = `profiles/title-de.json` here, first 4000 chars, reads `structured.title.title`, always deletes the
   job, null on any failure) may replace it ("Titel wird verfeinert…"). Either result replaces
   the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
   start or leaving the page abort both and a late answer is dropped. A title field cleared
