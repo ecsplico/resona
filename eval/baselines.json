@@ -1,6 +1,65 @@
 {
   "schema_version": 1,
   "baselines": {
+    "cloud-deepgram/cloud": {
+      "execution_profile": "cloud-deepgram",
+      "platform": "cloud",
+      "revision": 1,
+      "evaluation_id": 30,
+      "promoted_at": "2026-11-20T10:48:14+00:00",
+      "corpus_sha256": "2b297b84966a72d9a945297bb8bafc08b6182d77aebb9be4d1de84a2359585a3",
+      "release_id": "0.2.7",
+      "runtime_versions": [
+        "0.2.7"
+      ],
+      "normalization": {
+        "audio": "text-v1",
+        "document": "markdown-v1"
+      },
+      "models": [
+        {
+          "stage": "asr",
+          "engine": "deepgram",
+          "model": "nova-3",
+          "revision": null,
+          "accelerator": "external"
+        },
+        {
+          "stage": "diarize",
+          "engine": "deepgram",
+          "model": "nova-3",
+          "revision": null,
+          "accelerator": "external"
+        }
+      ],
+      "fixtures": {
+        "de-speech": {
+          "wer": 0.0,
+          "cer": 0.0
+        },
+        "de-numbers": {
+          "wer": 0.1364,
+          "cer": 0.2381
+        },
+        "silence": {
+          "silence_insertions": 0
+        },
+        "de-two-speakers": {
+          "wer": 0.0542,
+          "cer": 0.0524,
+          "speaker_attribution": 0.9759,
+          "der": 0.0753,
+          "speaker_count_error": 0
+        },
+        "de-case-conference": {
+          "wer": 0.1099,
+          "cer": 0.0825,
+          "speaker_attribution": 0.8462,
+          "der": 0.1751,
+          "speaker_count_error": 1
+        }
+      }
+    },
     "cpu-private/cpu": {
       "execution_profile": "cpu-private",
       "platform": "cpu",
