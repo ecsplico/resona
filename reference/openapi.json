@@ -1,0 +1,3784 @@
+{
+  "components": {
+    "schemas": {
+      "BBox": {
+        "additionalProperties": false,
+        "properties": {
+          "b": {
+            "title": "B",
+            "type": "number"
+          },
+          "coord_origin": {
+            "title": "Coord Origin",
+            "type": "string"
+          },
+          "l": {
+            "title": "L",
+            "type": "number"
+          },
+          "r": {
+            "title": "R",
+            "type": "number"
+          },
+          "t": {
+            "title": "T",
+            "type": "number"
+          }
+        },
+        "required": [
+          "l",
+          "t",
+          "r",
+          "b",
+          "coord_origin"
+        ],
+        "title": "BBox",
+        "type": "object"
+      },
+      "Candidate": {
+        "additionalProperties": false,
+        "description": "One approved (engine, model, revision, accelerator, ocr_engine) tuple.",
+        "properties": {
+          "accelerator": {
+            "enum": [
+              "metal",
+              "cuda",
+              "cpu",
+              "external"
+            ],
+            "title": "Accelerator",
+            "type": "string"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "model_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Revision"
+          },
+          "ocr_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Engine"
+          }
+        },
+        "required": [
+          "engine",
+          "model",
+          "accelerator"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
+      "Deleted": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "Deleted",
+        "type": "object"
+      },
+      "DetailErrorBody": {
+        "description": "Error without a code, on the few routes that predate :class:`ErrorBody`.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "DetailErrorBody",
+        "type": "object"
+      },
+      "Endpoint": {
+        "additionalProperties": false,
+        "description": "An admin-registered processing destination outside the in-process engine.\n\n``url`` is fixed by the registry entry (``None`` for provider SDK defaults of\ncloud ASR adapters); ``worker_id`` is the worker holding its secret file.\n``unload_url`` (``local_llm`` only, loopback http(s) only) is POSTed by the\nworker after a job's last stage on this endpoint so the model server frees\nthe GPU for the next job; it carries no content.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EndpointKind"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "unload_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unload Url"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "worker_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Id"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "model"
+        ],
+        "title": "Endpoint",
+        "type": "object"
+      },
+      "EndpointKind": {
+        "enum": [
+          "local_llm",
+          "cloud_asr",
+          "cloud_llm"
+        ],
+        "title": "EndpointKind",
+        "type": "string"
+      },
+      "EngineCandidate": {
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/Candidate"
+          },
+          "execution_profiles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Execution Profiles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate",
+          "execution_profiles"
+        ],
+        "title": "EngineCandidate",
+        "type": "object"
+      },
+      "EngineList": {
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/EngineView"
+            },
+            "title": "Engines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "engines",
+          "default"
+        ],
+        "title": "EngineList",
+        "type": "object"
+      },
+      "EngineView": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/EngineCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "job_kind": {
+            "enum": [
+              "audio",
+              "document",
+              "speech"
+            ],
+            "title": "Job Kind",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "job_kind",
+          "capabilities",
+          "private",
+          "available",
+          "models",
+          "candidates"
+        ],
+        "title": "EngineView",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "description": "The hub's error body. ``error`` is the machine-readable code.",
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ExecutionProfile-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "title": "Audio",
+            "type": "array"
+          },
+          "diarize": {
+            "default": false,
+            "title": "Diarize",
+            "type": "boolean"
+          },
+          "document": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "title": "Document",
+            "type": "array"
+          }
+        },
+        "title": "ExecutionProfile",
+        "type": "object"
+      },
+      "ExecutionProfile-Output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "HealthView": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthView",
+        "type": "object"
+      },
+      "JobAccepted": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "JobAccepted",
+        "type": "object"
+      },
+      "JobError": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "JobError",
+        "type": "object"
+      },
+      "JobErrorBody": {
+        "description": "Error of the synchronous transcription adapter; ``job_id`` names the job once one was admitted.",
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ],
+        "title": "JobErrorBody",
+        "type": "object"
+      },
+      "JobPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "JobPage",
+        "type": "object"
+      },
+      "JobResult": {
+        "additionalProperties": false,
+        "description": "``markdown`` is the final text. ``raw_markdown`` holds the engine's Markdown\nbefore postprocessing; it is set only when a postprocess step changed it.\n\n``text`` results (postprocess-only jobs) carry the uploaded text in ``raw_text``,\nthe profile output in ``markdown`` and the input again in ``raw_markdown`` when\nthe profile changed it; they have no segments or pages.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "audio",
+              "document",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "pages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Page"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "raw_markdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Markdown"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "segments": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "structured": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Structured",
+            "type": "object"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "raw_text",
+          "markdown",
+          "provenance"
+        ],
+        "title": "JobResult",
+        "type": "object"
+      },
+      "JobView": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Candidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Profile"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "audio",
+              "document",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          },
+          "queue_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_capable_worker",
+                  "release_not_approved",
+                  "worker_outdated",
+                  "waiting_capacity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Reason"
+          },
+          "result_available": {
+            "title": "Result Available",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "status",
+          "queue_reason",
+          "private",
+          "execution_profile",
+          "candidate",
+          "attempt",
+          "error",
+          "result_available",
+          "created_at",
+          "updated_at",
+          "deadline_at"
+        ],
+        "title": "JobView",
+        "type": "object"
+      },
+      "ListenEngineList": {
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/ListenEngineView"
+            },
+            "title": "Engines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "engines",
+          "default"
+        ],
+        "title": "ListenEngineList",
+        "type": "object"
+      },
+      "ListenEngineView": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "private",
+          "models"
+        ],
+        "title": "ListenEngineView",
+        "type": "object"
+      },
+      "MarkdownChunk": {
+        "description": "One character range of a result's Markdown; ``source`` names the field read.",
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "audio",
+                  "document",
+                  "text"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "page_count": {
+            "title": "Page Count",
+            "type": "integer"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "source": {
+            "enum": [
+              "markdown",
+              "raw_markdown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "text",
+          "offset",
+          "next_offset",
+          "total_chars",
+          "source",
+          "kind",
+          "language",
+          "page_count",
+          "warnings",
+          "provenance"
+        ],
+        "title": "MarkdownChunk",
+        "type": "object"
+      },
+      "OrganizationSettings-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "cloud_enabled": {
+            "default": false,
+            "title": "Cloud Enabled",
+            "type": "boolean"
+          },
+          "cpu_fallback_enabled": {
+            "default": false,
+            "title": "Cpu Fallback Enabled",
+            "type": "boolean"
+          },
+          "default_execution_profile": {
+            "default": "private-auto",
+            "title": "Default Execution Profile",
+            "type": "string"
+          },
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            },
+            "title": "Endpoints",
+            "type": "array"
+          },
+          "execution_profiles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExecutionProfile-Input"
+            },
+            "title": "Execution Profiles",
+            "type": "object"
+          },
+          "language": {
+            "default": "de",
+            "title": "Language",
+            "type": "string"
+          },
+          "polish": {
+            "default": false,
+            "title": "Polish",
+            "type": "boolean"
+          },
+          "postprocess_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postprocess Profile"
+          },
+          "testbench_enabled": {
+            "default": false,
+            "title": "Testbench Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "OrganizationSettings",
+        "type": "object"
+      },
+      "OrganizationSettings-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "cloud_enabled": {
+            "default": false,
+            "title": "Cloud Enabled",
+            "type": "boolean"
+          },
+          "cpu_fallback_enabled": {
+            "default": false,
+            "title": "Cpu Fallback Enabled",
+            "type": "boolean"
+          },
+          "default_execution_profile": {
+            "default": "private-auto",
+            "title": "Default Execution Profile",
+            "type": "string"
+          },
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            },
+            "title": "Endpoints",
+            "type": "array"
+          },
+          "execution_profiles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExecutionProfile-Output"
+            },
+            "title": "Execution Profiles",
+            "type": "object"
+          },
+          "language": {
+            "default": "de",
+            "title": "Language",
+            "type": "string"
+          },
+          "polish": {
+            "default": false,
+            "title": "Polish",
+            "type": "boolean"
+          },
+          "postprocess_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postprocess Profile"
+          },
+          "testbench_enabled": {
+            "default": false,
+            "title": "Testbench Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "OrganizationSettings",
+        "type": "object"
+      },
+      "Page": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PageBlock"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "text"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "PageBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "label"
+        ],
+        "title": "PageBlock",
+        "type": "object"
+      },
+      "ProfileDocument": {
+        "description": "A postprocess profile; see the profile file format. ``instructions`` only when set.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "initial_prompt": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Initial Prompt",
+            "type": "array"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "initial_prompt",
+          "steps"
+        ],
+        "title": "ProfileDocument",
+        "type": "object"
+      },
+      "ProfileList": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileRef"
+            },
+            "title": "Profiles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "profiles"
+        ],
+        "title": "ProfileList",
+        "type": "object"
+      },
+      "ProfileRef": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "revision"
+        ],
+        "title": "ProfileRef",
+        "type": "object"
+      },
+      "ProfileView": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfileDocument"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "revision",
+          "profile"
+        ],
+        "title": "ProfileView",
+        "type": "object"
+      },
+      "Provenance": {
+        "additionalProperties": false,
+        "properties": {
+          "input_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Sha256"
+          },
+          "runtime_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Version"
+          },
+          "settings_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings Revision"
+          },
+          "stages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StageProvenance"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "worker_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Id"
+          }
+        },
+        "title": "Provenance",
+        "type": "object"
+      },
+      "ReadyChecks": {
+        "properties": {
+          "data_writable": {
+            "title": "Data Writable",
+            "type": "boolean"
+          },
+          "maintenance": {
+            "title": "Maintenance",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema",
+          "data_writable",
+          "maintenance"
+        ],
+        "title": "ReadyChecks",
+        "type": "object"
+      },
+      "ReadyView": {
+        "description": "200 when every check holds, else 503 with the same body.",
+        "properties": {
+          "capacity": {
+            "enum": [
+              "available",
+              "degraded"
+            ],
+            "title": "Capacity",
+            "type": "string"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/ReadyChecks"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks",
+          "capacity"
+        ],
+        "title": "ReadyView",
+        "type": "object"
+      },
+      "Segment": {
+        "additionalProperties": false,
+        "description": "One transcript span. Diarized results (``AudioOptions.diarize``) carry ``speaker``:\n1-based, numbered in order of first appearance; a segment never spans a speaker change.",
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "Segment",
+        "type": "object"
+      },
+      "SettingsDoc": {
+        "properties": {
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/OrganizationSettings-Output"
+          }
+        },
+        "required": [
+          "organization_id",
+          "revision",
+          "settings"
+        ],
+        "title": "SettingsDoc",
+        "type": "object"
+      },
+      "SpeechRequest": {
+        "description": "Request body for POST /v1/audio/speech.",
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "input": {
+            "title": "Input",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "private": {
+            "default": true,
+            "title": "Private",
+            "type": "boolean"
+          },
+          "response_format": {
+            "default": "mp3",
+            "title": "Response Format",
+            "type": "string"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          }
+        },
+        "required": [
+          "input"
+        ],
+        "title": "SpeechRequest",
+        "type": "object"
+      },
+      "StageProvenance": {
+        "additionalProperties": false,
+        "description": "One executed stage. In-process stages record the accelerator actually used;\nendpoint stages (``llm`` via an approved endpoint) record ``endpoint_id`` and\n``accelerator='external'`` because the endpoint process owns its device.\n``accelerator='auto'`` marks an in-process stage whose device the operating\nsystem selects and does not report (Apple Vision OCR may use CPU, GPU or Neural\nEngine); it records that the device was not observed, not that it was a GPU.\n\n``peak_accelerator_bytes`` is the peak device memory (CUDA allocator / MLX) of the\nexecution process, recorded on stages that ran on ``cuda``/``metal``; stages run\ntogether by one engine call (Docling layout + table structure) share the value.",
+        "properties": {
+          "accelerator": {
+            "enum": [
+              "metal",
+              "cuda",
+              "cpu",
+              "auto",
+              "external"
+            ],
+            "title": "Accelerator",
+            "type": "string"
+          },
+          "endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Id"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "model_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Revision"
+          },
+          "peak_accelerator_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Accelerator Bytes"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          },
+          "stage": {
+            "enum": [
+              "asr",
+              "diarize",
+              "ocr",
+              "layout",
+              "llm"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "engine",
+          "model",
+          "accelerator",
+          "seconds"
+        ],
+        "title": "StageProvenance",
+        "type": "object"
+      },
+      "TranscriptionResponse": {
+        "description": "OpenAI-compatible transcription. ``language``, ``duration`` and ``segments`` only with\n``response_format=verbose_json``; ``structured`` only when the profile extracted data.",
+        "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Segment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segments"
+          },
+          "structured": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TranscriptionResponse",
+        "type": "object"
+      },
+      "UploadLinkView": {
+        "description": "A single-use upload link: send multipart ``file`` to ``upload_url`` with header ``token_header: token``.",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "max_bytes": {
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "token_header": {
+            "title": "Token Header",
+            "type": "string"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_url",
+          "token_header",
+          "token",
+          "expires_at",
+          "max_bytes"
+        ],
+        "title": "UploadLinkView",
+        "type": "object"
+      },
+      "UploadView": {
+        "properties": {
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "sha256",
+          "size"
+        ],
+        "title": "UploadView",
+        "type": "object"
+      },
+      "ValidationErrorBody": {
+        "description": "Rejected path, query or body parameters (the framework's own validation).",
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ValidationErrorBody",
+        "type": "object"
+      },
+      "ValidationIssue": {
+        "additionalProperties": true,
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Loc",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Msg",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationIssue",
+        "type": "object"
+      },
+      "VersionView": {
+        "properties": {
+          "hub_version": {
+            "title": "Hub Version",
+            "type": "string"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "worker_protocol": {
+            "title": "Worker Protocol",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "release_id",
+          "hub_version",
+          "worker_protocol"
+        ],
+        "title": "VersionView",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "description": "Organization credential as `Authorization: Bearer <token>` (`X-API-Key: <token>` is accepted too).",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "resona-api",
+    "version": "0.2.8"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness: the process serves HTTP. Checks nothing else.",
+        "operationId": "health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "client",
+          "Health"
+        ]
+      }
+    },
+    "/profiles": {
+      "get": {
+        "description": "Live profile names for the caller's organization, including the bundled default.",
+        "operationId": "profiles_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the organization's profiles",
+        "tags": [
+          "client",
+          "Config"
+        ]
+      }
+    },
+    "/profiles/{name}": {
+      "delete": {
+        "description": "Tombstone a profile (organization admin only); earlier revisions stay for provenance.",
+        "operationId": "profiles_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `revision_conflict`.",
+            "x-error-codes": [
+              "revision_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_profile_name`.",
+            "x-error-codes": [
+              "invalid_profile_name"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a profile",
+        "tags": [
+          "client",
+          "Config"
+        ]
+      },
+      "get": {
+        "description": "Return the current revision of a profile for the caller's organization.",
+        "operationId": "profiles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `stored_profile_invalid`.",
+            "x-error-codes": [
+              "stored_profile_invalid"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_profile_name`.",
+            "x-error-codes": [
+              "invalid_profile_name"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get one profile",
+        "tags": [
+          "client",
+          "Config"
+        ]
+      },
+      "put": {
+        "description": "Store a new revision (organization admin only). Inline rules only; no file sources.",
+        "operationId": "profiles_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRef"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `reserved_profile_name`, `revision_conflict`.",
+            "x-error-codes": [
+              "reserved_profile_name",
+              "revision_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ValidationErrorBody"
+                    }
+                  ],
+                  "title": "Response 422 Profiles Put"
+                }
+              }
+            },
+            "description": "Error: `invalid_profile_name`, `invalid_profile`, rejected parameters.",
+            "x-error-codes": [
+              "invalid_profile_name",
+              "invalid_profile"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create the next revision of a profile",
+        "tags": [
+          "client",
+          "Config"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyView"
+                }
+              }
+            },
+            "description": "Not ready: a check failed (`status: not_ready`)."
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "client",
+          "Health"
+        ]
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "description": "OpenAI-compatible synchronous text-to-speech (local or cloud engines).",
+        "operationId": "audio_speech_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "audio/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The synthesized audio; the content type follows the engine and `response_format`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`, `policy_denied`.",
+            "x-error-codes": [
+              "forbidden",
+              "policy_denied"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Speech",
+        "tags": [
+          "client",
+          "Audio"
+        ]
+      }
+    },
+    "/v1/audio/transcriptions": {
+      "post": {
+        "description": "OpenAI-compatible speech-to-text as a bounded wait on a queued audio job.\n\nMultipart fields: ``file`` plus OpenAI ``model``, ``language``,\n``response_format`` (json|text|verbose_json), ``prompt``/``temperature``\n(ignored) and Resona ``engine``, ``execution_profile``, ``profile``,\n``private`` (default true), ``diarize`` (label speakers, needs a worker that\ndiarizes; default: the execution profile's ``diarize``). Admission is identical to\n``POST /v1/jobs``.",
+        "operationId": "audio_transcriptions_create",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The transcript: JSON, or plain text with `response_format=text`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_idempotency_key`.",
+            "x-error-codes": [
+              "invalid_idempotency_key"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`, `policy_denied`.",
+            "x-error-codes": [
+              "forbidden",
+              "policy_denied"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `upload_not_found`, `execution_profile_not_found`, `profile_not_found`, `job_not_found`.",
+            "x-error-codes": [
+              "upload_not_found",
+              "execution_profile_not_found",
+              "profile_not_found",
+              "job_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `idempotency_conflict`, `settings_missing`, `job_cancelled`.",
+            "x-error-codes": [
+              "idempotency_conflict",
+              "settings_missing",
+              "job_cancelled"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `content_unavailable`.",
+            "x-error-codes": [
+              "content_unavailable"
+            ]
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `too_large`.",
+            "x-error-codes": [
+              "too_large"
+            ]
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unsupported_media`.",
+            "x-error-codes": [
+              "unsupported_media"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`.",
+            "x-error-codes": [
+              "invalid_upload",
+              "empty_upload",
+              "invalid_request",
+              "invalid_options",
+              "invalid_instructions",
+              "invalid_profile",
+              "kind_mismatch",
+              "no_candidates",
+              "unapproved_override"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "The job failed: `error` is the job's own error code (open set, e.g. `unsupported_input`), `job_failed` when it has none.",
+            "x-error-codes": [
+              "job_failed"
+            ]
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `timeout`. The job keeps running; `job_id` and the `Location` header name it.",
+            "x-error-codes": [
+              "timeout"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Transcription",
+        "tags": [
+          "client",
+          "Audio"
+        ]
+      }
+    },
+    "/v1/engines": {
+      "get": {
+        "description": "Engines the caller's organization can use: tested, approved and policy-filtered.",
+        "operationId": "engines_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List Engines",
+        "tags": [
+          "client",
+          "Engines"
+        ]
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "description": "The organization's jobs, newest first, with an opaque cursor.",
+        "operationId": "jobs_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ValidationErrorBody"
+                    }
+                  ],
+                  "title": "Response 422 Jobs List"
+                }
+              }
+            },
+            "description": "Error: `invalid_cursor`, `invalid_limit`, rejected parameters.",
+            "x-error-codes": [
+              "invalid_cursor",
+              "invalid_limit"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List Jobs",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      },
+      "post": {
+        "description": "Admit a job for one upload. Same key + same request returns the same job.",
+        "operationId": "jobs_create",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `idempotency_key_required`, `invalid_idempotency_key`.",
+            "x-error-codes": [
+              "idempotency_key_required",
+              "invalid_idempotency_key"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`, `policy_denied`.",
+            "x-error-codes": [
+              "forbidden",
+              "policy_denied"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `upload_not_found`, `execution_profile_not_found`, `profile_not_found`.",
+            "x-error-codes": [
+              "upload_not_found",
+              "execution_profile_not_found",
+              "profile_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `idempotency_conflict`, `settings_missing`.",
+            "x-error-codes": [
+              "idempotency_conflict",
+              "settings_missing"
+            ]
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `too_large`.",
+            "x-error-codes": [
+              "too_large"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `profile_required`, `release_not_staged`.",
+            "x-error-codes": [
+              "invalid_request",
+              "invalid_options",
+              "invalid_instructions",
+              "invalid_profile",
+              "kind_mismatch",
+              "no_candidates",
+              "unapproved_override",
+              "profile_required",
+              "release_not_staged"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Submit Job",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "delete": {
+        "description": "Delete a job in any state; later reads are 404 at once.\n\nA pending or terminal job's row, idempotency keys and files go now. A processing\njob is cancelled first: its lease is fenced (the worker's next call is\n``stale_lease``), its input removed, and its row kept as an invisible\n``deleted`` tombstone until the replaced lease would have expired, so a late\nworker cannot resurrect it; the maintenance sweep then purges it.",
+        "operationId": "jobs_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `job_not_found`.",
+            "x-error-codes": [
+              "job_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete Job",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      },
+      "get": {
+        "operationId": "jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `job_not_found`.",
+            "x-error-codes": [
+              "job_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Job",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "Pending → cancelled (input removed); processing → lease fenced via ``cancel_requested``.",
+        "operationId": "jobs_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `job_not_found`.",
+            "x-error-codes": [
+              "job_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel Job",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/result": {
+      "get": {
+        "description": "Stream the accepted JobResult JSON. 409 before completion, 410 after retention or a lossy restore.",
+        "operationId": "jobs_result",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `job_not_found`.",
+            "x-error-codes": [
+              "job_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `not_ready`.",
+            "x-error-codes": [
+              "not_ready"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `result_expired`, `content_unavailable`.",
+            "x-error-codes": [
+              "result_expired",
+              "content_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Result",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/result/markdown": {
+      "get": {
+        "description": "One character range of the result's Markdown plus small result metadata,\nnever the whole result.\n\n``source=raw`` reads ``raw_markdown`` (the text before postprocessing) when the\nresult has one, else ``markdown``; the response's ``source`` names the field read.\n``next_offset`` is null once the range reaches the end. Same 404/409/410 rules as\nthe full result; an offset past the end returns empty text.",
+        "operationId": "jobs_result_markdown",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 32768,
+              "maximum": 32768,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "markdown",
+              "enum": [
+                "markdown",
+                "raw"
+              ],
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkdownChunk"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `job_not_found`.",
+            "x-error-codes": [
+              "job_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `not_ready`.",
+            "x-error-codes": [
+              "not_ready"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `result_expired`, `content_unavailable`.",
+            "x-error-codes": [
+              "result_expired",
+              "content_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Result Markdown",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/listen/engines": {
+      "get": {
+        "description": "Engines this organization can stream live via ``WS /v1/listen`` right now.\n\nMirrors the bridge dispatch below: an available local engine-server, or a\ncloud provider with a realtime API when the org enables cloud processing and\napproves its endpoint. ``default`` is ``RESONA_DEFAULT_ENGINE`` if it is a\nlisted private engine, else the first listed local engine.",
+        "operationId": "listen_engines_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListenEngineList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List Listen Engines",
+        "tags": [
+          "client",
+          "Streaming"
+        ]
+      }
+    },
+    "/v1/settings": {
+      "get": {
+        "description": "The organization's current settings revision (secrets are never stored here).",
+        "operationId": "settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDoc"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Settings",
+        "tags": [
+          "client",
+          "Settings"
+        ]
+      },
+      "put": {
+        "description": "Replace the organization's settings; creates the next revision.\n\n``If-Match`` must name the current revision: missing → 428, stale → 409.",
+        "operationId": "settings_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSettings-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDoc"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `revision_conflict`.",
+            "x-error-codes": [
+              "revision_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorBody"
+                }
+              }
+            },
+            "description": "Error: rejected parameters."
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailErrorBody"
+                }
+              }
+            },
+            "description": "Error: an uncoded `detail` message."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Put Settings",
+        "tags": [
+          "client",
+          "Settings"
+        ]
+      }
+    },
+    "/v1/upload-links": {
+      "post": {
+        "description": "Mint a single-use link for one upload, valid ten minutes.\n\nFor callers that cannot hold the client credential, such as an agent sandbox\nbehind an MCP server: the file is sent with ``curl`` and its bytes never pass\nthrough a model. Only the token's hash is stored.",
+        "operationId": "upload_links_create",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadLinkView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Upload Link",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/upload-links/upload": {
+      "post": {
+        "description": "Spend an upload link: same multipart ``file`` contract as ``POST /v1/uploads``.",
+        "operationId": "upload_links_upload",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Resona-Upload-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Resona-Upload-Token"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_upload_link`.",
+            "x-error-codes": [
+              "invalid_upload_link"
+            ]
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `too_large`.",
+            "x-error-codes": [
+              "too_large"
+            ]
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unsupported_media`.",
+            "x-error-codes": [
+              "unsupported_media"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_upload`, `empty_upload`.",
+            "x-error-codes": [
+              "invalid_upload",
+              "empty_upload"
+            ]
+          }
+        },
+        "summary": "Upload With Link",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "description": "Stream multipart field ``file`` to staging, hash it, sniff its media family, promote.",
+        "operationId": "uploads_create",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`.",
+            "x-error-codes": [
+              "forbidden"
+            ]
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `too_large`.",
+            "x-error-codes": [
+              "too_large"
+            ]
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unsupported_media`.",
+            "x-error-codes": [
+              "unsupported_media"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_upload`, `empty_upload`.",
+            "x-error-codes": [
+              "invalid_upload",
+              "empty_upload"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Upload",
+        "tags": [
+          "client",
+          "Job"
+        ]
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "description": "Release identifiers and the worker protocol major. No authentication.",
+        "operationId": "version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Version",
+        "tags": [
+          "Evaluations",
+          "client"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Published contract: uploads, jobs, results, audio, engines, profiles, settings.",
+      "name": "client"
+    },
+    {
+      "description": "Transcription jobs.",
+      "name": "Job"
+    },
+    {
+      "description": "Postprocessing profiles configuration.",
+      "name": "Config"
+    },
+    {
+      "description": "OpenAI-compatible speech API.",
+      "name": "Audio"
+    },
+    {
+      "description": "Engine discovery.",
+      "name": "Engines"
+    },
+    {
+      "description": "Liveness and readiness probes.",
+      "name": "Health"
+    },
+    {
+      "description": "Revisioned organization settings.",
+      "name": "Settings"
+    },
+    {
+      "description": "Live streaming engines.",
+      "name": "Streaming"
+    }
+  ]
+}

@@ -1,0 +1,7143 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modular audio transcription platform with pluggable ASR engines and composable postprocessing">
+      
+      
+      
+        <link rel="canonical" href="https://ecsplico.github.io/resona/reference/http-api/">
+      
+      
+        <link rel="prev" href="../api/">
+      
+      
+        <link rel="next" href="../engine-server/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>HTTP API (client contract) - Resona</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#http-api-client-contract" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Resona" class="md-header__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Resona
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              HTTP API (client contract)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Hub
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/pwa-app/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference app
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Resona" class="md-nav__button md-logo" aria-label="Resona" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Resona
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ecsplico/resona" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ecsplico/resona
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hub
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Hub
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/local-only/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local-Only Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/engines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engine Selection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/replacements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Text Replacements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Speech Synthesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation & Baselines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/testbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testbench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Server Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/full-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full-Stack (uv)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Single-Host Stack (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/cpu-standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Single-Host Stack (Linux, no GPU)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/mac-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mac Worker (Apple Silicon)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/linux-worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux Worker (NVIDIA, Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/coolify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coolify Deployment (public hub)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases & Worker Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/config-files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0001-hub-and-app-boundary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/engine-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateless Engine Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/job-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Job Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postprocessing Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-api
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API (client contract)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API (client contract)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-profilesname" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /profiles/{name}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-profilesname" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /profiles/{name}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-profilesname" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /profiles/{name}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-ready" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /ready
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1audiospeech" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/speech
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1audiotranscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/transcriptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1engines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/engines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/jobs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobsjob_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs/{job_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-v1jobsjob_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /v1/jobs/{job_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1jobsjob_idcancel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/jobs/{job_id}/cancel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobsjob_idresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs/{job_id}/result
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobsjob_idresultmarkdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs/{job_id}/result/markdown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1listenengines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/listen/engines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-v1settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /v1/settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1upload-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/upload-links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1upload-linksupload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/upload-links/upload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1uploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/uploads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/version
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schemas
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Schemas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BBox
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#candidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Candidate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deleted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleted
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detailerrorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DetailErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpointkind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EndpointKind
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enginecandidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineCandidate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enginelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engineview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#executionprofile-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExecutionProfile-Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#executionprofile-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExecutionProfile-Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#healthview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HealthView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobaccepted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobAccepted
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#joberror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#joberrorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobpage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobPage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#listenenginelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ListenEngineList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#listenengineview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ListenEngineView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdownchunk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MarkdownChunk
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#organizationsettings-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrganizationSettings-Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#organizationsettings-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrganizationSettings-Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pageblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PageBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profiledocument" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileDocument
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profilelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profileref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profileview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#readychecks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadyChecks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#readyview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadyView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settingsdoc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SettingsDoc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speechrequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpeechRequest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stageprovenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StageProvenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#transcriptionresponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TranscriptionResponse
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadlinkview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UploadLinkView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UploadView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validationerrorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ValidationErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validationissue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ValidationIssue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#versionview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VersionView
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../engine-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-engine-server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../asr-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-asr-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloud-stt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-stt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloud-tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-cloud-tts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resona-postprocess
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dev Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/adding-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding an Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Product Brief
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/admin-console/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Console Design Direction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_9" id="__nav_2_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maybe Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Maybe Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/diarization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sprechertrennung (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference app
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference app
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/pwa-app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resona App (Capacitor)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/pwa-backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PWA Backups & Encryption at Rest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maybe Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Maybe Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/youtube-share/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YouTube-Share (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maybe-features/forge-editor-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forge-Editor-Integration (Studie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-profilesname" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /profiles/{name}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-profilesname" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /profiles/{name}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-profilesname" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /profiles/{name}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-ready" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /ready
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1audiospeech" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/speech
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1audiotranscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/transcriptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1engines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/engines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/jobs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobsjob_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs/{job_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-v1jobsjob_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /v1/jobs/{job_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1jobsjob_idcancel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/jobs/{job_id}/cancel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobsjob_idresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs/{job_id}/result
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1jobsjob_idresultmarkdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/jobs/{job_id}/result/markdown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1listenengines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/listen/engines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-v1settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /v1/settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1upload-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/upload-links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1upload-linksupload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/upload-links/upload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-v1uploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/uploads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-v1version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/version
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schemas
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Schemas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BBox
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#candidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Candidate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deleted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleted
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detailerrorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DetailErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpointkind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EndpointKind
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enginecandidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineCandidate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enginelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engineview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#executionprofile-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExecutionProfile-Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#executionprofile-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExecutionProfile-Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#healthview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HealthView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobaccepted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobAccepted
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#joberror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#joberrorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobpage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobPage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jobview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JobView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#listenenginelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ListenEngineList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#listenengineview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ListenEngineView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdownchunk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MarkdownChunk
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#organizationsettings-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrganizationSettings-Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#organizationsettings-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrganizationSettings-Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pageblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PageBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profiledocument" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileDocument
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profilelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profileref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profileview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProfileView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#readychecks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadyChecks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#readyview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadyView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settingsdoc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SettingsDoc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speechrequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpeechRequest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stageprovenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StageProvenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#transcriptionresponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TranscriptionResponse
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadlinkview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UploadLinkView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UploadView
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validationerrorbody" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ValidationErrorBody
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validationissue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ValidationIssue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#versionview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VersionView
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="http-api-client-contract">HTTP API (client contract)<a class="headerlink" href="#http-api-client-contract" title="Permanent link">&para;</a></h1>
+<p>The published client contract of resona-api: every route with the <code>client</code> audience tag and the schemas those routes use (<code>ResonaAPI.openapi_client()</code>). Admin, evaluation, testbench and worker routes are internal and not part of it. The machine-readable document is committed as <code>contract/openapi.json</code> and published here as <a href="../openapi.json">openapi.json</a>; <code>info.version</code> is the hub release id.</p>
+<ul>
+<li>Regenerate after changing a client route or schema: <code>just contract</code> (<code>uv run python scripts/gen_openapi.py</code>). <code>packages/api/tests/test_contract.py</code> fails on a stale document and names that command.</li>
+<li>CI job <code>contract</code> (<code>.github/workflows/test.yml</code>) compares the committed document with the one at the latest <code>v*</code> tag (<code>oasdiff breaking --fail-on ERR</code>). A pull request with a breaking change fails unless it carries the label <code>contract-break</code>; pushes to <code>main</code> only report. A tag that predates <code>contract/openapi.json</code> is skipped with a notice.</li>
+<li>This page is rendered from the committed document at docs build time by the MkDocs hook <code>scripts/mkdocs_openapi.py</code> (no network).</li>
+</ul>
+<p>Contract version <code>0.2.8</code> (OpenAPI 3.1.0).</p>
+<h2 id="operations">Operations<a class="headerlink" href="#operations" title="Permanent link">&para;</a></h2>
+<h3 id="get-health"><code>GET /health</code><a class="headerlink" href="#get-health" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>health_get</code></p>
+<p><strong>Health</strong></p>
+<p>Liveness: the process serves HTTP. Checks nothing else.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-HealthView">HealthView</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-profiles"><code>GET /profiles</code><a class="headerlink" href="#get-profiles" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>profiles_list</code></p>
+<p><strong>List the organization's profiles</strong></p>
+<p>Live profile names for the caller's organization, including the bundled default.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-ProfileList">ProfileList</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-profilesname"><code>GET /profiles/{name}</code><a class="headerlink" href="#get-profilesname" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>profiles_get</code></p>
+<p><strong>Get one profile</strong></p>
+<p>Return the current revision of a profile for the caller's organization.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>path</td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-ProfileView">ProfileView</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>stored_profile_invalid</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_profile_name</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-profilesname"><code>PUT /profiles/{name}</code><a class="headerlink" href="#put-profilesname" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>profiles_put</code></p>
+<p><strong>Create the next revision of a profile</strong></p>
+<p>Store a new revision (organization admin only). Inline rules only; no file sources.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>path</td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Request body (required): <code>application/json</code>: object</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-ProfileRef">ProfileRef</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>reserved_profile_name</code>, <code>revision_conflict</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_profile_name</code>, <code>invalid_profile</code>, rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a> or <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-profilesname"><code>DELETE /profiles/{name}</code><a class="headerlink" href="#delete-profilesname" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>profiles_delete</code></p>
+<p><strong>Delete a profile</strong></p>
+<p>Tombstone a profile (organization admin only); earlier revisions stay for provenance.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>path</td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-Deleted">Deleted</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>revision_conflict</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_profile_name</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-ready"><code>GET /ready</code><a class="headerlink" href="#get-ready" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>ready_get</code></p>
+<p><strong>Ready</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-ReadyView">ReadyView</a></td>
+</tr>
+<tr>
+<td>503</td>
+<td>Not ready: a check failed (<code>status: not_ready</code>).</td>
+<td><code>application/json</code>: <a href="#schema-ReadyView">ReadyView</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1audiospeech"><code>POST /v1/audio/speech</code><a class="headerlink" href="#post-v1audiospeech" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>audio_speech_create</code></p>
+<p><strong>Create Speech</strong></p>
+<p>OpenAI-compatible synchronous text-to-speech (local or cloud engines).</p>
+<p>Request body (required): <code>application/json</code>: <a href="#schema-SpeechRequest">SpeechRequest</a></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>The synthesized audio; the content type follows the engine and <code>response_format</code>.</td>
+<td><code>audio/*</code>: string (binary)</td>
+</tr>
+<tr>
+<td>400</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>, <code>policy_denied</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+<tr>
+<td>502</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>503</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1audiotranscriptions"><code>POST /v1/audio/transcriptions</code><a class="headerlink" href="#post-v1audiotranscriptions" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>audio_transcriptions_create</code></p>
+<p><strong>Create Transcription</strong></p>
+<p>OpenAI-compatible speech-to-text as a bounded wait on a queued audio job.</p>
+<p>Multipart fields: <code>file</code> plus OpenAI <code>model</code>, <code>language</code>,
+<code>response_format</code> (json|text|verbose_json), <code>prompt</code>/<code>temperature</code>
+(ignored) and Resona <code>engine</code>, <code>execution_profile</code>, <code>profile</code>,
+<code>private</code> (default true), <code>diarize</code> (label speakers, needs a worker that
+diarizes; default: the execution profile's <code>diarize</code>). Admission is identical to
+<code>POST /v1/jobs</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Idempotency-Key</code></td>
+<td>header</td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>The transcript: JSON, or plain text with <code>response_format=text</code>.</td>
+<td><code>application/json</code>: <a href="#schema-TranscriptionResponse">TranscriptionResponse</a><br><code>text/plain</code>: string</td>
+</tr>
+<tr>
+<td>400</td>
+<td>Error: <code>invalid_idempotency_key</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>, <code>policy_denied</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>upload_not_found</code>, <code>execution_profile_not_found</code>, <code>profile_not_found</code>, <code>job_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>idempotency_conflict</code>, <code>settings_missing</code>, <code>job_cancelled</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>410</td>
+<td>Error: <code>content_unavailable</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>413</td>
+<td>Error: <code>too_large</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>415</td>
+<td>Error: <code>unsupported_media</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_upload</code>, <code>empty_upload</code>, <code>invalid_request</code>, <code>invalid_options</code>, <code>invalid_instructions</code>, <code>invalid_profile</code>, <code>kind_mismatch</code>, <code>no_candidates</code>, <code>unapproved_override</code>.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>502</td>
+<td>The job failed: <code>error</code> is the job's own error code (open set, e.g. <code>unsupported_input</code>), <code>job_failed</code> when it has none.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+<tr>
+<td>504</td>
+<td>Error: <code>timeout</code>. The job keeps running; <code>job_id</code> and the <code>Location</code> header name it.</td>
+<td><code>application/json</code>: <a href="#schema-JobErrorBody">JobErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1engines"><code>GET /v1/engines</code><a class="headerlink" href="#get-v1engines" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>engines_list</code></p>
+<p><strong>List Engines</strong></p>
+<p>Engines the caller's organization can use: tested, approved and policy-filtered.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-EngineList">EngineList</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1jobs"><code>GET /v1/jobs</code><a class="headerlink" href="#get-v1jobs" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_list</code></p>
+<p><strong>List Jobs</strong></p>
+<p>The organization's jobs, newest first, with an opaque cursor.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cursor</code></td>
+<td>query</td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>query</td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-JobPage">JobPage</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_cursor</code>, <code>invalid_limit</code>, rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a> or <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1jobs"><code>POST /v1/jobs</code><a class="headerlink" href="#post-v1jobs" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_create</code></p>
+<p><strong>Submit Job</strong></p>
+<p>Admit a job for one upload. Same key + same request returns the same job.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Idempotency-Key</code></td>
+<td>header</td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>202</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-JobAccepted">JobAccepted</a></td>
+</tr>
+<tr>
+<td>400</td>
+<td>Error: <code>idempotency_key_required</code>, <code>invalid_idempotency_key</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>, <code>policy_denied</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>upload_not_found</code>, <code>execution_profile_not_found</code>, <code>profile_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>idempotency_conflict</code>, <code>settings_missing</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>413</td>
+<td>Error: <code>too_large</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_request</code>, <code>invalid_options</code>, <code>invalid_instructions</code>, <code>invalid_profile</code>, <code>kind_mismatch</code>, <code>no_candidates</code>, <code>unapproved_override</code>, <code>profile_required</code>, <code>release_not_staged</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1jobsjob_id"><code>GET /v1/jobs/{job_id}</code><a class="headerlink" href="#get-v1jobsjob_id" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_get</code></p>
+<p><strong>Get Job</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>path</td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-JobView">JobView</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>job_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-v1jobsjob_id"><code>DELETE /v1/jobs/{job_id}</code><a class="headerlink" href="#delete-v1jobsjob_id" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_delete</code></p>
+<p><strong>Delete Job</strong></p>
+<p>Delete a job in any state; later reads are 404 at once.</p>
+<p>A pending or terminal job's row, idempotency keys and files go now. A processing
+job is cancelled first: its lease is fenced (the worker's next call is
+<code>stale_lease</code>), its input removed, and its row kept as an invisible
+<code>deleted</code> tombstone until the replaced lease would have expired, so a late
+worker cannot resurrect it; the maintenance sweep then purges it.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>path</td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>204</td>
+<td>Successful Response</td>
+<td></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>job_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1jobsjob_idcancel"><code>POST /v1/jobs/{job_id}/cancel</code><a class="headerlink" href="#post-v1jobsjob_idcancel" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_cancel</code></p>
+<p><strong>Cancel Job</strong></p>
+<p>Pending → cancelled (input removed); processing → lease fenced via <code>cancel_requested</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>path</td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-JobView">JobView</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>job_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1jobsjob_idresult"><code>GET /v1/jobs/{job_id}/result</code><a class="headerlink" href="#get-v1jobsjob_idresult" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_result</code></p>
+<p><strong>Get Result</strong></p>
+<p>Stream the accepted JobResult JSON. 409 before completion, 410 after retention or a lossy restore.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>path</td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-JobResult">JobResult</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>job_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>not_ready</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>410</td>
+<td>Error: <code>result_expired</code>, <code>content_unavailable</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1jobsjob_idresultmarkdown"><code>GET /v1/jobs/{job_id}/result/markdown</code><a class="headerlink" href="#get-v1jobsjob_idresultmarkdown" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>jobs_result_markdown</code></p>
+<p><strong>Get Result Markdown</strong></p>
+<p>One character range of the result's Markdown plus small result metadata,
+never the whole result.</p>
+<p><code>source=raw</code> reads <code>raw_markdown</code> (the text before postprocessing) when the
+result has one, else <code>markdown</code>; the response's <code>source</code> names the field read.
+<code>next_offset</code> is null once the range reaches the end. Same 404/409/410 rules as
+the full result; an offset past the end returns empty text.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>path</td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>offset</code></td>
+<td>query</td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>query</td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>query</td>
+<td><code>"markdown"</code>, <code>"raw"</code></td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-MarkdownChunk">MarkdownChunk</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: <code>job_not_found</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>not_ready</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>410</td>
+<td>Error: <code>result_expired</code>, <code>content_unavailable</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1listenengines"><code>GET /v1/listen/engines</code><a class="headerlink" href="#get-v1listenengines" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>listen_engines_list</code></p>
+<p><strong>List Listen Engines</strong></p>
+<p>Engines this organization can stream live via <code>WS /v1/listen</code> right now.</p>
+<p>Mirrors the bridge dispatch below: an available local engine-server, or a
+cloud provider with a realtime API when the org enables cloud processing and
+approves its endpoint. <code>default</code> is <code>RESONA_DEFAULT_ENGINE</code> if it is a
+listed private engine, else the first listed local engine.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-ListenEngineList">ListenEngineList</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1settings"><code>GET /v1/settings</code><a class="headerlink" href="#get-v1settings" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>settings_get</code></p>
+<p><strong>Get Settings</strong></p>
+<p>The organization's current settings revision (secrets are never stored here).</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-SettingsDoc">SettingsDoc</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-v1settings"><code>PUT /v1/settings</code><a class="headerlink" href="#put-v1settings" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>settings_put</code></p>
+<p><strong>Put Settings</strong></p>
+<p>Replace the organization's settings; creates the next revision.</p>
+<p><code>If-Match</code> must name the current revision: missing → 428, stale → 409.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>If-Match</code></td>
+<td>header</td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Request body (required): <code>application/json</code>: <a href="#schema-OrganizationSettings-Input">OrganizationSettings-Input</a></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-SettingsDoc">SettingsDoc</a></td>
+</tr>
+<tr>
+<td>400</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Error: <code>revision_conflict</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: rejected parameters.</td>
+<td><code>application/json</code>: <a href="#schema-ValidationErrorBody">ValidationErrorBody</a></td>
+</tr>
+<tr>
+<td>428</td>
+<td>Error: an uncoded <code>detail</code> message.</td>
+<td><code>application/json</code>: <a href="#schema-DetailErrorBody">DetailErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1upload-links"><code>POST /v1/upload-links</code><a class="headerlink" href="#post-v1upload-links" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>upload_links_create</code></p>
+<p><strong>Create Upload Link</strong></p>
+<p>Mint a single-use link for one upload, valid ten minutes.</p>
+<p>For callers that cannot hold the client credential, such as an agent sandbox
+behind an MCP server: the file is sent with <code>curl</code> and its bytes never pass
+through a model. Only the token's hash is stored.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>201</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-UploadLinkView">UploadLinkView</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1upload-linksupload"><code>POST /v1/upload-links/upload</code><a class="headerlink" href="#post-v1upload-linksupload" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>upload_links_upload</code></p>
+<p><strong>Upload With Link</strong></p>
+<p>Spend an upload link: same multipart <code>file</code> contract as <code>POST /v1/uploads</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>X-Resona-Upload-Token</code></td>
+<td>header</td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>201</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-UploadView">UploadView</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>invalid_upload_link</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>413</td>
+<td>Error: <code>too_large</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>415</td>
+<td>Error: <code>unsupported_media</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_upload</code>, <code>empty_upload</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-v1uploads"><code>POST /v1/uploads</code><a class="headerlink" href="#post-v1uploads" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>uploads_create</code></p>
+<p><strong>Create Upload</strong></p>
+<p>Stream multipart field <code>file</code> to staging, hash it, sniff its media family, promote.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>201</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-UploadView">UploadView</a></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Error: <code>unauthorized</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Error: <code>forbidden</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>413</td>
+<td>Error: <code>too_large</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>415</td>
+<td>Error: <code>unsupported_media</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+<tr>
+<td>422</td>
+<td>Error: <code>invalid_upload</code>, <code>empty_upload</code>.</td>
+<td><code>application/json</code>: <a href="#schema-ErrorBody">ErrorBody</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-v1version"><code>GET /v1/version</code><a class="headerlink" href="#get-v1version" title="Permanent link">&para;</a></h3>
+<p>Operation id: <code>version_get</code></p>
+<p><strong>Version</strong></p>
+<p>Release identifiers and the worker protocol major. No authentication.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>Successful Response</td>
+<td><code>application/json</code>: <a href="#schema-VersionView">VersionView</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="schemas">Schemas<a class="headerlink" href="#schemas" title="Permanent link">&para;</a></h2>
+<p><a id="schema-BBox"></a></p>
+<h3 id="bbox">BBox<a class="headerlink" href="#bbox" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>b</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>coord_origin</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>l</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>t</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-Candidate"></a></p>
+<h3 id="candidate">Candidate<a class="headerlink" href="#candidate" title="Permanent link">&para;</a></h3>
+<p>One approved (engine, model, revision, accelerator, ocr_engine) tuple.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>accelerator</code></td>
+<td><code>"metal"</code>, <code>"cuda"</code>, <code>"cpu"</code>, <code>"external"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>engine</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>model_revision</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>ocr_engine</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-Deleted"></a></p>
+<h3 id="deleted">Deleted<a class="headerlink" href="#deleted" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ok</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-DetailErrorBody"></a></p>
+<h3 id="detailerrorbody">DetailErrorBody<a class="headerlink" href="#detailerrorbody" title="Permanent link">&para;</a></h3>
+<p>Error without a code, on the few routes that predate :class:<code>ErrorBody</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>detail</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-Endpoint"></a></p>
+<h3 id="endpoint">Endpoint<a class="headerlink" href="#endpoint" title="Permanent link">&para;</a></h3>
+<p>An admin-registered processing destination outside the in-process engine.</p>
+<p><code>url</code> is fixed by the registry entry (<code>None</code> for provider SDK defaults of
+cloud ASR adapters); <code>worker_id</code> is the worker holding its secret file.
+<code>unload_url</code> (<code>local_llm</code> only, loopback http(s) only) is POSTed by the
+worker after a job's last stage on this endpoint so the model server frees
+the GPU for the next job; it carries no content.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td><a href="#schema-EndpointKind">EndpointKind</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>unload_url</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>url</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>worker_id</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-EndpointKind"></a></p>
+<h3 id="endpointkind">EndpointKind<a class="headerlink" href="#endpointkind" title="Permanent link">&para;</a></h3>
+<p>Type: <code>"local_llm"</code>, <code>"cloud_asr"</code>, <code>"cloud_llm"</code></p>
+<p><a id="schema-EngineCandidate"></a></p>
+<h3 id="enginecandidate">EngineCandidate<a class="headerlink" href="#enginecandidate" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>candidate</code></td>
+<td><a href="#schema-Candidate">Candidate</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>execution_profiles</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-EngineList"></a></p>
+<h3 id="enginelist">EngineList<a class="headerlink" href="#enginelist" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>default</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>engines</code></td>
+<td>array of <a href="#schema-EngineView">EngineView</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-EngineView"></a></p>
+<h3 id="engineview">EngineView<a class="headerlink" href="#engineview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>available</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>candidates</code></td>
+<td>array of <a href="#schema-EngineCandidate">EngineCandidate</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>capabilities</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>job_kind</code></td>
+<td><code>"audio"</code>, <code>"document"</code>, <code>"speech"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>models</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>private</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ErrorBody"></a></p>
+<h3 id="errorbody">ErrorBody<a class="headerlink" href="#errorbody" title="Permanent link">&para;</a></h3>
+<p>The hub's error body. <code>error</code> is the machine-readable code.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>error</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ExecutionProfile-Input"></a></p>
+<h3 id="executionprofile-input">ExecutionProfile-Input<a class="headerlink" href="#executionprofile-input" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>audio</code></td>
+<td>array of <a href="#schema-Candidate">Candidate</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>diarize</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>document</code></td>
+<td>array of <a href="#schema-Candidate">Candidate</a></td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ExecutionProfile-Output"></a></p>
+<h3 id="executionprofile-output">ExecutionProfile-Output<a class="headerlink" href="#executionprofile-output" title="Permanent link">&para;</a></h3>
+<p>Type: object</p>
+<p><a id="schema-HealthView"></a></p>
+<h3 id="healthview">HealthView<a class="headerlink" href="#healthview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td><code>"ok"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-JobAccepted"></a></p>
+<h3 id="jobaccepted">JobAccepted<a class="headerlink" href="#jobaccepted" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>"pending"</code>, <code>"processing"</code>, <code>"completed"</code>, <code>"failed"</code>, <code>"cancelled"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-JobError"></a></p>
+<h3 id="joberror">JobError<a class="headerlink" href="#joberror" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>code</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-JobErrorBody"></a></p>
+<h3 id="joberrorbody">JobErrorBody<a class="headerlink" href="#joberrorbody" title="Permanent link">&para;</a></h3>
+<p>Error of the synchronous transcription adapter; <code>job_id</code> names the job once one was admitted.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>error</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>job_id</code></td>
+<td>integer or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-JobPage"></a></p>
+<h3 id="jobpage">JobPage<a class="headerlink" href="#jobpage" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>items</code></td>
+<td>array of <a href="#schema-JobView">JobView</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>next_cursor</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-JobResult"></a></p>
+<h3 id="jobresult">JobResult<a class="headerlink" href="#jobresult" title="Permanent link">&para;</a></h3>
+<p><code>markdown</code> is the final text. <code>raw_markdown</code> holds the engine's Markdown
+before postprocessing; it is set only when a postprocess step changed it.</p>
+<p><code>text</code> results (postprocess-only jobs) carry the uploaded text in <code>raw_text</code>,
+the profile output in <code>markdown</code> and the input again in <code>raw_markdown</code> when
+the profile changed it; they have no segments or pages.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td><code>"audio"</code>, <code>"document"</code>, <code>"text"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>markdown</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>pages</code></td>
+<td>array of <a href="#schema-Page">Page</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>provenance</code></td>
+<td><a href="#schema-Provenance">Provenance</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>raw_markdown</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>raw_text</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>schema_version</code></td>
+<td><code>1</code></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>segments</code></td>
+<td>array of <a href="#schema-Segment">Segment</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>structured</code></td>
+<td>object</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>warnings</code></td>
+<td>array of string</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-JobView"></a></p>
+<h3 id="jobview">JobView<a class="headerlink" href="#jobview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>attempt</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>candidate</code></td>
+<td><a href="#schema-Candidate">Candidate</a> or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>created_at</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>deadline_at</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td><a href="#schema-JobError">JobError</a> or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>execution_profile</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>job_id</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td><code>"audio"</code>, <code>"document"</code>, <code>"text"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>private</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>queue_reason</code></td>
+<td><code>"no_capable_worker"</code>, <code>"release_not_approved"</code>, <code>"worker_outdated"</code>, <code>"waiting_capacity"</code> or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>result_available</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>"pending"</code>, <code>"processing"</code>, <code>"completed"</code>, <code>"failed"</code>, <code>"cancelled"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>updated_at</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ListenEngineList"></a></p>
+<h3 id="listenenginelist">ListenEngineList<a class="headerlink" href="#listenenginelist" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>default</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>engines</code></td>
+<td>array of <a href="#schema-ListenEngineView">ListenEngineView</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ListenEngineView"></a></p>
+<h3 id="listenengineview">ListenEngineView<a class="headerlink" href="#listenengineview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>models</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>private</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-MarkdownChunk"></a></p>
+<h3 id="markdownchunk">MarkdownChunk<a class="headerlink" href="#markdownchunk" title="Permanent link">&para;</a></h3>
+<p>One character range of a result's Markdown; <code>source</code> names the field read.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td><code>"audio"</code>, <code>"document"</code>, <code>"text"</code> or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>string or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>next_offset</code></td>
+<td>integer or null</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>offset</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>page_count</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>provenance</code></td>
+<td><a href="#schema-Provenance">Provenance</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td><code>"markdown"</code>, <code>"raw_markdown"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>total_chars</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>warnings</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-OrganizationSettings-Input"></a></p>
+<h3 id="organizationsettings-input">OrganizationSettings-Input<a class="headerlink" href="#organizationsettings-input" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cloud_enabled</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>cpu_fallback_enabled</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>default_execution_profile</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>endpoints</code></td>
+<td>array of <a href="#schema-Endpoint">Endpoint</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>execution_profiles</code></td>
+<td>object of <a href="#schema-ExecutionProfile-Input">ExecutionProfile-Input</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>polish</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>postprocess_profile</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>testbench_enabled</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-OrganizationSettings-Output"></a></p>
+<h3 id="organizationsettings-output">OrganizationSettings-Output<a class="headerlink" href="#organizationsettings-output" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cloud_enabled</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>cpu_fallback_enabled</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>default_execution_profile</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>endpoints</code></td>
+<td>array of <a href="#schema-Endpoint">Endpoint</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>execution_profiles</code></td>
+<td>object of <a href="#schema-ExecutionProfile-Output">ExecutionProfile-Output</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>polish</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>postprocess_profile</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>testbench_enabled</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-Page"></a></p>
+<h3 id="page">Page<a class="headerlink" href="#page" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blocks</code></td>
+<td>array of <a href="#schema-PageBlock">PageBlock</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>number</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-PageBlock"></a></p>
+<h3 id="pageblock">PageBlock<a class="headerlink" href="#pageblock" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bbox</code></td>
+<td><a href="#schema-BBox">BBox</a> or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ProfileDocument"></a></p>
+<h3 id="profiledocument">ProfileDocument<a class="headerlink" href="#profiledocument" title="Permanent link">&para;</a></h3>
+<p>A postprocess profile; see the profile file format. <code>instructions</code> only when set.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>description</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>initial_prompt</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>instructions</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>array of object</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ProfileList"></a></p>
+<h3 id="profilelist">ProfileList<a class="headerlink" href="#profilelist" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>profiles</code></td>
+<td>array of <a href="#schema-ProfileRef">ProfileRef</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ProfileRef"></a></p>
+<h3 id="profileref">ProfileRef<a class="headerlink" href="#profileref" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>revision</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ProfileView"></a></p>
+<h3 id="profileview">ProfileView<a class="headerlink" href="#profileview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>profile</code></td>
+<td><a href="#schema-ProfileDocument">ProfileDocument</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>revision</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-Provenance"></a></p>
+<h3 id="provenance">Provenance<a class="headerlink" href="#provenance" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input_sha256</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>runtime_version</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>settings_revision</code></td>
+<td>integer or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>stages</code></td>
+<td>array of <a href="#schema-StageProvenance">StageProvenance</a></td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>worker_id</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ReadyChecks"></a></p>
+<h3 id="readychecks">ReadyChecks<a class="headerlink" href="#readychecks" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data_writable</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>maintenance</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td>boolean</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ReadyView"></a></p>
+<h3 id="readyview">ReadyView<a class="headerlink" href="#readyview" title="Permanent link">&para;</a></h3>
+<p>200 when every check holds, else 503 with the same body.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capacity</code></td>
+<td><code>"available"</code>, <code>"degraded"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>checks</code></td>
+<td><a href="#schema-ReadyChecks">ReadyChecks</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>"ready"</code>, <code>"not_ready"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-Segment"></a></p>
+<h3 id="segment">Segment<a class="headerlink" href="#segment" title="Permanent link">&para;</a></h3>
+<p>One transcript span. Diarized results (<code>AudioOptions.diarize</code>) carry <code>speaker</code>:
+1-based, numbered in order of first appearance; a segment never spans a speaker change.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>end</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>speaker</code></td>
+<td>integer or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>start</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-SettingsDoc"></a></p>
+<h3 id="settingsdoc">SettingsDoc<a class="headerlink" href="#settingsdoc" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>organization_id</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>revision</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td><a href="#schema-OrganizationSettings-Output">OrganizationSettings-Output</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-SpeechRequest"></a></p>
+<h3 id="speechrequest">SpeechRequest<a class="headerlink" href="#speechrequest" title="Permanent link">&para;</a></h3>
+<p>Request body for POST /v1/audio/speech.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>input</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>private</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>speed</code></td>
+<td>number or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>voice</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-StageProvenance"></a></p>
+<h3 id="stageprovenance">StageProvenance<a class="headerlink" href="#stageprovenance" title="Permanent link">&para;</a></h3>
+<p>One executed stage. In-process stages record the accelerator actually used;
+endpoint stages (<code>llm</code> via an approved endpoint) record <code>endpoint_id</code> and
+<code>accelerator='external'</code> because the endpoint process owns its device.
+<code>accelerator='auto'</code> marks an in-process stage whose device the operating
+system selects and does not report (Apple Vision OCR may use CPU, GPU or Neural
+Engine); it records that the device was not observed, not that it was a GPU.</p>
+<p><code>peak_accelerator_bytes</code> is the peak device memory (CUDA allocator / MLX) of the
+execution process, recorded on stages that ran on <code>cuda</code>/<code>metal</code>; stages run
+together by one engine call (Docling layout + table structure) share the value.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>accelerator</code></td>
+<td><code>"metal"</code>, <code>"cuda"</code>, <code>"cpu"</code>, <code>"auto"</code>, <code>"external"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>endpoint_id</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>engine</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>model_revision</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>peak_accelerator_bytes</code></td>
+<td>integer or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>seconds</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>stage</code></td>
+<td><code>"asr"</code>, <code>"diarize"</code>, <code>"ocr"</code>, <code>"layout"</code>, <code>"llm"</code></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-TranscriptionResponse"></a></p>
+<h3 id="transcriptionresponse">TranscriptionResponse<a class="headerlink" href="#transcriptionresponse" title="Permanent link">&para;</a></h3>
+<p>OpenAI-compatible transcription. <code>language</code>, <code>duration</code> and <code>segments</code> only with
+<code>response_format=verbose_json</code>; <code>structured</code> only when the profile extracted data.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>duration</code></td>
+<td>number or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>string or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>segments</code></td>
+<td>array of <a href="#schema-Segment">Segment</a> or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>structured</code></td>
+<td>object or null</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-UploadLinkView"></a></p>
+<h3 id="uploadlinkview">UploadLinkView<a class="headerlink" href="#uploadlinkview" title="Permanent link">&para;</a></h3>
+<p>A single-use upload link: send multipart <code>file</code> to <code>upload_url</code> with header <code>token_header: token</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expires_at</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>max_bytes</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>token</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>token_header</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>upload_url</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-UploadView"></a></p>
+<h3 id="uploadview">UploadView<a class="headerlink" href="#uploadview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sha256</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>upload_id</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ValidationErrorBody"></a></p>
+<h3 id="validationerrorbody">ValidationErrorBody<a class="headerlink" href="#validationerrorbody" title="Permanent link">&para;</a></h3>
+<p>Rejected path, query or body parameters (the framework's own validation).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>detail</code></td>
+<td>array of <a href="#schema-ValidationIssue">ValidationIssue</a></td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-ValidationIssue"></a></p>
+<h3 id="validationissue">ValidationIssue<a class="headerlink" href="#validationissue" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>loc</code></td>
+<td>array of string or integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>msg</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><a id="schema-VersionView"></a></p>
+<h3 id="versionview">VersionView<a class="headerlink" href="#versionview" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hub_version</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>release_id</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code>worker_protocol</code></td>
+<td>integer</td>
+<td>yes</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../api/" class="md-footer__link md-footer__link--prev" aria-label="Previous: resona-api">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                resona-api
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../engine-server/" class="md-footer__link md-footer__link--next" aria-label="Next: resona-engine-server">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                resona-engine-server
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.instant", "navigation.top", "navigation.footer", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

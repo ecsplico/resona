@@ -1718,6 +1718,8 @@
       
         
       
+        
+      
     
     
     
@@ -1809,6 +1811,34 @@
     
   
     resona-api
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/http-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API (client contract)
   
 
     
@@ -2720,7 +2750,7 @@ image by <code>sha256:</code> digest, every model by exact revision. Release ids
 commit after <code>vX.Y.Z</code> that still says <code>X.Y.Z</code> would therefore pass as the evaluated release while
 running other code. CI (<code>test.yml</code>) fails on such a commit: once <code>vX.Y.Z</code> is tagged, the next
 change to <code>main</code> must carry a new version.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>just<span class="w"> </span>bump<span class="w"> </span><span class="m">0</span>.3.0<span class="w">              </span><span class="c1"># every pyproject.toml + uv.lock (scripts/release_version.py bump)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>just<span class="w"> </span>bump<span class="w"> </span><span class="m">0</span>.3.0<span class="w">              </span><span class="c1"># every pyproject.toml + uv.lock (scripts/release_version.py bump), then contract/openapi.json</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-am<span class="w"> </span><span class="s2">&quot;chore(release): 0.3.0&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>push<span class="w">   </span><span class="c1"># via PR</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>git<span class="w"> </span>tag<span class="w"> </span>v0.3.0<span class="w"> </span>&lt;merged<span class="w"> </span>commit&gt;<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>v0.3.0<span class="w">   </span><span class="c1"># runs release.yml</span>
 </code></pre></div>
