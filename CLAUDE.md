@@ -11,7 +11,7 @@ resona/
 ├── pyproject.toml          ← workspace root
 ├── uv.lock
 ├── docker-compose.resona.yml
-├── docker-compose.coolify.yml ← public hub on Coolify (hub + hosted MCP + CPU live engine engine-faster-whisper, Caddy labels, /data volume); docs/server/coolify.md
+├── docker-compose.coolify.yml ← public hub on Coolify (hub + hosted MCP + CPU live engine engine-faster-whisper, Caddy labels, /data volume, `backup` service from packages/api/backup: restic, idle unless RESTIC_REPOSITORY is set); docs/server/coolify.md
 ├── docker-compose.worker.cloud.yml ← cloud ASR worker (Deepgram, non-private jobs, ± diarization; no ML stack); docs/server/coolify.md#cloud-asr-worker-deepgram
 ├── docker-compose.cpu-standalone.yml ← CPU-only single host from one compose path: hub + faster-whisper (live) + opt-in cpu-private worker (profile `worker`); docs/server/cpu-standalone.md
 ├── docker-compose.mac.yml  ← Apple Silicon single host: dockerized api + native engine (scripts/run-native-engine.sh); docs/server/mac-stack.md

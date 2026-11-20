@@ -223,8 +223,8 @@ services:
 
   # Opt-in encrypted off-site backup (COMPOSE_PROFILES=backup): consistent SQLite
   # dump of Directus + uploads → restic repository on S3-compatible storage, daily
-  # with retention. The hub's resona-data volume can be added; runbook and restore
-  # drill: docs/server/pwa-backups.md. Credentials are checked by the script, so
+  # with retention. App data only: the hub backs up its own volume from its own
+  # compose file. Runbook and restore drill: docs/server/pwa-backups.md. Credentials are checked by the script, so
   # deployments without the profile need none of them.
   backup:
     profiles: [backup]
@@ -238,9 +238,6 @@ services:
       - backup-cache:/root/.cache/restic
       # last-success / first-due survive restarts, so the healthcheck keeps its history.
       - backup-state:/state
-      # Optional: the hub's resona-data volume (same Docker host). Set HUB_DATA_VOLUME
-      # to its real Docker name; unset mounts an empty placeholder that is ignored.
-      - hub-data:/source/hub
     tmpfs:
       - /dumps
     environment:
@@ -249,9 +246,6 @@ services:
       AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
       AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-}
-      # The volume name itself, not `${HUB_DATA_VOLUME:+true}`: Coolify's compose
-      # parser rejects `:+` ("The key must start with a letter ...") and fails the deploy.
-      BACKUP_HUB_VOLUME: ${HUB_DATA_VOLUME:-}
       TZ: ${BACKUP_TZ:-Europe/Berlin}
       BACKUP_TIME: ${BACKUP_TIME:-02:30}
       BACKUP_ON_START: ${BACKUP_ON_START:-true}
@@ -278,8 +272,6 @@ volumes:
   verlauf-data:
   backup-cache:
   backup-state:
-  hub-data:
-    name: ${HUB_DATA_VOLUME:-resona-pwa-backup-no-hub}
 
 networks:
   coolify:

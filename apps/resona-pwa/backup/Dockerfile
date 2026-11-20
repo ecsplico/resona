@@ -1,5 +1,5 @@
-# Encrypted off-site backup of the PWA data (Directus SQLite + uploads, optionally
-# the hub's resona-data volume) to an S3-compatible restic repository.
+# Encrypted off-site backup of the PWA data (Directus SQLite + uploads) to an
+# S3-compatible restic repository.
 # Runbook: docs/server/pwa-backups.md.
 FROM restic/restic:0.18.1
 

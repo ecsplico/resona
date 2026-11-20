@@ -107,7 +107,8 @@ best effort: a failed title write is logged (no text) and never marks the row `e
 
 `backup/` (`Dockerfile` on `restic/restic`, script `backup.sh` = `resona-backup`) is the
 `backup` service of `docker-compose.coolify.yml`, active only with compose profile `backup`:
-SQLite dumps of Directus (and optionally the hub volume) + uploads → encrypted restic
+SQLite dump of Directus + uploads (app data only, never the hub volume: the hub backs
+up itself, `docs/server/coolify.md#backup`) → encrypted restic
 snapshot in S3, daily at `BACKUP_TIME` (`HH:MM`, 00:00–23:59), with retention. `last-success`
 lives in the `backup-state` volume; the healthcheck stays healthy until the first backup
 of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
