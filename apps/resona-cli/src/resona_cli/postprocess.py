@@ -19,7 +19,15 @@ from typing import Optional
 import typer
 from resona_client.client import TextOptions
 
-from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, check_privacy_flags, connect_hub, fail, instructions_arg
+from .hub import (
+    INSTRUCTIONS_FILE_HELP,
+    INSTRUCTIONS_HELP,
+    WEBHOOK_HELP,
+    check_privacy_flags,
+    connect_hub,
+    fail,
+    instructions_arg,
+)
 from .jobs_cli import _call
 from .media import MediaRequest, run_media
 from .transcribe import expand_inputs
@@ -60,6 +68,7 @@ def postprocess_files(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
+    webhook: Optional[str] = typer.Option(None, "--webhook", help=WEBHOOK_HELP),
     recursive: bool = typer.Option(False, "--recursive", "-r",
         help="Recurse into directories / use `**` in glob patterns."),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir",
@@ -120,6 +129,7 @@ def postprocess_files(
             options=TextOptions(),
             local=local,
             instructions=user_instructions,
+            webhook=webhook,
             output_suffix=profile_label(profile),
             input_label=input_label,
         ))

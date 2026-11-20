@@ -75,6 +75,8 @@ def check_privacy_flags(private: bool, allow_cloud: bool) -> bool:
 INSTRUCTIONS_HELP = ("User instructions for the postprocess profile's LLM steps (sent as the user "
                      "message; the profile prompt stays the system message). Needs --profile.")
 INSTRUCTIONS_FILE_HELP = "Read --instructions from this UTF-8 file."
+WEBHOOK_HELP = ("Name of a registered webhook endpoint (`resona webhooks add`) the hub notifies "
+                "when the job ends. Hub only.")
 
 
 def instructions_arg(text: Optional[str], file: Optional[Path]) -> Optional[str]:

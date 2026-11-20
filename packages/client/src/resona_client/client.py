@@ -195,6 +195,59 @@ class SettingsDoc:
     settings: dict
 
 
+@dataclass(frozen=True)
+class Webhook:
+    """A registered webhook endpoint of the organization; never carries the secret."""
+
+    name: str
+    url: str
+    created_at: str
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "Webhook":
+        return cls(name=str(data["name"]), url=str(data["url"]), created_at=str(data["created_at"]))
+
+
+@dataclass(frozen=True)
+class WebhookCreated(Webhook):
+    """Create and rotate response: ``secret`` (``whsec_…``) is shown once and cannot be read again."""
+
+    secret: str = field(default="", repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "WebhookCreated":
+        return cls(
+            name=str(data["name"]), url=str(data["url"]),
+            created_at=str(data["created_at"]), secret=str(data["secret"]),
+        )
+
+
+@dataclass(frozen=True)
+class WebhookDelivery:
+    """Metadata of one job event's delivery; never the payload or the response body."""
+
+    id: str
+    job_id: int
+    event: str
+    attempts: int
+    last_status: Optional[int]
+    delivered_at: Optional[str]
+    last_error: Optional[str]
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "WebhookDelivery":
+        status = data.get("last_status")
+        return cls(
+            id=str(data["id"]),
+            job_id=int(data["job_id"]),
+            event=str(data["event"]),
+            attempts=int(data.get("attempts") or 0),
+            last_status=int(status) if status is not None else None,
+            delivered_at=data.get("delivered_at"),
+            last_error=data.get("last_error"),
+        )
+
+
 def _parse_error_body(resp: httpx.Response) -> tuple[Optional[str], str]:
     """Extract (code, message) from ``{error, message}`` or FastAPI ``{detail: ...}``."""
     try:
@@ -385,6 +438,7 @@ class ResonaClient:
         provenance: Optional[Mapping[str, Any]] = None,
         purpose: JobPurpose = "production",
         release_id: Optional[str] = None,
+        webhook: Optional[str] = None,
     ) -> JobRef:
         """Upload a file and create a job for it. POST /v1/uploads, then POST /v1/jobs.
 
@@ -395,6 +449,7 @@ class ResonaClient:
         ``kind='text'`` uploads a UTF-8 text file and runs only the stored postprocess
         ``profile`` (required by the hub) on it; no execution profile, engine or model.
         ``instructions`` go to the profile's llm/extract steps as the user message.
+        ``webhook`` names a registered webhook endpoint notified when the job ends.
         """
         _checked_options(kind, options)
         upload = self.upload(filepath)
@@ -413,6 +468,7 @@ class ResonaClient:
             provenance=provenance,
             purpose=purpose,
             release_id=release_id,
+            webhook=webhook,
         )
 
     def submit_upload(
@@ -432,6 +488,7 @@ class ResonaClient:
         provenance: Optional[Mapping[str, Any]] = None,
         purpose: JobPurpose = "production",
         release_id: Optional[str] = None,
+        webhook: Optional[str] = None,
     ) -> JobRef:
         """Create a job for an existing upload. POST /v1/jobs
 
@@ -441,6 +498,8 @@ class ResonaClient:
         of a release staged on the hub (``resona-admin release stage``).
         ``instructions`` (user instructions for the profile's llm/extract steps) need a
         ``profile`` with such a step, else the hub answers 422 ``invalid_instructions``.
+        ``webhook`` (sent only when set) names an active webhook endpoint of the
+        organization (``create_webhook``); the hub answers 422 ``unknown_webhook`` otherwise.
         """
         checked = _checked_options(kind, options)
         key = idempotency_key or str(uuid.uuid4())
@@ -460,6 +519,7 @@ class ResonaClient:
             "provenance": dict(provenance) if provenance is not None else None,
             "purpose": purpose if purpose != "production" else None,
             "release_id": release_id,
+            "webhook": webhook,
         }
         body.update({k: v for k, v in optional.items() if v is not None})
 
@@ -599,6 +659,38 @@ class ResonaClient:
             expected={409: RevisionConflict},
         )
         return _settings_from(resp)
+
+    # ── Webhooks (org_admin) ──────────────────────────────────────────
+
+    def create_webhook(self, name: str, url: str) -> WebhookCreated:
+        """Register a job-notification URL. POST /v1/webhooks (org_admin)
+
+        The result carries the signing ``secret`` once. Raises ResonaAPIError 422
+        ``invalid_webhook_name`` / ``invalid_webhook_url``, 409 ``webhook_exists``.
+        """
+        resp = self._send("POST", "/v1/webhooks", json={"name": name, "url": url})
+        return WebhookCreated.from_dict(resp.json())
+
+    def list_webhooks(self) -> list[Webhook]:
+        """The organization's active webhook endpoints, without secrets. GET /v1/webhooks (org_admin)"""
+        return [Webhook.from_dict(item) for item in self._send("GET", "/v1/webhooks").json()["items"]]
+
+    def rotate_webhook(self, name: str) -> WebhookCreated:
+        """Replace the signing secret; the old one stops signing at once.
+        POST /v1/webhooks/{name}/rotate (org_admin). 404 ``webhook_not_found``.
+        """
+        return WebhookCreated.from_dict(self._send("POST", f"/v1/webhooks/{name}/rotate").json())
+
+    def delete_webhook(self, name: str) -> None:
+        """Revoke an endpoint; its name becomes free. DELETE /v1/webhooks/{name} (org_admin)"""
+        self._send("DELETE", f"/v1/webhooks/{name}")
+
+    def list_webhook_deliveries(self, name: str, limit: int = 50) -> list[WebhookDelivery]:
+        """Delivery metadata of one endpoint, newest first.
+        GET /v1/webhooks/{name}/deliveries (org_admin). 404 ``webhook_not_found``.
+        """
+        resp = self._send("GET", f"/v1/webhooks/{name}/deliveries", params={"limit": limit})
+        return [WebhookDelivery.from_dict(item) for item in resp.json()["items"]]
 
     # ── Releases, evaluations and baselines ───────────────────────────
 
@@ -746,6 +838,7 @@ class ResonaClient:
         private: bool = True,
         profile: Optional[str] = None,
         diarize: Optional[bool] = None,
+        webhook: Optional[str] = None,
     ) -> dict:
         """Transcribe audio through the OpenAI-compatible adapter. POST /v1/audio/transcriptions
 
@@ -756,6 +849,8 @@ class ResonaClient:
         execution profile that diarizes by default; ``None`` sends nothing (profile default).
         A hub predating diarization ignores the field: the result comes back without
         speaker labels and without an error (``submit_job`` gets a 422 there instead).
+        ``webhook`` (sent only when set) names an active webhook endpoint notified when
+        the job ends, also when this call times out.
 
         Returns:
             Dict with key ``text`` (``json`` and ``text`` formats).
@@ -776,6 +871,7 @@ class ResonaClient:
             "engine": engine,
             "execution_profile": execution_profile,
             "profile": profile,
+            "webhook": webhook,
         }
         data.update({k: v for k, v in optional.items() if v})
         if diarize is not None:

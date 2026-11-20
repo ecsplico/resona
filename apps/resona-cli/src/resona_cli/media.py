@@ -59,6 +59,8 @@ class MediaRequest:
     local: bool
     # User instructions for the postprocess profile's llm/extract steps (user message).
     instructions: Optional[str] = None
+    # Name of a registered webhook endpoint the hub notifies when each job ends (hub only).
+    webhook: Optional[str] = None
     # Inserted before ``.md``/``.result.json``: ``<stem>.<output_suffix>.md``.
     output_suffix: Optional[str] = None
     # Reported instead of the input path (``--json`` ``input``, frontmatter ``source``)
@@ -147,6 +149,8 @@ def _admission_error(e: ResonaAPIError) -> str:
     if e.code == "unapproved_override":
         return ("unapproved_override: the --engine/--model override is not an approved candidate "
                 "of this execution profile (see `resona settings get`)")
+    if e.code == "unknown_webhook":
+        return "unknown_webhook: no active webhook endpoint has this name (see `resona webhooks list`)"
     return f"{e.code or e.status}: {e.message}"
 
 
@@ -177,6 +181,9 @@ def run_media(req: MediaRequest) -> None:
     if req.local:
         if req.no_wait:
             typer.echo("Error: --no-wait needs the hub; --local runs synchronously", err=True)
+            raise typer.Exit(EXIT_ERROR)
+        if req.webhook:
+            typer.echo("Error: --webhook needs the hub; --local runs no hub job", err=True)
             raise typer.Exit(EXIT_ERROR)
         _run_local(req)
     else:
@@ -212,6 +219,7 @@ def _run_hub(req: MediaRequest) -> None:
                 instructions=req.instructions,
                 options=req.options,
                 private=req.private,
+                webhook=req.webhook,
             )
             submitted.append((source, ref.job_id))
     except PolicyDeniedError as e:
