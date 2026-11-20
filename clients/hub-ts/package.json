@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "description": "TypeScript client for the Resona hub HTTP contract (contract/openapi.json)",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ecsplico/resona.git",
+    "directory": "clients/hub-ts"
+  },
+  "homepage": "https://github.com/ecsplico/resona/tree/main/clients/hub-ts#readme",
+  "bugs": "https://github.com/ecsplico/resona/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -11,10 +18,14 @@
       "import": "./dist/index.js"
     }
   },
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": ["dist"],
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "generate": "openapi-typescript ../../contract/openapi.json -o src/schema.d.ts",

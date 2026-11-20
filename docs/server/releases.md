@@ -49,10 +49,12 @@ whatever the index serves that day (observed: a newer `huggingface_hub` that rej
 On a `v*` tag: version check, privacy/lease/release/update tests, `tool-inventory.json` check →
 `uv build --all-packages` → hub CPU, worker CPU and worker CUDA images (plus legacy engine images), pushed by version tag and recorded by digest →
 `resona eval --profile cpu-private` on `eval/corpus` against `eval/baselines.json` → manifest + draft GitHub release
-with wheels, manifest, `worker-constraints.txt`, schema and `tool-inventory.json` as assets.
+with wheels, manifest, `worker-constraints.txt`, schema and `tool-inventory.json` as assets. With `RESONA_PUBLISH_NPM=true`,
+the `npm` job also publishes the TypeScript hub client `clients/hub-ts` as `@ecsplico/resona-hub-client` at the release id.
 
 Repository variables (all optional): `RESONA_IMAGE_NAMESPACE` (default `ghcr.io/ecsplico`, unverified),
 `RESONA_PUBLISH_PYPI=true` (PyPI trusted publishing; namespace unverified, so GitHub release assets are canonical),
+`RESONA_PUBLISH_NPM=true` (npm trusted publishing of the hub client, see below),
 `RESONA_DISPATCH_MCP_RELEASE=true` with repo secrets `RELEASE_DISPATCH_APP_ID`/`RELEASE_DISPATCH_APP_KEY` to dispatch
 `mcp-release` (`{mcp: "resona-hub", version, tools}`, same shape as `skaile-ai/excel-mcp`) to `skaile-ai/ai-assets`, whose
 `mcp-release-bump.yml` opens the catalog bump PR for `mcp/resona-hub/MCP.md` and diffs its tool block against `tools`.
@@ -60,6 +62,29 @@ Not to `skaile-ai/platform`: its `mcp-release` handler only adopts flake-pinned 
 `skaile-release-dispatch` GitHub App's id and private key; in `skaile-ai` they are organization secrets, which this
 `ecsplico` repository does not inherit, so a `skaile-ai` org owner must add them here (unset as of 2026-11-01).
 Regenerate the inventory with `uv run python scripts/gen_tool_inventory.py` after changing MCP tools.
+
+### npm: `@ecsplico/resona-hub-client`
+
+The `npm` job (after `verify` and the `eval-cpu` gate, like PyPI) installs `clients/hub-ts` with `bun install --frozen-lockfile`, checks the generated types
+against `contract/openapi.json`, typechecks, tests and builds, sets the package version to the release id
+(`npm version X.Y.Z --no-git-tag-version`; the committed `0.0.0` is a placeholder) and runs
+`npm publish --provenance --access public`. It authenticates by OIDC trusted publishing (Node 24, npm ≥ 11.5.1,
+`id-token: write`); the repository holds no npm token. The package ships only `dist/`, `package.json`, `README.md` and `LICENSE`.
+
+One-time human setup, each step on a temporary web login (`npm login --auth-type=web`, 2FA in the browser), never with a
+stored automation token:
+
+1. A new package has to exist before it can be linked: build `clients/hub-ts` and publish a placeholder prerelease by hand
+   (`npm version 0.0.0-bootstrap.0 --no-git-tag-version && npm publish --access public --tag bootstrap`, version change not committed).
+2. Link it to this workflow:
+   `npm trust github @ecsplico/resona-hub-client --file release.yml --repository ecsplico/resona --allow-publish`.
+3. Set the repository variable `RESONA_PUBLISH_NPM=true`.
+4. Push a release tag within 2 days: a new link expires unless a CI publish uses it in that time.
+
+Failures: `E404` on the `PUT` = no trust link matches package, repository, workflow file (a renamed `release.yml` breaks it)
+and environment, or the link expired; recreate it. `E403 … bypass two-factor authentication` = a token was used instead of
+OIDC; remove it. `E403 … cannot publish over the previously published versions` = this release id is already published.
+The full checklist is in `RELEASING.md` at the repository root.
 
 ## Hub: staging, evaluation, approval
 
