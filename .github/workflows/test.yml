@@ -44,6 +44,11 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      # Hub/app boundary (HBL): the hub never mentions the reference app's internals,
+      # the apps reach hub code only over HTTP / resona-client. Also runs in pwa.yml.
+      - name: Hub/app boundary
+        run: uv run python scripts/check_boundary.py
+
       # Like `resona-worker prepare`: fetch the pinned Docling weights, so the worker's
       # private (offline) execution smoke test finds them in the HF cache.
       - name: Prepare Docling weights
