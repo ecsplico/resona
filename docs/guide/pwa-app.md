@@ -1,5 +1,10 @@
 # Resona app (Capacitor prototype)
 
+!!! info "Reference app"
+    This page belongs to the reference app, not the hub. The app is one consumer of
+    the hub's published HTTP/WebSocket contract and keeps its users, recordings and
+    transcripts itself ([ADR 0001](../adr/0001-hub-and-app-boundary.md)).
+
 Browsers stop the microphone when the phone is locked or the app goes to the
 background (WebKit bugs 226620 / 204681; Chrome on Android behaves the same).
 A web app cannot work around that. The Resona app is a [Capacitor](https://capacitorjs.com)

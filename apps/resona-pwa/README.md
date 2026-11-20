@@ -1,16 +1,27 @@
 # Resona PWA
 
-A Nuxt 4 progressive web app for medical dictation and transcription, built on the
-Hearth design system. It is a multi-user, installable, offline-capable front end that
-records or uploads audio, runs it through Resona's transcription backend, and lets you
-review, edit, and export the resulting transcripts. The app is browser-only
-(`ssr: false`) and talks to its backends over HTTP/WebSocket — it holds no server
-logic of its own.
+The **reference app** of the Resona hub: a Nuxt 4 progressive web app for medical
+dictation and transcription, built on the Hearth design system. It is a multi-user,
+installable, offline-capable front end that records or uploads audio, sends it through
+the Resona hub as jobs, and lets you review, edit, and export the resulting transcripts.
+The app is browser-only (`ssr: false`) and talks to its backends over HTTP/WebSocket — it
+holds no server logic of its own.
+
+## Reference app, not hub
+
+Resona has two layers ([ADR 0001: Hub and app boundary](../../docs/adr/0001-hub-and-app-boundary.md)).
+The hub is a transformation layer: uploads, jobs, live streaming, profiles, policy and
+workers; it knows organizations and credentials, not users, and keeps a job's result for
+24 hours. This app is one maintained consumer of the hub's published HTTP/WebSocket
+contract and owns everything a user keeps: users, dictations, recordings, transcripts,
+documents and their long-term storage (Directus), and the UI. It gets no hub access
+another app could not have and never reads hub storage, the hub database or hub source.
 
 ## Quick start
 
-This app lives at `apps/resona-pwa/` in the resona monorepo; run the commands below from
-this directory. The platform is split across **two stacks**:
+This app lives at `apps/resona-pwa/` in the resona monorepo until it moves to its own
+repository; run the commands below from this directory. It is split across **two
+stacks**, one per layer:
 
 1. **Resona hub** — resona-api from the monorepo root (e.g. `docker-compose.mac.yml`,
    see `docs/server/mac-stack.md`) or Coolify (`https://resona.ecsplico.de`). This app
@@ -121,8 +132,8 @@ image runs the **Nitro server** (`nuxt build` → `node .output/server`), not st
 
 ## Architecture
 
-Resona PWA is a **separate deployable inside the resona monorepo** (`apps/resona-pwa/`,
-own toolchain, no imports from the Python packages) and
+Resona PWA is the hub's reference app, a **separate deployable inside the resona
+monorepo** (`apps/resona-pwa/`, own toolchain, no imports from the Python packages), and
 communicates with two backend services over HTTP only:
 
 - **Directus** (`:7700`) — auth, data, and file storage via `@directus/sdk`. Holds the

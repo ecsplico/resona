@@ -135,6 +135,8 @@ transcript and appends the audio to the recording.
 
 Create a role **"user"** (non-admin). Add a policy with:
 - `recordings`, `documents`: read/create/update/delete where `user_created = $CURRENT_USER`
+- `documents`: create `title`, `file`, `status`; update only `title` (rename, also by
+  the dictations MCP `rename_document`), `status`, `error_message`
 - `transcripts`: read/update/delete where `recording.user_created = $CURRENT_USER`;
   create without an item rule (see below)
 - `transcript_corrections`: read own (`user_created`), create (see below); never

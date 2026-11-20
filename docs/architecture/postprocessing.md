@@ -1,6 +1,6 @@
 # Postprocessing Pipeline
 
-Postprocessing is the layer between raw engine output and the final stored transcript. The engine returns exactly what the model produced; everything else — text normalisation, dictation-command expansion, LLM reformatting, structured data extraction — is the pipeline's responsibility.
+Postprocessing is the layer between raw engine output and the job's final result. The engine returns exactly what the model produced; everything else — text normalisation, dictation-command expansion, LLM reformatting, structured data extraction — is the pipeline's responsibility.
 
 ## Profiles
 
@@ -94,7 +94,7 @@ Without `chunk_chars` an `llm` step keeps its single-call behaviour: a failure i
 
 ### extract
 
-Sends the current text to a language model and returns **structured JSON data**. The text is not modified; instead the extracted data is stored alongside the transcript (in `job.structured` server-side).
+Sends the current text to a language model and returns **structured JSON data**. The text is not modified; instead the extracted data is returned alongside the text (in `JobResult.structured` on the hub).
 
 ```json
 {

@@ -39,7 +39,7 @@ addopts = "--import-mode=importlib"
 # Shared hub test helpers (not collected: no test_ prefix).
 pythonpath = ["packages/api/tests/_support"]
 # The uv workspace only: apps/resona-pwa (incl. its worker) has its own toolchain.
-testpaths = ["packages", "apps/resona-cli", "apps/resona-worker", "apps/resona-mcp", "release", "profiles"]
+testpaths = ["packages", "apps/resona-cli", "apps/resona-worker", "apps/resona-mcp", "release", "profiles", "scripts"]
 
 [tool.ruff]
 # Lint, not format: the codebase predates a formatter policy. Pyflakes + the

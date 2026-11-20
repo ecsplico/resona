@@ -108,8 +108,7 @@ class Directus:
 
     async def update(self, collection: str, item_id: str, data: dict[str, Any], *, fields: list[str]) -> dict[str, Any]:
         """Patch one row; returns ``fields`` of the updated row."""
-        return await self._request(
-            "PATCH", f"/items/{collection}/{item_id}", params={"fields": ",".join(fields)}, json=data)
+        return await self._request("PATCH", f"/items/{collection}/{item_id}", params={"fields": ",".join(fields)}, json=data)
 
     async def delete(self, collection: str, item_id: str) -> None:
         """Delete one row (Directus answers 204)."""

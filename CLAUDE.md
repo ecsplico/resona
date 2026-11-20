@@ -4,6 +4,19 @@
 
 Resona is a modular transcription platform with pluggable ASR engines and a composable postprocessing pipeline. Designed for German medical dictation but usable for any language.
 
+## Layer map
+
+Two layers, one rule ([ADR 0001: hub and app boundary](docs/adr/0001-hub-and-app-boundary.md)):
+
+|Layer|Paths|Owns|
+|---|---|---|
+|**Hub** (transformation layer)|`packages/*`, `apps/resona-cli`, `apps/resona-worker`, `apps/resona-mcp`, root compose files, `profiles/`, `eval/`|uploads, jobs, live streaming, profiles, execution policy, workers, evaluation; organizations and credentials, not users; a job's result for 24 h, nothing else on behalf of an app|
+|**Reference app**|`apps/resona-pwa` (moving to its own repository)|users, dictations, recordings, transcripts, documents, long-term storage, UI|
+
+- The only connection is the hub's published HTTP/WebSocket contract: jobs (`/v1/uploads`, `/v1/jobs`, pull via `GET /v1/jobs/{id}`; push via signed webhooks next to pull), live (`WS /v1/listen`), profiles (`/profiles`).
+- The hub never stores app entities (no users, no dictations) and never calls app code; the reference app never reads hub storage, the hub database or hub source, and gets no access another app could not have.
+- Placing a feature: user-facing data or UI → reference app; a new transformation or contract field → hub first, then the app.
+
 ## Project structure
 
 ```
@@ -22,8 +35,8 @@ resona/
 │   ├── resona-cli/         ← resona: typer CLI (watch, transcribe, profiles, rec/live/ui TUIs)
 │   ├── resona-worker/      ← resona-worker: outbound-only pull worker (claims hub jobs under leases, runs one execution subprocess per job)
 │   ├── resona-mcp/         ← resona-mcp: MCP server (stdio + hosted Streamable HTTP /mcp) over the hub job API
-│   │                         (no bundled web UI; browser use goes through the Resona PWA standalone mode)
-│   └── resona-pwa/         ← Resona PWA: Nuxt 4 SPA (bun) + Directus data layer + resona-project-worker. Own toolchain,
+│   │                         (no bundled web UI; browser use goes through the reference app's standalone mode)
+│   └── resona-pwa/         ← reference app (PWA): Nuxt 4 SPA (bun) + Directus data layer + resona-project-worker. Own toolchain,
 │                             own CLAUDE.md; NOT a uv workspace member. Capacitor app shell (android/, ios/,
 │                             native background recording): docs/guide/pwa-app.md
 └── packages/
@@ -48,11 +61,11 @@ resona/
     └── client/             ← resona-client: httpx client library
 ```
 
-- `apps/` contains end-user applications (CLI tool, worker, MCP server, PWA).
+- `apps/` contains end-user applications: the hub's CLI tool, worker and MCP server, and the reference app (`resona-pwa`).
 - `packages/` contains the services and libraries they depend on.
 - Each Python package follows src-layout: `<root>/src/<module>/`.
 
-`apps/resona-pwa/` is a self-contained JS/TS app with its own lockfile (`bun.lock`), compose files and Python worker (`worker/`, own `uv.lock`, excluded from the uv workspace and from root pytest). It talks to resona-api over HTTP only: never import `packages/*` from it, and never import it from Python. Its conventions live in `apps/resona-pwa/CLAUDE.md`. Directus and the project worker live there; the Python side exposes only resona-api + engines.
+`apps/resona-pwa/` is the reference app: a self-contained JS/TS app with its own lockfile (`bun.lock`), compose files and Python worker (`worker/`, own `uv.lock`, excluded from the uv workspace and from root pytest). It talks to resona-api over HTTP/WebSocket only: never import `packages/*` from it, and never import it from Python. Its conventions live in `apps/resona-pwa/CLAUDE.md`. Directus and the project worker live there; the Python side exposes only resona-api + engines.
 
 ## The stateless engine contract
 
@@ -507,13 +520,15 @@ uv run pytest apps/resona-mcp/tests/               # mcp server
 uv run pytest packages/postprocess/tests/          # postprocess
 uv run pytest packages/tts-local/tests/            # local TTS engines
 uv run pytest -k test_transcribe                   # one test
-just pwa test                                      # PWA (vitest, from apps/resona-pwa)
-just pwa test-worker                               # PWA project worker (own uv env)
+just pwa test                                      # reference app (vitest, from apps/resona-pwa)
+just pwa test-worker                               # reference app project worker (own uv env)
 ```
 
-Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the PWA and its worker run through `just pwa …` or from `apps/resona-pwa/`.
+Root `uv run pytest` collects only the uv workspace (`testpaths` in `pyproject.toml`); the reference app and its worker run through `just pwa …` or from `apps/resona-pwa/`.
 
 Lint: `uv run ruff check .` (pyflakes + pycodestyle error classes, config in the root `pyproject.toml`; CI runs it before the tests). Not a formatter policy: do not run `ruff format` over existing files.
+
+Hub/app boundary ([ADR 0001](docs/adr/0001-hub-and-app-boundary.md)): `uv run python scripts/check_boundary.py` (in `just lint`, `test.yml` after ruff, and `pwa.yml`; stdlib only, `--root` for another tree; tests in `scripts/tests/`). Hub source under `packages/`, `apps/resona-{cli,worker,mcp}` and the root `justfile`/`pyproject.toml`/`docker-compose*.yml`/`.dockerignore` (tests and docs skipped) must not mention `directus`, `resona_project_worker`, `resona_dictations_mcp`, `resona-pwa` or `resona-verlauf`; the consumer apps `apps/resona-pwa` and `apps/resona-verlauf` (a Nuxt layer on the PWA, so app side) must not import hub Python packages (`resona_client` excepted) or path-reference `packages/` / hub `apps/`. Prints `path:line: message`, exit 1. Sanctioned mentions go into its `ALLOWLIST` (file + line regex + reason).
 
 Release id = the version of every workspace package (all equal). After a `vX.Y.Z` tag, the next change to `main` must bump it (`just bump <next>` → `scripts/release_version.py`, all `pyproject.toml` + `uv.lock`); CI (`test.yml`) fails a commit that reuses a tagged version, because hub and workers would report an evaluated release while running other code. Tests that need the hub's own release use `releases.hub_release_id()`, never a literal. Docs: `docs/server/releases.md#version-bump`.
 
