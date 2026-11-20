@@ -665,6 +665,18 @@
               }
             ],
             "title": "Updated At"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Name of the webhook endpoint notified when the job ends.",
+            "title": "Webhook"
           }
         },
         "required": [
@@ -2197,7 +2209,7 @@
     },
     "/v1/audio/transcriptions": {
       "post": {
-        "description": "OpenAI-compatible speech-to-text as a bounded wait on a queued audio job.\n\nMultipart fields: ``file`` plus OpenAI ``model``, ``language``,\n``response_format`` (json|text|verbose_json), ``prompt``/``temperature``\n(ignored) and Resona ``engine``, ``execution_profile``, ``profile``,\n``private`` (default true), ``diarize`` (label speakers, needs a worker that\ndiarizes; default: the execution profile's ``diarize``). Admission is identical to\n``POST /v1/jobs``.",
+        "description": "OpenAI-compatible speech-to-text as a bounded wait on a queued audio job.\n\nMultipart fields: ``file`` plus OpenAI ``model``, ``language``,\n``response_format`` (json|text|verbose_json), ``prompt``/``temperature``\n(ignored) and Resona ``engine``, ``execution_profile``, ``profile``,\n``private`` (default true), ``diarize`` (label speakers, needs a worker that\ndiarizes; default: the execution profile's ``diarize``), ``webhook`` (name of an\nactive webhook endpoint notified when the job ends). Admission is identical to\n``POST /v1/jobs``.",
         "operationId": "audio_transcriptions_create",
         "parameters": [
           {
@@ -2351,7 +2363,7 @@
                 }
               }
             },
-            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`.",
+            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`.",
             "x-error-codes": [
               "invalid_upload",
               "empty_upload",
@@ -2361,7 +2373,8 @@
               "invalid_profile",
               "kind_mismatch",
               "no_candidates",
-              "unapproved_override"
+              "unapproved_override",
+              "unknown_webhook"
             ]
           },
           "502": {
@@ -2683,7 +2696,7 @@
                 }
               }
             },
-            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `profile_required`, `release_not_staged`.",
+            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`.",
             "x-error-codes": [
               "invalid_request",
               "invalid_options",
@@ -2692,6 +2705,7 @@
               "kind_mismatch",
               "no_candidates",
               "unapproved_override",
+              "unknown_webhook",
               "profile_required",
               "release_not_staged"
             ]
