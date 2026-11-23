@@ -35,6 +35,10 @@ export default defineNuxtConfig({
 		// /directus/** proxies the allow-listed Directus API paths, so Directus needs
 		// no public host of its own (server/routes/directus/[...path].ts).
 		directusInternalUrl: "",
+		// Directus' REFRESH_TOKEN_COOKIE_DOMAIN (NUXT_DIRECTUS_COOKIE_DOMAIN, same value as
+		// DIRECTUS_COOKIE_DOMAIN). When set, the /directus proxy expires leftover host-only
+		// refresh cookies on /auth/* responses (server/utils/directusProxy.ts).
+		directusCookieDomain: "",
 		// Server-side URL of the dictation MCP service (NUXT_DICTATIONS_MCP_INTERNAL_URL).
 		// When set, /mcp proxies to it (server/routes/mcp.ts); empty = 404.
 		dictationsMcpInternalUrl: "",
