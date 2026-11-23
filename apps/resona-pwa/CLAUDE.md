@@ -613,9 +613,11 @@ shared/debugReport.ts                # debug report size limit + redaction (app 
 server/                              # the sanctioned Nitro OAuth layer (server only)
 ├── api/calendar/index.{get,delete}.ts  # single provider-agnostic endpoint
 ├── api/debug-report.post.ts         # temporary: logs the redacted /debug report as [resona-debug]
-├── routes/directus/[...path].ts     # same-origin proxy to Directus (allow-listed API paths)
+├── routes/directus/[...path].ts     # same-origin proxy to Directus → utils/directusProxy.ts (allow-listed API paths;
+│                                    #   with NUXT_DIRECTUS_COOKIE_DOMAIN, /auth/* responses expire the leftover host-only refresh cookie)
 ├── routes/mcp.ts                    # same-origin proxy to the dictations-mcp service (/mcp)
-└── utils/calendar/                  # provider interface + registry + Google + session
+├── utils/calendar/                  # provider interface + registry + Google + session
+└── utils/directusProxy.ts           # proxyDirectus(): allow-list, SSO 302s, host-only refresh cookie cleanup
 ```
 
 Component auto-import is `pathPrefix: false` — components resolve by filename

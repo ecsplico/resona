@@ -127,6 +127,9 @@ services:
       NUXT_PUBLIC_DIRECTUS_URL: ${NUXT_PUBLIC_DIRECTUS_URL}
       NUXT_PUBLIC_SSO_PROVIDER: keycloak
       NUXT_DIRECTUS_INTERNAL_URL: http://directus:8055
+      # Same value as Directus' REFRESH_TOKEN_COOKIE_DOMAIN: the proxy then expires
+      # leftover host-only refresh cookies (server/utils/directusProxy.ts).
+      NUXT_DIRECTUS_COOKIE_DOMAIN: ${DIRECTUS_COOKIE_DOMAIN:-}
       # /mcp proxy target (server/routes/mcp.ts); the service has no published port.
       NUXT_DICTATIONS_MCP_INTERNAL_URL: http://dictations-mcp:8000
       NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL}
@@ -176,6 +179,7 @@ services:
       NUXT_PUBLIC_SSO_DIRECTUS_URL: ${PWA_ORIGIN}/directus
       NUXT_PUBLIC_SSO_PROVIDER: keycloak
       NUXT_DIRECTUS_INTERNAL_URL: http://directus:8055
+      NUXT_DIRECTUS_COOKIE_DOMAIN: ${DIRECTUS_COOKIE_DOMAIN:-}
       NUXT_PUBLIC_RESONA_API_URL: ${NUXT_PUBLIC_RESONA_API_URL}
       NUXT_PUBLIC_DEFAULT_LANGUAGE: ${NUXT_PUBLIC_DEFAULT_LANGUAGE:-de}
       NUXT_PUBLIC_DEFAULT_PROFILE: ${NUXT_PUBLIC_DEFAULT_PROFILE:-dictation-medical-de}
