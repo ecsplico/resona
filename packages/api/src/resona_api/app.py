@@ -137,6 +137,7 @@ from .audio_routes import router as audio_router
 from .profiles_routes import router as profiles_router
 from .settings_routes import router as settings_router
 from .streaming_routes import router as streaming_router
+from .listen_prerecorded import router as listen_prerecorded_router
 from .evaluations_routes import router as evaluations_router
 from .admin_routes import router as admin_router, static_router as admin_static_router
 from .testbench_routes import router as testbench_router
@@ -148,6 +149,7 @@ app.include_router(audio_router)
 app.include_router(profiles_router)
 app.include_router(settings_router)
 app.include_router(streaming_router)
+app.include_router(listen_prerecorded_router)
 app.include_router(evaluations_router)
 app.include_router(admin_router)
 app.include_router(admin_static_router)

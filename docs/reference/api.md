@@ -99,6 +99,7 @@ Content-Type: application/json
 | `engine`, `model` | string | no | Override; must be an approved candidate (else `422`) |
 | `profile` | string | no (yes for `text`) | Name of a postprocess profile stored on the hub |
 | `instructions` | string | no | 1–8000 characters of user instructions for the profile's `llm`/`extract` steps (see [User instructions](#user-instructions)). Without a profile that has such a step → `422 invalid_instructions` |
+| `context` | object | no | `{before?, selection?, after?}`, each at most 4000 characters, at least one with text: the text around the spot the result is inserted at (see [Insertion context](#insertion-context)). Without a profile that has an `llm`/`extract` step → `422 invalid_context`. Part of the `Idempotency-Key` match only when set |
 | `options` | object | no | Audio: `translate`, `word_timestamps`, `vad_filter`, `diarize` (label speakers; result segments carry `speaker`, only workers that diarize claim the job; left out, a production job takes the execution profile's `diarize` setting, default off). Document: see [Document options](#document-options) |
 | `private` | bool | no | Default `true`. `false` needs organization cloud approval, else `403 policy_denied` |
 | `provenance` | object | no | `project_id`, `session_id`, `source` (informational only) |
@@ -131,6 +132,26 @@ If the model wraps its whole reply in `<text>…</text>`, the tags are removed. 
 Guards: only chunked `llm` steps with `max_length_deviation` / `preserve_markup` compare each reply with its chunk. A step without those guards, and every `extract` step, follows the instructions unchecked; give steps that must not rewrite content these guards.
 
 Workers must run a release with instruction support. A worker of an older release ignores the unknown `instructions` key and runs the profile without them, without an error; deploy the release to every worker before sending instructions.
+
+##### Insertion context
+
+`context` tells the profile's `llm`/`extract` steps where their result goes, e.g. a dictation inserted into a document at the cursor: `before` (text ahead of the insertion point), `selection` (text the result replaces) and `after`. The parts with text follow the text in the user message:
+
+```text
+<text>
+…chunk…
+</text>
+
+<context_before>
+Im Befund steht:
+</context_before>
+
+<context_after>
+Weiter im Text.
+</context_after>
+```
+
+The step's system prompt gets one fixed sentence: the text will be inserted between `context_before` and `context_after` (or replace `context_selection`), the context serves only terminology and continuity, is never copied or repeated, and only the transformed text is returned. A reply wrapped in `<text>…</text>` is unwrapped as with instructions. Like instructions, the context lives only in the job's postprocess artifact, never in the `execution_snapshot`. The job then needs the feature `postprocess.context`: older workers do not claim it and it waits as `worker_outdated`.
 
 ##### Document options
 
@@ -192,7 +213,7 @@ JobView fields: `job_id`, `kind`, `status`, `queue_reason` (null unless `pending
 |-------|---------|
 | `no_capable_worker` | No online worker of the job's privacy class (private jobs: `--private` workers; `private: false` jobs: non-private workers) offers one of the job's candidates (text jobs: runs text jobs; `diarize` jobs: also reports `diarize`) with the job's worker-assigned endpoints |
 | `release_not_approved` | Such a worker is online, but its release is not approved for the job's (execution profile, platform): promote an evaluation of that release. Text jobs: the worker's release is neither staged nor the bundled release; stage it |
-| `worker_outdated` | Such a worker runs an approved release, but that release does not know an option the job sets (e.g. `remove_repeated_headers` on a 0.1.0 worker) or the instructions of its postprocess profile: update a worker, or submit without the option |
+| `worker_outdated` | Such a worker runs an approved release, but that release does not know an option the job sets (e.g. `remove_repeated_headers` on a 0.1.0 worker) or the instructions or context of its postprocess profile: update a worker, or submit without the option |
 | `waiting_capacity` | An eligible worker is online and busy |
 
 `GET /v1/jobs/{id}/result/markdown` returns one character range of the result's Markdown, never the whole result: `{text, offset, next_offset, total_chars, source, kind, language, page_count, warnings, provenance}`. `offset` ≥ 0 (default 0); `limit` 1–32768 characters (default 32768, larger → `422`). `source` is `markdown` (default) or `raw`: `raw` reads `raw_markdown` (the text before postprocessing) when the result has one and `markdown` otherwise; the response's `source` names the field read (`markdown` or `raw_markdown`). `next_offset` is `null` once the range reaches the end; an offset past the end returns empty `text`. Concatenating `text` from offset 0 until `next_offset` is `null` reproduces that field exactly.
@@ -233,7 +254,7 @@ Heartbeat and claim bodies carry `text_jobs: true` from workers that run [text j
 
 Likewise `diarize: true` comes only from workers whose `prepare` verified the speaker diarizer. An audio job with `options.diarize` is offered only to a claim carrying it; other claims skip it without touching the job. The hub stores the flag per worker (`Worker.diarize`, schema migration 7) for `queue_reason`. A false `diarize` is left out of the execution snapshot, so workers predating the option still run every other audio job. The heartbeat reply carries `diarize: true` to say the hub accepts the field in claim bodies; a worker sends it in a claim only after such a reply, because hubs predating diarization reject unknown claim fields (`422`). A worker whose diarizer stage fails (`diarizer_unavailable`, or `out_of_memory` in that stage) fails the attempt retryably without withdrawing its ASR tuple and stops reporting and claiming `diarize` until it restarts. Diarization [limits](../guide/cli.md#diarization-limits).
 
-Heartbeats carry `features`: the job features the worker's release knows, `<kind>.<option>` for every option field (`document.remove_repeated_headers`, `audio.diarize`, …) plus `instructions` (a postprocess profile with user instructions). A job is offered only to a worker that knows every option key in its execution snapshot's `options` and, when its profile carries instructions, `instructions`; other claims skip it without touching the job, and it waits as `worker_outdated`. The hub stores the list per worker (`Worker.features`, schema migration 8). Workers predating the field report none and are judged by their release (`resona_job_core.features.LEGACY_RELEASE_FEATURES`: 0.1.0 knows the first options, 0.2.0 adds `instructions`, 0.2.1 `document.remove_repeated_headers`, 0.2.3 `audio.diarize`; an unparseable release only the 0.1.0 set). The check applies to every job purpose (production, evaluation, testbench). A worker that still receives a snapshot with an option it does not know (from a hub predating the check) fails the attempt retryably as `unsupported_options` without withdrawing its tuple, instead of `invalid_snapshot`.
+Heartbeats carry `features`: the job features the worker's release knows, `<kind>.<option>` for every option field (`document.remove_repeated_headers`, `audio.diarize`, …) plus `instructions` (a postprocess profile with user instructions) and `postprocess.context` (one with an insertion context). A job is offered only to a worker that knows every option key in its execution snapshot's `options` and, when its profile carries instructions, `instructions`; other claims skip it without touching the job, and it waits as `worker_outdated`. The hub stores the list per worker (`Worker.features`, schema migration 8). Workers predating the field report none and are judged by their release (`resona_job_core.features.LEGACY_RELEASE_FEATURES`: 0.1.0 knows the first options, 0.2.0 adds `instructions`, 0.2.1 `document.remove_repeated_headers`, 0.2.3 `audio.diarize`; an unparseable release only the 0.1.0 set). The check applies to every job purpose (production, evaluation, testbench). A worker that still receives a snapshot with an option it does not know (from a hub predating the check) fails the attempt retryably as `unsupported_options` without withdrawing its tuple, instead of `invalid_snapshot`.
 
 ---
 
@@ -374,6 +395,21 @@ Response:
 
 `default` is the engine of the first listed audio candidate of the organization's default execution profile, or `null`.
 
+**Recommendations.** `GET /v1/engines?languages=de,en` (optional, up to 10 codes; default: the organization's `language`; an invalid list is `422 invalid_request`) adds `recommendation` to each audio candidate the organization has measured:
+
+```json
+"recommendation": {"role": "recommended", "error_percent": 4.2, "seconds_per_30s": 1.8, "basis": "baseline"}
+```
+
+| Field | Description |
+|-------|-------------|
+| `role` | `recommended` (lowest error + wait penalty), `fast` (quicker than the recommended one), `accurate` (lower error than the recommended one); each candidate has at most one role |
+| `error_percent` | Word error rate in percent, geometric mean over the wanted languages |
+| `seconds_per_30s` | Seconds of ASR per 30 s of audio |
+| `basis` | `baseline` (the current promoted evaluation baseline of an execution profile with exactly this audio candidate on its platform) or `testbench` (latest bench runs on corrected testbench items) |
+
+Only the organization's own measurements count; a candidate without a WER for every wanted language or without a speed has no `recommendation`. The policy is T3 Code's `recommendSpeechModels` (`resona_job_core.recommend`).
+
 ---
 
 ### Audio (v1 — OpenAI-compatible)
@@ -468,6 +504,64 @@ OpenAI-compatible text-to-speech. Only cloud engines support TTS; requesting a l
 | `private` | bool | no | Always `false` for TTS (cloud only) |
 
 Returns raw audio bytes with the appropriate `Content-Type` header.
+
+---
+
+### Deepgram-compatible listen
+
+#### Live: `WS /v1/listen`
+
+Deepgram's live streaming protocol; the Deepgram SDKs work against it with the hub URL and
+`Authorization: Token <org credential>` (also `Bearer`, `X-API-Key`, `?token=`/`?api_key=`).
+`GET /v1/listen/engines` lists the engines the organization can stream.
+
+| Query param | Behaviour |
+|-------------|-----------|
+| `engine` | Resona: the engine to stream with (local engine-server name or a cloud provider with a realtime API); wins over `model` |
+| `model` | Selects an engine only when it names one the organization can stream; other values (`nova-3`) mean the organization default |
+| `language` / `detect_language=true` | Language; `detect_language=true` lets the engine detect it |
+| `encoding`, `sample_rate`, `channels` | `encoding=linear16` (or `pcm_s16le`/`s16le`): raw PCM frames. No `encoding`: the first binary frame is sniffed; container audio (WebM, Ogg, WAV, MP4/M4A, FLAC, MP3 with ID3) is decoded by `ffmpeg` on the hub into mono linear16 at `sample_rate` (default 16000); without `ffmpeg` the hub sends an `Error` frame and closes with `1011` |
+| `keyterm` (repeatable) | Vocabulary hints, merged with the postprocess profile's `initial_prompt`: local engines get them as the Whisper `initial_prompt`, cloud providers as `keyterms` |
+| `interim_results` | Interim `Results` (`is_final: false`) |
+| `profile`, `private` | Resona: postprocess profile for final transcripts; `private=false` allows cloud providers (needs `cloud_enabled`) |
+| `smart_format`, `punctuate`, `endpointing`, `vad_events`, `utterances`, `diarize`, `filler_words`, `mip_opt_out` | Accepted and ignored |
+
+Final `Results` carry `is_final: true` and `speech_final: true`, interim ones both `false`.
+`CloseStream` (or `Finalize`) flushes the engine (after `ffmpeg` drained); the closing `Metadata`
+names the engine in `engine` and `model_info`.
+
+#### Prerecorded: `POST /v1/listen`
+
+```
+POST /v1/listen?language=de
+Content-Type: audio/webm
+<audio bytes>
+```
+
+Deepgram's prerecorded API as an adapter onto the job path, exactly like
+`POST /v1/audio/transcriptions`: same admission, sync wait (`RESONA_SYNC_WAIT_SECONDS`), optional
+`Idempotency-Key`, `504 timeout` with `job_id` and `Location`, error mapping. The raw body is the
+audio (any container), or headerless PCM with `encoding=linear16&sample_rate=N&channels=N`, which
+the hub wraps into WAV. Query params: `language`, `model`/`engine` (same rule as live), `profile`,
+`private` (default `true`), `diarize`; `detect_language`, `keyterm` (batch jobs take vocabulary
+from the profile's `initial_prompt`) and the other Deepgram flags are accepted and ignored.
+
+```json
+{
+  "metadata": {"request_id": "42", "duration": 3.2, "channels": 1,
+               "model_info": {"engine": "faster-whisper", "model": "large-v3"}},
+  "results": {
+    "channels": [{"detected_language": "de",
+                  "alternatives": [{"transcript": "Das ist ein Test.", "confidence": null, "words": []}]}],
+    "utterances": [{"start": 0.0, "end": 3.2, "transcript": "Das ist ein Test.", "channel": 0}]
+  }
+}
+```
+
+`request_id` is the job ID; `transcript` is the job's Markdown; `words` stays empty (job results
+carry segment timestamps only); diarized utterances carry a 0-based `speaker`. Clients:
+`ResonaClient.listen(path, ...)` (Python, `SyncWaitTimeout` on 504) and
+`listenPrerecorded(blob, params)` (`@ecsplico/resona-hub-client`, `SyncWaitTimeout` with `jobId`).
 
 ---
 

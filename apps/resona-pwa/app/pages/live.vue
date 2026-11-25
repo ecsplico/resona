@@ -6,6 +6,7 @@ import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composable
 import { describeClose } from "~/composables/useLive";
 import { LIVE_SUGGESTION_MIN_WORDS, meaningfulWordCount, suggestTitle, TITLE_REFINE_MIN_WORDS } from "~/utils/titleSuggestion";
 import { refineTitle as refineTitleOnDevice } from "~/utils/titleRefinement";
+import { droppedInsertionMessage, resolveInsertion, snapshotInsertion, type InsertionTarget } from "~/utils/insertionGuard";
 import { discardUnfinished } from "~/data/unfinishedRecordings";
 
 const cfg = useRuntimeConfig().public;
@@ -196,6 +197,18 @@ const titleJob = useTitleJob();
 const remoteTitle = ref<string | null>(null);
 const titleRefining = ref(false);
 let titleAbort: AbortController | null = null;
+// The insertion guard's view of the title field: owned by one live session; a typed
+// title is another revision, so a late model title never replaces it (even typed back).
+let liveSession = 0;
+const titleNotice = ref<string | null>(null);
+function titleTarget(): InsertionTarget {
+	return {
+		ownerKey: `live-${liveSession}`,
+		text: title.value,
+		selection: { start: 0, end: title.value.length },
+		revision: titleEdited.value ? 1 : 0,
+	};
+}
 const shownSuggestion = computed(() => remoteTitle.value || deviceTitle.value || liveTitleSuggestion.value);
 watch(shownSuggestion, (suggestion) => {
 	if (suggestion && !titleEdited.value) {
@@ -268,9 +281,12 @@ async function refineTitle(): Promise<void> {
 		if (await startDeviceTitle(text) || ctrl.signal.aborted || !hubAllowed) {
 			return;
 		}
+		const snapshot = snapshotInsertion(titleTarget());
 		const remote = await titleJob.suggestTitleRemote(text, { language: cfg.defaultLanguage, signal: ctrl.signal });
-		if (remote && !ctrl.signal.aborted && !titleEdited.value) {
-			remoteTitle.value = remote;
+		if (remote && !ctrl.signal.aborted) {
+			const landed = resolveInsertion(snapshot, titleTarget(), remote, { language: cfg.defaultLanguage, onChange: "drop" });
+			if (landed.kind === "insert") remoteTitle.value = landed.text;
+			else titleNotice.value = droppedInsertionMessage("Der Titelvorschlag", landed.reason);
 		}
 	}
 	catch {
@@ -406,6 +422,8 @@ async function startLive(): Promise<void> {
 		}
 	}
 	sessionActive.value = true;
+	liveSession += 1;
+	titleNotice.value = null;
 	sessionWake.acquire();
 	cancelTitleRefinement();
 	deviceRun = null;
@@ -616,6 +634,14 @@ onMounted(async () => {
 					data-testid="live-title-suggestion"
 				>
 					Titelvorschlag: {{ shownSuggestion }}
+				</p>
+				<p
+					v-if="titleNotice && (sessionActive || showTitlePrompt)"
+					class="live__suggestion"
+					data-testid="live-title-notice"
+					role="status"
+				>
+					{{ titleNotice }}
 				</p>
 				<div
 					v-if="rollingText"

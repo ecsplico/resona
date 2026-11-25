@@ -30,6 +30,38 @@ _RAPIDOCR_LANGUAGES = frozenset({"de", "en", "fr", "it", "es"})
 MAX_INSTRUCTIONS_CHARS = 8000
 """Upper bound (characters) for a job's user ``instructions`` to its postprocess profile's LLM steps."""
 
+MAX_CONTEXT_CHARS = 4000
+"""Upper bound (characters) for each part of a job's ``context`` (``before``, ``selection``, ``after``)."""
+
+CONTEXT_KEYS = ("before", "selection", "after")
+"""The parts of a job's ``context``: the text around the spot its result is inserted at."""
+
+
+class JobContext(BaseModel):
+    """Text around the spot a job's result is inserted at, for its postprocess LLM steps.
+
+    ``before``/``after`` surround the insertion point, ``selection`` is the text the result
+    replaces. Each part is at most :data:`MAX_CONTEXT_CHARS`; at least one must carry text.
+    The parts are kept verbatim (whitespace matters for continuity); empty ones count as absent.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    before: str | None = Field(default=None, max_length=MAX_CONTEXT_CHARS)
+    selection: str | None = Field(default=None, max_length=MAX_CONTEXT_CHARS)
+    after: str | None = Field(default=None, max_length=MAX_CONTEXT_CHARS)
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "JobContext":
+        if not self.parts():
+            raise ValueError("context needs text in before, selection or after")
+        return self
+
+    def parts(self) -> dict[str, str]:
+        """The parts with text, in :data:`CONTEXT_KEYS` order."""
+        return {key: value for key in CONTEXT_KEYS if (value := getattr(self, key)) and value.strip()}
+
+
 # Word documents (Office Open XML). Docling reads their XML directly: no pages are rendered and
 # nothing is OCRed, so the options below have nothing to act on.
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -147,6 +179,9 @@ def document_options_conflict(
 __all__ = [
     "DEFAULT_OCR_ENGINE",
     "DOCX_MEDIA_TYPE",
+    "CONTEXT_KEYS",
+    "MAX_CONTEXT_CHARS",
+    "JobContext",
     "AudioOptions",
     "DocumentOptions",
     "DocumentPipeline",

@@ -7,6 +7,7 @@ import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHu
 import { CHUNK_SECONDS_MAX, CHUNK_SECONDS_MIN, clampChunkSeconds } from "~/composables/useLiveSettings";
 import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 import type { TitleModelAvailability } from "~/utils/titleRefinement";
+import { engineBadge } from "~/utils/engineRecommendation";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -723,7 +724,7 @@ watch(tab, (value) => {
 								:key="e.name"
 								:value="e.name"
 							>
-								{{ e.name }}{{ e.private ? "" : " (Cloud)" }}
+								{{ e.name }}{{ e.private ? "" : " (Cloud)" }}{{ engineBadge(e) ? ` – ${engineBadge(e)}` : "" }}
 							</option>
 						</select>
 					</label>

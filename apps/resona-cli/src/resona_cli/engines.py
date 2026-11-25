@@ -229,12 +229,27 @@ def benchmark_select(
     )
 
 
+def _roles(engine: dict) -> str:
+    """Recommendation badges of an engine's candidates: ``recommended 4.0% 2.0s/30s``."""
+    badges = []
+    for listed in engine.get("candidates") or []:
+        rec = listed.get("recommendation")
+        if rec:
+            badges.append(f"{rec['role']} {rec['error_percent']:.1f}% {rec['seconds_per_30s']:.1f}s/30s")
+    return ", ".join(badges)
+
+
 @engines_app.command("status")
-def engines_status():
-    """Show the live gateway catalogue of available engines and their status."""
+def engines_status(
+    languages: Optional[str] = typer.Option(
+        None, "--languages", help="Comma-separated languages for the recommendation roles (default: org language)",
+    ),
+):
+    """Show the live gateway catalogue of available engines, their status and recommendation roles."""
+    wanted = [lang.strip() for lang in languages.split(",") if lang.strip()] if languages else None
     try:
         client = ResonaClient.from_config(auto_start=False)
-        data = client.list_engines()
+        data = client.list_engines(languages=wanted)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -256,6 +271,7 @@ def engines_status():
         table.add_column("Capabilities")
         table.add_column("Available")
         table.add_column("Models")
+        table.add_column("Role")
         for e in engines:
             name = e["name"]
             if name == default_name:
@@ -263,10 +279,10 @@ def engines_status():
             avail = "[green]✓[/green]" if e.get("available") else "[red]✗[/red]"
             caps = ", ".join(e.get("capabilities", []))
             models = ", ".join(e.get("models", [])) or "-"
-            table.add_row(name, e.get("kind", ""), caps, avail, models)
+            table.add_row(name, e.get("kind", ""), caps, avail, models, _roles(e) or "-")
         Console().print(table)
     except ImportError:
-        typer.echo(f"  {'NAME':<22}{'KIND':<9}{'CAPS':<12}{'AVAIL':<8}MODELS")
+        typer.echo(f"  {'NAME':<22}{'KIND':<9}{'CAPS':<12}{'AVAIL':<8}{'MODELS':<40}ROLE")
         for e in engines:
             name = e["name"]
             if name == default_name:
@@ -274,4 +290,4 @@ def engines_status():
             avail = "✓" if e.get("available") else "✗"
             caps = ",".join(e.get("capabilities", []))
             models = ",".join(e.get("models", [])) or "-"
-            typer.echo(f"  {name:<22}{e.get('kind', ''):<9}{caps:<12}{avail:<8}{models}")
+            typer.echo(f"  {name:<22}{e.get('kind', ''):<9}{caps:<12}{avail:<8}{models:<40}{_roles(e) or '-'}")

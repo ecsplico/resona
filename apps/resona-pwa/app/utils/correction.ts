@@ -1,4 +1,5 @@
 import type { CorrectionEdit } from "~/types/directus";
+import { mapPosition } from "~/utils/insertionGuard";
 
 // Above this many token pairs the LCS table gets too big for a phone; the
 // changed middle is then reported as one single edit.
@@ -186,38 +187,14 @@ function wordEdits(before: string, after: string): CorrectionEdit[] {
 	return edits.map(e => ({ before: e.before.trim(), after: e.after.trim() })).filter(e => e.before !== e.after);
 }
 
-/** The one changed span between two texts: `before` with `removed` at `at` replaced by `inserted` gives `after`. */
-export interface TextSplice {
-	at: number;
-	removed: string;
-	inserted: string;
-}
-
-/** Common prefix and suffix trimmed off: the single span where `after` differs from `before`. */
-export function textSplice(before: string, after: string): TextSplice {
-	const max = Math.min(before.length, after.length);
-	let start = 0;
-	while (start < max && before[start] === after[start]) start += 1;
-	let end = 0;
-	while (end < max - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end += 1;
-	return {
-		at: start,
-		removed: before.slice(start, before.length - end),
-		inserted: after.slice(start, after.length - end),
-	};
-}
-
 /**
- * Offset `at` in `base`, carried over onto `saved`: it maps when it lies in the
- * part both texts share before or after their differing span; null when it falls
- * inside that span (then no position in `saved` is the right one).
+ * Offset `at` in `base`, carried over onto `saved` (the insertion guard's
+ * `mapPosition`, staying in front of text inserted at `at`): it maps when it lies
+ * in the part both texts share before or after their differing span; null when it
+ * falls inside that span (then no position in `saved` is the right one).
  */
 export function rebaseOffset(saved: string, base: string, at: number): number | null {
-	const { at: diffStart, removed } = textSplice(base, saved);
-	const sharedTail = base.length - diffStart - removed.length;
-	if (at <= diffStart) return at;
-	if (base.length - at <= sharedTail) return saved.length - (base.length - at);
-	return null;
+	return mapPosition(base, saved, at, { bias: "before" });
 }
 
 /**

@@ -125,3 +125,41 @@ def test_transcribe_raises_provider_http_error_on_401(wav_path):
         deepgram.transcribe(wav_path, api_key="bad")
     assert exc.value.status_code == 401
     assert exc.value.provider == "deepgram"
+
+
+@respx.mock
+def test_transcribe_sends_keyterms_as_repeated_keyterm_params_for_nova_3(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    deepgram.transcribe(
+        wav_path, api_key="dgkey", model="nova-3",
+        keyterms=[" Monic ", "Quetiapin", "monic", "", "x" * 51, "Psychopathologischer   Befund"],
+    )
+    params = route.calls.last.request.url.params
+    # Stripped, whitespace collapsed, case-insensitively deduplicated, empties and >50 chars dropped.
+    assert params.get_list("keyterm") == ["Monic", "Quetiapin", "Psychopathologischer Befund"]
+    assert "keywords" not in params
+
+
+@respx.mock
+def test_transcribe_uses_keywords_for_older_models(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    deepgram.transcribe(wav_path, api_key="dgkey", model="nova-2", keyterms=["Quetiapin", "Sertralin"])
+    params = route.calls.last.request.url.params
+    assert params.get_list("keywords") == ["Quetiapin", "Sertralin"]
+    assert "keyterm" not in params
+
+
+@respx.mock
+def test_transcribe_caps_keyterms_at_100(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    deepgram.transcribe(wav_path, api_key="dgkey", keyterms=[f"term{i}" for i in range(150)])
+    terms = route.calls.last.request.url.params.get_list("keyterm")
+    assert terms == [f"term{i}" for i in range(100)]
+
+
+@respx.mock
+def test_transcribe_without_keyterms_sends_no_biasing_param(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    deepgram.transcribe(wav_path, api_key="dgkey")
+    params = route.calls.last.request.url.params
+    assert "keyterm" not in params and "keywords" not in params

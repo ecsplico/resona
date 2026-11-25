@@ -36,7 +36,7 @@ of pipeline steps that transform the raw transcript into the final output.
 |-------|----------|-------------|
 | `name` | yes | Profile identifier (must match the filename when stored on disk) |
 | `description` | no | Human-readable description |
-| `initial_prompt` | no | List of phrases passed to the ASR engine as vocabulary hints |
+| `initial_prompt` | no | List of phrases used as vocabulary hints. Hub jobs on a cloud ASR candidate send them to the provider as keyterms (Deepgram `keyterm`/`keywords`, ElevenLabs `keyterms` on Scribe v2+, OpenAI `prompt`); at most 100 terms of ≤ 50 characters |
 | `steps` | no | Ordered list of postprocessing step objects |
 
 ---
@@ -113,6 +113,32 @@ alongside the transcript. The text is not modified.
 `temperature`, `max_tokens` and `timeout` apply as for `llm`.
 
 Extracted data is stored in `job.structured` (server) or `PostprocessResult.data` (local).
+
+### include
+
+Puts the steps of another profile at this position. Small reusable profiles (**blocks**) are
+composed this way instead of copying their rules:
+
+```json
+{
+  "name": "dictation-clean-de",
+  "steps": [
+    {"type": "include", "profile": "filler-words-de"},
+    {"type": "include", "profile": "dictation-commands-de"}
+  ]
+}
+```
+
+- `profile` is a profile name (lowercase letters, digits, `-`, `_`). An optional top-level
+  `"block": true` marks a profile as meant for including; it changes nothing else.
+- Includes are resolved before anything runs (`resona_postprocess.compose.flatten`): the included
+  steps go in at that position, recursively up to 4 levels deep, and `initial_prompt` lists are
+  merged in order without duplicates (the outer profile's first). A `replacements` step that an
+  included profile reads from `source` gets its rules inline.
+- A cycle, a missing profile, deeper nesting, an included profile with `instructions` or `context`
+  (only the outer profile or the job sets them) or two `extract` steps with the same name after flattening
+  are errors. A pipeline refuses a profile that still has include steps.
+- Lookup order in local CLI mode: `<RESONA_PROFILES_DIR>/<name>.json`, then the bundled blocks.
 
 ---
 
@@ -195,9 +221,11 @@ dritten Absatz` starts a new paragraph. Dictate around these words, or correct t
     punctuation is merged. This affects every job that uses `profile=default` and every
     organization with `polish` on and `postprocess_profile` `default`.
 
-    The bundled `default` reaches the worker as a reference to `default_replacements.json`, which
-    the worker resolves from its own installed `resona-postprocess`. Until every worker runs the
-    new release, the same job can get old or new output depending on which worker claims it.
+    The bundled `default` includes the block `dictation-commands-de`; resolving it inlines that
+    block's rules, so the job's pinned profile carries the rules themselves. Older hubs sent a
+    reference to `default_replacements.json`, which each worker resolved from its own installed
+    `resona-postprocess`: there, until every worker runs the same release, the same job can get
+    old or new output depending on which worker claims it.
 
     To keep the old rules, store them under another name (the name `default` is reserved) and
     select that profile (`--profile`, or the organization's `postprocess_profile`):
@@ -208,9 +236,26 @@ dritten Absatz` starts a new paragraph. Dictate around these words, or correct t
     resona profiles push dictation-v0-1 dictation-v0-1.json
     ```
 
+### Bundled blocks
+
+The wheel also ships blocks (`resona_postprocess/blocks/*.json`, `"block": true`) for `include`
+steps; a local `resona postprocess --local --profile filler-words-de` runs one directly:
+
+| Block | Does |
+|-------|------|
+| `dictation-commands-de` | the generic German dictation commands of `default` (table above) |
+| `filler-words-de` | removes `äh`, `ähm`, `öh`, `öhm`, `hm`, `hmm`, `mhm` |
+| `filler-words-en` | removes `um`, `uh`, `erm`, `hmm` |
+
+The filler blocks only match a whole word (`Ähmlichkeit`, `umbrella`, `uh-huh`, `Hm-Laut` stay)
+and never remove a line break. A filler takes one adjacent comma with it (`Ja, äh, ich` →
+`Ja, ich`; `Äh, ich` → `ich`; `komme ähm, wenn` → `komme, wenn`); at the end of a sentence or
+line the punctuation stays (`Zeit, äh.` → `Zeit.`). The German block does not touch `um`, a
+German word.
+
 ### Profile catalogue
 
-The `resona-postprocess` wheel bundles one profile, `default`, because it works with no setup.
+The `resona-postprocess` wheel bundles only `default` and the blocks above, because they work with no setup.
 Profiles that need a decision or an endpoint of the organization live in the repository's root
 directory [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) and exist on a hub
 only after an org admin pushed them:

@@ -10,12 +10,14 @@ plain engines), its absolute checks still apply, and it cannot be promoted.
 
 from __future__ import annotations
 
+import wave
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from resona_job_core import PLATFORM_OF_ACCELERATOR, JobResult
+from resona_job_core.recommend import seconds_per_30s
 
 from .corpus import Corpus, Fixture
 from .gate import TOLERANCE, Gate, evaluate_gate
@@ -70,6 +72,24 @@ def models_of(runs: Sequence[FixtureRun]) -> list[dict[str, Any]]:
             seen[key] = {"stage": stage.stage, "engine": stage.engine, "model": stage.model,
                          "revision": stage.model_revision, "accelerator": stage.accelerator}
     return [seen[k] for k in sorted(seen, key=lambda k: tuple(str(v) for v in k))]
+
+
+def audio_seconds(path) -> float | None:
+    """Length of a WAV fixture in seconds; None for other formats or unreadable files."""
+    try:
+        with wave.open(str(path), "rb") as fh:
+            frames, rate = fh.getnframes(), fh.getframerate()
+    except (OSError, EOFError, wave.Error):
+        return None
+    return frames / rate if frames and rate else None
+
+
+def fixture_speed(corpus: Corpus, run: FixtureRun) -> float | None:
+    """ASR seconds per 30 s of audio for an audio fixture (rounded), else None."""
+    if run.fixture.kind != "audio":
+        return None
+    value = seconds_per_30s(run.result, audio_seconds(corpus.path(run.fixture)))
+    return None if value is None else round(value, 3)
 
 
 def score_runs(runs: Sequence[FixtureRun]) -> dict[str, FixtureMetrics]:
@@ -132,6 +152,8 @@ def build_report(
                 "kind": run.fixture.kind,
                 "checks": list(run.fixture.checks),
                 "job_id": run.job_id,
+                "language": run.fixture.language,
+                "seconds_per_30s": fixture_speed(corpus, run),
                 "metrics": metrics[run.fixture.id],
                 "provenance": {
                     "worker_id": run.result.provenance.worker_id,
@@ -147,6 +169,21 @@ def build_report(
     return report, gate
 
 
+def _recorded_metrics(entry: Mapping[str, Any]) -> dict[str, Any]:
+    """Gated metrics plus the ASR speed (``seconds_per_30s``, measured only, never gated)."""
+    metrics = dict(entry["metrics"])
+    if entry.get("seconds_per_30s") is not None:
+        metrics["seconds_per_30s"] = entry["seconds_per_30s"]
+    return metrics
+
+
+def _recorded_checks(entry: Mapping[str, Any]) -> dict[str, Any]:
+    checks: dict[str, Any] = {"kind": entry["kind"], "checks": list(entry["checks"])}
+    if entry.get("language"):
+        checks["language"] = entry["language"]
+    return checks
+
+
 def evaluation_record(report: Mapping[str, Any], gate: Gate) -> dict[str, Any]:
     """Body of ``POST /v1/evaluations``: identifiers, hashes and numbers only."""
     if measurement_only(report.get("postprocess_profile")):
@@ -159,10 +196,7 @@ def evaluation_record(report: Mapping[str, Any], gate: Gate) -> dict[str, Any]:
         "release_id": report["release_id"],
         "corpus_sha256": report["corpus_sha256"],
         "baseline_revision": baseline["revision"] if baseline is not None else None,
-        "fixtures": {fid: dict(entry["metrics"]) for fid, entry in report["fixtures"].items()},
-        "fixture_checks": {
-            fid: {"kind": entry["kind"], "checks": list(entry["checks"])}
-            for fid, entry in report["fixtures"].items()
-        },
+        "fixtures": {fid: _recorded_metrics(entry) for fid, entry in report["fixtures"].items()},
+        "fixture_checks": {fid: _recorded_checks(entry) for fid, entry in report["fixtures"].items()},
         "gate": gate.record(),
     }

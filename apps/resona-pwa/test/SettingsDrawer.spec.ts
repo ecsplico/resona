@@ -166,6 +166,23 @@ describe("SettingsDrawer – Live tab", () => {
 		expect(useLiveSettings().correctionEngine).toBe("openai");
 	});
 
+	it("shows the hub's recommendation roles as German badges on correction engines", async () => {
+		listListenEngines.mockResolvedValue({ engines: [], default: null });
+		const rec = (role: string) => ({ role, error_percent: 4, seconds_per_30s: 2, basis: "baseline" });
+		listEngines.mockResolvedValue({
+			engines: [
+				{ name: "whisper", kind: "local", job_kind: "audio", private: true, available: true, models: [], candidates: [{ candidate: {}, execution_profiles: [], recommendation: rec("accurate") }] },
+				{ name: "mlx-whisper", kind: "local", job_kind: "audio", private: true, available: true, models: [], candidates: [{ candidate: {}, execution_profiles: [], recommendation: rec("recommended") }, { candidate: {}, execution_profiles: [], recommendation: rec("fast") }] },
+				{ name: "parakeet", kind: "local", job_kind: "audio", private: true, available: true, models: [], candidates: [{ candidate: {}, execution_profiles: [] }] },
+			],
+			default: null,
+		});
+		useLiveSettings().correction = true;
+		const wrapper = await openLive();
+		const options = wrapper.findAll("[data-testid=settings-live-correction-engine] option").map(o => o.text());
+		expect(options).toEqual(["Hub-Standard", "whisper – genau", "mlx-whisper – empfohlen, schnell", "parakeet"]);
+	});
+
 	it("keeps Hub-Standard as the only option when the engine list fails", async () => {
 		listListenEngines.mockResolvedValue({ engines: [], default: null });
 		listEngines.mockRejectedValue(new Error("offline"));

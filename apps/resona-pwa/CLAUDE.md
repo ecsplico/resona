@@ -244,6 +244,12 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   (`live__block--corrected`/`--pending`), save awaits `finish()` (≤90 s, prompt shows
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
+  The drawer's correction-engine options carry the hub's recommendation roles as German badges
+  (`utils/engineRecommendation.ts`: `recommended`/`fast`/`accurate` → `empfohlen`/`schnell`/`genau`,
+  from `/v1/engines` candidate `recommendation`, org-language default; unmeasured → no badge).
+  Each correction lands through the insertion guard (`utils/insertionGuard.ts`, block =
+  owner `<generation>:<id>`, whole live text selected, `onChange: "drop"`): after a reset or
+  new start it is dropped silently, a block whose live text changed meanwhile stays `failed`.
   Start checks (`live.vue`, notice `data-testid="live-notice"` + `data-kind`): no hub token,
   401/403 (token rejected), unreachable hub (start re-checks first), other HTTP error, hub
   without live engine, and device source `unsupported|unavailable` (start disabled) or
@@ -271,7 +277,10 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   job, profile `title-de` = `profiles/title-de.json` here, first 4000 chars, reads `structured.title.title`, always deletes the
   job, null on any failure) may replace it ("Titel wird verfeinert…"). Either result replaces
   the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
-  start or leaving the page abort both and a late answer is dropped. A title field cleared
+  start or leaving the page abort both and a late answer is dropped. The hub answer also
+  goes through the insertion guard (title field = owner `live-<session>`, revision 1 once
+  typed, `onChange: "drop"`): a field that changed since the request drops it with the notice
+  `data-testid="live-title-notice"`. A title field cleared
   before saving saves under `suggestTitle` again.
   **Opt-in download** of that browser model (Einstellungen → Live → "Titelvorschläge
   (Browser-KI)", `useTitleModel()`, module-level state so a download survives closing the
@@ -419,7 +428,8 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   paragraph) as one undo step, never emitting `typed`, and returns `{base, at, inserted}`;
   the page saves only that part on its own (`autosavePart` + `utils/correction.ts`
   `rebaseInsertion` onto the last *saved* text, so unsaved typing is never written along; a
-  part inside unsaved typing stays unsaved). `dirty` counts only typed edits (the editor's
+  part inside unsaved typing stays unsaved; `rebaseOffset` is the insertion guard's
+  `mapPosition` with `bias: "before"`). `dirty` counts only typed edits (the editor's
   `typed` event) and parts whose own save failed, so pure dictation never triggers the leave
   dialog; a dictation or re-dictation still in flight gets a leave `confirm`. `useTranscriptEdit` serializes all
   writes (`enqueue`; `saving` is true from the click, a second click joins the running
@@ -604,6 +614,7 @@ app/
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
 ├── utils/hubTokenSync.ts            # pure per-user hub token sync (pull/push over a remote interface)
 ├── utils/debugProbe.ts             # temporary mobile diagnostics (live + Prompt API) for /debug
+├── utils/insertionGuard.ts          # late results (correction, title, re-dictation anchors): snapshotInsertion/resolveInsertion (map through edits or drop: owner-changed | draft-changed-unmappable), mapPosition, word-boundary spaceInsertion; port of T3 Code's resolveTranscriptCommit
 ├── utils/titleRefinement.ts         # on-device title refinement via the browser Prompt API (available-only, never downloads)
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css

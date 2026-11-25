@@ -10,13 +10,18 @@
 
 /** Query parameters of `/v1/listen`. */
 export interface ListenParams {
-  /** Engine name (`/v1/listen/engines`); `model` is accepted as an alias. */
+  /** Engine name (`/v1/listen/engines`); wins over `model`. */
   engine?: string;
+  /** Selects an engine only when it names one the organization can stream (else the default). */
   model?: string;
   language?: string;
+  /** The engine detects the language (`language` is ignored). */
+  detect_language?: boolean;
+  /** Vocabulary hints, one `keyterm` query parameter each. */
+  keyterm?: string[];
   /** Stored postprocess profile applied to each final transcript. */
   profile?: string;
-  /** Only `linear16` (the default) is supported. */
+  /** `linear16` for raw PCM frames; omit to send container audio (WebM/Ogg/…, decoded by the hub). */
   encoding?: "linear16";
   /** Default 16000. */
   sample_rate?: number;
@@ -51,6 +56,9 @@ export interface ListenMetadata {
   duration: number;
   channels: number;
   models: string[];
+  /** The engine the session ran on (Resona). */
+  engine?: string;
+  model_info?: Record<string, { name: string; version: string; arch: string }>;
 }
 
 export interface ListenError {
@@ -72,7 +80,8 @@ export function listenUrl(baseUrl: string, token: string, params: ListenParams =
   const url = new URL(`${baseUrl.replace(/\/+$/, "")}/v1/listen`);
   url.protocol = url.protocol === "https:" ? "wss:" : url.protocol === "http:" ? "ws:" : url.protocol;
   for (const [name, value] of Object.entries(params)) {
-    if (value !== undefined) url.searchParams.set(name, String(value));
+    if (Array.isArray(value)) for (const item of value) url.searchParams.append(name, String(item));
+    else if (value !== undefined) url.searchParams.set(name, String(value));
   }
   url.searchParams.set("token", token);
   return url.toString();

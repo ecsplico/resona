@@ -686,6 +686,8 @@ describe("live transcription page", () => {
 			remote.resolve("Kopfschmerzen seit drei Tagen");
 			await flush();
 			expect(titleValue(w)).toBe("Mein Titel");
+			// The user chose their own title: an aborted suggestion goes without a notice.
+			expect(w.find("[data-testid=\"live-title-notice\"]").exists()).toBe(false);
 		});
 
 		it("null from the hub keeps the rule title silently", async () => {

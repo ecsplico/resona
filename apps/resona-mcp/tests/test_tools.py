@@ -10,7 +10,7 @@ import httpx
 import pytest
 from mcp import Client
 from resona_client.client import AudioOptions, JobNotReady, ResonaAPIError, ResultExpired
-from resona_job_core import JobResult, Provenance
+from resona_job_core import JobContext, JobResult, Provenance
 
 from resona_mcp.server import (
     MAX_RESULT_CHUNK_CHARS,
@@ -242,6 +242,30 @@ def test_postprocess_text_from_upload_id_submits_a_text_job(hub, payload):
     assert kwargs["kind"] == "text" and kwargs["profile"] == "transcript-polish-de"
     assert kwargs["language"] == "de" and kwargs["private"] is True
     assert "execution_profile" not in kwargs and "options" not in kwargs
+
+
+@pytest.mark.parametrize("tool, extra", [
+    ("postprocess_text", {"profile": "transcript-polish-de"}),
+    ("transcribe_audio", {"profile": "transcript-polish-de"}),
+])
+def test_context_is_passed_to_the_hub(hub, payload, tool, extra):
+    context = {"before": "Im Befund steht:", "after": "Weiter im Text."}
+    payload(call(remote(hub), tool, {"upload_id": "upl_" + "c" * 24, "context": context, **extra}))
+    _, (_, kwargs) = hub.calls[0]
+    assert kwargs["context"] == JobContext(**context)
+
+
+def test_context_defaults_to_none(hub, payload):
+    payload(call(remote(hub), "transcribe_audio", {"upload_id": "upl_" + "c" * 24}))
+    _, (_, kwargs) = hub.calls[0]
+    assert kwargs["context"] is None
+
+
+@pytest.mark.parametrize("context", [{}, {"before": "x" * 4001}, {"selection": "   "}])
+def test_invalid_context_is_rejected_before_any_hub_call(hub, error_text, context):
+    error_text(call(remote(hub), "postprocess_text", {
+        "upload_id": "upl_" + "c" * 24, "profile": "transcript-polish-de", "context": context}))
+    assert hub.calls == []
 
 
 @pytest.mark.parametrize("has_raw", [True, False])

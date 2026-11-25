@@ -291,3 +291,38 @@ def test_engines_status_gateway_error_exits_nonzero(isolated_config):
                side_effect=httpx.ConnectError("refused")):
         result = runner.invoke(app, ["engines", "status"])
     assert result.exit_code != 0
+
+
+def test_engines_status_shows_recommendation_roles_for_languages(isolated_config):
+    rec = {"role": "recommended", "error_percent": 4.0, "seconds_per_30s": 2.0, "basis": "baseline"}
+    catalogue = {
+        "engines": [
+            {"name": "mlx-whisper", "kind": "local", "capabilities": ["stt"], "private": True,
+             "available": True, "models": ["m"],
+             "candidates": [{"candidate": {"engine": "mlx-whisper"}, "recommendation": rec}]},
+            {"name": "whisper", "kind": "local", "capabilities": ["stt"], "private": True,
+             "available": True, "models": ["large-v3"], "candidates": [{"candidate": {"engine": "whisper"}}]},
+        ],
+        "default": None,
+    }
+    mock_client = MagicMock()
+    mock_client.list_engines.return_value = catalogue
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        result = runner.invoke(app, ["engines", "status", "--languages", "de, en"])
+
+    assert result.exit_code == 0, result.output
+    mock_client.list_engines.assert_called_once_with(languages=["de", "en"])
+    from resona_cli.engines import _roles
+    assert _roles(catalogue["engines"][0]) == "recommended 4.0% 2.0s/30s"
+    assert _roles(catalogue["engines"][1]) == ""
+
+
+def test_engines_status_defaults_to_the_org_language(isolated_config):
+    mock_client = MagicMock()
+    mock_client.list_engines.return_value = {"engines": [], "default": None}
+
+    with patch("resona_client.client.ResonaClient.from_config", return_value=mock_client):
+        runner.invoke(app, ["engines", "status"])
+
+    mock_client.list_engines.assert_called_once_with(languages=None)

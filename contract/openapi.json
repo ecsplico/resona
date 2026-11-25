@@ -192,6 +192,16 @@
             },
             "title": "Execution Profiles",
             "type": "array"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -227,6 +237,44 @@
           "default"
         ],
         "title": "EngineList",
+        "type": "object"
+      },
+      "EngineRecommendation": {
+        "description": "Role from the organization's own measurements for the requested languages\n(``error_percent``: geometric mean WER in percent; ``basis``: promoted baseline or testbench).",
+        "properties": {
+          "basis": {
+            "enum": [
+              "baseline",
+              "testbench"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "error_percent": {
+            "title": "Error Percent",
+            "type": "number"
+          },
+          "role": {
+            "enum": [
+              "recommended",
+              "fast",
+              "accurate"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "seconds_per_30s": {
+            "title": "Seconds Per 30S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "error_percent",
+          "seconds_per_30s",
+          "basis"
+        ],
+        "title": "EngineRecommendation",
         "type": "object"
       },
       "EngineView": {
@@ -756,6 +804,35 @@
         "title": "ListenEngineView",
         "type": "object"
       },
+      "ListenPrerecordedResponse": {
+        "description": "Deepgram-compatible prerecorded transcription (``POST /v1/listen``). ``request_id`` is the\njob ID; ``transcript`` is the job's Markdown; ``structured`` only when the profile extracted data.",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/PrerecordedMetadata"
+          },
+          "results": {
+            "$ref": "#/components/schemas/PrerecordedResults"
+          },
+          "structured": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured"
+          }
+        },
+        "required": [
+          "metadata",
+          "results"
+        ],
+        "title": "ListenPrerecordedResponse",
+        "type": "object"
+      },
       "MarkdownChunk": {
         "description": "One character range of a result's Markdown; ``source`` names the field read.",
         "properties": {
@@ -1027,9 +1104,224 @@
         "title": "PageBlock",
         "type": "object"
       },
-      "ProfileDocument": {
-        "description": "A postprocess profile; see the profile file format. ``instructions`` only when set.",
+      "PrerecordedAlternative": {
         "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "transcript": {
+            "title": "Transcript",
+            "type": "string"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/PrerecordedWord"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "transcript",
+          "words"
+        ],
+        "title": "PrerecordedAlternative",
+        "type": "object"
+      },
+      "PrerecordedChannel": {
+        "properties": {
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/PrerecordedAlternative"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "detected_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Language"
+          }
+        },
+        "required": [
+          "alternatives"
+        ],
+        "title": "PrerecordedChannel",
+        "type": "object"
+      },
+      "PrerecordedMetadata": {
+        "properties": {
+          "channels": {
+            "title": "Channels",
+            "type": "integer"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "model_info": {
+            "$ref": "#/components/schemas/PrerecordedModelInfo"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "duration",
+          "channels",
+          "model_info"
+        ],
+        "title": "PrerecordedMetadata",
+        "type": "object"
+      },
+      "PrerecordedModelInfo": {
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "PrerecordedModelInfo",
+        "type": "object"
+      },
+      "PrerecordedResults": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/PrerecordedChannel"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "utterances": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PrerecordedUtterance"
+            },
+            "title": "Utterances",
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "title": "PrerecordedResults",
+        "type": "object"
+      },
+      "PrerecordedUtterance": {
+        "description": "One result segment; ``speaker`` (0-based, Deepgram style) only on diarized results.",
+        "properties": {
+          "channel": {
+            "default": 0,
+            "title": "Channel",
+            "type": "integer"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "transcript": {
+            "title": "Transcript",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "transcript"
+        ],
+        "title": "PrerecordedUtterance",
+        "type": "object"
+      },
+      "PrerecordedWord": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "word",
+          "start",
+          "end"
+        ],
+        "title": "PrerecordedWord",
+        "type": "object"
+      },
+      "ProfileDocument": {
+        "description": "A postprocess profile; see the profile file format. ``instructions`` and ``context`` only when set.",
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -2363,13 +2655,14 @@
                 }
               }
             },
-            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`.",
+            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`.",
             "x-error-codes": [
               "invalid_upload",
               "empty_upload",
               "invalid_request",
               "invalid_options",
               "invalid_instructions",
+              "invalid_context",
               "invalid_profile",
               "kind_mismatch",
               "no_candidates",
@@ -2418,8 +2711,28 @@
     },
     "/v1/engines": {
       "get": {
-        "description": "Engines the caller's organization can use: tested, approved and policy-filtered.",
+        "description": "Engines the caller's organization can use: tested, approved and policy-filtered.\n\nMeasured audio candidates carry a ``recommendation`` role for ``languages``.",
         "operationId": "engines_list",
+        "parameters": [
+          {
+            "description": "Comma-separated language codes for the recommendations (default: the organization language)",
+            "in": "query",
+            "name": "languages",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated language codes for the recommendations (default: the organization language)",
+              "title": "Languages"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2455,6 +2768,19 @@
             "description": "Error: `forbidden`.",
             "x-error-codes": [
               "forbidden"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_request`.",
+            "x-error-codes": [
+              "invalid_request"
             ]
           }
         },
@@ -2696,11 +3022,12 @@
                 }
               }
             },
-            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`.",
+            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`.",
             "x-error-codes": [
               "invalid_request",
               "invalid_options",
               "invalid_instructions",
+              "invalid_context",
               "invalid_profile",
               "kind_mismatch",
               "no_candidates",
@@ -3241,6 +3568,411 @@
         "tags": [
           "client",
           "Job"
+        ]
+      }
+    },
+    "/v1/listen": {
+      "post": {
+        "description": "Deepgram-compatible prerecorded transcription as a bounded wait on a queued audio job.\n\nOther Deepgram parameters (``smart_format``, ``punctuate``, ``utterances``,\n``filler_words``, ``mip_opt_out``, ...) are accepted and ignored. Admission is\nidentical to ``POST /v1/jobs``.",
+        "operationId": "listen_transcribe",
+        "parameters": [
+          {
+            "description": "Transcription language, e.g. `de`.",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Transcription language, e.g. `de`.",
+              "title": "Language"
+            }
+          },
+          {
+            "description": "Accepted for compatibility; jobs run in `language` or the organization's language.",
+            "in": "query",
+            "name": "detect_language",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Accepted for compatibility; jobs run in `language` or the organization's language.",
+              "title": "Detect Language",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Selects an engine only when it names one the organization can use (`GET /v1/engines`); other values (`nova-3`) mean the default.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Selects an engine only when it names one the organization can use (`GET /v1/engines`); other values (`nova-3`) mean the default.",
+              "title": "Model"
+            }
+          },
+          {
+            "description": "Engine; wins over `model`.",
+            "in": "query",
+            "name": "engine",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Engine; wins over `model`.",
+              "title": "Engine"
+            }
+          },
+          {
+            "description": "Stored postprocess profile name.",
+            "in": "query",
+            "name": "profile",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stored postprocess profile name.",
+              "title": "Profile"
+            }
+          },
+          {
+            "description": "Private processing only (default).",
+            "in": "query",
+            "name": "private",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Private processing only (default).",
+              "title": "Private",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Label speakers; unset = the execution profile's default.",
+            "in": "query",
+            "name": "diarize",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Label speakers; unset = the execution profile's default.",
+              "title": "Diarize"
+            }
+          },
+          {
+            "description": "`linear16` for raw PCM; omit for containers.",
+            "in": "query",
+            "name": "encoding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`linear16` for raw PCM; omit for containers.",
+              "title": "Encoding"
+            }
+          },
+          {
+            "description": "Sample rate of raw PCM.",
+            "in": "query",
+            "name": "sample_rate",
+            "required": false,
+            "schema": {
+              "default": 16000,
+              "description": "Sample rate of raw PCM.",
+              "maximum": 192000,
+              "minimum": 8000,
+              "title": "Sample Rate",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Channels of raw PCM.",
+            "in": "query",
+            "name": "channels",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Channels of raw PCM.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Channels",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Accepted for compatibility; batch jobs take key terms from the profile's `initial_prompt`.",
+            "in": "query",
+            "name": "keyterm",
+            "required": false,
+            "schema": {
+              "description": "Accepted for compatibility; batch jobs take key terms from the profile's `initial_prompt`.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Keyterm",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "audio/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "The audio: a container (WAV, MP3, Ogg, WebM, MP4, FLAC), or raw PCM with `encoding=linear16`.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListenPrerecordedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `invalid_idempotency_key`.",
+            "x-error-codes": [
+              "invalid_idempotency_key"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unauthorized`.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `forbidden`, `policy_denied`.",
+            "x-error-codes": [
+              "forbidden",
+              "policy_denied"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `upload_not_found`, `execution_profile_not_found`, `profile_not_found`, `job_not_found`.",
+            "x-error-codes": [
+              "upload_not_found",
+              "execution_profile_not_found",
+              "profile_not_found",
+              "job_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `idempotency_conflict`, `settings_missing`, `job_cancelled`.",
+            "x-error-codes": [
+              "idempotency_conflict",
+              "settings_missing",
+              "job_cancelled"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `content_unavailable`.",
+            "x-error-codes": [
+              "content_unavailable"
+            ]
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `too_large`.",
+            "x-error-codes": [
+              "too_large"
+            ]
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `unsupported_media`.",
+            "x-error-codes": [
+              "unsupported_media"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JobErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ValidationErrorBody"
+                    }
+                  ],
+                  "title": "Response 422 Listen Transcribe"
+                }
+              }
+            },
+            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, rejected parameters.",
+            "x-error-codes": [
+              "invalid_upload",
+              "empty_upload",
+              "invalid_request",
+              "invalid_options",
+              "invalid_instructions",
+              "invalid_context",
+              "invalid_profile",
+              "kind_mismatch",
+              "no_candidates",
+              "unapproved_override",
+              "unknown_webhook"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "The job failed: `error` is the job's own error code (open set, e.g. `unsupported_input`), `job_failed` when it has none.",
+            "x-error-codes": [
+              "job_failed"
+            ]
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobErrorBody"
+                }
+              }
+            },
+            "description": "Error: `timeout`. The job keeps running; `job_id` and the `Location` header name it.",
+            "x-error-codes": [
+              "timeout"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Listen Transcribe",
+        "tags": [
+          "client",
+          "Streaming"
         ]
       }
     },

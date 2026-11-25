@@ -125,6 +125,7 @@ def plan_local(
     private: bool,
     profile: Optional[str],
     instructions: Optional[str] = None,
+    context: Optional[dict[str, str]] = None,
 ) -> LocalPlan:
     """Resolve and policy-check everything before any processing (PolicyDenied escapes)."""
     from resona_postprocess.pipeline import build_pipeline, local_policy
@@ -154,6 +155,8 @@ def plan_local(
     pipeline = None
     if profile_ref is None and instructions is not None:
         raise LocalRunError("invalid_instructions: instructions need a postprocess profile (--profile)")
+    if profile_ref is None and context is not None:
+        raise LocalRunError("invalid_context: context needs a postprocess profile (--profile)")
     if profile_ref is not None:
         try:
             prof = resolve_profile(profile_ref, _PROFILES_DIR)
@@ -164,6 +167,11 @@ def plan_local(
                 prof = prof.with_instructions(instructions)
             except ProfileError as e:
                 raise LocalRunError(f"invalid_instructions: {e}") from None
+        if context is not None:
+            try:
+                prof = prof.with_context(context)
+            except ProfileError as e:
+                raise LocalRunError(f"invalid_context: {e}") from None
         pipeline = build_pipeline(prof, policy=local_policy(prof, base=policy))
 
     return LocalPlan(

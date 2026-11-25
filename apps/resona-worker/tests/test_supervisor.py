@@ -483,3 +483,26 @@ def test_local_engine_job_makes_no_extra_policy_call(build_supervisor, fakes) ->
 
     assert hub.paths("/policy") == []
     assert len(hub.paths("/result")) == 1
+
+
+def test_executor_snapshot_carries_the_profile_initial_prompt(build_supervisor, fakes) -> None:
+    profile = {"name": "terms", "initial_prompt": ["Monic", "Quetiapin", 7, " "], "steps": []}
+    hub = fakes.FakeHub(CAND, profile=profile, job_input=b"SNAPSHOT")
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/result")
+    seen = json.loads(JobResult.model_validate_json(body).raw_text)
+    # Only non-blank strings: the executor sends them to cloud ASR as keyterms.
+    assert seen["initial_prompt"] == ["Monic", "Quetiapin"]
+
+
+def test_executor_snapshot_without_profile_has_no_initial_prompt(build_supervisor, fakes) -> None:
+    hub = fakes.FakeHub(CAND, job_input=b"SNAPSHOT")
+    supervisor = build_supervisor(hub, capabilities=(CAND,))
+
+    supervisor.run(once=True)
+
+    ((_, _, _, body),) = hub.paths("/result")
+    assert json.loads(JobResult.model_validate_json(body).raw_text)["initial_prompt"] == []

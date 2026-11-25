@@ -3,6 +3,7 @@
  * per-device token from `useHubSettings` (`Authorization: Bearer <token>`).
  */
 import type { Provenance } from "~/types/directus";
+import type { EngineRecommendation } from "~/utils/engineRecommendation";
 
 export class HubError extends Error {
 	/** HTTP status; 0 = network failure (unreachable host, CORS, offline). */
@@ -25,7 +26,8 @@ export interface HubEngine {
 	private: boolean;
 	available: boolean;
 	models: string[];
-	candidates: unknown[];
+	/** Candidate tuples; measured audio candidates carry the hub's `recommendation`. */
+	candidates: Array<{ candidate: unknown; execution_profiles: string[]; recommendation?: EngineRecommendation | null }>;
 }
 
 export interface ListenEngine {

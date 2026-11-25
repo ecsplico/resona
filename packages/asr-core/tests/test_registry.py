@@ -195,3 +195,19 @@ def test_load_uses_recommended_when_env_unset(mock_config, mock_eps, monkeypatch
     with patch.object(reg, "recommended_engine", wraps=reg.recommended_engine) as rec:
         _load_from_entrypoint()
         rec.assert_called_once()
+
+
+def test_release_transcriber_drops_singleton_and_next_call_reloads():
+    from resona_asr_core.registry import release_transcriber, transcriber_loaded
+
+    factory = MagicMock(side_effect=lambda engine=None: FakeTranscriber())
+    with patch("resona_asr_core.registry._load_from_entrypoint", factory):
+        assert transcriber_loaded() is False
+        assert release_transcriber() is False
+        first = get_transcriber()
+        assert transcriber_loaded() is True
+        assert release_transcriber() is True
+        assert transcriber_loaded() is False
+        second = get_transcriber()
+    assert first is not second
+    assert factory.call_count == 2

@@ -20,11 +20,13 @@ import typer
 from resona_client.client import TextOptions
 
 from .hub import (
+    CONTEXT_FILE_HELP,
     INSTRUCTIONS_FILE_HELP,
     INSTRUCTIONS_HELP,
     WEBHOOK_HELP,
     check_privacy_flags,
     connect_hub,
+    context_arg,
     fail,
     instructions_arg,
 )
@@ -68,6 +70,7 @@ def postprocess_files(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
+    context_file: Optional[Path] = typer.Option(None, "--context-file", help=CONTEXT_FILE_HELP),
     webhook: Optional[str] = typer.Option(None, "--webhook", help=WEBHOOK_HELP),
     recursive: bool = typer.Option(False, "--recursive", "-r",
         help="Recurse into directories / use `**` in glob patterns."),
@@ -95,6 +98,7 @@ def postprocess_files(
     """
     want_private = check_privacy_flags(private, allow_cloud)
     user_instructions = instructions_arg(instructions, instructions_file)
+    user_context = context_arg(context_file)
     if (job is None) == (not inputs):
         fail("give either text files or --job <id>, not both")
     input_label = None
@@ -129,6 +133,7 @@ def postprocess_files(
             options=TextOptions(),
             local=local,
             instructions=user_instructions,
+            context=user_context,
             webhook=webhook,
             output_suffix=profile_label(profile),
             input_label=input_label,

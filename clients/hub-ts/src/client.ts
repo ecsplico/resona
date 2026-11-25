@@ -17,8 +17,45 @@ export type JobStatus = JobView["status"];
 export type UploadView = Schemas["UploadView"];
 export type MarkdownChunk = Schemas["MarkdownChunk"];
 export type JobResult = Schemas["JobResult"];
+export type ListenPrerecordedResponse = Schemas["ListenPrerecordedResponse"];
+
+/** Query parameters of `POST /v1/listen` (Deepgram prerecorded); all optional. */
+export interface ListenPrerecordedParams {
+  /** Transcription language, e.g. `de`; default: the organization's language. */
+  language?: string;
+  /** Engine; wins over `model`. */
+  engine?: string;
+  /** Deepgram model name; selects an engine only when it names one the organization can use. */
+  model?: string;
+  /** Stored postprocess profile name. */
+  profile?: string;
+  /** Default `true` on the hub. */
+  private?: boolean;
+  /** Label speakers; unset = the execution profile's default. */
+  diarize?: boolean;
+  /** `linear16` for headerless PCM (then `sample_rate`/`channels`); omit for containers. */
+  encoding?: "linear16";
+  sample_rate?: number;
+  channels?: number;
+  idempotencyKey?: string;
+  signal?: AbortSignal;
+}
 
 export type JobKind = "audio" | "document" | "text";
+
+/**
+ * Text around the spot a job's result is inserted at (each part at most 4000 characters,
+ * at least one with text). The profile's llm/extract steps use it for terminology and
+ * continuity and never copy it into the result.
+ */
+export interface JobContext {
+  /** Text ahead of the insertion point. */
+  before?: string;
+  /** Text the result replaces. */
+  selection?: string;
+  /** Text after the insertion point. */
+  after?: string;
+}
 
 /** Body of `POST /v1/jobs` (the route reads it unvalidated by OpenAPI, so it is written here). */
 export interface JobRequest {
@@ -32,6 +69,8 @@ export interface JobRequest {
   profile?: string;
   /** User instructions for the profile's llm/extract steps. */
   instructions?: string;
+  /** Text around the insertion point; needs a profile with an llm/extract step (else 422 `invalid_context`). */
+  context?: JobContext;
   /** `AudioOptions`, `DocumentOptions` or none for text jobs. */
   options?: Record<string, unknown>;
   /** Default `true` on the hub. */
@@ -92,6 +131,17 @@ export class HubError extends Error {
   }
 }
 
+/** 504 `timeout` of a synchronous adapter: the job keeps running as `jobId`. */
+export class SyncWaitTimeout extends HubError {
+  readonly jobId: number;
+
+  constructor(message: string, jobId: number) {
+    super(504, "timeout", message);
+    this.name = "SyncWaitTimeout";
+    this.jobId = jobId;
+  }
+}
+
 export interface HubClientOptions {
   /** Hub origin, e.g. `https://hub.example.org` (no trailing `/v1`). */
   baseUrl: string;
@@ -135,6 +185,11 @@ export interface HubClient {
     jobId: number,
     options?: { source?: "markdown" | "raw"; signal?: AbortSignal },
   ): Promise<string>;
+  /**
+   * `POST /v1/listen` (Deepgram prerecorded): `audio` is the raw body, the hub queues an audio
+   * job and waits a bounded time. Throws `SyncWaitTimeout` (504) with the still running job.
+   */
+  listenPrerecorded(audio: Blob, params?: ListenPrerecordedParams): Promise<ListenPrerecordedResponse>;
 }
 
 function defaultRetryDelay(attempt: number): number {
@@ -271,5 +326,34 @@ export function createHubClient(options: HubClientOptions): HubClient {
     return parts.join("");
   }
 
-  return { api, upload, submitJob, getJob, waitForJob, resultMarkdown };
+  async function listenPrerecorded(
+    audio: Blob,
+    params: ListenPrerecordedParams = {},
+  ): Promise<ListenPrerecordedResponse> {
+    const { idempotencyKey, signal, ...query } = params;
+    const search = new URLSearchParams();
+    for (const [name, value] of Object.entries(query)) {
+      if (value !== undefined) search.set(name, String(value));
+    }
+    const headers: Record<string, string> = { "Content-Type": audio.type || "application/octet-stream" };
+    if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+    const qs = search.toString();
+    const response = await request(`/v1/listen${qs ? `?${qs}` : ""}`, {
+      method: "POST",
+      body: audio,
+      headers,
+      signal,
+    });
+    if (response.status === 504) {
+      const body: unknown = await response.clone().json().catch(() => null);
+      if (body !== null && typeof body === "object" && "error" in body && body.error === "timeout"
+        && "job_id" in body && typeof body.job_id === "number") {
+        const message = "message" in body && typeof body.message === "string" ? body.message : "";
+        throw new SyncWaitTimeout(message, body.job_id);
+      }
+    }
+    return json<ListenPrerecordedResponse>(response);
+  }
+
+  return { api, upload, submitJob, getJob, waitForJob, resultMarkdown, listenPrerecorded };
 }

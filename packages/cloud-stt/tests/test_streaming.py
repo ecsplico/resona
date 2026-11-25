@@ -149,3 +149,54 @@ def test_elevenlabs_send_audio_and_commit():
     assert base64.b64decode(chunk["audio_base_64"]) == b"\x00\x01\x02\x03"
     asyncio.run(s.finish())
     assert json.loads(ws.sent[-1])["commit"] is True
+
+
+# ── Keyterms ─────────────────────────────────────────────────────────
+
+def _capture_connect(monkeypatch):
+    captured = {}
+
+    async def fake_connect(url, **kw):
+        captured["url"] = url
+        return _FakeProviderWS()
+
+    monkeypatch.setattr("websockets.connect", fake_connect)
+    return captured
+
+
+def _query(url: str) -> dict[str, list[str]]:
+    from urllib.parse import parse_qs, urlsplit
+
+    return parse_qs(urlsplit(url).query)
+
+
+def test_dispatcher_passes_keyterms_to_deepgram_stream(monkeypatch):
+    captured = _capture_connect(monkeypatch)
+    asyncio.run(open_stream("deepgram", api_key="k", model="nova-3", keyterms=["Monic", "Quetiapin", "monic"]))
+    query = _query(captured["url"])
+    assert query["keyterm"] == ["Monic", "Quetiapin"]
+    assert "keywords" not in query
+
+
+def test_deepgram_stream_uses_keywords_for_nova_2(monkeypatch):
+    import resona_cloud_stt.providers.deepgram as dg
+    captured = _capture_connect(monkeypatch)
+    asyncio.run(dg.open_stream(api_key="k", model="nova-2", keyterms=["Quetiapin"]))
+    query = _query(captured["url"])
+    assert query["keywords"] == ["Quetiapin"]
+    assert "keyterm" not in query
+
+
+def test_elevenlabs_stream_sends_keyterms_query_params_within_1000_chars(monkeypatch):
+    import resona_cloud_stt.providers.elevenlabs as el
+    captured = _capture_connect(monkeypatch)
+    terms = [f"{i:02d}" + "x" * 48 for i in range(30)]  # 50 chars each
+    asyncio.run(el.open_stream(api_key="k", model="scribe_v2_realtime", keyterms=terms))
+    assert _query(captured["url"])["keyterms"] == terms[:20]
+
+
+def test_elevenlabs_stream_without_keyterms_has_none(monkeypatch):
+    import resona_cloud_stt.providers.elevenlabs as el
+    captured = _capture_connect(monkeypatch)
+    asyncio.run(el.open_stream(api_key="k", model="scribe_v2_realtime"))
+    assert "keyterms" not in _query(captured["url"])

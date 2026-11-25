@@ -6,14 +6,17 @@ ends the command; nothing falls back to local or cloud processing.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import NoReturn, Optional
 
 import typer
+from pydantic import ValidationError
 
 from resona_client.client import JobView, ResonaClient
 from resona_client.config import EngineConfig, EngineEntry
+from resona_job_core import JobContext
 
 EXIT_ERROR = 1
 EXIT_POLICY_DENIED = 2
@@ -93,6 +96,27 @@ def instructions_arg(text: Optional[str], file: Optional[Path]) -> Optional[str]
     if not text.strip():
         fail("instructions are empty")
     return text.strip()
+
+
+CONTEXT_FILE_HELP = ("JSON file {\"before\", \"selection\", \"after\"}: the text around the spot the result "
+                     "is inserted at, for the postprocess profile's LLM steps (each part ≤ 4000 characters). "
+                     "Needs --profile.")
+
+
+def context_arg(file: Optional[Path]) -> Optional[dict[str, str]]:
+    """``--context-file``: a validated job context (parts with text only); ``None`` without the flag."""
+    if file is None:
+        return None
+    try:
+        data = json.loads(file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        fail(f"cannot read {file}: {e}")
+    if not isinstance(data, dict):
+        fail(f"{file}: context must be a JSON object with before, selection and/or after")
+    try:
+        return JobContext.model_validate(data).parts()
+    except ValidationError as e:
+        fail(f"{file}: invalid context: {'; '.join(err['msg'] for err in e.errors())}")
 
 
 def candidate_label(candidate: Optional[dict]) -> str:

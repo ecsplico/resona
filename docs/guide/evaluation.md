@@ -73,6 +73,7 @@ Scores are numbers only. Reports and hub records never contain transcripts or Ma
 - **DER** is the time-based diarization error rate: missed speech + false alarm + speaker confusion over total reference speech, collar 0, overlapping speech scored, with the error-minimising one-to-one speaker mapping.
 - **Speaker count error** is |hypothesis speakers − reference speakers|. It is reported, not gated.
 - A diarization fixture whose result has no segments, or a segment without `speaker`, scores speaker attribution 0 and DER 1.0.
+- **Speed** (`seconds_per_30s`, audio fixtures): seconds of the result's `asr` stage per 30 s of fixture audio. It is recorded with the fixture's `language` and never gated; promoted baselines feed the engine recommendations of `GET /v1/engines?languages=` (basis `baseline`).
 
 ## The gate
 

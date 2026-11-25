@@ -54,9 +54,13 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="live-asr")
 class LiveTranscriber:
     """Stateful live transcriber for a single audio stream/session."""
 
-    def __init__(self, language: str = "de", task: str = "transcribe"):
-        self.language = language
+    def __init__(self, language: str | None = "de", task: str = "transcribe",
+                 initial_prompt: str | None = None):
+        self.language = language  # None: the engine detects the language
         self.task = task
+        # Vocabulary hint for the windowed path (Whisper ``initial_prompt``); native
+        # streaming sessions ignore it.
+        self.initial_prompt = initial_prompt
         self.buffer = np.array([], dtype=np.float32)
         self._lock = Lock()
         self._transcriber = None
@@ -211,7 +215,7 @@ class LiveTranscriber:
                 speech_pad_ms=400,
             ),
             condition_on_previous_text=False,
-            initial_prompt=" ",
+            initial_prompt=self.initial_prompt or " ",
             word_timestamps=True,
         )
 

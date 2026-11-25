@@ -3,6 +3,8 @@
 `fixtures/default_golden.json` holds hand-written expected outputs for texts with generic commands
 only; `fixtures/pre_split_default_replacements.json` is the rule list `default` used before the
 medical headings and name corrections moved to the catalogue profile `dictation-medical-de`.
+`default` is a single include of the bundled block `dictation-commands-de`; `bundled_default()`
+returns it flattened, with those rules inline.
 """
 
 import json
@@ -46,3 +48,12 @@ def test_default_holds_only_the_generic_commands() -> None:
     for medical in ("Monique", "Serafin", "Lucy", "Nele", "Mele", "Verlauf", "Medikation", "Psychopathologischer"):
         assert medical not in patterns
     assert _run_default("Monique Punkt") == "Monique."
+
+
+def test_flattened_default_is_the_dictation_commands_block_inline() -> None:
+    raw = json.loads(resources.files("resona_postprocess").joinpath("profiles/default.json").read_text("utf-8"))
+    assert raw["steps"] == [{"type": "include", "profile": "dictation-commands-de"}]
+    default = bundled_default()
+    assert [step["type"] for step in default.steps] == ["replacements"]
+    assert "source" not in default.steps[0]
+    assert default.steps[0]["rules"] == DEFAULT_RULES == PRE_SPLIT_RULES[10:]

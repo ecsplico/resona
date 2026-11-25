@@ -107,6 +107,10 @@ Sends the current text to a language model and returns **structured JSON data**.
 
 `temperature`, `max_tokens` and `timeout` apply as for `llm`; the call is made in JSON mode.
 
+### include
+
+`{"type": "include", "profile": "<name>"}` stands for the steps of another profile (a **block**; an optional top-level `"block": true` marks one for listings only). `resona_postprocess.compose.flatten(profile, lookup)` replaces every include by the included profile's steps at that position, recursively (at most `MAX_INCLUDE_DEPTH` = 4 levels), merges `initial_prompt` lists in order without duplicates (outer first, then included in step order) and inlines the rules of an included `replacements` step that reads `source`. `flatten_with_includes` also returns the included profile names in first-use order (for provenance). A cycle (the error names the chain), a missing include, deeper nesting, an included profile carrying `instructions` or `context`, or duplicate extract names after flattening raise `ProfileError`. `build_pipeline` refuses a profile with include steps, so callers flatten first; `bundled_default()` and `resolve_profile()` already return flat profiles. Lookups: `bundled_lookup` (bundled blocks), `directory_lookup(dir)` (`<dir>/<name>.json`), `chain_lookups(...)` (first hit wins).
+
 ## PostprocessResult
 
 `build_pipeline(profile, policy=policy).run(text)` returns a `PostprocessResult`:
@@ -123,7 +127,7 @@ A text step may return a `StepOutput(text, warnings)` instead of a string; chunk
 
 ## The bundled default profile
 
-`resona-postprocess` ships a `profiles/default.json` (rules in `default_replacements.json`) that turns German dictation commands into Markdown. It is used automatically when no profile is specified.
+`resona-postprocess` ships a `profiles/default.json` that turns German dictation commands into Markdown. It is a single include of the bundled block `dictation-commands-de` (`blocks/dictation-commands-de.json`, rules in `default_replacements.json`); `bundled_default()` returns it flattened, with the rules inline. It is used automatically when no profile is specified.
 
 | Spoken | Written |
 |--------|---------|
@@ -141,11 +145,15 @@ Every command pattern has word boundaries (`\b`); rules run case-insensitively, 
 
 The general `Kapitel` rule fires only for a title of one to five words (characters other than whitespace and `.,;:!?()[]`; a `.` or `,` between digits is allowed, so `F32.1` stays whole; command words like `Komma` are excluded) followed by an optional comma and a terminator: `Absatz`, `Punkt`, `Doppelpunkt`, `Fragezeichen`, `Ausrufezeichen`, `!`, `?`, `:`, or a `.` with no digit on either side (`3. Mai` is no terminator). Negative lookbehinds skip `Kapitel` after articles, prepositions and ordinals (`im`, `das`, `dem`, `vom`, `zum`, `letzten`, …), so prose such as `wie im Kapitel zuvor beschrieben.` is untouched. Without a match the text stays as spoken. The punctuation commands absorb one adjacent punctuation mark on each side (`, Komma,` → `,`, `. Punkt.` → `.`), so Whisper's own punctuation is not doubled. Rules that consume leading whitespace use `(?<![ \t])[ \t]*` instead of `\s*`: they never cross a newline (only `Absatz` and the heading rules produce line breaks) and stay linear on long space runs. Whole-word commands still hit ordinary words (`der wichtigste Punkt`, `im dritten Absatz`); rules cannot avoid that.
 
-This is a behaviour change for every organization using the bundled `default` (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). The bundled profile reaches workers as `source: default_replacements.json` and is resolved from each worker's installed `resona-postprocess`, so the snapshot hash does not cover the rule content and a mixed-release fleet can give different output for the same snapshot.
+This is a behaviour change for every organization using the bundled `default` (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). Older hubs sent the bundled profile to workers as `source: default_replacements.json`, resolved from each worker's installed `resona-postprocess`; since `default` became an include, the flattened profile carries the rules inline, so the snapshot hash covers them.
+
+## The bundled blocks
+
+`blocks/*.json` ship in the wheel next to `default` (`list_bundled_blocks()`, `bundled_block(name)`): `dictation-commands-de` (the generic commands above), `filler-words-de` (`äh`, `ähm`, `öh`, `öhm`, `hm`, `hmm`, `mhm`) and `filler-words-en` (`um`, `uh`, `erm`, `hmm`). The filler rules match whole words only (`(?<![\w-])…(?![\w-])`, Unicode-aware, so `Ähmlichkeit`, `umbrella`, `uh-huh` stay), use only horizontal whitespace (never a newline), take one adjacent comma with the filler and leave sentence-end punctuation in place.
 
 ## The catalogue transcript profiles
 
-The wheel bundles only `default`: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) catalogue and reach a hub with `resona profiles push`; none of them is resolved by name from the package.
+The wheel bundles only `default` and the blocks: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) catalogue and reach a hub with `resona profiles push`; none of them is resolved by name from the package.
 
 `profiles/dictation-medical-de.json` (`dictation-medical-de`) is one `replacements` step with inline rules, in the order the bundled `default` had them up to 0.2.7: name corrections (`Monique` → `Monic`, …), the four medical heading rules (`Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere`, no terminator needed, an immediately spoken `Absatz`/`Punkt`/`Doppelpunkt`/`Komma` is swallowed; they run before the general `Kapitel` rule), then the generic rules of `default_replacements.json`. A test keeps it equal to the pre-split rule list. The reference app selects it as its default profile.
 
@@ -159,12 +167,12 @@ The wheel bundles only `default`: a bundled profile must work with no setup. Pro
 
 ## Profile resolution
 
-`resolve_profile(ref, profiles_dir)` accepts any of:
-- A `Profile` object — returned as-is
+`resolve_profile(ref, profiles_dir)` returns a flattened profile (includes resolved against `<profiles_dir>/<name>.json`, then the bundled blocks) and accepts any of:
+- A `Profile` object
 - A `dict` — parsed as a profile
 - A string starting with `{` — parsed as inline JSON
 - A string ending with `.json` that exists on disk — loaded from that path
-- A plain name string — looked up as `<profiles_dir>/<name>.json`; falls back to the bundled `default` profile when `name == "default"`
+- A plain name string — looked up as `<profiles_dir>/<name>.json`; falls back to the bundled `default` profile when `name == "default"`, then to a bundled block of that name
 
 ## Where the pipeline runs
 

@@ -29,11 +29,12 @@ Returns liveness status plus the active engine name and loaded model.
 {
   "status": "ok",
   "engine": "faster-whisper",
-  "models": ["large-v3"]
+  "models": ["large-v3"],
+  "loaded": true
 }
 ```
 
-The model name is read from `DEFAULT_FASTWHISPER_MODEL` / `DEFAULT_WHISPER_MODEL` / `DEFAULT_VOXTRAL_MODEL` depending on the active engine.
+The model name is read from `DEFAULT_FASTWHISPER_MODEL` / `DEFAULT_WHISPER_MODEL` / `DEFAULT_VOXTRAL_MODEL` depending on the active engine. `loaded` is `false` before the first load and after an idle unload (`RESONA_ENGINE_UNLOAD_AFTER`, see [environment](../configuration/environment.md)); the next request loads the model again.
 
 ---
 

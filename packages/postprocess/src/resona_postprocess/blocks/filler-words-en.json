@@ -1,0 +1,19 @@
+{
+  "name": "filler-words-en",
+  "description": "Removes English filler words (um, uh, erm, hmm) with one adjacent comma, never inside words or across lines.",
+  "block": true,
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "replacements",
+      "name": "filler-words-en",
+      "rules": [
+        {"pattern": "(?<=[^\\s.!?;:,])(?:[ \\t]*,?[ \\t]*(?<![\\w-])(?:u+m+|u+h+|e+r+m+|h+m+)(?![\\w-]))+(?=[.!?;:]|[ \\t]*(?:\\n|\\Z))", "replacement": ""},
+        {"pattern": "(?<=[.!?;:])[ \\t]+(?<![\\w-])(?:u+m+|u+h+|e+r+m+|h+m+)(?![\\w-])[ \\t]*[.!?;:]+|(?<![^\\n])(?<![\\w-])(?:u+m+|u+h+|e+r+m+|h+m+)(?![\\w-])[ \\t]*[.!?;:]+[ \\t]*", "replacement": ""},
+        {"pattern": "(?<=,)[ \\t]*(?<![\\w-])(?:u+m+|u+h+|e+r+m+|h+m+)(?![\\w-])[ \\t]*,", "replacement": ""},
+        {"pattern": "(?<=\\S)[ \\t]+(?<![\\w-])(?:u+m+|u+h+|e+r+m+|h+m+)(?![\\w-])[ \\t]*(?=,)", "replacement": ""},
+        {"pattern": "(?<!\\S)(?<![\\w-])(?:u+m+|u+h+|e+r+m+|h+m+)(?![\\w-])[ \\t]*,?[ \\t]*", "replacement": ""}
+      ]
+    }
+  ]
+}

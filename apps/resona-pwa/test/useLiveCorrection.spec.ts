@@ -215,4 +215,25 @@ describe("useLiveCorrection", () => {
 		expect(c.blocks.value).toHaveLength(0);
 		expect(c.text.value).toBe("");
 	});
+
+	it("drops a correction that arrives after a new start (insertion guard: owner changed)", async () => {
+		const { promise, resolve: answer } = Promise.withResolvers<string>();
+		transcribeSync.mockImplementationOnce(() => promise);
+		const { c, cap } = setup(10);
+		cap.emitSeconds(10);
+		c.addFinal("alter block");
+		await flush();
+		expect(c.blocks.value[0]!.state).toBe("correcting");
+
+		const next = fakeCapture();
+		c.start({ capture: next.capture, language: "de", engine: "", chunkSeconds: 10 });
+		next.emitSeconds(1);
+		c.addFinal("neuer text");
+		answer("Korrektur des alten Blocks");
+		await flush();
+		expect(c.blocks.value).toHaveLength(1);
+		expect(c.blocks.value[0]!.liveText).toBe("neuer text");
+		expect(c.blocks.value[0]!.correctedText).toBeNull();
+		expect(c.text.value).toBe("neuer text");
+	});
 });

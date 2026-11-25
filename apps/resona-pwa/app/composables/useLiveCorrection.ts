@@ -1,5 +1,6 @@
 import { computed, getCurrentScope, onScopeDispose, ref, type ComputedRef, type Ref } from "vue";
 import type { PcmCapture } from "~/composables/usePcmCapture";
+import { resolveInsertion, snapshotInsertion, type InsertionTarget } from "~/utils/insertionGuard";
 import { pcmToWav } from "~/utils/pcm";
 
 export type LiveBlockState = "open" | "queued" | "correcting" | "corrected" | "failed";
@@ -116,6 +117,15 @@ export function useLiveCorrection(): LiveCorrection {
 		for (const w of waiters) w();
 	}
 
+	/**
+	 * A block as the insertion guard sees it: owned by its session and id, the
+	 * whole live text selected, so the correction replaces it only while it is unchanged.
+	 */
+	function blockTarget(gen: number, block: LiveBlock): InsertionTarget | null {
+		if (gen !== generation || !blocks.value.includes(block)) return null;
+		return { ownerKey: `${gen}:${block.id}`, text: block.liveText, selection: { start: 0, end: block.liveText.length } };
+	}
+
 	async function pump(): Promise<void> {
 		if (running) return;
 		running = true;
@@ -127,10 +137,12 @@ export function useLiveCorrection(): LiveCorrection {
 				if (!block) break;
 				block.state = "correcting";
 				const samples = block.samples ?? new Int16Array(0);
+				const language = opts?.language ?? "";
+				const snapshot = snapshotInsertion(blockTarget(gen, block)!);
 				let corrected: string | null = null;
 				try {
 					const result = await hub.transcribeSync(pcmToWav(samples, SAMPLE_RATE), "chunk.wav", {
-						language: opts?.language ?? "",
+						language,
 						engine: opts?.engine || undefined,
 					});
 					const trimmed = (result ?? "").trim();
@@ -139,10 +151,15 @@ export function useLiveCorrection(): LiveCorrection {
 				catch {
 					corrected = null;
 				}
-				if (gen !== generation) return;
+				// A reset (Verwerfen, a new start) owns the blocks now: the late result is dropped.
+				const landed = resolveInsertion(snapshot, blockTarget(gen, block), corrected ?? "", {
+					language: language || "de",
+					onChange: "drop",
+				});
+				if (landed.kind === "dropped" && landed.reason === "owner-changed") return;
 				block.samples = null;
-				if (corrected !== null) {
-					block.correctedText = corrected;
+				if (corrected !== null && landed.kind === "insert") {
+					block.correctedText = landed.text;
 					block.state = "corrected";
 				}
 				else {

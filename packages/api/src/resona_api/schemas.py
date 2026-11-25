@@ -104,7 +104,8 @@ ADMISSION = {
     404: ["upload_not_found", "execution_profile_not_found", "profile_not_found"],
     409: ["idempotency_conflict", "settings_missing"],
     422: [
-        "invalid_request", "invalid_options", "invalid_instructions", "invalid_profile", "kind_mismatch",
+        "invalid_request", "invalid_options", "invalid_instructions", "invalid_context", "invalid_profile",
+        "kind_mismatch",
         "no_candidates", "unapproved_override", "unknown_webhook",
     ],
 }
@@ -191,9 +192,20 @@ class MarkdownChunk(BaseModel):
 # ── Engines ───────────────────────────────────────────────────────────────
 
 
+class EngineRecommendation(BaseModel):
+    """Role from the organization's own measurements for the requested languages
+    (``error_percent``: geometric mean WER in percent; ``basis``: promoted baseline or testbench)."""
+
+    role: Literal["recommended", "fast", "accurate"]
+    error_percent: float
+    seconds_per_30s: float
+    basis: Literal["baseline", "testbench"]
+
+
 class EngineCandidate(BaseModel):
     candidate: Candidate
     execution_profiles: list[str]
+    recommendation: Optional[EngineRecommendation] = None  # absent when unmeasured
 
 
 class EngineView(BaseModel):
@@ -238,6 +250,59 @@ class TranscriptionResponse(BaseModel):
     structured: Optional[dict[str, Any]] = None
 
 
+class PrerecordedWord(BaseModel):
+    word: str
+    start: float
+    end: float
+
+
+class PrerecordedAlternative(BaseModel):
+    transcript: str
+    confidence: Optional[float] = None
+    words: list[PrerecordedWord]
+
+
+class PrerecordedChannel(BaseModel):
+    detected_language: Optional[str] = None
+    alternatives: list[PrerecordedAlternative]
+
+
+class PrerecordedUtterance(BaseModel):
+    """One result segment; ``speaker`` (0-based, Deepgram style) only on diarized results."""
+
+    start: float
+    end: float
+    transcript: str
+    channel: int = 0
+    speaker: Optional[int] = None
+
+
+class PrerecordedResults(BaseModel):
+    channels: list[PrerecordedChannel]
+    utterances: list[PrerecordedUtterance] = []
+
+
+class PrerecordedModelInfo(BaseModel):
+    engine: Optional[str] = None
+    model: Optional[str] = None
+
+
+class PrerecordedMetadata(BaseModel):
+    request_id: str
+    duration: float
+    channels: int
+    model_info: PrerecordedModelInfo
+
+
+class ListenPrerecordedResponse(BaseModel):
+    """Deepgram-compatible prerecorded transcription (``POST /v1/listen``). ``request_id`` is the
+    job ID; ``transcript`` is the job's Markdown; ``structured`` only when the profile extracted data."""
+
+    metadata: PrerecordedMetadata
+    results: PrerecordedResults
+    structured: Optional[dict[str, Any]] = None
+
+
 # ── Profiles and settings ─────────────────────────────────────────────────
 
 
@@ -251,7 +316,7 @@ class ProfileList(BaseModel):
 
 
 class ProfileDocument(BaseModel):
-    """A postprocess profile; see the profile file format. ``instructions`` only when set."""
+    """A postprocess profile; see the profile file format. ``instructions`` and ``context`` only when set."""
 
     name: str
     # Stored profiles never had their description type-checked; pass it through as it is.
@@ -259,6 +324,7 @@ class ProfileDocument(BaseModel):
     initial_prompt: list[str]
     steps: list[dict[str, Any]]
     instructions: Optional[str] = None
+    context: Optional[dict[str, str]] = None
 
 
 class ProfileView(BaseModel):
@@ -306,8 +372,10 @@ class ReadyView(BaseModel):
 
 __all__ = [
     "ADMISSION", "DETAIL", "JOB_ID", "RESULT", "UPLOAD", "VALIDATION",
-    "Deleted", "DetailErrorBody", "EngineList", "ErrorBody", "HealthView", "JobAccepted", "JobErrorBody",
-    "JobPage", "JobResult", "JobView", "ListenEngineList", "MarkdownChunk", "ProfileList", "ProfileRef",
+    "Deleted", "DetailErrorBody", "EngineList", "EngineRecommendation", "ErrorBody", "HealthView", "JobAccepted",
+    "JobErrorBody",
+    "JobPage", "JobResult", "JobView", "ListenEngineList", "ListenPrerecordedResponse", "MarkdownChunk",
+    "ProfileList", "ProfileRef",
     "ProfileView", "ReadyView", "SettingsDoc", "TranscriptionResponse", "UploadLinkView", "UploadView",
     "ValidationErrorBody", "VersionView", "error_responses", "merge_codes",
 ]

@@ -39,6 +39,7 @@ from resona_job_core import (
     DEFAULT_OCR_ENGINE,
     DOCX_MEDIA_TYPE,
     MAX_INSTRUCTIONS_CHARS,
+    JobContext,
     AudioOptions,
     Candidate,
     DocumentOptions,
@@ -140,6 +141,8 @@ class JobRequest(BaseModel):
     profile: Optional[str] = Field(default=None, max_length=64)
     # User instructions for the profile's llm/extract steps (user message; the step prompt stays system).
     instructions: Optional[str] = Field(default=None, min_length=1, max_length=MAX_INSTRUCTIONS_CHARS)
+    # Text around the spot the result is inserted at, for the profile's llm/extract steps.
+    context: Optional[JobContext] = None
     options: Optional[dict[str, Any]] = None
     private: bool = True
     provenance: Optional[Provenance] = None
@@ -787,6 +790,8 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     if name is None:
         if req.instructions is not None:
             raise api_error(422, "invalid_instructions", "instructions need a postprocess profile")
+        if req.context is not None:
+            raise api_error(422, "invalid_context", "context needs a postprocess profile")
         return None
     if not is_profile_name(name):
         raise api_error(422, "invalid_profile", "profile must be a stored profile name")
@@ -801,6 +806,11 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
             profile = profile.with_instructions(req.instructions)
         except ProfileError as exc:
             raise api_error(422, "invalid_instructions", str(exc)) from None
+    if req.context is not None:
+        try:
+            profile = profile.with_context(req.context)
+        except ProfileError as exc:
+            raise api_error(422, "invalid_context", str(exc)) from None
     build_pipeline(profile, policy=policy)  # raises PolicyDenied before the job exists
     row = session.exec(
         select(ProfileRevision)
@@ -813,6 +823,9 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     if profile.instructions is not None:
         # Content-free marker: only workers whose release reads instructions claim the job.
         meta["instructions"] = True
+    if profile.context is not None:
+        # Content-free marker, as for instructions: the context itself stays in the artifact.
+        meta["context"] = True
     return meta, document, endpoint_ids(profile)
 
 
@@ -965,11 +978,12 @@ def _request_hash(req: JobRequest, upload: Upload | None) -> str:
 
     A client that re-uploads the same file and replays the same key must get
     the same job; only a different file or different parameters conflict.
-    ``webhook`` counts only when set, so keys recorded before it existed keep their hash.
+    ``webhook`` and ``context`` count only when set, so keys recorded before they existed keep their hash.
     """
     fields = req.model_dump(mode="json")
-    if fields.get("webhook") is None:
-        fields.pop("webhook", None)
+    for optional in ("webhook", "context"):
+        if fields.get(optional) is None:
+            fields.pop(optional, None)
     fields["upload_id"] = None
     fields["input_sha256"] = upload.sha256 if upload is not None else req.upload_id
     canonical = json.dumps(fields, sort_keys=True, separators=(",", ":"))

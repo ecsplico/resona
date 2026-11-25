@@ -3,8 +3,8 @@
 A worker on an older release validates options with ``extra="forbid"`` (or silently
 ignores what it does not know), so the hub hands a job only to a worker that knows every
 feature the job uses. Features are named ``<kind>.<option>`` for each option key in the
-snapshot's ``options`` and :data:`INSTRUCTIONS` for a postprocess profile carrying user
-instructions.
+snapshot's ``options``, :data:`INSTRUCTIONS` for a postprocess profile carrying user
+instructions and :data:`CONTEXT` for one carrying the text around the insertion point.
 
 Workers report :func:`known_features` in their heartbeat. Workers predating that report
 are judged by their release through :data:`LEGACY_RELEASE_FEATURES`, which is frozen at the
@@ -24,6 +24,9 @@ from .options import AudioOptions, DocumentOptions, TextOptions
 
 INSTRUCTIONS = "instructions"
 """The job's postprocess profile carries user instructions for its LLM steps."""
+
+CONTEXT = "postprocess.context"
+"""The job's postprocess profile carries ``context`` (text before/after the insertion point) for its LLM steps."""
 
 _OPTION_MODELS: dict[str, type[BaseModel]] = {
     "audio": AudioOptions,
@@ -56,16 +59,20 @@ _RELEASE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
 
 def known_features() -> frozenset[str]:
-    """Every feature the installed release knows: the option fields of each job kind plus instructions."""
+    """Every feature the installed release knows: the option fields of each job kind, instructions and context."""
     known = {f"{kind}.{name}" for kind, model in _OPTION_MODELS.items() for name in model.model_fields}
-    return frozenset(known | {INSTRUCTIONS})
+    return frozenset(known | {INSTRUCTIONS, CONTEXT})
 
 
-def required_features(kind: str, options: Mapping[str, Any] | None, *, instructions: bool = False) -> frozenset[str]:
+def required_features(
+    kind: str, options: Mapping[str, Any] | None, *, instructions: bool = False, context: bool = False,
+) -> frozenset[str]:
     """The features a job with these snapshot ``options`` (keys as stored) uses."""
     required = {f"{kind}.{name}" for name in (options or {})}
     if instructions:
         required.add(INSTRUCTIONS)
+    if context:
+        required.add(CONTEXT)
     return frozenset(required)
 
 
@@ -89,6 +96,7 @@ def worker_features(reported: Iterable[str] | None, release: str | None) -> froz
 
 
 __all__ = [
+    "CONTEXT",
     "INSTRUCTIONS",
     "LEGACY_RELEASE_FEATURES",
     "known_features",

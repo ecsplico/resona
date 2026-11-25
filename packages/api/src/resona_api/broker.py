@@ -350,13 +350,15 @@ def wants_diarize(snapshot: dict[str, Any], kind: str) -> bool:
 
 
 def job_features(snapshot: dict[str, Any], kind: str) -> frozenset[str]:
-    """The release-dependent features a job uses: its option keys and profile instructions."""
+    """The release-dependent features a job uses: its option keys, profile instructions and context."""
     options = snapshot.get("options")
     postprocess = snapshot.get("postprocess")
+    flags = postprocess if isinstance(postprocess, dict) else {}
     return required_features(
         kind,
         options if isinstance(options, dict) else None,
-        instructions=isinstance(postprocess, dict) and bool(postprocess.get("instructions")),
+        instructions=bool(flags.get("instructions")),
+        context=bool(flags.get("context")),
     )
 
 

@@ -44,6 +44,11 @@ ENV PYTHONUNBUFFERED=1
 ENV RESONA_RELEASE_ID="${RESONA_RELEASE_ID}"
 ENV DATA_PATH=/data
 
+# ffmpeg decodes container audio (WebM/Ogg/MP4 from browsers) streamed to WS /v1/listen.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin resona \
     && mkdir -p /data && chown resona:resona /data
 

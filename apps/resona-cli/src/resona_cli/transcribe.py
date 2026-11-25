@@ -6,7 +6,15 @@ from typing import Optional
 import typer
 from resona_client.client import AudioOptions
 
-from .hub import INSTRUCTIONS_FILE_HELP, INSTRUCTIONS_HELP, WEBHOOK_HELP, check_privacy_flags, instructions_arg
+from .hub import (
+    CONTEXT_FILE_HELP,
+    INSTRUCTIONS_FILE_HELP,
+    INSTRUCTIONS_HELP,
+    WEBHOOK_HELP,
+    check_privacy_flags,
+    context_arg,
+    instructions_arg,
+)
 from .media import MediaRequest, run_media
 
 EXTENSIONS = {"wav", "webm", "flac", "mp3", "m4a", "ogg", "aac"}
@@ -76,6 +84,7 @@ def transcribe_files(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
+    context_file: Optional[Path] = typer.Option(None, "--context-file", help=CONTEXT_FILE_HELP),
     webhook: Optional[str] = typer.Option(None, "--webhook", help=WEBHOOK_HELP),
     translate: bool = typer.Option(False, "--translate", help="Translate to English."),
     word_timestamps: bool = typer.Option(False, "--word-timestamps", help="Request word timestamps."),
@@ -94,6 +103,7 @@ def transcribe_files(
     """
     want_private = check_privacy_flags(private, allow_cloud)
     user_instructions = instructions_arg(instructions, instructions_file)
+    user_context = context_arg(context_file)
     files = expand_inputs(inputs, recursive, EXTENSIONS)
     if not files:
         typer.echo("No audio files found.", err=True)
@@ -116,5 +126,6 @@ def transcribe_files(
                              **({} if diarize is None else {"diarize": diarize})),
         local=local,
         instructions=user_instructions,
+        context=user_context,
         webhook=webhook,
     ))

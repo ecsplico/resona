@@ -1,4 +1,4 @@
-"""Profile data in the wheel: only what works with no setup (the `default` profile and its rules)."""
+"""Profile data in the wheel: only what works with no setup (the `default` profile, its rules, bundled blocks)."""
 
 from importlib import resources
 from pathlib import Path
@@ -20,8 +20,14 @@ def _json_files(root) -> list[str]:
     return sorted(found)
 
 
-def test_wheel_ships_only_the_default_profile() -> None:
+def test_wheel_ships_only_the_default_profile_and_the_bundled_blocks() -> None:
     # The wheel is built from this directory as it is (hatch `packages = ["src/resona_postprocess"]`).
-    expected = ["default_replacements.json", "profiles/default.json"]
+    expected = [
+        "blocks/dictation-commands-de.json",
+        "blocks/filler-words-de.json",
+        "blocks/filler-words-en.json",
+        "default_replacements.json",
+        "profiles/default.json",
+    ]
     assert _json_files(PACKAGE_DIR) == expected
     assert _json_files(resources.files("resona_postprocess")) == expected

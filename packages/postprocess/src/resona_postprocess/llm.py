@@ -175,16 +175,43 @@ def _completion(*, endpoint: Endpoint, messages: list[dict], settings: LlmCallSe
     raise last_exc
 
 
-def _messages(prompt: str, text: str, instructions: str | None = None) -> list[dict]:
+_PLACEMENT_INSERT = "The text will be inserted between context_before and context_after."
+_PLACEMENT_REPLACE = (
+    "The text will replace context_selection between context_before and context_after; "
+    "the selected text will not remain, so do not preserve or copy it into the result."
+)
+_CONTEXT_RULE = (
+    " Use the context blocks only for terminology, references and continuity with the nearby text, "
+    "to resolve ambiguity and likely recognition errors; do not invent content, never copy or repeat "
+    "the context, and return only the result for the text itself."
+)
+
+
+def _messages(prompt: str, text: str, instructions: str | None = None,
+              context: dict[str, str] | None = None) -> list[dict]:
     """System = the step's prompt; user = the text, preceded by the user's instructions if any.
 
-    With instructions the user message tags both parts (``<instructions>``/``<text>``) so the
-    model can tell them apart; :func:`_unwrap_text` drops a ``<text>`` wrapper it echoes back.
+    With instructions or context the user message tags its parts (``<instructions>``,
+    ``<text>``, then ``<context_before>``/``<context_selection>``/``<context_after>`` for the
+    context parts present) so the model can tell them apart, and context adds one placement
+    rule to the system prompt; :func:`_unwrap_text` drops a ``<text>`` wrapper it echoes back.
     """
-    user = text if instructions is None else (
-        f"<instructions>\n{instructions}\n</instructions>\n\n<text>\n{text}\n</text>"
-    )
-    return [{"role": "system", "content": prompt}, {"role": "user", "content": user}]
+    if instructions is None and not context:
+        return [{"role": "system", "content": prompt}, {"role": "user", "content": text}]
+    parts = [] if instructions is None else [f"<instructions>\n{instructions}\n</instructions>"]
+    parts.append(f"<text>\n{text}\n</text>")
+    system = prompt
+    if context:
+        parts.extend(f"<context_{key}>\n{context[key]}\n</context_{key}>"
+                     for key in ("before", "selection", "after") if context.get(key))
+        placement = _PLACEMENT_REPLACE if context.get("selection") else _PLACEMENT_INSERT
+        system = f"{prompt}\n\n{placement}{_CONTEXT_RULE}"
+    return [{"role": "system", "content": system}, {"role": "user", "content": "\n\n".join(parts)}]
+
+
+def _wrapped(instructions: str | None, context: dict[str, str] | None) -> bool:
+    """Whether :func:`_messages` tagged the text, so a reply may echo the ``<text>`` wrapper."""
+    return instructions is not None or bool(context)
 
 
 def llm_transform(
@@ -195,6 +222,7 @@ def llm_transform(
     policy: ExecutionPolicy,
     settings: LlmCallSettings = LlmCallSettings(),
     instructions: str | None = None,
+    context: dict[str, str] | None = None,
 ) -> str:
     """Send transcript text to an approved LLM endpoint and return the result.
 
@@ -202,8 +230,9 @@ def llm_transform(
     fixes the model and base URL; no environment fallback applies here.
     """
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
-    reply = _completion(endpoint=endpoint, messages=_messages(prompt, text, instructions), settings=settings)
-    return _unwrap_text(reply) if instructions is not None and reply else reply
+    reply = _completion(endpoint=endpoint, messages=_messages(prompt, text, instructions, context),
+                        settings=settings)
+    return _unwrap_text(reply) if _wrapped(instructions, context) and reply else reply
 
 
 def _unwrap_text(reply: str) -> str:
@@ -245,6 +274,7 @@ def llm_transform_chunked(
     preserve_markup: bool = False,
     settings: LlmCallSettings = LlmCallSettings(attempts=_DEFAULT_CHUNK_ATTEMPTS),
     instructions: str | None = None,
+    context: dict[str, str] | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """Transform long Markdown chunk by chunk (see :func:`split_markdown`).
 
@@ -269,7 +299,7 @@ def llm_transform_chunked(
         for attempt in range(1, settings.attempts + 1):
             try:
                 reply = llm_transform(core, prompt=prompt, endpoint=endpoint, policy=policy,
-                                      settings=single_call, instructions=instructions)
+                                      settings=single_call, instructions=instructions, context=context)
                 break
             except PolicyDenied:
                 raise
@@ -281,7 +311,7 @@ def llm_transform_chunked(
         else:
             raise PostprocessStepFailed(step_name, f"chunk {number} failed after {settings.attempts} attempts")
 
-        polished = _clean_reply(reply, core, wrapped=instructions is not None)
+        polished = _clean_reply(reply, core, wrapped=_wrapped(instructions, context))
         reason = None
         if max_length_deviation is not None and length_deviation(core, polished) > max_length_deviation:
             reason = "length"
@@ -306,6 +336,7 @@ def llm_extract(
     policy: ExecutionPolicy,
     settings: LlmCallSettings = LlmCallSettings(),
     instructions: str | None = None,
+    context: dict[str, str] | None = None,
 ) -> dict:
     """Extract structured data from text. Returns a parsed JSON object.
 
@@ -315,7 +346,7 @@ def llm_extract(
     check_policy(policy, [Stage(name="llm", kind="llm", endpoint=endpoint)])
     raw = _completion(
         endpoint=endpoint,
-        messages=_messages(prompt, text, instructions),
+        messages=_messages(prompt, text, instructions, context),
         settings=settings,
         response_format={"type": "json_object"},
     )

@@ -17,7 +17,9 @@ Protocol:
   ``delta`` carries only the words confirmed in this step (never the cumulative
   transcript) so proxies can forward incremental finals without re-deriving them.
 
-Query params: ?language=de selects the transcription language.
+Query params: ?language=de selects the transcription language (``auto``: the engine
+detects it); ?initial_prompt=... passes a vocabulary hint (e.g. key terms) to the
+engine's ``initial_prompt``.
 """
 import asyncio
 import base64
@@ -54,7 +56,10 @@ async def live_transcribe_websocket(websocket: WebSocket):
         raise
 
     language = websocket.query_params.get("language") or "de"
-    transcriber = LiveTranscriber(language=language)
+    initial_prompt = (websocket.query_params.get("initial_prompt") or "").strip() or None
+    transcriber = LiveTranscriber(
+        language=None if language == "auto" else language, initial_prompt=initial_prompt,
+    )
     processing = True
 
     async def process_loop():

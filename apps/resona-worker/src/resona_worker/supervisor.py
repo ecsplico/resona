@@ -423,6 +423,8 @@ class Supervisor:
                         "candidate": candidate.model_dump(mode="json"),
                         "language": snapshot.get("language"),
                         "options": snapshot.get("options") or {},
+                        # The profile's vocabulary: cloud ASR sends it as provider keyterms.
+                        "initial_prompt": _initial_prompt(profile_dict),
                     }
                 ),
                 encoding="utf-8",
@@ -714,6 +716,14 @@ def _text_result(path: Path, language: Any) -> JobResult:
         language=language if isinstance(language, str) else None,
         provenance=Provenance(),
     )
+
+
+def _initial_prompt(profile_dict: dict[str, Any] | None) -> list[str]:
+    """The postprocess profile's ``initial_prompt`` terms (strings only), or none."""
+    terms = (profile_dict or {}).get("initial_prompt")
+    if not isinstance(terms, list):
+        return []
+    return [term for term in terms if isinstance(term, str) and term.strip()]
 
 
 def _candidate_of(snapshot: dict[str, Any]) -> Candidate:

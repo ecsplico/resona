@@ -11,6 +11,7 @@ All configuration is read with [`python-decouple`](https://github.com/HBNetwork/
 |----------|---------|-------------|
 | `RESONA_ENGINE` | `faster-whisper` | Engine to load per engine-server process: `faster-whisper`, `whisper`, or `voxtral` |
 | `RESONA_ENGINE_KEY` | _(unset)_ | Optional API key for the engine; auth is disabled when not set |
+| `RESONA_ENGINE_UNLOAD_AFTER` | `never` | Free the model's memory after this many idle minutes (`0`/`immediately` = as soon as the last request or WebSocket ends). Open requests and sockets block unloading; the next request loads the model again, so it pays the load time. `/health` reports `loaded` |
 | `LOGLEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 
 ## resona-api (`:7000`)

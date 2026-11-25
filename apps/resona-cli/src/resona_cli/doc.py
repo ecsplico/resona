@@ -7,10 +7,12 @@ from pydantic import ValidationError
 from resona_client.client import DocumentOptions
 
 from .hub import (
+    CONTEXT_FILE_HELP,
     INSTRUCTIONS_FILE_HELP,
     INSTRUCTIONS_HELP,
     WEBHOOK_HELP,
     check_privacy_flags,
+    context_arg,
     fail,
     instructions_arg,
 )
@@ -81,6 +83,7 @@ def doc_files(
         help="Postprocess profile name (a JSON file or inline JSON only with --local)."),
     instructions: Optional[str] = typer.Option(None, "--instructions", help=INSTRUCTIONS_HELP),
     instructions_file: Optional[Path] = typer.Option(None, "--instructions-file", help=INSTRUCTIONS_FILE_HELP),
+    context_file: Optional[Path] = typer.Option(None, "--context-file", help=CONTEXT_FILE_HELP),
     webhook: Optional[str] = typer.Option(None, "--webhook", help=WEBHOOK_HELP),
     ocr: Optional[str] = typer.Option(None, "--ocr",
         help="auto (OCR bitmap regions only), force (full-page OCR) or off."),
@@ -106,6 +109,7 @@ def doc_files(
     """
     want_private = check_privacy_flags(private, allow_cloud)
     user_instructions = instructions_arg(instructions, instructions_file)
+    user_context = context_arg(context_file)
     options = document_options(ocr, ocr_engine, languages, pages, image_scale, ocr_min_confidence,
                                remove_repeated_headers)
     files = expand_inputs(inputs, recursive, EXTENSIONS)
@@ -129,5 +133,6 @@ def doc_files(
         options=options,
         local=local,
         instructions=user_instructions,
+        context=user_context,
         webhook=webhook,
     ))

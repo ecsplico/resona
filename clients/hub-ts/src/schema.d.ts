@@ -147,6 +147,8 @@ export interface paths {
         /**
          * List Engines
          * @description Engines the caller's organization can use: tested, approved and policy-filtered.
+         *
+         *     Measured audio candidates carry a ``recommendation`` role for ``languages``.
          */
         get: operations["engines_list"];
         put?: never;
@@ -268,6 +270,30 @@ export interface paths {
         get: operations["jobs_result_markdown"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Listen Transcribe
+         * @description Deepgram-compatible prerecorded transcription as a bounded wait on a queued audio job.
+         *
+         *     Other Deepgram parameters (``smart_format``, ``punctuate``, ``utterances``,
+         *     ``filler_words``, ``mip_opt_out``, ...) are accepted and ignored. Admission is
+         *     identical to ``POST /v1/jobs``.
+         */
+        post: operations["listen_transcribe"];
         delete?: never;
         options?: never;
         head?: never;
@@ -491,6 +517,7 @@ export interface components {
             candidate: components["schemas"]["Candidate"];
             /** Execution Profiles */
             execution_profiles: string[];
+            recommendation?: components["schemas"]["EngineRecommendation"] | null;
         };
         /** EngineList */
         EngineList: {
@@ -498,6 +525,27 @@ export interface components {
             default: string | null;
             /** Engines */
             engines: components["schemas"]["EngineView"][];
+        };
+        /**
+         * EngineRecommendation
+         * @description Role from the organization's own measurements for the requested languages
+         *     (``error_percent``: geometric mean WER in percent; ``basis``: promoted baseline or testbench).
+         */
+        EngineRecommendation: {
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "baseline" | "testbench";
+            /** Error Percent */
+            error_percent: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "recommended" | "fast" | "accurate";
+            /** Seconds Per 30S */
+            seconds_per_30s: number;
         };
         /** EngineView */
         EngineView: {
@@ -700,6 +748,19 @@ export interface components {
             private: boolean;
         };
         /**
+         * ListenPrerecordedResponse
+         * @description Deepgram-compatible prerecorded transcription (``POST /v1/listen``). ``request_id`` is the
+         *     job ID; ``transcript`` is the job's Markdown; ``structured`` only when the profile extracted data.
+         */
+        ListenPrerecordedResponse: {
+            metadata: components["schemas"]["PrerecordedMetadata"];
+            results: components["schemas"]["PrerecordedResults"];
+            /** Structured */
+            structured?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * MarkdownChunk
          * @description One character range of a result's Markdown; ``source`` names the field read.
          */
@@ -829,11 +890,86 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** PrerecordedAlternative */
+        PrerecordedAlternative: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Transcript */
+            transcript: string;
+            /** Words */
+            words: components["schemas"]["PrerecordedWord"][];
+        };
+        /** PrerecordedChannel */
+        PrerecordedChannel: {
+            /** Alternatives */
+            alternatives: components["schemas"]["PrerecordedAlternative"][];
+            /** Detected Language */
+            detected_language?: string | null;
+        };
+        /** PrerecordedMetadata */
+        PrerecordedMetadata: {
+            /** Channels */
+            channels: number;
+            /** Duration */
+            duration: number;
+            model_info: components["schemas"]["PrerecordedModelInfo"];
+            /** Request Id */
+            request_id: string;
+        };
+        /** PrerecordedModelInfo */
+        PrerecordedModelInfo: {
+            /** Engine */
+            engine?: string | null;
+            /** Model */
+            model?: string | null;
+        };
+        /** PrerecordedResults */
+        PrerecordedResults: {
+            /** Channels */
+            channels: components["schemas"]["PrerecordedChannel"][];
+            /**
+             * Utterances
+             * @default []
+             */
+            utterances: components["schemas"]["PrerecordedUtterance"][];
+        };
+        /**
+         * PrerecordedUtterance
+         * @description One result segment; ``speaker`` (0-based, Deepgram style) only on diarized results.
+         */
+        PrerecordedUtterance: {
+            /**
+             * Channel
+             * @default 0
+             */
+            channel: number;
+            /** End */
+            end: number;
+            /** Speaker */
+            speaker?: number | null;
+            /** Start */
+            start: number;
+            /** Transcript */
+            transcript: string;
+        };
+        /** PrerecordedWord */
+        PrerecordedWord: {
+            /** End */
+            end: number;
+            /** Start */
+            start: number;
+            /** Word */
+            word: string;
+        };
         /**
          * ProfileDocument
-         * @description A postprocess profile; see the profile file format. ``instructions`` only when set.
+         * @description A postprocess profile; see the profile file format. ``instructions`` and ``context`` only when set.
          */
         ProfileDocument: {
+            /** Context */
+            context?: {
+                [key: string]: string;
+            } | null;
             /** Description */
             description: string;
             /** Initial Prompt */
@@ -1543,7 +1679,7 @@ export interface operations {
                     "application/json": components["schemas"]["JobErrorBody"];
                 };
             };
-            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`. */
+            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1574,7 +1710,10 @@ export interface operations {
     };
     engines_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated language codes for the recommendations (default: the organization language) */
+                languages?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1601,6 +1740,15 @@ export interface operations {
             };
             /** @description Error: `forbidden`. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Error: `invalid_request`. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1734,7 +1882,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`. */
+            /** @description Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2069,6 +2217,156 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationErrorBody"];
+                };
+            };
+        };
+    };
+    listen_transcribe: {
+        parameters: {
+            query?: {
+                /** @description Transcription language, e.g. `de`. */
+                language?: string | null;
+                /** @description Accepted for compatibility; jobs run in `language` or the organization's language. */
+                detect_language?: boolean;
+                /** @description Selects an engine only when it names one the organization can use (`GET /v1/engines`); other values (`nova-3`) mean the default. */
+                model?: string | null;
+                /** @description Engine; wins over `model`. */
+                engine?: string | null;
+                /** @description Stored postprocess profile name. */
+                profile?: string | null;
+                /** @description Private processing only (default). */
+                private?: boolean;
+                /** @description Label speakers; unset = the execution profile's default. */
+                diarize?: boolean | null;
+                /** @description `linear16` for raw PCM; omit for containers. */
+                encoding?: string | null;
+                /** @description Sample rate of raw PCM. */
+                sample_rate?: number;
+                /** @description Channels of raw PCM. */
+                channels?: number;
+                /** @description Accepted for compatibility; batch jobs take key terms from the profile's `initial_prompt`. */
+                keyterm?: string[];
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The audio: a container (WAV, MP3, Ogg, WebM, MP4, FLAC), or raw PCM with `encoding=linear16`. */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "audio/*": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListenPrerecordedResponse"];
+                };
+            };
+            /** @description Error: `invalid_idempotency_key`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `unauthorized`. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `forbidden`, `policy_denied`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `upload_not_found`, `execution_profile_not_found`, `profile_not_found`, `job_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `idempotency_conflict`, `settings_missing`, `job_cancelled`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `content_unavailable`. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `too_large`. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `unsupported_media`. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, rejected parameters. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"] | components["schemas"]["ValidationErrorBody"];
+                };
+            };
+            /** @description The job failed: `error` is the job's own error code (open set, e.g. `unsupported_input`), `job_failed` when it has none. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
+                };
+            };
+            /** @description Error: `timeout`. The job keeps running; `job_id` and the `Location` header name it. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobErrorBody"];
                 };
             };
         };

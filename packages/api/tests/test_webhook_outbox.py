@@ -175,10 +175,11 @@ def test_idempotency_replay_with_a_different_webhook_is_409(http, fresh_org, cli
 
 
 def test_request_hash_without_webhook_is_unchanged():
-    # Keys recorded before webhooks existed hashed a request without the field.
+    # Keys recorded before webhooks (and job context) existed hashed a request without those fields.
     req = jobs_routes.JobRequest(kind="audio", upload_id="upl_x")
     fields = req.model_dump(mode="json")
     fields.pop("webhook")
+    fields.pop("context")
     fields["upload_id"] = None
     fields["input_sha256"] = "upl_x"
     expected = hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

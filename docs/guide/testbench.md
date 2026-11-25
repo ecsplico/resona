@@ -77,6 +77,11 @@ Runs are scored against the reference with `resona-eval`:
 | audio | `raw_text` | `text-v1` | WER, CER |
 | document | `markdown` | `markdown-v1` | WER, CER |
 
+Bench runs on corrected audio items also feed the engine recommendations of
+`GET /v1/engines?languages=` (basis `testbench`, used when no promoted baseline covers the
+candidate): WER per item language and speed as `asr` stage seconds per 30 s of audio, where the audio
+length is the end of the last transcript segment.
+
 When the reference changes, all completed runs of the item are re-scored. The word diff aligns the
 normalized words (`equal`, `substitute`, `insert`, `delete`). See
 [Evaluation & Baselines](evaluation.md) for the normalizations.
