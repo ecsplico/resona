@@ -610,14 +610,18 @@ resona profiles show my-profile
 
 ### profiles push
 
-Upload a local profile JSON file to the server.
+Upload local profile JSON files to the server, blocks before the profiles that include them.
 
 ```bash
-resona profiles push my-profile.json
+resona profiles push my-profile my-profile.json       # one file under the name my-profile
+resona profiles push my-profile.json my-block.json    # each file under its file name
+resona profiles push profiles/                        # a directory: its *.json and blocks/*.json
 ```
 
-The profile's `name` field determines the server-side name. If a profile with the same name
-already exists it is replaced.
+Each file is stored under its file name without `.json` (or under `NAME` in the `NAME FILE` form)
+as a new revision. The push order follows the `include` steps. An include must name a profile pushed
+in the same call, a bundled block or a profile already stored on the hub; a missing include, a
+cycle or an invalid file exits 1 before anything is uploaded.
 
 ### profiles pull
 

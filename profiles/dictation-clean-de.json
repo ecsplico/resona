@@ -1,0 +1,27 @@
+{
+  "name": "dictation-clean-de",
+  "description": "Deutsches medizinisches Diktat → bereinigtes Markdown: Füllwörter entfernt, Namenskorrekturen, medizinische Kapitel, Diktatbefehle, dann gesprochene Selbstkorrekturen über das Modell der Rolle cleanup.",
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "include",
+      "profile": "filler-words-de"
+    },
+    {
+      "type": "include",
+      "profile": "names-medical-de"
+    },
+    {
+      "type": "include",
+      "profile": "headings-medical-de"
+    },
+    {
+      "type": "include",
+      "profile": "dictation-commands-de"
+    },
+    {
+      "type": "include",
+      "profile": "self-correction-de"
+    }
+  ]
+}

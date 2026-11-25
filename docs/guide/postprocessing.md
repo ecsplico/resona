@@ -293,20 +293,32 @@ Profiles that need a decision or an endpoint of the organization live in the rep
 directory [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) and exist on a hub
 only after an org admin pushed them:
 
-| Profile | What it does | Needs |
-|---------|--------------|-------|
-| `dictation-medical-de` | Name corrections, medical section headings, then the generic commands of `default` (rules only; what `default` did up to 0.2.7) | Nothing |
-| `transcript-markdown-de` | Dictation commands → Markdown, rules only | Nothing |
-| `transcript-polish-de` | The same rules, then an LLM pass limited to capitalization, punctuation and whitespace | `local_llm` endpoint `local-llm` |
-| `document-polish-de` | OCR corrections on document Markdown ([Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)) | `local_llm` endpoint `local-llm` |
+| Profile | Includes | What it does | Needs |
+|---------|----------|--------------|-------|
+| `dictation-medical-de` | `names-medical-de`, `headings-medical-de`, `dictation-commands-de` | Name corrections, medical section headings, then the generic commands of `default` (rules only; what `default` did up to 0.2.7) | Nothing |
+| `transcript-markdown-de` | `headings-medical-de`, `dictation-commands-de` | Dictation commands → Markdown, rules only | Nothing |
+| `transcript-polish-de` | `transcript-markdown-de`, `polish-punctuation-de` | The same rules, then an LLM pass limited to capitalization, punctuation and whitespace | Role `polish` |
+| `document-polish-de` | `polish-ocr-de` | OCR corrections on document Markdown ([Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)) | Role `polish` |
+| `dictation-clean-de` | `filler-words-de`, `names-medical-de`, `headings-medical-de`, `dictation-commands-de`, `self-correction-de` | `dictation-medical-de` with filler words removed first and spoken self-corrections resolved last | Role `cleanup` |
+
+The catalogue profiles are compositions: their `include` steps name the blocks in `profiles/blocks/`
+(`names-medical-de`, `headings-medical-de`, `polish-punctuation-de` and `polish-ocr-de` on `@polish`,
+`self-correction-de` on `@cleanup`) and the bundled blocks. Their LLM steps name a model role, which
+the organization settings map to an endpoint (`model_roles`, see [Model roles](#model-roles)). One
+push call uploads the catalogue, blocks before the profiles that include them; an include that is
+neither pushed with it, bundled nor stored on the hub, or a cycle, stops it before any upload:
 
 ```bash
 git clone https://github.com/ecsplico/resona && cd resona   # or download the files of your release tag
-resona profiles push dictation-medical-de profiles/dictation-medical-de.json
-resona profiles push transcript-markdown-de profiles/transcript-markdown-de.json
-resona profiles push transcript-polish-de profiles/transcript-polish-de.json
-resona profiles push document-polish-de profiles/document-polish-de.json
+resona profiles push profiles/
 ```
+
+!!! note "Release note: the catalogue became compositions"
+    Up to the flat catalogue every profile carried its rules inline and its LLM step called the
+    endpoint id `local-llm`. An organization that pushed those files maps the roles to that
+    endpoint (`"model_roles": {"polish": "local-llm", "title": "local-llm", "cleanup": "local-llm"}`)
+    and re-pushes with `resona profiles push profiles/`; it needs hub release 0.2.8 or later. The
+    output is unchanged; see the [catalogue README](https://github.com/ecsplico/resona/tree/main/profiles).
 
 !!! warning "Release note: `default` lost its medical headings and name corrections"
     Up to 0.2.7 the bundled `default` also turned `Kapitel Verlauf`, `Kapitel Medikation`,
@@ -333,9 +345,10 @@ resona profiles push document-polish-de profiles/document-polish-de.json
 
 ### dictation-medical-de
 
-`profiles/dictation-medical-de.json` is one `replacements` step with inline rules, in this order:
-name corrections (`Monique` → `Monic`, `Serafine`/`Serafina` → `Seraphine`, `Lucy` → `Lucie`,
-`Nele`/`Mele` → `Neele`), the medical section headings, then the generic commands of `default`.
+`profiles/dictation-medical-de.json` includes three rule blocks, in this order:
+`names-medical-de` with the name corrections (`Monique` → `Monic`, `Serafine`/`Serafina` → `Seraphine`, `Lucy` → `Lucie`,
+`Nele`/`Mele` → `Neele`), `headings-medical-de` with the medical section headings, then the
+bundled `dictation-commands-de` (the generic commands of `default`).
 The headings `Kapitel Verlauf`, `Kapitel Medikation`, `Kapitel Psychopathologischer Befund` and
 `Kapitel Procedere` (also spoken `Prozedere`) need no terminator; a spoken `Absatz`, `Punkt`,
 `Doppelpunkt` or `Komma` right after them is dropped. They run before the general `Kapitel` rule,
@@ -344,15 +357,15 @@ Its output is what `default` produced up to 0.2.7.
 
 ### transcript-markdown-de and transcript-polish-de
 
-`profiles/transcript-markdown-de.json` holds the rules of `dictation-medical-de` without its name
-corrections and without any LLM step, so it runs on every worker.
-`profiles/transcript-polish-de.json` runs the same rules, then a chunked `llm` step on the endpoint
-id `local-llm`. Its prompt allows the model to change only capitalization (sentence starts, after
+`profiles/transcript-markdown-de.json` includes the rules of `dictation-medical-de` without its
+name corrections (`headings-medical-de`, `dictation-commands-de`) and no LLM step, so it runs on
+every worker. `profiles/transcript-polish-de.json` includes `transcript-markdown-de`, then the block
+`polish-punctuation-de`: a chunked `llm` step on the model role `@polish`. Its prompt allows the model to change only capitalization (sentence starts, after
 headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any
 word, not even a word that looks misrecognized; numbers, units, doses, drug names, diagnoses and
 codes stay exactly as transcribed. Settings: `max_length_deviation` 0.1, `preserve_markup: true`,
-`temperature` 0, `chunk_chars` 12000. Like `document-polish-de`, it needs an org admin to register
-a `local_llm` endpoint `local-llm` on the approved worker.
+`temperature` 0, `chunk_chars` 12000. Like `document-polish-de`, it needs an org admin to assign
+the role `polish` to an endpoint, for example a `local_llm` endpoint on the approved worker.
 
 The guards check less than the prompt asks for. `preserve_markup` compares only HTML comments,
 the sequence of heading levels and the cell count of every table row; it does not notice merged
@@ -360,8 +373,20 @@ paragraphs, joined list items, a rewritten heading text or a changed word or num
 changes such things is kept as long as it stays within the 10 % length guard. Use the polish
 profile only where a reviewer reads the result.
 
-Both carry their rules inline, because hosted profiles reject `source`. Push them from the
+Their blocks carry the rules inline, because hosted profiles reject `source`. Push them from the
 catalogue as shown under [Profile catalogue](#profile-catalogue).
+
+### dictation-clean-de
+
+`profiles/dictation-clean-de.json` is `dictation-medical-de` with two more blocks around it: first
+the bundled `filler-words-de` on the raw transcript (so `Kapitel Verlauf ähm der Patient …` still
+makes the heading), last `self-correction-de`, a chunked `llm` step on the model role `@cleanup`.
+Its prompt (adapted from T3 Code's correction cue) resolves a spoken self-correction only where the
+cue `nein, streich das` or `Korrektur` clearly marks one (`Ramipril 5 mg, nein, streich das, 10 mg
+täglich.` → `Ramipril 10 mg täglich.`) and otherwise returns the text unchanged; a cue that is part
+of the content (`Die Korrektur der Dosis …`) stays. Settings: `chunk_chars` 12000, `max_attempts` 3,
+`max_length_deviation` 0.5 (a correction removes text; a reply further off keeps the chunk as the
+rules left it, warning `polish_chunk_rejected:<n>:length`), `preserve_markup` true, `temperature` 0.
 
 ---
 

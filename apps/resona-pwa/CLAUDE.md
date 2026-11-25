@@ -103,12 +103,14 @@ CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 ### Hub profiles
 
 `profiles/title-de.json` is this app's own postprocess profile (one `extract` step `title` on
-endpoint `local-llm`; `useTitleJob` reads `structured.title.title`). A hub knows it only after
-`just push-profiles` (`scripts/push-profiles.sh`: `resona profiles push` for `profiles/*.json`,
-then the catalogue profiles the app uses: `dictation-medical-de` (the `defaultProfile` of new
-recordings) and those offered under Nachbearbeiten, `transcript-markdown-de` and
-`transcript-polish-de`, from `RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI`
-names the `resona` command; needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
+the model role `@title`, mapped to an endpoint by the hub settings' `model_roles`; `useTitleJob`
+reads `structured.title.title`). A hub knows it only after `just push-profiles`
+(`scripts/push-profiles.sh`: one `resona profiles push` call for `profiles/*.json`, the catalogue
+profiles the app uses: `dictation-medical-de` (the `defaultProfile` of new recordings) and those
+offered under Nachbearbeiten, `transcript-markdown-de` and `transcript-polish-de`, plus the
+catalogue blocks `blocks/*.json` they include, which the CLI pushes first; from
+`RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI` names the `resona` command;
+needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
 checks the file against the hub's documented profile format and `titleFromResult`, without
 importing hub code.
 

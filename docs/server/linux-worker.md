@@ -121,7 +121,7 @@ Each job runs in its own subprocess. The model is loaded for that job and is rel
 
 ## LLM polish on the worker host
 
-Document jobs can get an OCR-correction pass from a local model on the worker host. The catalogue profile `document-polish-de` (`profiles/document-polish-de.json` in the repository, see [Profile catalogue](../guide/postprocessing.md#profile-catalogue)) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint `local-llm`. The profile names no host: an org admin registers a `local_llm` endpoint with the id `local-llm`, a loopback `url` and the approved worker's `worker_id` (see [Enable it](#enable-it)). Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning `polish_chunk_rejected:<n>:<length|markup>`. A chunk that fails 3 calls fails the job (`postprocess_failed`, retryable); the polish is never skipped silently. `markdown` is the polished text. The converter's Markdown before polish, tables included, stays in the result's `raw_markdown` (set whenever a postprocess step changed the Markdown); `raw_text` is the converter's plain text, which has no tables. See [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown).
+Document jobs can get an OCR-correction pass from a local model on the worker host. The catalogue profile `document-polish-de` (`profiles/document-polish-de.json` in the repository, see [Profile catalogue](../guide/postprocessing.md#profile-catalogue)) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint the organization assigns to the model role `polish` (block `polish-ocr-de`, `"endpoint": "@polish"`). The profile names no host: an org admin registers a `local_llm` endpoint, here with the id `local-llm`, a loopback `url` and the approved worker's `worker_id`, and maps the role to it (see [Enable it](#enable-it)). Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning `polish_chunk_rejected:<n>:<length|markup>`. A chunk that fails 3 calls fails the job (`postprocess_failed`, retryable); the polish is never skipped silently. `markdown` is the polished text. The converter's Markdown before polish, tables included, stays in the result's `raw_markdown` (set whenever a postprocess step changed the Markdown); `raw_text` is the converter's plain text, which has no tables. See [Postprocessing Pipeline](../architecture/postprocessing.md#chunked-mode-long-markdown).
 
 ### Privacy
 
@@ -150,7 +150,7 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`):
 
 1. Deploy a release that contains this feature to the hub **and** to every worker first. An older hub rejects `unload_url` in the settings (`422`); an older worker fails postprocess jobs whose snapshot contains it (`invalid_snapshot`).
 2. Start the worker with the override (above).
-3. As org admin, add the endpoint to the organization settings. The catalogue profile calls the endpoint id `local-llm`, so register it under that id (or change the profile's `endpoint` before uploading it). `url` and `unload_url` point to the model server on the worker host's loopback; `worker_id` is the id that `resona-admin worker enroll` printed for the Linux worker:
+3. As org admin, add the endpoint to the organization settings. The catalogue profile calls the model role `@polish`; the example registers the endpoint as `local-llm` and maps the roles to it. `url` and `unload_url` point to the model server on the worker host's loopback; `worker_id` is the id that `resona-admin worker enroll` printed for the Linux worker:
 
     ```json
     {
@@ -166,7 +166,8 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`):
     The `openai/` prefix makes litellm speak the OpenAI chat API to `url`; llama-swap receives the model name `qwen3.6-27b`.
 
     ```bash
-    resona settings get | jq '.settings | .endpoints = ([.endpoints[] | select(.id != "local-llm")] + [input])' \
+    resona settings get | jq '.settings | .endpoints = ([.endpoints[] | select(.id != "local-llm")] + [input])
+      | .model_roles = ((.model_roles // {}) + {polish: "local-llm", cleanup: "local-llm", title: "local-llm"})' \
       - local-llm.json > settings.json
     resona settings set --file settings.json
     ```
@@ -174,7 +175,7 @@ llama-swap's API (from its `docs/kb/guides/model-runtime/ttl-and-unloading.md`):
 4. Upload the profile from the repository's `profiles/` catalogue as an organization profile (org admin). It is not part of any wheel, so take it from a checkout or download the file of your release tag:
 
     ```bash
-    resona profiles push document-polish-de profiles/document-polish-de.json
+    resona profiles push profiles/document-polish-de.json profiles/blocks/polish-ocr-de.json
     ```
 
 5. Request it per document job:
