@@ -54,6 +54,7 @@ vi.mock("@capacitor/core", () => ({
 		getPlatform: () => platform.name,
 	},
 	registerPlugin: () => plugin,
+	// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- ResonaSpeechWeb extends it; the native path never instantiates it
 	WebPlugin: class {},
 }));
 vi.mock("@capawesome-team/capacitor-android-foreground-service", () => ({
