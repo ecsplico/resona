@@ -493,6 +493,22 @@ def test_put_profile():
     assert route.called
 
 
+@respx.mock
+def test_get_profile_resolved_sends_the_query_flag():
+    route = respx.get("http://t/profiles/a", params={"resolved": "true"}).mock(
+        return_value=httpx.Response(200, json={"name": "a", "revision": 1, "profile": {}, "includes": []}))
+    assert ResonaClient(base_url="http://t").get_profile("a", resolved=True)["includes"] == []
+    assert route.called
+
+
+@respx.mock
+def test_profile_in_use_surfaces_as_api_error():
+    respx.delete("http://t/profiles/a").mock(return_value=httpx.Response(
+        409, json={"error": "profile_in_use", "message": "included by b"}))
+    with pytest.raises(ResonaAPIError) as exc:
+        ResonaClient(base_url="http://t").delete_profile("a")
+    assert exc.value.code == "profile_in_use"
+
 
 
 # ── Context manager ───────────────────────────────────────────────────────────

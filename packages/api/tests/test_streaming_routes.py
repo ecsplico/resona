@@ -473,6 +473,25 @@ def test_listen_engines_requires_auth(listen_catalogue):
     assert _listen_client().get("/v1/listen/engines").status_code == 401
 
 
+def test_listen_engines_default_is_live_engine(fresh_org, client_headers, store_settings, listen_catalogue):
+    """``live.engine`` is the advertised default when listed, a cloud engine too."""
+    from resona_job_core import Endpoint
+
+    listen_catalogue([_local(), _cloud("deepgram", "nova-3")])
+    endpoint = Endpoint(id="cloud-asr:deepgram", kind="cloud_asr", model="nova-3")
+    store_settings(fresh_org, cloud_enabled=True, endpoints=[endpoint.model_dump(mode="json")],
+                   live={"engine": "deepgram"})
+    body = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org)).json()
+    assert body["default"] == "deepgram"
+
+
+def test_listen_engines_unlisted_live_engine_falls_back(fresh_org, client_headers, store_settings, listen_catalogue):
+    listen_catalogue([_local()])
+    store_settings(fresh_org, live={"engine": "deepgram"})
+    body = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org)).json()
+    assert body["default"] == "faster-whisper"
+
+
 # ── Deepgram compatibility: params, key terms, speech_final, Metadata ────────
 
 def test_results_mark_finals_as_speech_final():
@@ -518,14 +537,16 @@ def test_is_container_audio(head, container):
 def local_listen(monkeypatch, client_headers, org_a):
     """A streaming app over a fake local engine that records the engine URL and resolve calls."""
     fake_ws = _FakeEngineWS(script=[{"type": "final", "text": "hallo", "delta": "hallo"}])
-    seen = {"urls": [], "resolve": []}
+    seen = {"urls": [], "resolve": [], "preferred": []}
 
     def connect(url, **kwargs):
         seen["urls"].append(url)
+        fake_ws._queue = asyncio.Queue()  # one session per queue: each connection runs on its own loop
         return _FakeConnect(fake_ws)
 
     def resolve(name, *args, **kwargs):
         seen["resolve"].append(name)
+        seen["preferred"].append(kwargs.get("preferred"))
         return _local()
 
     monkeypatch.setattr(sr.websockets, "connect", connect)
@@ -581,6 +602,29 @@ def test_listen_engine_param_wins_over_model(local_listen):
         ws.send_text(json.dumps({"type": "CloseStream"}))
         _until_metadata(ws)
     assert seen["resolve"] == ["other"]
+
+
+def test_listen_default_engine_comes_from_live_settings(local_listen, org_a, store_settings):
+    """Without ``engine`` (or a ``model`` naming one) the org's ``live.engine`` is the preferred default."""
+    client, _, seen = local_listen
+    with client.websocket_connect("/v1/listen?encoding=linear16") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    store_settings(org_a, live={"engine": "faster-whisper"})
+    with client.websocket_connect("/v1/listen?encoding=linear16") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    assert seen["resolve"] == [None, None]
+    assert seen["preferred"] == [None, "faster-whisper"]
+
+
+def test_listen_engine_param_wins_over_live_settings(local_listen, org_a, store_settings):
+    client, _, seen = local_listen
+    store_settings(org_a, live={"engine": "deepgram"})
+    with client.websocket_connect("/v1/listen?encoding=linear16&engine=faster-whisper") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    assert seen["resolve"] == ["faster-whisper"]
 
 
 def test_listen_explicit_linear16_never_decodes(local_listen, monkeypatch):

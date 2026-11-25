@@ -130,6 +130,7 @@ def plan_local(
     """Resolve and policy-check everything before any processing (PolicyDenied escapes)."""
     from resona_postprocess.pipeline import build_pipeline, local_policy
     from resona_postprocess.profile import ProfileError, resolve_profile
+    from resona_postprocess.roles import RoleUnassigned, resolve_roles
 
     settings = local.settings
     if not private and not settings.cloud_enabled:
@@ -162,6 +163,11 @@ def plan_local(
             prof = resolve_profile(profile_ref, _PROFILES_DIR)
         except ProfileError as e:
             raise LocalRunError(f"invalid_profile: {e}") from None
+        try:
+            # "@<role>" endpoints from the cached settings' model_roles, as the hub does at admission.
+            prof = resolve_roles(prof, settings)
+        except RoleUnassigned as e:
+            raise LocalRunError(str(e)) from None
         if instructions is not None:
             try:
                 prof = prof.with_instructions(instructions)

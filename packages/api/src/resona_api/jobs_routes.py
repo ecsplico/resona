@@ -86,8 +86,9 @@ from .db.models import (
 from .deps import get_db_session
 from . import schemas
 from .errors import api_error, validation_message
+from .model_roles import resolve_model_roles
 from .openapi import CLIENT
-from .privacy import ProfileNotFound, is_profile_name, load_org_profile
+from .privacy import ProfileNotFound, is_profile_name, load_resolved_profile
 from .settings_store import current_settings
 
 logger = logging.getLogger(__name__)
@@ -796,11 +797,13 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     if not is_profile_name(name):
         raise api_error(422, "invalid_profile", "profile must be a stored profile name")
     try:
-        profile = load_org_profile(session, organization_id, name)
+        # Flat from here on: the pinned document never carries include steps.
+        profile, includes = load_resolved_profile(session, organization_id, name)
     except ProfileNotFound:
         raise api_error(404, "profile_not_found", "no such profile for this organization") from None
-    except ProfileError:
-        raise api_error(422, "invalid_profile", "stored profile is invalid") from None
+    except ProfileError as exc:
+        raise api_error(422, "invalid_profile", f"stored profile is invalid: {exc}") from None
+    profile = resolve_model_roles(profile, settings)  # "@<role>" endpoints → concrete ids, or 422
     if req.instructions is not None:
         try:
             profile = profile.with_instructions(req.instructions)
@@ -820,6 +823,9 @@ def _resolve_postprocess(session: Session, organization_id: str, req: JobRequest
     revision = row.revision if row is not None and not row.deleted else 0
     document = json.dumps(profile.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
     meta = {"name": name, "revision": revision, "sha256": hashlib.sha256(document).hexdigest()}
+    if includes:
+        # Provenance only: the document is already flat, workers never resolve includes.
+        meta["includes"] = includes
     if profile.instructions is not None:
         # Content-free marker: only workers whose release reads instructions claim the job.
         meta["instructions"] = True

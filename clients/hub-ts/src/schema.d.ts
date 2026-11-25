@@ -59,12 +59,17 @@ export interface paths {
         /**
          * Create the next revision of a profile
          * @description Store a new revision (organization admin only). Inline rules only; no file sources.
+         *
+         *     Every include must resolve (stored profile, else bundled block) without a cycle, and
+         *     stored profiles that include this one must still resolve with the new revision.
          */
         put: operations["profiles_put"];
         post?: never;
         /**
          * Delete a profile
          * @description Tombstone a profile (organization admin only); earlier revisions stay for provenance.
+         *
+         *     A profile another stored profile includes, directly or indirectly, stays (409 ``profile_in_use``).
          */
         delete: operations["profiles_delete"];
         options?: never;
@@ -313,8 +318,10 @@ export interface paths {
          *
          *     Mirrors the bridge dispatch below: an available local engine-server, or a
          *     cloud provider with a realtime API when the org enables cloud processing and
-         *     approves its endpoint. ``default`` is ``RESONA_DEFAULT_ENGINE`` if it is a
-         *     listed private engine, else the first listed local engine.
+         *     approves its endpoint. ``default`` is the organization's ``live.engine`` if it is
+         *     listed (a cloud one too: clients open it with ``private=false``), else
+         *     ``RESONA_DEFAULT_ENGINE`` if it is a listed private engine, else the first
+         *     listed local engine.
          */
         get: operations["listen_engines_list"];
         put?: never;
@@ -761,6 +768,23 @@ export interface components {
             } | null;
         };
         /**
+         * LiveDefaults
+         * @description Organization defaults for live dictation; a device setting left empty inherits them.
+         *
+         *     ``engine``: the ``WS /v1/listen`` engine when a request names none (before
+         *     ``RESONA_DEFAULT_ENGINE``). ``correction_execution_profile``: the execution profile of
+         *     chunked live correction jobs. ``cleanup_profile``: the stored postprocess profile a
+         *     client runs on finished live text as a text job.
+         */
+        LiveDefaults: {
+            /** Cleanup Profile */
+            cleanup_profile?: string | null;
+            /** Correction Execution Profile */
+            correction_execution_profile?: string | null;
+            /** Engine */
+            engine?: string | null;
+        };
+        /**
          * MarkdownChunk
          * @description One character range of a result's Markdown; ``source`` names the field read.
          */
@@ -816,6 +840,11 @@ export interface components {
              * @default de
              */
             language: string;
+            live?: components["schemas"]["LiveDefaults"] | null;
+            /** Model Roles */
+            model_roles?: {
+                [key: string]: string;
+            };
             /**
              * Polish
              * @default false
@@ -857,6 +886,11 @@ export interface components {
              * @default de
              */
             language: string;
+            live?: components["schemas"]["LiveDefaults"] | null;
+            /** Model Roles */
+            model_roles?: {
+                [key: string]: string;
+            };
             /**
              * Polish
              * @default false
@@ -963,9 +997,11 @@ export interface components {
         };
         /**
          * ProfileDocument
-         * @description A postprocess profile; see the profile file format. ``instructions`` and ``context`` only when set.
+         * @description A postprocess profile; see the profile file format. ``instructions``, ``context`` and ``block`` only when set.
          */
         ProfileDocument: {
+            /** Block */
+            block?: boolean | null;
             /** Context */
             context?: {
                 [key: string]: string;
@@ -983,6 +1019,16 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /**
+         * ProfileInclude
+         * @description A profile an include step resolved to: an organization profile, or a bundled block (revision 0).
+         */
+        ProfileInclude: {
+            /** Name */
+            name: string;
+            /** Revision */
+            revision: number;
+        };
         /** ProfileList */
         ProfileList: {
             /** Profiles */
@@ -997,6 +1043,8 @@ export interface components {
         };
         /** ProfileView */
         ProfileView: {
+            /** Includes */
+            includes?: components["schemas"]["ProfileInclude"][] | null;
             /** Name */
             name: string;
             profile: components["schemas"]["ProfileDocument"];
@@ -1274,7 +1322,10 @@ export interface operations {
     };
     profiles_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return the flattened profile: include steps replaced by the steps of the profiles they name, plus `includes`. */
+                resolved?: boolean;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1450,7 +1501,7 @@ export interface operations {
                     "application/json": components["schemas"]["DetailErrorBody"];
                 };
             };
-            /** @description Error: `revision_conflict`. */
+            /** @description Error: `profile_in_use`, `revision_conflict`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1679,7 +1730,7 @@ export interface operations {
                     "application/json": components["schemas"]["JobErrorBody"];
                 };
             };
-            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`. */
+            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `role_unassigned`, `unapproved_override`, `unknown_webhook`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1882,7 +1933,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`. */
+            /** @description Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `role_unassigned`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2342,7 +2393,7 @@ export interface operations {
                     "application/json": components["schemas"]["JobErrorBody"];
                 };
             };
-            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, rejected parameters. */
+            /** @description Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `role_unassigned`, `unapproved_override`, `unknown_webhook`, rejected parameters. */
             422: {
                 headers: {
                     [name: string]: unknown;

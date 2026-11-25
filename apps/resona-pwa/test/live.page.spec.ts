@@ -54,9 +54,14 @@ const device = vi.hoisted(() => ({
 	final: null as null | { value: string },
 	status: null as null | { value: string },
 	error: null as null | { value: string | null },
-	start: vi.fn(async () => {}),
+	start: vi.fn(async (_opts: { language: string; keepAudio?: boolean }) => {}),
 	stop: vi.fn(),
 	availability: vi.fn(async (): Promise<string> => "available"),
+	// Native path (ResonaSpeech plugin in the Android app).
+	native: false,
+	pcm: { sampleRate: 16000, start: vi.fn(async () => {}), stop: vi.fn(), onFrame: vi.fn(() => () => {}) },
+	finish: vi.fn(async () => {}),
+	recording: vi.fn((): { blob: Blob; seconds: number } | null => null),
 }));
 mockNuxtImport("useDeviceSpeech", () => () => {
 	device.partial ??= ref("");
@@ -71,6 +76,10 @@ mockNuxtImport("useDeviceSpeech", () => () => {
 		error: device.error,
 		start: device.start,
 		stop: device.stop,
+		native: device.native,
+		pcm: device.pcm,
+		finish: device.finish,
+		recording: device.recording,
 		onFinal: vi.fn(() => () => {}),
 		availability: device.availability,
 		install: vi.fn(async () => true),
@@ -84,6 +93,7 @@ const settings = vi.hoisted(() => ({
 		correction: boolean;
 		correctionEngine: string;
 		chunkSeconds: number;
+		cleanup: boolean;
 	},
 }));
 mockNuxtImport("useLiveSettings", () => () => {
@@ -93,6 +103,7 @@ mockNuxtImport("useLiveSettings", () => () => {
 		correction: false,
 		correctionEngine: "",
 		chunkSeconds: 15,
+		cleanup: false,
 	});
 	return settings.value;
 });
@@ -112,11 +123,21 @@ const listListenEngines = vi.hoisted(() => vi.fn(async () => {
 	}
 	return listen.result;
 }));
+// Org settings (`live` defaults) and the text-job calls of the cleanup pass.
+const hubJobs = vi.hoisted(() => ({
+	getSettings: vi.fn(),
+	upload: vi.fn(),
+	createJob: vi.fn(),
+	getJob: vi.fn(),
+	getResult: vi.fn(),
+	deleteJob: vi.fn(),
+}));
 mockNuxtImport("useHub", () => () => ({
 	token: () => "tok",
 	hasToken: () => listen.hasToken,
 	listListenEngines,
 	listEngines: hubListEngines,
+	...hubJobs,
 }));
 
 const route = vi.hoisted(() => ({ query: {} as Record<string, string> }));
@@ -256,18 +277,28 @@ describe("live transcription page", () => {
 		device.partial.value = "";
 		device.error.value = null;
 		device.availability.mockResolvedValue("available");
+		device.native = false;
+		device.recording.mockReturnValue(null);
 		settings.value ??= reactive({
 			source: "hub" as "hub" | "device",
 			hubEngine: "",
 			correction: false,
 			correctionEngine: "",
 			chunkSeconds: 15,
+			cleanup: false,
 		});
 		settings.value.source = "hub";
 		settings.value.hubEngine = "";
 		settings.value.correction = false;
 		settings.value.correctionEngine = "";
 		settings.value.chunkSeconds = 15;
+		settings.value.cleanup = false;
+		hubJobs.getSettings.mockResolvedValue({ organization_id: "org", revision: 1, settings: {} });
+		hubJobs.upload.mockResolvedValue("up-1");
+		hubJobs.createJob.mockResolvedValue(41);
+		hubJobs.getJob.mockResolvedValue({ id: 41, status: "completed", error: null });
+		hubJobs.getResult.mockResolvedValue({ markdown: "Der Befund ist unauffällig." });
+		hubJobs.deleteJob.mockResolvedValue(undefined);
 		finalListeners.clear();
 		corr.blocks ??= ref<TestBlock[]>([]);
 		corr.blocks.value = [];
@@ -958,6 +989,38 @@ describe("live transcription page", () => {
 		expect(w.find("[data-testid=\"reconnect-banner\"]").exists()).toBe(false);
 	});
 
+	it("native device source: the plugin owns the microphone, feeds the correction and becomes the saved audio", async () => {
+		settings.value!.source = "device";
+		settings.value!.correction = true;
+		device.native = true;
+		const wav = new Blob(["RIFF"], { type: "audio/wav" });
+		device.recording.mockReturnValue({ blob: wav, seconds: 12.4 });
+		const w = await mountLive();
+		expect(device.start).toHaveBeenCalledWith({ language: "de", keepAudio: true });
+		// No web microphone, capture graph or web recorder next to the plugin's AudioRecord.
+		expect(capture.start).not.toHaveBeenCalled();
+		expect(recorderStart).not.toHaveBeenCalled();
+		expect(corr.start).toHaveBeenCalledWith(expect.objectContaining({ capture: device.pcm }));
+
+		device.final!.value = "Lokal erkannt";
+		corr.blocks!.value = [{ id: 1, liveText: "Lokal erkannt", correctedText: "Vom Hub korrigiert.", state: "corrected", samples: null }];
+		await w.find("[data-testid=\"stop-live\"]").trigger("click");
+		await flush();
+		// The plugin finished (last PCM frame in) before the correction closed its block.
+		expect(device.finish.mock.invocationCallOrder[0]!).toBeLessThan(corr.finish.mock.invocationCallOrder[0]!);
+		corr.finishResolve!();
+		await flush();
+		await w.find("[data-testid=\"confirm-save\"]").trigger("click");
+		await flush();
+		expect(store.createRecording).toHaveBeenCalledWith(
+			expect.objectContaining({ duration_seconds: 12 }),
+			wav,
+			expect.stringMatching(/\.wav$/),
+		);
+		// The hub's correction is the saved text; the stamp names both engines.
+		expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Vom Hub korrigiert.", engine: "android-speech+whisper-large" });
+	});
+
 	it("a typed title is not overwritten when the correction finishes with other text", async () => {
 		settings.value!.correction = true;
 		const w = await mountLive();
@@ -1133,5 +1196,92 @@ describe("live transcription page", () => {
 		await stopAndSave(w);
 		expect(corr.finish).not.toHaveBeenCalled();
 		expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "plain", engine: "whisper-live" });
+	});
+
+	describe("organization live defaults", () => {
+		it("correction without a device engine uses the org's correction execution profile", async () => {
+			hubJobs.getSettings.mockResolvedValue({ settings: { live: { correction_execution_profile: "gpu-private" } } });
+			settings.value!.correction = true;
+			await mountLive();
+			expect(corr.start).toHaveBeenCalledWith(expect.objectContaining({ engine: "", executionProfile: "gpu-private" }));
+		});
+
+		it("a device correction engine wins over the org profile", async () => {
+			hubJobs.getSettings.mockResolvedValue({ settings: { live: { correction_execution_profile: "gpu-private" } } });
+			settings.value!.correction = true;
+			settings.value!.correctionEngine = "whisper-large";
+			await mountLive();
+			expect(corr.start).toHaveBeenCalledWith(expect.objectContaining({ engine: "whisper-large", executionProfile: undefined }));
+		});
+	});
+
+	describe("cleanup of the finished live text", () => {
+		it("runs the org cleanup profile as a text job with context and saves the cleaned text", async () => {
+			hubJobs.getSettings.mockResolvedValue({ settings: { live: { cleanup_profile: "dictation-clean-de" } } });
+			settings.value!.cleanup = true;
+			route.query = { title: "Visite Station 3" };
+			final.value = "äh der Befund ist äh unauffällig";
+			const w = await mountLive();
+			await stopAndSave(w);
+
+			expect(hubJobs.createJob).toHaveBeenCalledWith(
+				{
+					kind: "text",
+					upload_id: "up-1",
+					profile: "dictation-clean-de",
+					context: { before: "# Visite Station 3" },
+					language: "de",
+				},
+				expect.stringMatching(/^live-cleanup:/),
+			);
+			const uploaded = hubJobs.upload.mock.calls[0]![0] as File;
+			expect(await uploaded.text()).toBe("äh der Befund ist äh unauffällig");
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Der Befund ist unauffällig.", engine: "whisper-live+cleanup" });
+			expect(hubJobs.deleteJob).toHaveBeenCalledWith(41);
+		});
+
+		it("cleans the corrected text once the correction has finished", async () => {
+			hubJobs.getSettings.mockResolvedValue({ settings: { live: { cleanup_profile: "dictation-clean-de" } } });
+			settings.value!.correction = true;
+			settings.value!.cleanup = true;
+			const w = await mountLive();
+			corr.blocks!.value = [{ id: 1, liveText: "eins", correctedText: "Eins.", state: "corrected", samples: null }];
+			corr.finish.mockResolvedValueOnce(undefined);
+			await stopAndSave(w);
+
+			const uploaded = hubJobs.upload.mock.calls[0]![0] as File;
+			expect(await uploaded.text()).toBe("Eins.");
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "Der Befund ist unauffällig.", engine: "whisper-live+whisper-large+cleanup" });
+		});
+
+		it("sends nothing when the organization names no cleanup profile", async () => {
+			settings.value!.cleanup = true;
+			final.value = "plain";
+			const w = await mountLive();
+			await stopAndSave(w);
+			expect(hubJobs.upload).not.toHaveBeenCalled();
+			expect(hubJobs.createJob).not.toHaveBeenCalled();
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "plain", engine: "whisper-live" });
+		});
+
+		it("sends nothing while the device toggle is off", async () => {
+			hubJobs.getSettings.mockResolvedValue({ settings: { live: { cleanup_profile: "dictation-clean-de" } } });
+			final.value = "plain";
+			const w = await mountLive();
+			await stopAndSave(w);
+			expect(hubJobs.createJob).not.toHaveBeenCalled();
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "plain", engine: "whisper-live" });
+		});
+
+		it("a failed cleanup job keeps the live text", async () => {
+			hubJobs.getSettings.mockResolvedValue({ settings: { live: { cleanup_profile: "dictation-clean-de" } } });
+			hubJobs.getJob.mockResolvedValue({ id: 41, status: "failed", error: { code: "postprocess_failed", message: "x" } });
+			settings.value!.cleanup = true;
+			final.value = "plain";
+			const w = await mountLive();
+			await stopAndSave(w);
+			expect(store.createTranscript).toHaveBeenCalledWith("rec-1", { text: "plain", engine: "whisper-live" });
+			expect(hubJobs.deleteJob).toHaveBeenCalledWith(41);
+		});
 	});
 });

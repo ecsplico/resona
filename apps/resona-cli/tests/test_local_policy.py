@@ -16,7 +16,7 @@ from resona_cli import settings_cache
 from resona_cli.main import app
 from resona_client.client import SettingsDoc
 from resona_client.config import EngineConfig
-from resona_job_core import JobResult, default_settings
+from resona_job_core import Endpoint, JobResult, default_settings
 
 runner = CliRunner()
 
@@ -180,6 +180,42 @@ def test_local_rejects_unapproved_override(tmp_path, execution):
     assert result.exit_code == 1
     assert "unapproved_override" in result.output
     assert execution.calls == []
+
+
+ROLE_PROFILE = {
+    "name": "role-polish",
+    "steps": [{"type": "llm", "name": "polish", "prompt": "fix", "endpoint": "@polish"}],
+}
+
+
+def _role_profile_file(tmp_path: Path) -> Path:
+    path = tmp_path / "role-polish.json"
+    path.write_text(json.dumps(ROLE_PROFILE), encoding="utf-8")
+    return path
+
+
+def test_local_resolves_model_roles_from_cached_settings(tmp_path, litellm_spy, execution):
+    audio = _make_wav(tmp_path / "audio.wav")
+    llm = Endpoint(id="local-llm", kind="local_llm", model="openai/qwen-local", url="http://127.0.0.1:9292/v1")
+    _cache_settings(endpoints=[llm], model_roles={"polish": "local-llm"})
+
+    result = runner.invoke(app, ["transcribe", str(audio), "--local", "--execution-profile", "cpu-private",
+                                 "--profile", str(_role_profile_file(tmp_path))])
+
+    assert result.exit_code == 0, result.output
+    assert [c["model"] for c in litellm_spy.calls] == ["openai/qwen-local"]
+
+
+def test_local_unassigned_role_fails_before_any_processing(tmp_path, litellm_spy, execution):
+    audio = _make_wav(tmp_path / "audio.wav")
+    _cache_settings()
+
+    result = runner.invoke(app, ["transcribe", str(audio), "--local", "--execution-profile", "cpu-private",
+                                 "--profile", str(_role_profile_file(tmp_path))])
+
+    assert result.exit_code == 1
+    assert "role_unassigned" in result.output and "polish" in result.output
+    assert litellm_spy.calls == [] and execution.calls == []
 
 
 def test_local_execution_failure_is_reported_without_output(tmp_path, monkeypatch):

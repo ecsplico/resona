@@ -74,7 +74,7 @@ Uses [litellm](https://github.com/BerriAI/litellm) — any OpenAI-compatible end
 | `type` | yes | `"llm"` |
 | `name` | no | Human-readable label for this step |
 | `prompt` | yes | System prompt sent to the model |
-| `endpoint` | no | Id of an endpoint in the organization's settings registry; required in hub profiles |
+| `endpoint` | no | Id of an endpoint in the organization's settings registry, or `@<role>` for a [model role](#model-roles); required in hub profiles |
 | `model` | no | litellm model string (overrides `RESONA_LLM_MODEL`; explicit local CLI mode only) |
 | `api_base` | no | Custom API endpoint (overrides `RESONA_LLM_API_BASE`; explicit local CLI mode only) |
 | `timeout` | no | Seconds per model call (default 120) |
@@ -139,6 +139,39 @@ composed this way instead of copying their rules:
   (only the outer profile or the job sets them) or two `extract` steps with the same name after flattening
   are errors. A pipeline refuses a profile that still has include steps.
 - Lookup order in local CLI mode: `<RESONA_PROFILES_DIR>/<name>.json`, then the bundled blocks.
+- On the hub ([ADR 0002](../adr/0002-profile-composition-resolves-at-admission.md)) an include
+  names the organization's stored profile, else a bundled block. Admission (`POST /v1/jobs`,
+  `/v1/audio/transcriptions`, `POST /v1/listen`, `WS /v1/listen`) flattens the profile, so the
+  pinned document is flat and any worker runs it; the snapshot lists `includes: [{name, revision}]`
+  (revision 0 = bundled). `PUT /profiles/{name}` refuses includes that do not resolve or cycles,
+  also when the write would break a stored profile that includes it (422 `invalid_profile`);
+  `DELETE` answers 409 `profile_in_use` while another stored profile includes it.
+  `resona profiles show <name> --resolved` (`GET /profiles/{name}?resolved=true`) prints the flat
+  document a job would pin.
+
+### Model roles
+
+An `llm` or `extract` step may name a **model role** instead of an endpoint id:
+`"endpoint": "@polish"`. The organization settings map each role to one of their endpoints:
+
+```json
+{
+  "endpoints": [{"id": "local-llm", "kind": "local_llm", "model": "openai/qwen", "url": "http://127.0.0.1:9292/v1"}],
+  "model_roles": {"polish": "local-llm", "cleanup": "local-llm", "title": "local-llm"}
+}
+```
+
+- Role names match `^[a-z][a-z0-9-]{0,31}$`; every role must name an endpoint in `endpoints`
+  (`PUT /v1/settings` answers 422 otherwise). The standard roles are `polish`, `cleanup`,
+  `title`, `extract` and `judge`; they are a convention, an organization may add others.
+- The hub resolves roles at admission, after includes: the job's pinned profile carries the
+  endpoint id, so policy checks, worker endpoint assignment and the worker see no role. A role
+  the organization has not assigned is 422 `role_unassigned`, and no job is created. Changing
+  `model_roles` affects new jobs only.
+- `--local` resolves roles from the settings cached by `resona settings pull`; an unassigned role
+  fails before any processing with `role_unassigned`.
+- The admin UI's Settings tab lists `model_roles` read-only; change them with
+  `resona settings set --file`.
 
 ---
 

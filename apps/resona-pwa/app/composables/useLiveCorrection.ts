@@ -17,6 +17,8 @@ export interface LiveCorrectionStartOptions {
 	capture: PcmCapture;
 	language: string;
 	engine: string;
+	/** Execution profile for the correction jobs (the org's `live.correction_execution_profile`); empty = the org default. */
+	executionProfile?: string;
 	chunkSeconds: number;
 }
 
@@ -144,6 +146,7 @@ export function useLiveCorrection(): LiveCorrection {
 					const result = await hub.transcribeSync(pcmToWav(samples, SAMPLE_RATE), "chunk.wav", {
 						language,
 						engine: opts?.engine || undefined,
+						executionProfile: opts?.executionProfile || undefined,
 					});
 					const trimmed = (result ?? "").trim();
 					corrected = trimmed.length > 0 ? trimmed : null;

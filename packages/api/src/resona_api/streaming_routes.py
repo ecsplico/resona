@@ -124,8 +124,10 @@ def list_listen_engines(
 
     Mirrors the bridge dispatch below: an available local engine-server, or a
     cloud provider with a realtime API when the org enables cloud processing and
-    approves its endpoint. ``default`` is ``RESONA_DEFAULT_ENGINE`` if it is a
-    listed private engine, else the first listed local engine.
+    approves its endpoint. ``default`` is the organization's ``live.engine`` if it is
+    listed (a cloud one too: clients open it with ``private=false``), else
+    ``RESONA_DEFAULT_ENGINE`` if it is a listed private engine, else the first
+    listed local engine.
     """
     try:
         _, settings = current_settings(session, principal.organization_id)
@@ -135,8 +137,11 @@ def list_listen_engines(
         {"name": e.name, "kind": e.kind, "private": e.private, "models": e.models}
         for e in _org_listen_engines(settings)
     ]
+    live_engine = settings.live.engine if settings.live else None
     configured = reg.default_engine_name()
-    if any(e["name"] == configured and e["private"] for e in engines):
+    if live_engine and any(e["name"] == live_engine for e in engines):
+        default = live_engine
+    elif any(e["name"] == configured and e["private"] for e in engines):
         default = configured
     else:
         default = next((e["name"] for e in engines if e["kind"] == "local"), None)
@@ -511,6 +516,7 @@ async def listen(websocket: WebSocket):
                 engine=engine_name,
                 profile=profile_name,
                 language=language,
+                live=True,
             )
     except PolicyDenied as exc:
         await websocket.send_json({

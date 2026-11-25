@@ -230,8 +230,26 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   Live source (Einstellungen → Live, `useLiveSettings().source`): `hub` streams PCM from
   `usePcmCapture()` to `/v1/listen` using an engine from `/v1/listen/engines` discovery
   (`private=false` only for cloud entries; empty list → start disabled); `device` uses
-  on-device Web Speech (`useDeviceSpeech`, `processLocally` always true). Transcript
-  `engine` stamp: `web-speech` / selected hub engine / listen default / `hub-live`.
+  on-device recognition (`useDeviceSpeech`, never cloud). Transcript
+  `engine` stamp: `web-speech` / `android-speech` / selected hub engine / listen default / `hub-live`
+  (with correction `<stamp>+<correction engine>`).
+  Device source in the Android app (`useDeviceSpeech().native` = `hasResonaSpeech()`): the app-local
+  plugin `ResonaSpeech` (`utils/resonaSpeech.ts` = TS definitions, web fallback answering
+  `unsupported`, `decodePcm`; Java `android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java`
+  + `…/resona/speech/` (`LiveSpeechSession` + pure, JUnit-tested `SpeechTranscript`, `PcmFrames`,
+  `AudioFeed`, `RecognitionRestarts`, `LanguageSupport`), registered in `MainActivity`; Android 13+,
+  older answers `unsupported`). `available`/`install({language})` → `checkRecognitionSupport` /
+  `triggerModelDownload`; `start({language, emitPcm})` captures with its own `AudioRecord` (16 kHz
+  mono) and feeds `createOnDeviceSpeechRecognizer` via `EXTRA_AUDIO_SOURCE` (segmented session;
+  silence/end restart at once, transient errors back off, 5 in a row → non-fatal `error`, PCM goes
+  on); events `update {committed, tentative, revision}` → `final`/`partial` (stale revisions
+  dropped, `onFinal` per new committed text), `pcm {data}` (base64 int16, 250 ms) →
+  `device.pcm` (a `PcmCapture`: `live.vue` passes it to `useLiveCorrection` instead of
+  `usePcmCapture`, no `getUserMedia`, no web recorder) and with `keepAudio` → `recording()` (WAV);
+  `error {fatal}`. `stop()` → `{text}` after the last `pcm`. `useDeviceSpeech` starts the
+  `microphone` foreground service (`utils/recordingService.ts`, shared with `useNativeRecorder`)
+  before the plugin and stops it after, so live runs on with the screen locked. With correction
+  the hub's text is what gets saved; the on-device text is only the preview.
   Settings persist in localStorage `resona.live.settings` (`chunkSeconds` clamped 8–30);
   the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
   On-device Web Speech exists only in desktop Chrome ≥ 139 (Safari/iOS has no
@@ -250,6 +268,19 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   Each correction lands through the insertion guard (`utils/insertionGuard.ts`, block =
   owner `<generation>:<id>`, whole live text selected, `onChange: "drop"`): after a reset or
   new start it is dropped silently, a block whose live text changed meanwhile stays `failed`.
+  Organization defaults (`useOrgLiveDefaults`: `GET /v1/settings` → `settings.live`, module
+  singleton, null without token/hub): empty device values inherit them via
+  `effectiveLiveSettings(device, org)` — `hubEngine` empty → the hub's listen default (which is
+  the org's `live.engine` when listed), `correctionEngine` empty → correction jobs carry
+  `execution_profile` = `live.correction_execution_profile`. The drawer labels the empty
+  choices with the inherited value (`Organisation (<x>)`, else `Hub-Standard`).
+  Cleanup (`settings.cleanup`, toggle "Text nach dem Diktat bereinigen"): on stop, after the
+  correction finished, `useLiveCleanup().cleanupInto` sends the captured text as a `kind: "text"`
+  job with `live.cleanup_profile` and `context` (`liveCleanupContext(title)` = `# <title>` as
+  `before`), polls ≤60 s, deletes the job, and lands the result through the insertion guard
+  (owner `live-<session>`, whole text selected, `onChange: "drop"`): it replaces the save text
+  only while that is unchanged (stamp `<stamp>+cleanup`); any failure keeps the live text. No
+  `cleanup_profile` in the org → the toggle does nothing and the drawer says so.
   Start checks (`live.vue`, notice `data-testid="live-notice"` + `data-kind`): no hub token,
   401/403 (token rejected), unreachable hub (start re-checks first), other HTTP error, hub
   without live engine, and device source `unsupported|unavailable` (start disabled) or
@@ -589,10 +620,12 @@ app/
 │   │                                # useHub: the only hub HTTP client (token, engines, jobs)
 │   │                                # useHubSettings: per-device hub token (localStorage)
 │   │                                # useDataStore: picks directusStore | localStore by data mode
-│   │                                # useLiveSettings: live source/engine/correction settings
+│   │                                # useLiveSettings: live source/engine/correction/cleanup settings + effectiveLiveSettings
+│   │                                # useOrgLiveDefaults: org `live` defaults from GET /v1/settings (module singleton)
+│   │                                # useLiveCleanup: cleanup text job (live.cleanup_profile + context) through the insertion guard
 │   │                                # useTitleModel: browser title model state + opt-in download (module-level)
 │   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
-│   │                                # useDeviceSpeech: on-device Web Speech live source
+│   │                                # useDeviceSpeech: on-device live source (ResonaSpeech plugin in the Android app, else Web Speech)
 │   │                                # useLiveCorrection: re-transcribes live blocks via the hub
 │   │                                # useRedictation: record more parts onto a recording (durable recording_parts, landed at their chip)
 ├── data/
@@ -609,6 +642,8 @@ app/
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Weiter diktieren (done or error) / Löschen)
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
+├── utils/resonaSpeech.ts            # ResonaSpeech plugin definitions + web fallback + decodePcm (Android live dictation)
+├── utils/recordingService.ts        # Android microphone foreground service (native recorder + ResonaSpeech)
 ├── utils/adts.ts                    # scanAdts(): whole ADTS frames + seconds of a cut-off .aac
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)

@@ -15,7 +15,9 @@ Resona has two layers: the **hub**, which transforms audio, documents and text, 
 - **Upload**: An input file held by the hub until exactly one job consumes it; it expires if no job does. _Avoid_: recording, attachment, file.
 - **Result**: The output of a completed job (Markdown, raw text, segments or pages, provenance), kept by the hub for 24 hours. _Avoid_: transcript, document, output.
 - **Profile**: A named, ordered list of postprocessing steps (replacements, llm, extract) applied to the engine's output. _Avoid_: template, preset, prompt; never short for execution profile.
+- **Block**: A profile meant to be included by others through an `include` step: an organization's stored profile, else one bundled with the hub. Including it puts its steps at that position; the hub resolves every include at admission, so a job always runs a flat profile ([ADR 0002](docs/adr/0002-profile-composition-resolves-at-admission.md)). `"block": true` only hides it from listings. _Avoid_: snippet, fragment, partial, module, template.
 - **Execution profile**: A named list of approved candidates (engine, model, accelerator) in an organization's settings that decides where a job may run. _Avoid_: bare "profile", engine config, backend.
+- **Model role**: A purpose name (`polish`, `cleanup`, `title`, `extract`, `judge`, or one the organization adds) that an organization's settings map to one of its endpoints; a profile step says `"endpoint": "@<role>"` and admission replaces it with that endpoint. _Avoid_: model alias, side model, model slot; not a credential role (client, org admin, …).
 - **Organization**: The hub's tenant: it owns settings, profiles, credentials, workers and jobs. _Avoid_: tenant, account, team, customer, user.
 - **Credential**: A token the hub issued to an organization with one role (client, org admin, worker, hub operator); the hub knows credentials, not people. _Avoid_: user, login, account, password.
 - **Worker**: An outbound-only process that claims jobs from the hub under a lease and runs engine and postprocessing. _Avoid_: runner, node, engine; not the reference app's project worker.
@@ -36,6 +38,7 @@ The hub has none of these. Hub code, routes, docs and issues do not use them for
 - An **organization** holds many **credentials**, **workers**, **profiles** and **execution profiles**.
 - An **upload** is consumed by exactly one **job**; a completed **job** has one **result**.
 - A **job** runs under one **execution profile** and at most one **profile**.
+- A **profile** includes zero or more **blocks**; a **block** is itself a profile and may include others.
 - An app turns a **recording** or **document** into an **upload** and a **job**, learns the outcome by **pull** or **push**, and stores the **result** as its own **transcript** or **document**.
 - A **dictation** may cause several **jobs** (transcribe, postprocess again, title); a **job** knows nothing about the dictation it serves.
 

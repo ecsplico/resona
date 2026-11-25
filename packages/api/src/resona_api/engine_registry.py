@@ -191,6 +191,7 @@ def resolve(
     capability: str,
     private: bool,
     catalogue: list[EngineInfo] | None = None,
+    preferred: str | None = None,
 ) -> EngineInfo:
     """Resolve a request to a concrete engine.
 
@@ -199,6 +200,8 @@ def resolve(
         capability: ``"stt"`` or ``"tts"``.
         private: when True, only private (local) engines are eligible.
         catalogue: override the live catalogue (tests).
+        preferred: default ranked before ``RESONA_DEFAULT_ENGINE`` when ``engine`` is
+            None (an organization's ``live.engine``); skipped when not eligible.
 
     Raises:
         EngineNotFoundError, EngineUnavailableError, CapabilityError,
@@ -237,11 +240,11 @@ def resolve(
         what = "private " if private else ""
         raise NoEngineError(f"no {what}engine available for {capability}")
 
-    default = default_engine_name()
-    if default:
-        for e in candidates:
-            if e.name == default:
-                return e
+    for default in (preferred, default_engine_name()):
+        if default:
+            for e in candidates:
+                if e.name == default:
+                    return e
     for e in candidates:
         if e.kind == "local":
             return e

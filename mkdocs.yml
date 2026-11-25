@@ -96,6 +96,7 @@ nav:
     - Architecture:
       - Overview: architecture/overview.md
       - "ADR 0001: Hub and App Boundary": adr/0001-hub-and-app-boundary.md
+      - "ADR 0002: Profile Composition Resolves at Admission": adr/0002-profile-composition-resolves-at-admission.md
       - Stateless Engine Contract: architecture/engine-contract.md
       - Job Lifecycle: architecture/job-lifecycle.md
       - Postprocessing Pipeline: architecture/postprocessing.md

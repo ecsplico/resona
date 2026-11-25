@@ -995,9 +995,14 @@ class ResonaClient:
         """List stored profiles. GET /profiles"""
         return self._send("GET", "/profiles").json()["profiles"]
 
-    def get_profile(self, name: str) -> dict:
-        """Fetch one profile. GET /profiles/{name}"""
-        return self._send("GET", f"/profiles/{name}").json()
+    def get_profile(self, name: str, *, resolved: bool = False) -> dict:
+        """Fetch one profile. GET /profiles/{name}
+
+        ``resolved=True`` returns the flattened profile (include steps replaced by the
+        steps they name) plus ``includes: [{name, revision}]``.
+        """
+        params = {"resolved": "true"} if resolved else None
+        return self._send("GET", f"/profiles/{name}", params=params).json()
 
     def put_profile(self, name: str, profile: dict) -> dict:
         """Create or replace a profile. PUT /profiles/{name}"""

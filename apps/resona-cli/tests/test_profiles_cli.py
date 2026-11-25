@@ -28,7 +28,7 @@ def test_profiles_push(tmp_path, monkeypatch):
 
 def test_profiles_show(monkeypatch):
     class FakeClient:
-        def get_profile(self, name): return {"name": name, "steps": [], "description": "test-desc"}
+        def get_profile(self, name, *, resolved=False): return {"name": name, "steps": [], "description": "test-desc"}
     monkeypatch.setattr("resona_cli.profiles.ResonaClient.from_config",
                         classmethod(lambda cls, **k: FakeClient()))
     result = CliRunner().invoke(app, ["profiles", "show", "medical"])
@@ -36,11 +36,27 @@ def test_profiles_show(monkeypatch):
     assert "medical" in result.stdout
 
 
+def test_profiles_show_resolved_asks_for_the_flat_profile(monkeypatch):
+    asked = {}
+
+    class FakeClient:
+        def get_profile(self, name, *, resolved=False):
+            asked["resolved"] = resolved
+            return {"name": name, "profile": {"steps": [{"type": "replacements", "rules": []}]},
+                    "includes": [{"name": "dictation-commands-de", "revision": 0}]}
+    monkeypatch.setattr("resona_cli.profiles.ResonaClient.from_config",
+                        classmethod(lambda cls, **k: FakeClient()))
+    result = CliRunner().invoke(app, ["profiles", "show", "medical", "--resolved"])
+    assert result.exit_code == 0
+    assert asked["resolved"] is True
+    assert "dictation-commands-de" in result.stdout
+
+
 def test_profiles_pull(tmp_path, monkeypatch):
     dest = tmp_path / "medical.json"
 
     class FakeClient:
-        def get_profile(self, name): return {"name": name, "steps": [], "description": "pulled"}
+        def get_profile(self, name, *, resolved=False): return {"name": name, "steps": [], "description": "pulled"}
     monkeypatch.setattr("resona_cli.profiles.ResonaClient.from_config",
                         classmethod(lambda cls, **k: FakeClient()))
     result = CliRunner().invoke(app, ["profiles", "pull", "medical", str(dest)])

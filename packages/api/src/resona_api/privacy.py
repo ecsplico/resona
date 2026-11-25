@@ -8,7 +8,9 @@ substituted and no provider is contacted.
 
 Postprocess profiles are organization-owned and referenced by name. Hosted
 profiles never reference local paths: a replacements ``source`` is rejected
-because it would read a file from the hub host.
+because it would read a file from the hub host. ``include`` steps resolve at
+admission against the organization's stored profiles, then the bundled blocks
+(:func:`resolve_includes`), so every pinned profile document is flat.
 """
 
 from __future__ import annotations
@@ -29,8 +31,10 @@ from resona_job_core import (
     check_policy,
     cloud_asr_endpoint_id,
 )
+from resona_postprocess.compose import bundled_block, flatten_with_includes
 from resona_postprocess.pipeline import PostprocessPipeline, build_pipeline
 from resona_postprocess.profile import Profile, ProfileError, bundled_default
+from resona_postprocess.roles import resolve_roles
 
 from . import engine_registry as reg
 from .db.models import ProfileRevision
@@ -60,27 +64,115 @@ def validate_profile_body(data: dict) -> Profile:
     return profile
 
 
-def load_org_profile(session: Session, organization_id: str, name: str) -> Profile:
-    """Load the latest non-deleted revision of a named profile for an organization.
-
-    The bundled ``default`` profile is readable by every organization when the
-    organization has no revision of that name. Raises :class:`ProfileNotFound`
-    for unknown names and :class:`ProfileError` for a stored body that no longer
-    validates.
-    """
-    if not is_profile_name(name):
-        raise ProfileNotFound(name)
-    row = session.exec(
+def _latest_row(session: Session, organization_id: str, name: str) -> ProfileRevision | None:
+    return session.exec(
         select(ProfileRevision)
         .where(ProfileRevision.organization_id == organization_id)
         .where(ProfileRevision.name == name)
         .order_by(ProfileRevision.revision.desc())
     ).first()
+
+
+def load_org_profile(session: Session, organization_id: str, name: str) -> Profile:
+    """Load the latest non-deleted revision of a named profile for an organization, as stored.
+
+    The bundled ``default`` profile is readable by every organization when the
+    organization has no revision of that name. Include steps stay as they are;
+    :func:`load_resolved_profile` flattens them. Raises :class:`ProfileNotFound`
+    for unknown names and :class:`ProfileError` for a stored body that no longer
+    validates.
+    """
+    if not is_profile_name(name):
+        raise ProfileNotFound(name)
+    row = _latest_row(session, organization_id, name)
     if row is None or row.deleted:
         if name == BUNDLED_PROFILE_NAME:
-            return bundled_default()
+            return bundled_default(flat=False)
         raise ProfileNotFound(name)
     return validate_profile_body(json.loads(row.profile_json))
+
+
+def live_profiles(session: Session, organization_id: str) -> dict[str, ProfileRevision]:
+    """The latest revision of every stored, non-deleted profile of an organization, by name."""
+    rows = session.exec(
+        select(ProfileRevision)
+        .where(ProfileRevision.organization_id == organization_id)
+        .order_by(ProfileRevision.name, ProfileRevision.revision)
+    ).all()
+    latest: dict[str, ProfileRevision] = {}
+    for row in rows:
+        latest[row.name] = row
+    return {name: row for name, row in latest.items() if not row.deleted}
+
+
+def included_names(profile: Profile) -> list[str]:
+    """The profiles ``profile`` includes directly, in step order."""
+    return [step["profile"] for step in profile.steps if step.get("type") == "include"]
+
+
+def resolve_includes(
+    session: Session,
+    organization_id: str,
+    profile: Profile,
+    *,
+    overrides: dict[str, Profile] | None = None,
+) -> tuple[Profile, list[dict]]:
+    """Flatten ``profile`` against the organization's profiles; name what it included.
+
+    An include names an organization profile (latest live revision), else a bundled
+    block (revision 0). ``overrides`` replace stored profiles by name, so a write can
+    be checked before it is stored. Returns the flat profile and ``[{name, revision}]``
+    in first-use order. Raises :class:`ProfileError` for a missing include, a cycle,
+    nesting too deep, an included profile with instructions or context, or a stored
+    profile that no longer validates.
+    """
+    overrides = overrides or {}
+    revisions: dict[str, int] = {}
+
+    def lookup(name: str) -> Profile | None:
+        if name in overrides:
+            row = _latest_row(session, organization_id, name)
+            revisions[name] = (row.revision if row is not None else 0) + 1
+            return overrides[name]
+        if is_profile_name(name):
+            row = _latest_row(session, organization_id, name)
+            if row is not None and not row.deleted:
+                revisions[name] = row.revision
+                try:
+                    return validate_profile_body(json.loads(row.profile_json))
+                except ProfileError as exc:
+                    raise ProfileError(f"included profile {name!r} is invalid: {exc}") from exc
+        block = bundled_block(name)
+        if block is not None:
+            revisions[name] = 0
+        return block
+
+    flat, names = flatten_with_includes(profile, lookup)
+    return flat, [{"name": name, "revision": revisions[name]} for name in names]
+
+
+def load_resolved_profile(session: Session, organization_id: str, name: str) -> tuple[Profile, list[dict]]:
+    """:func:`load_org_profile`, flattened by :func:`resolve_includes`."""
+    return resolve_includes(session, organization_id, load_org_profile(session, organization_id, name))
+
+
+def dependents(session: Session, organization_id: str, name: str) -> list[str]:
+    """Stored profiles that include ``name``, directly or through other stored profiles, sorted."""
+    graph: dict[str, list[str]] = {}
+    for other, row in live_profiles(session, organization_id).items():
+        try:
+            graph[other] = included_names(Profile.from_dict(json.loads(row.profile_json)))
+        except (ProfileError, ValueError):
+            graph[other] = []
+    found: set[str] = set()
+    frontier = [name]
+    while frontier:
+        target = frontier.pop()
+        for other, includes in graph.items():
+            if target in includes and other not in found and other != name:
+                found.add(other)
+                frontier.append(other)
+    return sorted(found)
 
 
 def cloud_endpoint_allowed(settings: OrganizationSettings, engine: str) -> bool:
@@ -143,13 +235,17 @@ def admit(
     engine: str | None = None,
     profile: str | None = None,
     language: str | None = None,
+    live: bool = False,
 ) -> Admission:
     """Resolve and policy-check the whole chain for one request.
 
     Raises ``PolicyDenied`` when any stage is not allowed, ``LookupError`` when
     the organization has no settings or the profile name is unknown,
-    ``ProfileError`` for an invalid stored profile, and registry errors for
+    ``ProfileError`` for an invalid stored profile or an unassigned model role
+    (``RoleUnassigned``, message ``role_unassigned: …``), and registry errors for
     engine selection problems. Callers must map these before processing starts.
+    ``live``: a live session (``WS /v1/listen``); without ``engine`` the organization's
+    ``live.engine`` is preferred over ``RESONA_DEFAULT_ENGINE``.
     """
     try:
         revision, settings = current_settings(session, organization_id)
@@ -159,13 +255,15 @@ def admit(
         raise PolicyDenied("policy", "cloud processing is disabled for this organization")
     policy = settings.policy(private=private)
     try:
-        info = reg.resolve(engine, "stt", private=private)
+        preferred = settings.live.engine if live and settings.live else None
+        info = reg.resolve(engine, "stt", private=private, preferred=preferred)
     except reg.PrivacyViolationError as exc:
         raise PolicyDenied("asr", str(exc)) from exc
     check_policy(policy, [asr_stage(info, settings)])
 
     profile_name = profile or settings.postprocess_profile or BUNDLED_PROFILE_NAME
-    prof = load_org_profile(session, organization_id, profile_name)
+    prof, _ = load_resolved_profile(session, organization_id, profile_name)
+    prof = resolve_roles(prof, settings)  # RoleUnassigned is a ProfileError (ValueError)
     pipeline = build_pipeline(prof, policy=policy)
     return Admission(
         settings_revision=revision,

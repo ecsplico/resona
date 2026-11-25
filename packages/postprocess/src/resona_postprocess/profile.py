@@ -236,15 +236,17 @@ def _bundled_default_raw() -> "Profile":
     return Profile.from_dict(data, base_dir=None)
 
 
-def bundled_default() -> "Profile":
+def bundled_default(*, flat: bool = True) -> "Profile":
     """Return the `default` profile bundled with resona-postprocess, flattened.
 
     Its include steps resolve against the bundled blocks, so the result has none.
+    With ``flat=False`` the include steps stay, for a caller with its own lookup.
     Raises ProfileError if the bundled file is missing or unparseable.
     """
     from .compose import bundled_lookup, flatten
 
-    return flatten(_bundled_default_raw(), bundled_lookup)
+    raw = _bundled_default_raw()
+    return flatten(raw, bundled_lookup) if flat else raw
 
 
 def resolve_profile(ref: Profile | dict | str, profiles_dir: Path | str) -> "Profile":

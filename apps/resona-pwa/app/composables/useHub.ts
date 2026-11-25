@@ -70,6 +70,26 @@ export interface EngineList<T> {
 	default: string | null;
 }
 
+/** Job `context`: text before/after the insertion point and the selection the result replaces. */
+export interface JobContext {
+	before?: string;
+	selection?: string;
+	after?: string;
+}
+
+/** Organization defaults for live dictation (`OrganizationSettings.live`); absent keys are unset. */
+export interface OrgLiveDefaults {
+	engine?: string;
+	correction_execution_profile?: string;
+	cleanup_profile?: string;
+}
+
+export interface HubSettingsDoc {
+	organization_id: string;
+	revision: number;
+	settings: { live?: OrgLiveDefaults; [key: string]: unknown };
+}
+
 export function useHub() {
 	const cfg = useRuntimeConfig().public;
 	const settings = useHubSettings();
@@ -156,13 +176,14 @@ export function useHub() {
 	async function transcribeSync(
 		blob: Blob,
 		filename: string,
-		fields: { language: string; engine?: string; profile?: string },
+		fields: { language: string; engine?: string; executionProfile?: string; profile?: string },
 	): Promise<string> {
 		const form = new FormData();
 		form.append("file", blob, filename);
 		form.append("language", fields.language);
 		form.append("response_format", "json");
 		if (fields.engine) form.append("engine", fields.engine);
+		if (fields.executionProfile) form.append("execution_profile", fields.executionProfile);
 		if (fields.profile) form.append("profile", fields.profile);
 		try {
 			const body = await json<{ text?: string }>("/v1/audio/transcriptions", {
@@ -190,7 +211,8 @@ export function useHub() {
 
 	async function createJob(
 		// `text`: postprocess-only job on an uploaded transcript; `profile` is required.
-		body: { kind: "audio" | "document" | "text"; upload_id: string; language?: string; profile?: string; engine?: string; instructions?: string },
+		// `context`: text around where the result goes, for the profile's llm/extract steps.
+		body: { kind: "audio" | "document" | "text"; upload_id: string; language?: string; profile?: string; engine?: string; instructions?: string; context?: JobContext },
 		idempotencyKey: string,
 	): Promise<number> {
 		const res = await json<{ job_id: number }>("/v1/jobs", {
@@ -213,6 +235,11 @@ export function useHub() {
 		await request(`/v1/jobs/${id}`, { method: "DELETE" });
 	}
 
+	/** The organization's current settings (`GET /v1/settings`, any client token). */
+	async function getSettings(): Promise<HubSettingsDoc> {
+		return await json<HubSettingsDoc>("/v1/settings");
+	}
+
 	return {
 		token,
 		hasToken,
@@ -226,5 +253,6 @@ export function useHub() {
 		getJob,
 		getResult,
 		deleteJob,
+		getSettings,
 	};
 }

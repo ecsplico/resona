@@ -97,3 +97,31 @@ def test_settings_are_per_organization(anon_client, fresh_org, admin_headers, cl
     assert resp.json()["organization_id"] == other
     assert resp.json()["revision"] == 1
     assert resp.json()["settings"]["language"] == "de"
+
+
+def test_live_defaults_round_trip_and_are_readable_by_clients(anon_client, fresh_org, admin_headers, client_headers):
+    """``live`` is stored as sent and served to client tokens (the reference app inherits it)."""
+    live = {"engine": "faster-whisper", "cleanup_profile": "dictation-clean-de"}
+    resp = anon_client.put(
+        "/v1/settings",
+        json={"live": live},
+        headers={**admin_headers(fresh_org), "If-Match": '"1"'},
+    )
+    assert resp.status_code == 200
+
+    read = anon_client.get("/v1/settings", headers=client_headers(fresh_org))
+    assert read.json()["settings"]["live"] == live
+
+
+def test_settings_without_live_leave_the_key_out(anon_client, fresh_org, client_headers):
+    read = anon_client.get("/v1/settings", headers=client_headers(fresh_org))
+    assert "live" not in read.json()["settings"]
+
+
+def test_live_correction_profile_must_be_an_execution_profile(anon_client, fresh_org, admin_headers):
+    resp = anon_client.put(
+        "/v1/settings",
+        json={"live": {"correction_execution_profile": "nope"}},
+        headers={**admin_headers(fresh_org), "If-Match": '"1"'},
+    )
+    assert resp.status_code == 422

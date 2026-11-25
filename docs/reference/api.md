@@ -265,6 +265,14 @@ GET /v1/settings      → {organization_id, revision, settings} + ETag
 PUT /v1/settings      (org_admin, If-Match: <revision>)
 ```
 
+Optional `live` (left out of the document while unset, so older releases still read it) holds the organization's defaults for live dictation; each key is optional and a client's own setting wins over it:
+
+| Key | Meaning |
+|---|---|
+| `engine` | `WS /v1/listen` engine when the request names none (and no `model` names one), ranked before `RESONA_DEFAULT_ENGINE`; `GET /v1/listen/engines` reports it as `default` when it is listed. Skipped when not eligible (a cloud engine for a private session) |
+| `correction_execution_profile` | execution profile for live correction chunks; must be a key of `execution_profiles` (`422` otherwise) |
+| `cleanup_profile` | stored postprocess profile name a client runs on finished live text as a `text` job with `context` |
+
 ---
 
 ### Webhook endpoints (role `org_admin`)
@@ -595,7 +603,9 @@ Returns an array of profile summaries:
 GET /profiles/{name}
 ```
 
-Returns the full profile JSON. Returns `404` if not found.
+Returns the full profile JSON as stored, include steps and all. Returns `404` if not found.
+
+With `?resolved=true` the response holds the flat profile a job would pin: every `include` step replaced by the steps of the profile it names (the organization's stored profile, else the bundled block), plus `includes: [{name, revision}]` in first-use order (revision `0` for a bundled block). A stored composition that no longer resolves answers `409 stored_profile_invalid`. See [ADR 0002](../adr/0002-profile-composition-resolves-at-admission.md).
 
 #### Create or replace profile
 
@@ -605,7 +615,8 @@ Content-Type: application/json
 ```
 
 Upload a profile object. The `name` field in the body must match the URL `{name}`. Returns the
-stored profile.
+stored profile. A body whose `include` steps do not resolve, form a cycle or nest deeper than four
+levels, or that would break a stored profile including it, is refused with `422 invalid_profile`.
 
 #### Delete profile
 
@@ -613,7 +624,8 @@ stored profile.
 DELETE /profiles/{name}
 ```
 
-Returns `{"ok": true}`. Returns `404` if not found.
+Returns `{"ok": true}`. Returns `404` if not found, `409 profile_in_use` while another stored
+profile includes it.
 
 ---
 

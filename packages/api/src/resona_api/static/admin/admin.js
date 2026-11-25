@@ -1766,7 +1766,14 @@ function settingSummary(value) {
   }
   if (value && typeof value === "object") {
     const keys = Object.keys(value);
-    return keys.length ? keys.length + (keys.length === 1 ? " key: " : " keys: ") + keys.join(", ") : "Empty object";
+    if (!keys.length) {
+      return "Empty object";
+    }
+    // Flat maps (live defaults, model roles) show their values, nested ones only their keys.
+    if (keys.every((key) => value[key] === null || typeof value[key] !== "object")) {
+      return keys.map((key) => key + ": " + String(value[key])).join(", ");
+    }
+    return keys.length + (keys.length === 1 ? " key: " : " keys: ") + keys.join(", ");
   }
   return value === null ? "null" : String(value);
 }
@@ -1792,15 +1799,18 @@ async function loadSettings(seq) {
       )
     );
     const listBody = h("cds-structured-list-body");
-    Object.keys(values).forEach((key) => {
-      const value = values[key];
+    // Model roles are omitted from the document while none is assigned; list the row anyway.
+    const rows = "model_roles" in values ? values : Object.assign({}, values, { model_roles: null });
+    Object.keys(rows).forEach((key) => {
+      const value = rows[key];
       const scalar = value === null || typeof value !== "object";
+      const summary = key === "model_roles" && value === null ? "No roles assigned" : settingSummary(value);
       listBody.appendChild(
         h(
           "cds-structured-list-row",
           null,
           h("cds-structured-list-cell", null, h("span", { class: "mono" }, key)),
-          h("cds-structured-list-cell", null, h("span", { class: scalar ? "mono" : null }, settingSummary(value)))
+          h("cds-structured-list-cell", null, h("span", { class: scalar ? "mono" : null }, summary))
         )
       );
     });

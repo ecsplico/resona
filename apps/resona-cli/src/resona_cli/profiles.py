@@ -28,10 +28,15 @@ def list_profiles():
 
 
 @profiles_app.command("show")
-def show_profile(name: str = typer.Argument(..., help="Profile name.")):
+def show_profile(
+    name: str = typer.Argument(..., help="Profile name."),
+    resolved: bool = typer.Option(
+        False, "--resolved", help="Show the flattened profile the hub pins for jobs (includes resolved)."
+    ),
+):
     """Print a profile's JSON."""
     try:
-        print(json.dumps(_client().get_profile(name), indent=2, ensure_ascii=False))
+        print(json.dumps(_client().get_profile(name, resolved=resolved), indent=2, ensure_ascii=False))
     except Exception as e:
         print(f"Error: {e}")
         raise typer.Exit(1)

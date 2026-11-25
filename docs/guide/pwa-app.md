@@ -32,6 +32,26 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
   a failure inside the service itself (`startForeground`) is only logged natively.
 - Elapsed time is computed from the wall clock, so the recording sheet shows the
   right length after unlocking (web view timers stall while locked).
+- Live dictation with Einstellungen → Live → Quelle "Gerät" uses the app-local Capacitor
+  plugin `ResonaSpeech` on Android 13+ (`android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java`,
+  pure helpers and their JUnit tests under `…/resona/speech/`; JS side
+  `app/utils/resonaSpeech.ts` + `useDeviceSpeech`). The plugin captures the microphone
+  itself (`AudioRecord`, 16 kHz mono PCM16) and feeds the on-device recognizer
+  (`SpeechRecognizer.createOnDeviceSpeechRecognizer`, API 31+) through a pipe
+  (`EXTRA_AUDIO_SOURCE`, API 33+) in a segmented session; its results arrive as `update`
+  events `{committed, tentative, revision}` (the preview), and the same audio arrives as
+  `pcm` events (base64 int16, 250 ms each). The web app starts the `microphone` foreground
+  service first (`app/utils/recordingService.ts`, shared with the native recorder), so the
+  session keeps running with the screen locked. The PCM is the correction's input
+  (`useLiveCorrection` takes `useDeviceSpeech().pcm` as its `PcmCapture`) and is kept as the
+  saved audio (WAV): with Korrektur on, the hub's text is the saved transcript and the
+  on-device text is only the preview (stamp `android-speech+<engine>`). Silence and
+  recognizer ends restart the recognition at once; transient errors retry with backoff and
+  after five in a row the preview gives up while the audio goes on. `available`/`install`
+  map `checkRecognitionSupport`/`triggerModelDownload` to the drawer's language-pack states.
+  Below Android 13 the plugin answers `unsupported` (the drawer says so, start is disabled);
+  in the browser the device source stays on-device Web Speech.
+  Structure ported from T3 Code's Android voice module (pingdotgg/t3code@b70b9e3, MIT).
 - Sharing a file from another app (Android share sheet → Resona) goes through a
   `SEND` / `SEND_MULTIPLE` intent filter and `@capgo/capacitor-share-target` into the same share page as
   the web share target (`/share-target`); see the Findings row "Share target".
@@ -165,6 +185,20 @@ Recovery after a kill:
    `adb shell run-as de.ecsplico.resona ls cache/capacitor-audio-recorder` lists no file.
 4. A normal record → stop → save leaves no file there either.
 
+Live dictation while locked (Android 13+, needs a human; recognizer quality, language
+packs and vendor audio policies differ per phone):
+
+1. Einstellungen → Live: Quelle "Gerät", Korrektur on. If the drawer says the language
+   pack is missing, load it ("Sprachpaket laden") and wait until it says available.
+2. Open Live. Allow the microphone and notifications; "Resona nimmt auf" appears.
+3. Speak: the on-device preview grows word by word (tentative text, then committed).
+4. Lock the screen, keep dictating for 2 minutes with pauses of 10 s or more.
+5. Unlock: the preview covers the locked part (pauses did not end it), the correction
+   blocks keep landing.
+6. Stop and save: the recording has a `.wav` of the full length, the transcript is the
+   hub's correction, stamped `android-speech+<engine>`.
+7. Android 12 or older: the drawer shows the device source as unsupported; no crash.
+
 Directus login over time (data mode `directus`, build above; needs a human, ≥ 1 h):
 
 1. Install the Directus build, open Resona, sign in with e-mail and password (an account
@@ -227,7 +261,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 | Push-to-talk, re-dictation | Native recorder too; same upload → hub job flow |
 | Interruptions (#33, #39) | Web recorder: track `mute`/`ended` and a hidden page interrupt it. Native recorder: locking or backgrounding does not interrupt it (the service keeps the microphone); a phone call (or another app taking the microphone) does. Android 10+: the OS feeds the recording silence during a call and the recorder plugin reports nothing, so the app-local Capacitor plugin `RecordingSilence` (`AudioManager.registerAudioRecordingCallback`, `AudioRecordingConfiguration.isClientSilenced()` of the app's own recording session, no phone-state permission) reports it with a native timestamp. iOS: the recorder plugin's `recordingInterruptionBegan`/`Ended` events (an `Ended` without `shouldResume` and without a begin counts only while the plugin reports `PAUSED`, since it also arrives late after the user continued; after a `recordingError` the plugin cannot resume, so Fortsetzen is refused and the notice says Beenden keeps everything recorded so far). Either way the app pauses the native recording, stops the clock and shows "Aufnahme unterbrochen"; Fortsetzen resumes the same file, Beenden stops it. Android: the call is cut out of the audio ("… diese Zeit fehlt darin"), except the short delay until the callback fires; when the web view gets the event more than 3 s late (it stalls under the dialer or lock screen), the notice says part of the call is in the audio as silence and the clock counts it; if Android refuses to pause, the notice says the call is in the audio as silence. iOS: the notice promises nothing about the audio, since the plugin resumes on its own after the call before the app can pause it. Below Android 10 a call stays undetected. Unit-tested with the plugins mocked and the debug APK builds; the call on a real phone (device test above) is still open, iOS is not built |
 | Recovery after a kill (#33, #40) | Web recorder: IndexedDB chunks (`resona-unfinished-recordings`). Native recorder (Android): records ADTS (`format: "aac"`, plugin ≥ 8.4), which stays readable up to its last frame; on the next open the recordings list offers `recording-*.aac` files left in `cache/capacitor-audio-recorder/` (Behalten → save → hub job, or Verwerfen; the file is deleted either way). Unit-tested with plugin and Filesystem mocked, and ffmpeg decodes a cut-off ADTS file; the kill on a real phone (device test above) is still open. iOS: not offered (the plugin writes to the app's `tmp/`, which the scan does not read) |
-| Live dictation | **Foreground only**, as in the browser. It streams PCM from `getUserMedia` over the `/v1/listen` WebSocket in the web view, and `live.vue` keeps `useWebRecorder()` for the audio of that same stream. Background live would need native PCM capture and a native WebSocket client |
+| Live dictation | Hub source: **foreground only**, as in the browser. It streams PCM from `getUserMedia` over the `/v1/listen` WebSocket in the web view, and `live.vue` keeps `useWebRecorder()` for the audio of that same stream. Device source on Android 13+: the `ResonaSpeech` plugin captures natively under the `microphone` foreground service, so preview, PCM for the hub correction and the saved WAV continue while locked (#163). JS side unit-tested with the plugin mocked (`test/useDeviceSpeech.native.spec.ts`), pure Java helpers with JUnit (`android/app/src/test/java/de/ecsplico/resona/speech/`); the locked run on a real phone (device test above) is still open, including whether Android throttles the web view's correction requests while locked (blocks would then queue and catch up after unlocking) |
 | Standalone data mode | Works without login: IndexedDB + hub token; processing runs while the app is open |
 | Directus login | JSON auth mode in the app (#41): access and refresh token in `@capacitor/preferences`, refreshed before a request once the access token is within 30 s of expiry, also after background or restart; web build unchanged (cookie mode). Directus `CORS_ORIGIN` lists `https://localhost` and `capacitor://localhost` (`APP_ORIGINS`). Unit-tested with Capacitor and the SDK mocked (`test/useDirectus.native.spec.ts`); the ≥ 1 h login on a real phone (device test above) is still open |
 | Keycloak SSO | Not in the app: the login page hides the Keycloak button and says to sign in with password (Keycloak-only accounts: use the browser). Missing: Directus' OpenID callback ends by setting the refresh cookie (`AUTH_KEYCLOAK_MODE: cookie`) on the Directus host and redirecting to an allow-listed URL; it never hands a token to the redirect target, and no endpoint trades a one-time code for a JSON-mode refresh token. In the app the flow has to run in the system browser (Capacitor opens foreign hosts there; Keycloak/Google refuse embedded web views), so that cookie lands in the browser, not the app. To build: (1) a Directus endpoint extension the browser reaches after SSO (redirect allow-list entry, proxy `ALLOWED` path) that reads the refresh cookie first-party, refreshes in JSON mode, stores the result under a single-use, short-lived code bound to a verifier the app generated (PKCE-style), clears the browser session and redirects to an app link (`https://<pwa-host>/app-auth?code=…`, Android App Link with `assetlinks.json` / iOS Universal Link) or a custom scheme; (2) a POST exchanging code + verifier for `{access_token, refresh_token, expires}`; (3) in the app `@capacitor/browser` to start it, `@capacitor/app` `appUrlOpen` to receive the code, the intent filter / associated domain, then `preferencesAuthStorage().set(...)`. About 1–2 days plus a security review of the handover |

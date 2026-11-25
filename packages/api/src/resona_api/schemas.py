@@ -106,7 +106,7 @@ ADMISSION = {
     422: [
         "invalid_request", "invalid_options", "invalid_instructions", "invalid_context", "invalid_profile",
         "kind_mismatch",
-        "no_candidates", "unapproved_override", "unknown_webhook",
+        "no_candidates", "role_unassigned", "unapproved_override", "unknown_webhook",
     ],
 }
 """Errors of job admission, shared by ``POST /v1/jobs`` and the synchronous adapter."""
@@ -316,7 +316,7 @@ class ProfileList(BaseModel):
 
 
 class ProfileDocument(BaseModel):
-    """A postprocess profile; see the profile file format. ``instructions`` and ``context`` only when set."""
+    """A postprocess profile; see the profile file format. ``instructions``, ``context`` and ``block`` only when set."""
 
     name: str
     # Stored profiles never had their description type-checked; pass it through as it is.
@@ -325,12 +325,23 @@ class ProfileDocument(BaseModel):
     steps: list[dict[str, Any]]
     instructions: Optional[str] = None
     context: Optional[dict[str, str]] = None
+    # Marks a profile meant to be included by others; listings may hide it.
+    block: Optional[bool] = None
+
+
+class ProfileInclude(BaseModel):
+    """A profile an include step resolved to: an organization profile, or a bundled block (revision 0)."""
+
+    name: str
+    revision: int
 
 
 class ProfileView(BaseModel):
     name: str
     revision: int
     profile: ProfileDocument
+    # Only with ``?resolved=true``: the profiles flattened into ``profile``, in first-use order.
+    includes: Optional[list[ProfileInclude]] = None
 
 
 class Deleted(BaseModel):

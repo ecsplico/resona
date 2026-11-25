@@ -833,6 +833,49 @@
         "title": "ListenPrerecordedResponse",
         "type": "object"
       },
+      "LiveDefaults": {
+        "additionalProperties": false,
+        "description": "Organization defaults for live dictation; a device setting left empty inherits them.\n\n``engine``: the ``WS /v1/listen`` engine when a request names none (before\n``RESONA_DEFAULT_ENGINE``). ``correction_execution_profile``: the execution profile of\nchunked live correction jobs. ``cleanup_profile``: the stored postprocess profile a\nclient runs on finished live text as a text job.",
+        "properties": {
+          "cleanup_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup Profile"
+          },
+          "correction_execution_profile": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Execution Profile"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          }
+        },
+        "title": "LiveDefaults",
+        "type": "object"
+      },
       "MarkdownChunk": {
         "description": "One character range of a result's Markdown; ``source`` names the field read.",
         "properties": {
@@ -961,6 +1004,23 @@
             "title": "Language",
             "type": "string"
           },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveDefaults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_roles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Roles",
+            "type": "object"
+          },
           "polish": {
             "default": false,
             "title": "Polish",
@@ -1022,6 +1082,23 @@
             "default": "de",
             "title": "Language",
             "type": "string"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveDefaults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_roles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Roles",
+            "type": "object"
           },
           "polish": {
             "default": false,
@@ -1306,8 +1383,19 @@
         "type": "object"
       },
       "ProfileDocument": {
-        "description": "A postprocess profile; see the profile file format. ``instructions`` and ``context`` only when set.",
+        "description": "A postprocess profile; see the profile file format. ``instructions``, ``context`` and ``block`` only when set.",
         "properties": {
+          "block": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block"
+          },
           "context": {
             "anyOf": [
               {
@@ -1366,6 +1454,25 @@
         "title": "ProfileDocument",
         "type": "object"
       },
+      "ProfileInclude": {
+        "description": "A profile an include step resolved to: an organization profile, or a bundled block (revision 0).",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "revision"
+        ],
+        "title": "ProfileInclude",
+        "type": "object"
+      },
       "ProfileList": {
         "properties": {
           "profiles": {
@@ -1402,6 +1509,20 @@
       },
       "ProfileView": {
         "properties": {
+          "includes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProfileInclude"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Includes"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2042,7 +2163,7 @@
     },
     "/profiles/{name}": {
       "delete": {
-        "description": "Tombstone a profile (organization admin only); earlier revisions stay for provenance.",
+        "description": "Tombstone a profile (organization admin only); earlier revisions stay for provenance.\n\nA profile another stored profile includes, directly or indirectly, stays (409 ``profile_in_use``).",
         "operationId": "profiles_delete",
         "parameters": [
           {
@@ -2110,8 +2231,9 @@
                 }
               }
             },
-            "description": "Error: `revision_conflict`.",
+            "description": "Error: `profile_in_use`, `revision_conflict`.",
             "x-error-codes": [
+              "profile_in_use",
               "revision_conflict"
             ]
           },
@@ -2151,6 +2273,18 @@
             "schema": {
               "title": "Name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Return the flattened profile: include steps replaced by the steps of the profiles they name, plus `includes`.",
+            "in": "query",
+            "name": "resolved",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Return the flattened profile: include steps replaced by the steps of the profiles they name, plus `includes`.",
+              "title": "Resolved",
+              "type": "boolean"
             }
           }
         ],
@@ -2240,7 +2374,7 @@
         ]
       },
       "put": {
-        "description": "Store a new revision (organization admin only). Inline rules only; no file sources.",
+        "description": "Store a new revision (organization admin only). Inline rules only; no file sources.\n\nEvery include must resolve (stored profile, else bundled block) without a cycle, and\nstored profiles that include this one must still resolve with the new revision.",
         "operationId": "profiles_put",
         "parameters": [
           {
@@ -2655,7 +2789,7 @@
                 }
               }
             },
-            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`.",
+            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `role_unassigned`, `unapproved_override`, `unknown_webhook`.",
             "x-error-codes": [
               "invalid_upload",
               "empty_upload",
@@ -2666,6 +2800,7 @@
               "invalid_profile",
               "kind_mismatch",
               "no_candidates",
+              "role_unassigned",
               "unapproved_override",
               "unknown_webhook"
             ]
@@ -3022,7 +3157,7 @@
                 }
               }
             },
-            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`.",
+            "description": "Error: `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `role_unassigned`, `unapproved_override`, `unknown_webhook`, `profile_required`, `release_not_staged`.",
             "x-error-codes": [
               "invalid_request",
               "invalid_options",
@@ -3031,6 +3166,7 @@
               "invalid_profile",
               "kind_mismatch",
               "no_candidates",
+              "role_unassigned",
               "unapproved_override",
               "unknown_webhook",
               "profile_required",
@@ -3922,7 +4058,7 @@
                 }
               }
             },
-            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `unapproved_override`, `unknown_webhook`, rejected parameters.",
+            "description": "Error: `invalid_upload`, `empty_upload`, `invalid_request`, `invalid_options`, `invalid_instructions`, `invalid_context`, `invalid_profile`, `kind_mismatch`, `no_candidates`, `role_unassigned`, `unapproved_override`, `unknown_webhook`, rejected parameters.",
             "x-error-codes": [
               "invalid_upload",
               "empty_upload",
@@ -3933,6 +4069,7 @@
               "invalid_profile",
               "kind_mismatch",
               "no_candidates",
+              "role_unassigned",
               "unapproved_override",
               "unknown_webhook"
             ]
@@ -3978,7 +4115,7 @@
     },
     "/v1/listen/engines": {
       "get": {
-        "description": "Engines this organization can stream live via ``WS /v1/listen`` right now.\n\nMirrors the bridge dispatch below: an available local engine-server, or a\ncloud provider with a realtime API when the org enables cloud processing and\napproves its endpoint. ``default`` is ``RESONA_DEFAULT_ENGINE`` if it is a\nlisted private engine, else the first listed local engine.",
+        "description": "Engines this organization can stream live via ``WS /v1/listen`` right now.\n\nMirrors the bridge dispatch below: an available local engine-server, or a\ncloud provider with a realtime API when the org enables cloud processing and\napproves its endpoint. ``default`` is the organization's ``live.engine`` if it is\nlisted (a cloud one too: clients open it with ``private=false``), else\n``RESONA_DEFAULT_ENGINE`` if it is a listed private engine, else the first\nlisted local engine.",
         "operationId": "listen_engines_list",
         "responses": {
           "200": {
