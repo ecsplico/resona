@@ -21,7 +21,7 @@ README = (CATALOGUE / "README.md").read_text("utf-8")
 
 def test_catalogue_holds_the_documented_profiles_and_blocks() -> None:
     assert [path.stem for path in PROFILE_FILES] == [
-        "dictation-clean-de", "dictation-medical-de", "document-polish-de",
+        "cleanup-judge-de", "dictation-clean-de", "dictation-medical-de", "document-polish-de",
         "transcript-markdown-de", "transcript-polish-de",
     ]
     assert [path.stem for path in BLOCK_FILES] == [
@@ -59,6 +59,7 @@ def test_catalogue_file_flattens(path: Path) -> None:
     ("transcript-markdown-de", ["headings-medical", "dictation-commands"]),
     ("transcript-polish-de", ["headings-medical", "dictation-commands", "transcript-polish"]),
     ("document-polish-de", ["ocr-polish"]),
+    ("cleanup-judge-de", ["judge"]),
     ("dictation-clean-de", [
         "filler-words-de", "names-medical", "headings-medical", "dictation-commands", "self-correction",
     ]),

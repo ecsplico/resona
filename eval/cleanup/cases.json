@@ -1,0 +1,83 @@
+{
+  "description": "German dictation-cleanup cases for `resona eval cleanup`: raw dictation transcripts as the postprocess profile receives them, the text around their insertion point (sent as the job context) and a rubric for the judge. includes/excludes are case-insensitive substrings a usable answer must (not) contain; punctuation counts as a space.",
+  "credit": "Case shape and the cases de-spoken-correction, de-literal-cue, de-filler-inside-word and de-replace-selection adapted from T3 Code evals/voice-cleanup (pingdotgg/t3code, MIT License, Copyright (c) 2026 T3 Tools Inc.).",
+  "cases": [
+    {
+      "id": "de-spoken-correction",
+      "transcript": "wir treffen uns am freitag nein streich das am montag um zehn",
+      "before": "Kurze Notiz zum Projekt. ",
+      "selection": "",
+      "after": "",
+      "rubric": "Wir treffen uns am Montag um zehn (Uhr). Kein Freitag, kein „nein, streich das“, nichts aus dem Text davor.",
+      "includes": ["montag"],
+      "excludes": ["freitag", "streich das", "kurze notiz"]
+    },
+    {
+      "id": "de-korrektur-cue",
+      "transcript": "der patient erhält bei bedarf ibuprofen 400 mg Korrektur paracetamol 500 mg bis zu dreimal täglich",
+      "before": "",
+      "selection": "",
+      "after": "",
+      "rubric": "Bei Bedarf Paracetamol 500 mg bis zu dreimal täglich. Ibuprofen, 400 mg und das Wort „Korrektur“ fallen weg; die Dosis 500 mg und „dreimal täglich“ bleiben unverändert.",
+      "includes": ["paracetamol", "500 mg", "dreimal täglich"],
+      "excludes": ["ibuprofen", "400", "korrektur"]
+    },
+    {
+      "id": "de-literal-cue",
+      "transcript": "auf dem knopf steht nein streich das aber er löscht gar nichts",
+      "before": "",
+      "selection": "",
+      "after": "",
+      "rubric": "Die Knopfbeschriftung „nein, streich das“ bleibt stehen, ebenso „löscht gar nichts“. Zeichensetzung und Großschreibung dürfen sich ändern.",
+      "includes": ["streich das", "nichts"]
+    },
+    {
+      "id": "de-literal-korrektur",
+      "transcript": "die korrektur der fehlstellung erfolgte operativ und verlief ohne komplikationen",
+      "before": "",
+      "selection": "",
+      "after": "",
+      "rubric": "„Korrektur“ ist hier Teil des Satzes (die operative Korrektur einer Fehlstellung), kein Korrekturhinweis: der ganze Satz bleibt inhaltlich unverändert. Zeichensetzung und Großschreibung dürfen sich ändern.",
+      "includes": ["korrektur der fehlstellung", "operativ", "ohne komplikationen"]
+    },
+    {
+      "id": "de-filler-inside-word",
+      "transcript": "äh die ähnlichkeit der öhrchen ist ähm erstaunlich hm hmm aber die humboldt studie zeigt das",
+      "before": "",
+      "selection": "",
+      "after": "",
+      "rubric": "Die freistehenden Füllwörter (äh, ähm, hm, hmm) verschwinden; „Ähnlichkeit“, „Öhrchen“ und „Humboldt“ bleiben vollständig.",
+      "includes": ["ähnlichkeit", "öhrchen", "humboldt", "erstaunlich"],
+      "excludes": [" äh ", " ähm ", " hm ", " hmm "]
+    },
+    {
+      "id": "de-insert-between-sentences",
+      "transcript": "er berichtet über deutlich besseren schlaf seit der umstellung punkt",
+      "before": "Der Patient kam pünktlich zum Termin. ",
+      "selection": "",
+      "after": " Die nächste Kontrolle ist in vier Wochen.",
+      "rubric": "Nur der neue Satz über den besseren Schlaf seit der Umstellung, mit Satzpunkt statt des Worts „Punkt“. Nichts aus dem Satz davor (pünktlich, Termin) oder danach (Kontrolle, vier Wochen) wird übernommen oder wiederholt.",
+      "includes": ["besseren schlaf", "umstellung"],
+      "excludes": ["pünktlich", "termin", "kontrolle", "vier wochen", " punkt "]
+    },
+    {
+      "id": "de-replace-selection",
+      "transcript": "die dosis auf zwanzig milligramm erhöhen",
+      "before": "Plan: ",
+      "selection": "die Dosis beibehalten",
+      "after": " und in zwei Wochen kontrollieren.",
+      "rubric": "Nur der neue Satzteil über die Erhöhung auf 20 mg (ausgeschrieben oder als Zahl); „beibehalten“, „Plan:“ und „kontrollieren“ gehören nicht in die Antwort.",
+      "includes": ["erhöhen"],
+      "excludes": ["beibehalten", " plan ", "kontrollieren"]
+    },
+    {
+      "id": "de-dose-unchanged",
+      "transcript": "metoprolol 47,5 mg morgens und ramipril 2,5 mg abends weiter wie bisher",
+      "before": "",
+      "selection": "",
+      "after": "",
+      "rubric": "Keine Selbstkorrektur: Medikamente, Dosen (47,5 mg, 2,5 mg) und Zeitpunkte (morgens, abends) bleiben exakt erhalten; keine Dosis wird gerundet, umgerechnet oder verändert.",
+      "includes": ["metoprolol 47,5 mg morgens", "ramipril 2,5 mg abends", "wie bisher"]
+    }
+  ]
+}

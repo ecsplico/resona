@@ -20,7 +20,7 @@ profile with `--profile <name>` (or the organization's `postprocess_profile`).
 
 ## Profiles
 
-Each profile is a composition: `include` steps the hub flattens at job admission.
+Each profile except `cleanup-judge-de` is a composition: `include` steps the hub flattens at job admission.
 
 | Profile | Includes | What it does | Needs |
 |---------|----------|--------------|-------|
@@ -29,6 +29,7 @@ Each profile is a composition: `include` steps the hub flattens at job admission
 | `transcript-polish-de` | `transcript-markdown-de`, `polish-punctuation-de` | The same rules, then a chunked LLM pass that may change only capitalization, punctuation and whitespace | The role `polish` |
 | `document-polish-de` | `polish-ocr-de` | Chunked LLM pass over document Markdown: OCR corrections only | The role `polish` |
 | `dictation-clean-de` | `filler-words-de`, `names-medical-de`, `headings-medical-de`, `dictation-commands-de`, `self-correction-de` | `dictation-medical-de` with German filler words (äh, ähm, hm, …) removed first and spoken self-corrections resolved last | The role `cleanup` |
+| `cleanup-judge-de` | none | Judge of `resona eval cleanup`: one `extract` step `judge` reads a labelled document (rubric, text before/selection/after the insertion point, raw transcript, cleaned result) and returns `{"pass": bool, "reason": str}` in `structured.judge`; cosmetic punctuation differences pass, changed meaning or copied surrounding text fail. Temperature 0. See [Cleanup evaluation](../docs/guide/evaluation.md#cleanup-evaluation) | The role `judge` |
 
 ## Blocks
 

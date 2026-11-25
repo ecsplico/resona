@@ -20,6 +20,12 @@ baselines measure the plain engines.
 ``--kind audio|document`` evaluates only that kind's fixtures, for execution profiles
 with candidates of one kind (cloud ASR: ``--kind audio --allow-cloud``).
 
+``resona eval cleanup --profile <hub profile> --output-dir <dir>`` runs the German
+dictation-cleanup cases (``eval/cleanup/cases.json``) as hub text jobs with their insertion
+context, then scores each output with a judge text job (``--judge-profile``, default
+``cleanup-judge-de``, model role ``judge``). Measurement only: ``cleanup-report.json``,
+no baseline, exit 0 whatever the pass rate.
+
 Exit codes: 0 gate passed, 1 error, 2 policy denied, 3 gate failed,
 4 ``baseline_required`` (no comparable baseline; promotable when absolute checks pass).
 """
@@ -28,13 +34,15 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 import typer
 from resona_client.client import (
+    JobTimeout,
     PolicyDeniedError,
     ResonaAPIError,
     ResonaClient,
@@ -55,8 +63,16 @@ from resona_eval import (
     promoted_entry,
     upsert_baseline,
 )
+from resona_eval.cleanup import (
+    CleanupCaseError,
+    cases_sha256,
+    cleanup_report,
+    judge_document,
+    judge_verdict,
+    load_cleanup_cases,
+)
 from resona_eval.corpus import Corpus, Fixture
-from resona_job_core import PLATFORMS, PolicyDenied
+from resona_job_core import PLATFORMS, JobResult, PolicyDenied
 
 from .hub import connect_hub, exit_policy_denied, fail
 
@@ -297,3 +313,104 @@ def promote(
         fail(str(e))
     typer.echo(f"promoted evaluation {evaluation_id}: {entry['execution_profile']}/{entry['platform']} "
                f"baseline revision {entry['revision']} → {baselines}", err=True)
+
+
+_ROLE_IN_MESSAGE = re.compile(r"model role '([^']+)'")
+
+
+def _role_hint(role: str) -> str:
+    return (f"model role {role!r} is not assigned to an endpoint in the organization settings; an org admin "
+            f"assigns it with `resona settings get`, then `model_roles.{role}` = <endpoint id> in that JSON, "
+            "then `resona settings set --file <file>`")
+
+
+def _hub_error(e: ResonaAPIError) -> NoReturn:
+    if e.code == "role_unassigned":
+        match = _ROLE_IN_MESSAGE.search(e.message or "")
+        fail(_role_hint(match.group(1) if match else "?"))
+    fail(f"hub: {e}")
+
+
+def _text_job(client: ResonaClient, name: str, text: str, *, profile: str, language: str,
+              context: Optional[dict[str, str]] = None) -> int:
+    upload = client.upload_bytes(f"{name}.txt", text.encode("utf-8"))
+    ref = client.submit_upload(upload.upload_id, kind="text", profile=profile, language=language,
+                               context=context, private=True)
+    return ref.job_id
+
+
+def _completed(client: ResonaClient, job_id: int, label: str, timeout: float) -> JobResult:
+    job = client.wait_for_job(job_id, timeout=timeout)
+    if job.status != "completed":
+        code = (job.error or {}).get("code", job.status)
+        fail(f"{label} job {job_id} ended {job.status}: {code}")
+    return client.get_result(job_id)
+
+
+@eval_app.command("cleanup")
+def cleanup(
+    profile: str = typer.Option(..., "--profile", help="Hub postprocess profile under test (e.g. dictation-clean-de)."),
+    output_dir: Path = typer.Option(..., "--output-dir", help="Directory for cleanup-report.json."),
+    cases_path: Path = typer.Option(Path("eval/cleanup/cases.json"), "--cases", help="Cleanup cases file."),
+    judge_profile: str = typer.Option("cleanup-judge-de", "--judge-profile",
+                                      help="Hub profile whose extract step `judge` scores each case."),
+    language: str = typer.Option("de", "--language", help="Language of the cases."),
+    timeout: float = typer.Option(600.0, "--timeout", help="Seconds to wait for each hub job."),
+    only: Optional[list[str]] = typer.Option(None, "--case", help="Run only this case (repeatable)."),
+):
+    """Run the dictation-cleanup cases through a hub profile and score them with the `judge` model role.
+
+    Measurement only: writes cleanup-report.json, exits 0 whatever the pass rate, 1 on hub or setup errors.
+    """
+    try:
+        cases = load_cleanup_cases(cases_path)
+    except CleanupCaseError as e:
+        fail(str(e))
+    if only:
+        unknown = sorted(set(only) - {case.id for case in cases})
+        if unknown:
+            fail(f"unknown case id(s): {', '.join(unknown)}")
+        cases = [case for case in cases if case.id in only]
+    digest = cases_sha256(cases_path)
+
+    client = connect_hub()
+    try:
+        roles = client.get_settings().settings.get("model_roles") or {}
+        if "judge" not in roles:
+            fail(_role_hint("judge"))
+        cleanup_jobs = {}
+        for case in cases:
+            cleanup_jobs[case.id] = _text_job(client, f"cleanup-{case.id}", case.transcript, profile=profile,
+                                              language=language, context=case.context())
+            typer.echo(f"cleanup: {case.id} → job {cleanup_jobs[case.id]}", err=True)
+        outputs = {case.id: _completed(client, cleanup_jobs[case.id], f"cleanup {case.id}", timeout).markdown
+                   for case in cases}
+        judge_jobs = {}
+        for case in cases:
+            judge_jobs[case.id] = _text_job(client, f"judge-{case.id}", judge_document(case, outputs[case.id]),
+                                            profile=judge_profile, language=language)
+            typer.echo(f"cleanup: {case.id} judge → job {judge_jobs[case.id]}", err=True)
+        verdicts = {case.id: judge_verdict(_completed(client, judge_jobs[case.id], f"judge {case.id}",
+                                                      timeout).structured)
+                    for case in cases}
+    except PolicyDeniedError as e:
+        exit_policy_denied(e.message)
+    except ResonaAPIError as e:
+        _hub_error(e)
+    except JobTimeout as e:
+        fail(f"{e}; it keeps running on the hub")
+    finally:
+        client.close()
+
+    report = cleanup_report(cases=cases, outputs=outputs, verdicts=verdicts, profile=profile,
+                            judge_profile=judge_profile, cases_sha256=digest)
+    report_path = output_dir / "cleanup-report.json"
+    _write_json(report_path, report)
+    for entry in report["cases"]:
+        if not entry["pass"]:
+            findings = [f"judge: {entry['judge']['reason']}"] if not entry["judge"]["pass"] else []
+            findings += [f"missing {needle!r}" for needle in entry["missing_includes"]]
+            findings += [f"contains {needle.strip()!r}" for needle in entry["present_excludes"]]
+            typer.echo(f"  failed {entry['id']}: {'; '.join(findings)}", err=True)
+    typer.echo(f"cleanup: {profile} passed {report['passed']}/{report['total']} (measurement only)", err=True)
+    typer.echo(str(report_path))
