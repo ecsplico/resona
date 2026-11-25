@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
-import { useDeviceSpeech } from "~/composables/useDeviceSpeech";
+import { deviceSpeechEngine, useDeviceSpeech } from "~/composables/useDeviceSpeech";
 import { useLiveCorrection } from "~/composables/useLiveCorrection";
 import { decodePcm } from "~/utils/resonaSpeech";
 
-// The Android app path: the ResonaSpeech plugin is compiled in and owns the microphone.
-const { calls, plugin, service, emit, handles, transcribeSync } = vi.hoisted(() => {
+// The app path: the ResonaSpeech plugin is compiled in and owns the microphone. Android
+// unless a test switches `platform.name` to "ios".
+const { calls, plugin, service, emit, handles, transcribeSync, platform } = vi.hoisted(() => {
+	const platform = { name: "android" };
 	const calls: string[] = [];
 	const listeners = new Map<string, Set<(event: unknown) => void>>();
 	const handles: Array<{ remove: ReturnType<typeof vi.fn> }> = [];
@@ -42,14 +44,14 @@ const { calls, plugin, service, emit, handles, transcribeSync } = vi.hoisted(() 
 	function emit(name: string, event: unknown): void {
 		for (const cb of [...(listeners.get(name) ?? [])]) cb(event);
 	}
-	return { calls, plugin, service, emit, handles, transcribeSync: vi.fn() };
+	return { calls, plugin, service, emit, handles, transcribeSync: vi.fn(), platform };
 });
 
 vi.mock("@capacitor/core", () => ({
 	Capacitor: {
 		isNativePlatform: () => true,
 		isPluginAvailable: (name: string) => name === "ResonaSpeech",
-		getPlatform: () => "android",
+		getPlatform: () => platform.name,
 	},
 	registerPlugin: () => plugin,
 	WebPlugin: class {},
@@ -284,5 +286,67 @@ describe("useLiveCorrection fed by the ResonaSpeech plugin", () => {
 		expect((lastWav as Blob).size).toBe(44 + 16000 * 2);
 		expect(c.blocks.value.map(b => b.liveText)).toEqual(["erster Teil zweiter Teil", "dritter"]);
 		expect(c.text.value).toBe("Vom Hub korrigiert. Vom Hub korrigiert.");
+	});
+});
+
+describe("useDeviceSpeech on iOS (ResonaSpeech plugin, no foreground service)", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		calls.length = 0;
+		handles.length = 0;
+		platform.name = "ios";
+		plugin.stop.mockImplementation(async () => {
+			calls.push("plugin.stop");
+			return { text: "" };
+		});
+		plugin.start.mockImplementation(async () => {
+			calls.push("plugin.start");
+		});
+	});
+
+	afterEach(() => {
+		platform.name = "android";
+	});
+
+	it("is the native path and stamps transcripts as ios-speech", async () => {
+		const s = useDeviceSpeech();
+		expect(s.native).toBe(true);
+		expect(deviceSpeechEngine(true)).toBe("ios-speech");
+		expect(deviceSpeechEngine(false)).toBe("web-speech");
+		plugin.available.mockResolvedValueOnce({ status: "downloading" });
+		expect(await s.availability("de")).toBe("downloading");
+		expect(plugin.available).toHaveBeenCalledWith({ language: "de-DE" });
+	});
+
+	it("opens the plugin without the Android foreground service and closes without it", async () => {
+		const s = useDeviceSpeech();
+		await s.start({ language: "de", keepAudio: true });
+		expect(calls).toEqual(["plugin.start"]);
+		expect(service.startForegroundService).not.toHaveBeenCalled();
+		expect(service.requestPermissions).not.toHaveBeenCalled();
+		expect(plugin.start).toHaveBeenCalledWith({ language: "de-DE", emitPcm: true });
+		expect(s.status.value).toBe("OPEN");
+
+		emit("update", { committed: "Der Patient", tentative: "kommt", revision: 1 });
+		emit("pcm", pcmEvent(seconds(0.25)));
+		expect(s.final.value).toBe("Der Patient");
+		expect(s.partial.value).toBe("kommt");
+		plugin.stop.mockImplementationOnce(async () => {
+			calls.push("plugin.stop");
+			return { text: "Der Patient kommt." };
+		});
+		await s.finish();
+		await flush();
+		expect(calls).toEqual(["plugin.start", "plugin.stop"]);
+		expect(service.stopForegroundService).not.toHaveBeenCalled();
+		expect(s.fullText.value).toBe("Der Patient kommt.");
+		expect(s.recording()?.seconds).toBe(0.25);
+	});
+
+	it("maps the iOS plugin's rejection codes like Android's", async () => {
+		plugin.start.mockRejectedValueOnce(Object.assign(new Error("Spracherkennung für Resona nicht erlaubt"), { code: "service-not-allowed" }));
+		const s = useDeviceSpeech();
+		await expect(s.start({ language: "de" })).rejects.toThrow("Lokale Spracherkennung nicht erlaubt");
+		expect(s.status.value).toBe("CLOSED");
 	});
 });

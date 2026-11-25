@@ -16,6 +16,7 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:ios-speech": "sh ios/App/SpeechTests/run.sh",
     "cap:build": "RESONA_CAPACITOR=1 nuxt generate && cap sync",
     "cap:apk": "bun run cap:build && cd android && ./gradlew assembleDebug",
     "cap:assets": "bunx @capacitor/assets@4.0.0 generate --android --ios --iconBackgroundColor '#D96846' --splashBackgroundColor '#FBF5EC'"

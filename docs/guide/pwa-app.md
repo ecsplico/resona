@@ -52,6 +52,24 @@ Status: **prototype, Android first.** iOS is prepared but not built or signed.
   Below Android 13 the plugin answers `unsupported` (the drawer says so, start is disabled);
   in the browser the device source stays on-device Web Speech.
   Structure ported from T3 Code's Android voice module (pingdotgg/t3code@b70b9e3, MIT).
+- On iOS the same plugin (`ios/App/App/ResonaSpeechPlugin.swift`, registered by
+  `ResonaBridgeViewController`; Capacitor-free helpers under `ios/App/App/Speech/`) gives the
+  same JS surface, events and error codes. An `AVAudioEngine` input tap feeds the recognizer
+  and, resampled with `AVAudioConverter` to 16 kHz int16, the `pcm` events (250 ms each).
+  iOS 26+: `SpeechAnalyzer` with `SpeechTranscriber(reportingOptions: [.volatileResults])`;
+  volatile results are the tentative text, finalized ones the committed text, and the
+  language assets come from `AssetInventory` (`available` = its status, `install` starts
+  `downloadAndInstall` in the background). Below iOS 26, or while the SpeechAnalyzer assets
+  are missing: `SFSpeechRecognizer` with `requiresOnDeviceRecognition` (on-device models
+  ship with the system's dictation languages; none for the language → `unavailable`), one
+  task per utterance, restarted at once, transient errors with backoff. Audio session
+  `.playAndRecord` plus `UIBackgroundModes: audio` keep it running while locked (no
+  foreground service on iOS; `startRecordingService` returns at once). Info.plist carries
+  `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription` (the speech
+  prompt appears only on the `SFSpeechRecognizer` path). Transcripts are stamped
+  `ios-speech`. The pure helpers typecheck and run without Xcode (`bun run
+  test:ios-speech`, `swiftc` against the macOS SDK); the plugin itself needs an Xcode build.
+  Asset check/install adapted from T3 Code's `native/apple-speech` (MIT).
 - Sharing a file from another app (Android share sheet → Resona) goes through a
   `SEND` / `SEND_MULTIPLE` intent filter and `@capgo/capacitor-share-target` into the same share page as
   the web share target (`/share-target`); see the Findings row "Share target".
@@ -198,6 +216,15 @@ packs and vendor audio policies differ per phone):
 6. Stop and save: the recording has a `.wav` of the full length, the transcript is the
    hub's correction, stamped `android-speech+<engine>`.
 7. Android 12 or older: the drawer shows the device source as unsupported; no crash.
+8. iPhone with iOS 26 (once an iOS build exists): steps 1–6 with German. The first start
+   asks for the microphone only; "Sprachpaket laden" downloads the SpeechTranscriber assets
+   (the drawer shows "wird noch geladen", then available). Locked dictation needs no
+   notification; the stamp is `ios-speech+<engine>`. Also check airplane mode (still
+   recognizes: on-device) and a phone call during dictation (the session should report an
+   `error` and stop, no crash).
+9. iPhone with iOS 18 or older: Quelle "Gerät" asks for speech recognition on first start
+   (`NSSpeechRecognitionUsageDescription`); German must be available if it is a keyboard
+   dictation language on the phone, otherwise the drawer says unavailable.
 
 Directus login over time (data mode `directus`, build above; needs a human, ≥ 1 h):
 
@@ -267,7 +294,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.
 | Keycloak SSO | Not in the app: the login page hides the Keycloak button and says to sign in with password (Keycloak-only accounts: use the browser). Missing: Directus' OpenID callback ends by setting the refresh cookie (`AUTH_KEYCLOAK_MODE: cookie`) on the Directus host and redirecting to an allow-listed URL; it never hands a token to the redirect target, and no endpoint trades a one-time code for a JSON-mode refresh token. In the app the flow has to run in the system browser (Capacitor opens foreign hosts there; Keycloak/Google refuse embedded web views), so that cookie lands in the browser, not the app. To build: (1) a Directus endpoint extension the browser reaches after SSO (redirect allow-list entry, proxy `ALLOWED` path) that reads the refresh cookie first-party, refreshes in JSON mode, stores the result under a single-use, short-lived code bound to a verifier the app generated (PKCE-style), clears the browser session and redirects to an app link (`https://<pwa-host>/app-auth?code=…`, Android App Link with `assetlinks.json` / iOS Universal Link) or a custom scheme; (2) a POST exchanging code + verifier for `{access_token, refresh_token, expires}`; (3) in the app `@capacitor/browser` to start it, `@capacitor/app` `appUrlOpen` to receive the code, the intent filter / associated domain, then `preferencesAuthStorage().set(...)`. About 1–2 days plus a security review of the handover |
 | Nitro routes | Not in the app (static build): calendar (`/api/calendar`), `/api/debug-report`, the `/directus` proxy. `NUXT_PUBLIC_DIRECTUS_URL` must be the absolute Directus URL |
 | Share target | Android `SEND` intent filter on `MainActivity` for `audio/*`, PDF, PNG, JPEG, TIFF and DOCX, `SEND_MULTIPLE` for `audio/*`, `application/*` and `image/*` (Android gives several files their common type, `*/*` when audio and documents are mixed, which matches too); `@capgo/capacitor-share-target` copies the files into the app cache and `app/utils/nativeShare.ts` stashes every usable one and opens `/share-target`: documents → uploaded at once, then audio → one save sheet (several recordings keep their file names as titles) → recordings; all wait for the hub token and become hub jobs. One file opens its page, several the list. Files of other types in a multi-share (GIF, XLSX, …) are skipped and reported; a single file of another type does not offer Resona. Tested on a Pixel 9a (Android 17) from the Files app: one memo (cold start), one PDF, one DOCX, two memos + a PDF in one share. DOCX needs a hub that accepts Word uploads (after 0.2.2). iOS would need a Share Extension + App Group (not set up) |
-| iOS | Project generated (`ios/`, Swift Package Manager), `UIBackgroundModes: audio` and `NSMicrophoneUsageDescription` set. Not built: needs Xcode, an Apple developer account and signing |
+| iOS | Project generated (`ios/`, Swift Package Manager), `UIBackgroundModes: audio`, `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription` set; `ResonaSpeech` plugin in Swift (#164, see above; pure helpers checked with `bun run test:ios-speech`). Not built: needs Xcode, an Apple developer account and signing |
 
 ### Effort for iOS / TestFlight
 

@@ -231,9 +231,10 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   `usePcmCapture()` to `/v1/listen` using an engine from `/v1/listen/engines` discovery
   (`private=false` only for cloud entries; empty list → start disabled); `device` uses
   on-device recognition (`useDeviceSpeech`, never cloud). Transcript
-  `engine` stamp: `web-speech` / `android-speech` / selected hub engine / listen default / `hub-live`
+  `engine` stamp: `web-speech` / `android-speech` / `ios-speech` (`deviceSpeechEngine(native)`, by
+  `Capacitor.getPlatform()`) / selected hub engine / listen default / `hub-live`
   (with correction `<stamp>+<correction engine>`).
-  Device source in the Android app (`useDeviceSpeech().native` = `hasResonaSpeech()`): the app-local
+  Device source in the Android and iOS apps (`useDeviceSpeech().native` = `hasResonaSpeech()`): the app-local
   plugin `ResonaSpeech` (`utils/resonaSpeech.ts` = TS definitions, web fallback answering
   `unsupported`, `decodePcm`; Java `android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java`
   + `…/resona/speech/` (`LiveSpeechSession` + pure, JUnit-tested `SpeechTranscript`, `PcmFrames`,
@@ -250,6 +251,22 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   `microphone` foreground service (`utils/recordingService.ts`, shared with `useNativeRecorder`)
   before the plugin and stops it after, so live runs on with the screen locked. With correction
   the hub's text is what gets saved; the on-device text is only the preview.
+  iOS (same JS surface, same events and error codes): Swift `ios/App/App/ResonaSpeechPlugin.swift`
+  (Capacitor; registered by `ResonaBridgeViewController.registerPluginInstance`, used in
+  `SceneDelegate` and `Main.storyboard`) + Capacitor-free `ios/App/App/Speech/` (`LiveSpeechSession`:
+  `AVAudioEngine` input tap → `PcmResampler` (16 kHz int16 for `pcm`, `PcmFrames` 250 ms) and the
+  recognizer; `SpeechSupport` + pure `LanguageSupport`: iOS 26+ `SpeechAnalyzer` +
+  `SpeechTranscriber(reportingOptions: [.volatileResults])`, volatile → tentative, finalized →
+  committed, assets via `AssetInventory` (`install` = `downloadAndInstall` in the background,
+  `available` → `downloading`); below iOS 26 `SFSpeechRecognizer` with
+  `requiresOnDeviceRecognition` (no on-device model for the locale → `unavailable`), one task
+  per utterance restarted by `RecognitionRestarts`; `SpeechTranscript` = revision bookkeeping).
+  Audio session `.playAndRecord` + Info.plist `UIBackgroundModes: audio` keep it running when
+  locked (no service; `startRecordingService` is Android-only). Info.plist
+  `NSSpeechRecognitionUsageDescription` (asked only for the `SFSpeechRecognizer` path) and
+  `NSMicrophoneUsageDescription`. Pure files typecheck and run without Xcode: `bun run
+  test:ios-speech` (`ios/App/SpeechTests/run.sh`: `swiftc` against the macOS SDK + `main.swift`
+  checks); the plugin file needs Xcode. Adapted in parts from T3 Code (MIT).
   Settings persist in localStorage `resona.live.settings` (`chunkSeconds` clamped 8–30);
   the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
   On-device Web Speech exists only in desktop Chrome ≥ 139 (Safari/iOS has no

@@ -1,28 +1,48 @@
 """German medical dictation rules (catalogue `dictation-medical-de`) and the transcript Markdown profiles.
 
-Every rule test runs `dictation-medical-de` and checks its output against the rule list the bundled
+Catalogue profiles are compositions of blocks (`profiles/blocks/`, bundled blocks). Every rule test
+runs the flattened `dictation-medical-de` and checks its output against the rule list the bundled
 `default` used before the split (`fixtures/pre_split_default_replacements.json`).
 """
 
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import resona_postprocess.llm as llm_mod
+from resona_job_core import OrganizationSettings
 from resona_job_core.policy import Endpoint, EndpointKind, ExecutionPolicy, PolicyDenied
+from resona_postprocess.compose import bundled_lookup, chain_lookups, directory_lookup, flatten
 from resona_postprocess.pipeline import build_pipeline
-from resona_postprocess.profile import resolve_profile
+from resona_postprocess.profile import Profile
 from resona_postprocess.replacements import apply_replacements
+from resona_postprocess.roles import resolve_roles
 
 CATALOGUE = Path(__file__).resolve().parents[3] / "profiles"
+# A hub after `resona profiles push profiles/`: catalogue profiles and blocks, then the bundled blocks.
+CATALOGUE_LOOKUP = chain_lookups(
+    directory_lookup(CATALOGUE), directory_lookup(CATALOGUE / "blocks"), bundled_lookup,
+)
 PRE_SPLIT_RULES = json.loads(
     (Path(__file__).parent / "fixtures" / "pre_split_default_replacements.json").read_text("utf-8")
 )
-MEDICAL_RULES = json.loads((CATALOGUE / "dictation-medical-de.json").read_text("utf-8"))["steps"][0]["rules"]
 TRANSCRIPT_PROFILES = ("transcript-markdown-de", "transcript-polish-de")
+
+
+def _catalogue_profile(name: str) -> Profile:
+    """The catalogue profile ``name``, flattened the way the hub flattens it at admission."""
+    return flatten(Profile.from_file(CATALOGUE / f"{name}.json"), CATALOGUE_LOOKUP)
+
+
+def _flat_rules(profile: Profile) -> list[dict]:
+    return [rule for step in profile.steps if step["type"] == "replacements" for rule in step["rules"]]
+
+
+MEDICAL_RULES = _flat_rules(_catalogue_profile("dictation-medical-de"))
 
 LOCAL_LLM = Endpoint(
     id="local-llm",
@@ -42,8 +62,8 @@ def _rules(text: str) -> str:
     return out
 
 
-def _catalogue_profile(name: str):
-    return resolve_profile(str(CATALOGUE / f"{name}.json"), CATALOGUE)
+def _with_roles(profile: Profile, **roles: str) -> Profile:
+    return resolve_roles(profile, OrganizationSettings(endpoints=[LOCAL_LLM], model_roles=roles))
 
 
 @pytest.mark.parametrize("text", [
@@ -181,16 +201,16 @@ def test_dictation_medical_profile_is_the_pre_split_default() -> None:
     # Name corrections, the medical headings, then the generic commands, in the pre-split order.
     assert MEDICAL_RULES == PRE_SPLIT_RULES
     profile = _catalogue_profile("dictation-medical-de")
+    assert [step["type"] for step in profile.steps] == ["replacements"] * 3
     pipe = build_pipeline(profile, policy=ExecutionPolicy(private=True))
     assert pipe.run("Monique Punkt Kapitel Verlauf stabil Punkt").text == "Monic.\n\n## Verlauf\n\nstabil."
 
 
 @pytest.mark.parametrize("name", TRANSCRIPT_PROFILES)
 def test_transcript_profiles_reuse_the_medical_command_rules(name: str) -> None:
-    profile = _catalogue_profile(name)
-    rules = profile.steps[0]["rules"]
-    # Inline rules (hosted profiles reject 'source'); they are dictation-medical-de without its
-    # leading name corrections (one `\bName\b` rule each).
+    rules = _flat_rules(_catalogue_profile(name))
+    # The flattened rules are dictation-medical-de without its leading name corrections
+    # (one `\bName\b` rule each).
     head, tail = MEDICAL_RULES[:-len(rules)], MEDICAL_RULES[-len(rules):]
     assert tail == rules
     assert head and all(r["pattern"].startswith("\\b") and r["pattern"].endswith("\\b") for r in head)
@@ -203,10 +223,12 @@ def test_transcript_markdown_profile_runs_without_llm() -> None:
     assert pipe.run("Kapitel Anamnese Absatz Text Punkt").text == "## Anamnese\n\nText."
 
 
-def test_transcript_polish_profile_needs_local_llm_and_polishes_after_rules(monkeypatch) -> None:
+def test_transcript_polish_profile_needs_the_polish_role_and_polishes_after_rules(monkeypatch) -> None:
     profile = _catalogue_profile("transcript-polish-de")
+    assert profile.steps[-1]["endpoint"] == "@polish"
     with pytest.raises(PolicyDenied):
-        build_pipeline(profile, policy=ExecutionPolicy(private=True))
+        build_pipeline(_with_roles(profile, polish="local-llm"), policy=ExecutionPolicy(private=True))
+    profile = _with_roles(profile, polish="local-llm")
 
     seen: list[str] = []
 
@@ -223,3 +245,101 @@ def test_transcript_polish_profile_needs_local_llm_and_polishes_after_rules(monk
     assert seen == ["## Anamnese\n\nder Patient."]
     assert result.text == "## Anamnese\n\nDer Patient."
     assert result.warnings == []
+
+
+# dictation-clean-de: filler-words-de runs on the raw transcript, before the names, headings and
+# commands; the llm step self-correction-de comes last.
+
+def _clean_rules(text: str) -> str:
+    """``text`` through the flattened ``dictation-clean-de`` without its llm step."""
+    profile = _catalogue_profile("dictation-clean-de")
+    rules_only = replace(profile, steps=[step for step in profile.steps if step["type"] == "replacements"])
+    return build_pipeline(rules_only, policy=ExecutionPolicy(private=True)).run(text).text
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    # Filler at the start of the dictation and after a spoken full stop.
+    (
+        "Äh der Patient berichtet Komma ähm er habe seit drei Tagen Kopfschmerzen Punkt",
+        "der Patient berichtet, er habe seit drei Tagen Kopfschmerzen.",
+    ),
+    ("Erster Satz Punkt Ähm Zweiter Satz Punkt", "Erster Satz. Zweiter Satz."),
+    # Between commas Whisper set around a hesitation: one adjacent comma goes with the filler.
+    ("Der Befund ist, äh, unauffällig Punkt", "Der Befund ist, unauffällig."),
+    ("Monique äh berichtet, mhm, dass es besser geht Punkt", "Monic berichtet, dass es besser geht."),
+    ("Der Patient, ähm, berichtet über Schlafstörungen, äh. Er schläft schlecht.",
+     "Der Patient, berichtet über Schlafstörungen. Er schläft schlecht."),
+    # Before a spoken comma or full stop, repeated, after a heading, inside a list.
+    ("Er sagte äh Komma es gehe Punkt", "Er sagte, es gehe."),
+    ("Der Patient äh äh berichtet Punkt", "Der Patient berichtet."),
+    ("Kapitel Medikation Absatz Ramipril 5 mg ähm Punkt", "## Medikation\n\nRamipril 5 mg."),
+    ("Kapitel Verlauf ähm der Patient ist stabil Punkt", "## Verlauf\n\nder Patient ist stabil."),
+    ("Vorher Punkt ähm Absatz Weiter Punkt", "Vorher.\n\nWeiter."),
+    (
+        "Kapitel Diagnosen Doppelpunkt Anstrich ähm Hypertonie Anstrich Diabetes Absatz Ende Punkt",
+        "## Diagnosen\n\n- Hypertonie\n- Diabetes\n\nEnde.",
+    ),
+])
+def test_dictation_clean_removes_fillers_inside_dictations(text: str, expected: str) -> None:
+    assert _clean_rules(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "Die Ähnlichkeit mit dem Vorbefund ist ähnlich hoch.",
+    "Die Ähre und das Ähmlichkeitsmaß bleiben.",
+    "Ähmlichkeit bleibt.",
+    "Er hummelt durch die Hmmelreich-Straße.",
+])
+def test_dictation_clean_keeps_words_that_contain_a_filler(text: str) -> None:
+    assert _clean_rules(text) == text
+
+
+def test_dictation_clean_rules_are_the_medical_rules_after_the_fillers() -> None:
+    # Without fillers in the text, dictation-clean-de's rules give what dictation-medical-de gives.
+    text = "Monique Punkt Kapitel Verlauf stabil Komma Kapitel Befunde Absatz Klammer auf gut Klammer zu Punkt"
+    assert _clean_rules(text) == _rules(text)
+
+
+def test_self_correction_runs_last_on_the_cleanup_role(monkeypatch) -> None:
+    profile = _catalogue_profile("dictation-clean-de")
+    step = profile.steps[-1]
+    assert step["endpoint"] == "@cleanup"
+    assert step["temperature"] == 0 and step["preserve_markup"] is True
+    assert "nein, streich das" in step["prompt"] and "Korrektur" in step["prompt"]
+    assert "unverändert" in step["prompt"]
+
+    seen: list[str] = []
+
+    class Correct:
+        def completion(self, **kwargs):
+            chunk = kwargs["messages"][1]["content"]
+            seen.append(chunk)
+            reply = chunk.replace("5 mg, nein, streich das, ", "")
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))], usage=None)
+
+    monkeypatch.setattr(llm_mod, "litellm", Correct())
+    pipe = build_pipeline(_with_roles(profile, cleanup="local-llm"), policy=LOCAL_POLICY)
+    result = pipe.run(
+        "Kapitel Medikation Absatz ähm Ramipril 5 mg Komma nein Komma streich das Komma 10 mg täglich Punkt"
+    )
+
+    assert seen == ["## Medikation\n\nRamipril 5 mg, nein, streich das, 10 mg täglich."]
+    assert result.text == "## Medikation\n\nRamipril 10 mg täglich."
+    assert result.warnings == []
+
+
+def test_self_correction_keeps_the_text_when_the_model_rewrites_too_much(monkeypatch) -> None:
+    profile = _with_roles(_catalogue_profile("dictation-clean-de"), cleanup="local-llm")
+
+    class Summarize:
+        def completion(self, **kwargs):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Stabil."))], usage=None)
+
+    monkeypatch.setattr(llm_mod, "litellm", Summarize())
+    result = build_pipeline(profile, policy=LOCAL_POLICY).run(
+        "Kapitel Verlauf der Patient ist stabil Komma Korrektur Komma weitgehend stabil Punkt"
+    )
+
+    # A reply far off the input length is rejected; the chunk stays as the rules left it.
+    assert result.text == "## Verlauf\n\nder Patient ist stabil, Korrektur, weitgehend stabil."
+    assert result.warnings == ["polish_chunk_rejected:1:length"]

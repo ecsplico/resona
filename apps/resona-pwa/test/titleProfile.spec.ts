@@ -58,7 +58,8 @@ describe("app hub profiles", () => {
 			else {
 				expect(typeof step.prompt).toBe("string");
 				expect(step.prompt).not.toBe("");
-				expect(step.endpoint).toBe("local-llm");
+				// A model role the organization maps to an endpoint (settings model_roles).
+				expect(step.endpoint).toMatch(/^@[a-z][a-z0-9_-]*$/);
 			}
 		}
 	});
@@ -67,7 +68,7 @@ describe("app hub profiles", () => {
 		const profile = load(`${TITLE_PROFILE}.json`);
 		expect(profile.steps).toHaveLength(1);
 		const step = profile.steps[0]!;
-		expect(step).toMatchObject({ type: "extract", name: "title", temperature: 0, max_tokens: 64, timeout: 30 });
+		expect(step).toMatchObject({ type: "extract", name: "title", endpoint: "@title", temperature: 0, max_tokens: 64, timeout: 30 });
 		// Extract data is keyed by step name; the prompt asks for {"title": "..."}.
 		expect(step.prompt).toContain("{\"title\": \"...\"}");
 		const structured = { [step.name!]: { title: "Befund Kontrolluntersuchung Knie" } };

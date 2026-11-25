@@ -2,12 +2,16 @@ import { Capacitor, registerPlugin, WebPlugin } from "@capacitor/core";
 import type { PluginListenerHandle } from "@capacitor/core";
 
 /**
- * App-local Capacitor plugin `ResonaSpeech` (Android:
- * `android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java`, Android 13+):
- * on-device live recognition as a preview plus the same microphone audio as 16 kHz PCM.
- * The app captures the audio itself (`AudioRecord`) and feeds the on-device recognizer
- * through `EXTRA_AUDIO_SOURCE`, so it keeps running with the screen locked under the
- * microphone foreground service (`~/utils/recordingService`).
+ * App-local Capacitor plugin `ResonaSpeech`: on-device live recognition as a preview plus
+ * the same microphone audio as 16 kHz PCM, with the same surface on both app platforms.
+ * - Android 13+ (`android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java`):
+ *   the app captures the audio itself (`AudioRecord`) and feeds the on-device recognizer
+ *   through `EXTRA_AUDIO_SOURCE`, so it keeps running with the screen locked under the
+ *   microphone foreground service (`~/utils/recordingService`).
+ * - iOS (`ios/App/App/ResonaSpeechPlugin.swift` + `Speech/`): an `AVAudioEngine` tap feeds
+ *   `SpeechAnalyzer`/`SpeechTranscriber` (iOS 26+, assets via `AssetInventory`) or, below,
+ *   `SFSpeechRecognizer` with on-device recognition only; the `playAndRecord` audio session
+ *   plus `UIBackgroundModes: audio` keep it running with the screen locked (no service).
  *
  * Events: `update` (committed text never changes again, tentative text is the segment in
  * progress, `revision` grows with every change), `pcm` (base64 little-endian int16, 16 kHz
@@ -60,7 +64,7 @@ export class ResonaSpeechWeb extends WebPlugin implements ResonaSpeechPlugin {
 	}
 
 	async start(_options: { language: string; emitPcm: boolean }): Promise<void> {
-		throw this.unavailable("ResonaSpeech needs the Android app.");
+		throw this.unavailable("ResonaSpeech needs the Resona app.");
 	}
 
 	async stop(): Promise<{ text: string }> {
@@ -72,7 +76,7 @@ export const ResonaSpeech = registerPlugin<ResonaSpeechPlugin>("ResonaSpeech", {
 	web: () => new ResonaSpeechWeb(),
 });
 
-/** True inside an app shell that compiles the plugin in (today: Android). */
+/** True inside an app shell that compiles the plugin in (Android and iOS). */
 export function hasResonaSpeech(): boolean {
 	return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("ResonaSpeech");
 }

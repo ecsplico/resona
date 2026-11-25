@@ -16,6 +16,15 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		A1E5A0000000000000000101 /* ResonaSpeechPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000001 /* ResonaSpeechPlugin.swift */; };
+		A1E5A0000000000000000102 /* ResonaBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000002 /* ResonaBridgeViewController.swift */; };
+		A1E5A0000000000000000103 /* LanguageSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000003 /* LanguageSupport.swift */; };
+		A1E5A0000000000000000104 /* LiveSpeechSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000004 /* LiveSpeechSession.swift */; };
+		A1E5A0000000000000000105 /* PcmFrames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000005 /* PcmFrames.swift */; };
+		A1E5A0000000000000000106 /* PcmResampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000006 /* PcmResampler.swift */; };
+		A1E5A0000000000000000107 /* RecognitionRestarts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000007 /* RecognitionRestarts.swift */; };
+		A1E5A0000000000000000108 /* SpeechSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000008 /* SpeechSupport.swift */; };
+		A1E5A0000000000000000109 /* SpeechTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E5A0000000000000000009 /* SpeechTranscript.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +39,15 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		A1E5A0000000000000000001 /* ResonaSpeechPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResonaSpeechPlugin.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000002 /* ResonaBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResonaBridgeViewController.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000003 /* LanguageSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSupport.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000004 /* LiveSpeechSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSpeechSession.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000005 /* PcmFrames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PcmFrames.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000006 /* PcmResampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PcmResampler.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000007 /* RecognitionRestarts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecognitionRestarts.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000008 /* SpeechSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSupport.swift; sourceTree = "<group>"; };
+		A1E5A0000000000000000009 /* SpeechTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTranscript.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,10 +79,27 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		A1E5A0000000000000000200 /* Speech */ = {
+			isa = PBXGroup;
+			children = (
+				A1E5A0000000000000000003 /* LanguageSupport.swift */,
+				A1E5A0000000000000000004 /* LiveSpeechSession.swift */,
+				A1E5A0000000000000000005 /* PcmFrames.swift */,
+				A1E5A0000000000000000006 /* PcmResampler.swift */,
+				A1E5A0000000000000000007 /* RecognitionRestarts.swift */,
+				A1E5A0000000000000000008 /* SpeechSupport.swift */,
+				A1E5A0000000000000000009 /* SpeechTranscript.swift */,
+			);
+			path = Speech;
+			sourceTree = "<group>";
+		};
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				A1E5A0000000000000000001 /* ResonaSpeechPlugin.swift */,
+				A1E5A0000000000000000002 /* ResonaBridgeViewController.swift */,
+				A1E5A0000000000000000200 /* Speech */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -160,6 +195,15 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				A1E5A0000000000000000101 /* ResonaSpeechPlugin.swift in Sources */,
+				A1E5A0000000000000000102 /* ResonaBridgeViewController.swift in Sources */,
+				A1E5A0000000000000000103 /* LanguageSupport.swift in Sources */,
+				A1E5A0000000000000000104 /* LiveSpeechSession.swift in Sources */,
+				A1E5A0000000000000000105 /* PcmFrames.swift in Sources */,
+				A1E5A0000000000000000106 /* PcmResampler.swift in Sources */,
+				A1E5A0000000000000000107 /* RecognitionRestarts.swift in Sources */,
+				A1E5A0000000000000000108 /* SpeechSupport.swift in Sources */,
+				A1E5A0000000000000000109 /* SpeechTranscript.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,16 +1,18 @@
 """Chunked llm steps (document polish): placeholders, length guard, hard failure, policy."""
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import resona_postprocess.llm as llm_mod
+from resona_job_core import OrganizationSettings
 from resona_job_core.policy import Endpoint, EndpointKind, ExecutionPolicy, PolicyDenied
+from resona_postprocess.compose import bundled_lookup, chain_lookups, directory_lookup, flatten
 from resona_postprocess.llm import PostprocessStepFailed
 from resona_postprocess.pipeline import build_pipeline
 from resona_postprocess.profile import Profile, ProfileError
+from resona_postprocess.roles import resolve_roles
 
 LOCAL_LLM = Endpoint(
     id="local-llm",
@@ -175,8 +177,10 @@ def test_non_loopback_local_endpoint_is_denied_before_any_call(monkeypatch) -> N
 
 def test_catalogue_document_polish_profile_runs_long_markdown_in_chunks(monkeypatch) -> None:
     catalogue = Path(__file__).resolve().parents[3] / "profiles"
-    data = json.loads((catalogue / "document-polish-de.json").read_text("utf-8"))
-    profile = Profile.from_dict(data)
+    # The hub flattens the composition and resolves the polish role at admission.
+    lookup = chain_lookups(directory_lookup(catalogue / "blocks"), bundled_lookup)
+    flat = flatten(Profile.from_file(catalogue / "document-polish-de.json"), lookup)
+    profile = resolve_roles(flat, OrganizationSettings(endpoints=[LOCAL_LLM], model_roles={"polish": "local-llm"}))
     fake = _install(monkeypatch, lambda chunk: chunk)
     long_doc = "\n\n".join([DOC] * 30)
 

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { NewRecording } from "~/data/types";
 import { HubError, type ListenEngine } from "~/composables/useHub";
-import { DEVICE_SPEECH_ENGINE, DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
+import { DEVICE_SPEECH_HINTS, deviceSpeechEngine, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 import { describeClose } from "~/composables/useLive";
 import { LIVE_SUGGESTION_MIN_WORDS, meaningfulWordCount, suggestTitle, TITLE_REFINE_MIN_WORDS } from "~/utils/titleSuggestion";
 import { refineTitle as refineTitleOnDevice } from "~/utils/titleRefinement";
@@ -522,7 +522,7 @@ async function stopLive(): Promise<void> {
 	// Snapshot BEFORE source.stop(), which removes the data watcher immediately.
 	capturedText.value = source.value.fullText.value.trim();
 	const liveLabel = settings.source === "device"
-		? (device.native ? DEVICE_SPEECH_ENGINE.native : DEVICE_SPEECH_ENGINE.web)
+		? deviceSpeechEngine(device.native)
 		: settings.hubEngine || listenDefault.value || "hub-live";
 	capturedEngine.value = liveLabel;
 	correctionDone = null;

@@ -1,6 +1,6 @@
 import { computed, getCurrentScope, onScopeDispose, ref } from "vue";
 import type { ComputedRef, Ref } from "vue";
-import type { PluginListenerHandle } from "@capacitor/core";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import type { PcmCapture } from "~/composables/usePcmCapture";
 import { pcmToWav } from "~/utils/pcm";
 import { startRecordingService, stopRecordingService } from "~/utils/recordingService";
@@ -8,11 +8,12 @@ import { decodePcm, hasResonaSpeech, ResonaSpeech, RESONA_SPEECH_SAMPLE_RATE, ty
 
 /**
  * On-device live transcription, never in the cloud. Two paths:
- * - App shell with the `ResonaSpeech` plugin (Android 13+, `~/utils/resonaSpeech`): the
- *   plugin owns the microphone, its recognizer gives the preview (committed + tentative)
+ * - App shell with the `ResonaSpeech` plugin (Android 13+ and iOS, `~/utils/resonaSpeech`):
+ *   the plugin owns the microphone, its recognizer gives the preview (committed + tentative)
  *   and its 16 kHz PCM is exposed as `pcm` (a `PcmCapture` for `useLiveCorrection`) and,
- *   with `keepAudio`, kept for `recording()`. Runs under the microphone foreground service,
- *   so it goes on with the screen locked.
+ *   with `keepAudio`, kept for `recording()`. Goes on with the screen locked: on Android
+ *   under the microphone foreground service, on iOS through the plugin's audio session and
+ *   the app's `audio` background mode.
  * - Elsewhere the Web Speech API restricted to local processing (`processLocally = true`).
  * Mirrors the `useLive` surface so the live page can swap sources.
  */
@@ -55,19 +56,24 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 /**
  * Why local recognition can't start, per availability state. `unsupported`: neither the
- * Android app (13+, `ResonaSpeech`) nor a browser with on-device Web Speech
+ * Resona app (Android 13+ or iOS, `ResonaSpeech`) nor a browser with on-device Web Speech
  * (`available()`/`processLocally`), which today only desktop Chrome ≥ 139 ships; Safari on
  * iOS has no such API and Chrome on Android exposes it but always answers `unavailable`.
  */
 export const DEVICE_SPEECH_HINTS: Record<Exclude<DeviceSpeechAvailability, "available">, string> = {
-	unsupported: "Dieses Gerät kann nicht lokal erkennen (nur die Android-App ab Android 13 oder Chrome am Desktop, nicht iPhone/Safari)",
+	unsupported: "Dieses Gerät kann nicht lokal erkennen (nur die Resona-App für Android 13+ und iPhone oder Chrome am Desktop, nicht Safari)",
 	unavailable: "Lokale Erkennung hier nicht verfügbar (z. B. Chrome auf Android oder Sprache nicht unterstützt)",
 	downloadable: "Sprachpaket fehlt: Einstellungen → Live → Sprachpaket laden",
 	downloading: "Sprachpaket wird noch geladen",
 };
 
-/** Engine stamp of a live transcript from this source. */
-export const DEVICE_SPEECH_ENGINE = { web: "web-speech", native: "android-speech" } as const;
+/** Engine stamp of a live transcript from this source; the plugin's per app platform. */
+export const DEVICE_SPEECH_ENGINE = { web: "web-speech", android: "android-speech", ios: "ios-speech" } as const;
+
+export function deviceSpeechEngine(native: boolean): string {
+	if (!native) return DEVICE_SPEECH_ENGINE.web;
+	return Capacitor.getPlatform() === "ios" ? DEVICE_SPEECH_ENGINE.ios : DEVICE_SPEECH_ENGINE.android;
+}
 
 export function bcp47(language: string): string {
 	if (language === "de") return "de-DE";

@@ -1,12 +1,12 @@
 {
   "name": "title-de",
-  "description": "Kurzer Titelvorschlag (3–8 Wörter) für ein Diktat oder Dokument über ein kleines lokales LLM; Ergebnis in structured.title.title",
+  "description": "Kurzer Titelvorschlag (3–8 Wörter) für ein Diktat oder Dokument über das Modell der Rolle title; Ergebnis in structured.title.title",
   "initial_prompt": [],
   "steps": [
     {
       "type": "extract",
       "name": "title",
-      "endpoint": "local-llm",
+      "endpoint": "@title",
       "temperature": 0,
       "max_tokens": 64,
       "timeout": 30,
