@@ -74,3 +74,25 @@ def test_facade_accumulates_confirmed(monkeypatch):
     assert lt.has_enough_audio() is True
     result = lt.process_sync()
     assert result.confirmed == "hello hello"  # delta appended each feed
+
+
+class _RecordingEngine:
+    def __init__(self):
+        self.kwargs = []
+
+    def transcribe(self, audio, **kwargs):
+        self.kwargs.append(kwargs)
+        return {"text": "", "language": "de", "segments": []}
+
+
+def test_windowed_path_passes_initial_prompt_and_auto_language(monkeypatch):
+    engine = _RecordingEngine()
+    monkeypatch.setattr(lt_mod, "get_transcriber", lambda *a, **k: engine)
+
+    LiveTranscriber(language=None, initial_prompt="Olanzapin, Quetiapin")._transcribe_sync(
+        np.zeros(SAMPLE_RATE, dtype=np.float32))
+    LiveTranscriber(language="de")._transcribe_sync(np.zeros(SAMPLE_RATE, dtype=np.float32))
+
+    assert engine.kwargs[0]["initial_prompt"] == "Olanzapin, Quetiapin"
+    assert engine.kwargs[0]["language"] is None
+    assert engine.kwargs[1]["initial_prompt"] == " "  # unchanged default without key terms

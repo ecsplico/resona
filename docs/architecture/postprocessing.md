@@ -107,6 +107,10 @@ Sends the current text to a language model and returns **structured JSON data**.
 
 `temperature`, `max_tokens` and `timeout` apply as for `llm`; the call is made in JSON mode.
 
+### include
+
+`{"type": "include", "profile": "<name>"}` stands for the steps of another profile (a **block**; an optional top-level `"block": true` marks one for listings only). `resona_postprocess.compose.flatten(profile, lookup)` replaces every include by the included profile's steps at that position, recursively (at most `MAX_INCLUDE_DEPTH` = 4 levels), merges `initial_prompt` lists in order without duplicates (outer first, then included in step order) and inlines the rules of an included `replacements` step that reads `source`. `flatten_with_includes` also returns the included profile names in first-use order (for provenance). A cycle (the error names the chain), a missing include, deeper nesting, an included profile carrying `instructions` or `context`, or duplicate extract names after flattening raise `ProfileError`. `build_pipeline` refuses a profile with include steps, so callers flatten first; `bundled_default()` and `resolve_profile()` already return flat profiles. Lookups: `bundled_lookup` (bundled blocks), `directory_lookup(dir)` (`<dir>/<name>.json`), `chain_lookups(...)` (first hit wins).
+
 ## PostprocessResult
 
 `build_pipeline(profile, policy=policy).run(text)` returns a `PostprocessResult`:
@@ -123,7 +127,7 @@ A text step may return a `StepOutput(text, warnings)` instead of a string; chunk
 
 ## The bundled default profile
 
-`resona-postprocess` ships a `profiles/default.json` (rules in `default_replacements.json`) that turns German dictation commands into Markdown. It is used automatically when no profile is specified.
+`resona-postprocess` ships a `profiles/default.json` that turns German dictation commands into Markdown. It is a single include of the bundled block `dictation-commands-de` (`blocks/dictation-commands-de.json`, rules in `default_replacements.json`); `bundled_default()` returns it flattened, with the rules inline. It is used automatically when no profile is specified.
 
 | Spoken | Written |
 |--------|---------|
@@ -141,30 +145,38 @@ Every command pattern has word boundaries (`\b`); rules run case-insensitively, 
 
 The general `Kapitel` rule fires only for a title of one to five words (characters other than whitespace and `.,;:!?()[]`; a `.` or `,` between digits is allowed, so `F32.1` stays whole; command words like `Komma` are excluded) followed by an optional comma and a terminator: `Absatz`, `Punkt`, `Doppelpunkt`, `Fragezeichen`, `Ausrufezeichen`, `!`, `?`, `:`, or a `.` with no digit on either side (`3. Mai` is no terminator). Negative lookbehinds skip `Kapitel` after articles, prepositions and ordinals (`im`, `das`, `dem`, `vom`, `zum`, `letzten`, …), so prose such as `wie im Kapitel zuvor beschrieben.` is untouched. Without a match the text stays as spoken. The punctuation commands absorb one adjacent punctuation mark on each side (`, Komma,` → `,`, `. Punkt.` → `.`), so Whisper's own punctuation is not doubled. Rules that consume leading whitespace use `(?<![ \t])[ \t]*` instead of `\s*`: they never cross a newline (only `Absatz` and the heading rules produce line breaks) and stay linear on long space runs. Whole-word commands still hit ordinary words (`der wichtigste Punkt`, `im dritten Absatz`); rules cannot avoid that.
 
-This is a behaviour change for every organization using the bundled `default` (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). The bundled profile reaches workers as `source: default_replacements.json` and is resolved from each worker's installed `resona-postprocess`, so the snapshot hash does not cover the rule content and a mixed-release fleet can give different output for the same snapshot.
+This is a behaviour change for every organization using the bundled `default` (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). Older hubs sent the bundled profile to workers as `source: default_replacements.json`, resolved from each worker's installed `resona-postprocess`; since `default` became an include, the flattened profile carries the rules inline, so the snapshot hash covers them.
+
+## The bundled blocks
+
+`blocks/*.json` ship in the wheel next to `default` (`list_bundled_blocks()`, `bundled_block(name)`): `dictation-commands-de` (the generic commands above), `filler-words-de` (`äh`, `ähm`, `öh`, `öhm`, `hm`, `hmm`, `mhm`) and `filler-words-en` (`um`, `uh`, `erm`, `hmm`). The filler rules match whole words only (`(?<![\w-])…(?![\w-])`, Unicode-aware, so `Ähmlichkeit`, `umbrella`, `uh-huh` stay), use only horizontal whitespace (never a newline), take one adjacent comma with the filler and leave sentence-end punctuation in place.
 
 ## The catalogue transcript profiles
 
-The wheel bundles only `default`: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) catalogue and reach a hub with `resona profiles push`; none of them is resolved by name from the package.
+The wheel bundles only `default` and the blocks: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) catalogue and reach a hub with `resona profiles push`; none of them is resolved by name from the package.
 
-`profiles/dictation-medical-de.json` (`dictation-medical-de`) is one `replacements` step with inline rules, in the order the bundled `default` had them up to 0.2.7: name corrections (`Monique` → `Monic`, …), the four medical heading rules (`Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere`, no terminator needed, an immediately spoken `Absatz`/`Punkt`/`Doppelpunkt`/`Komma` is swallowed; they run before the general `Kapitel` rule), then the generic rules of `default_replacements.json`. A test keeps it equal to the pre-split rule list. The reference app selects it as its default profile.
+The catalogue profiles are compositions: `include` steps over the catalogue blocks in `profiles/blocks/` (`"block": true`) and the bundled blocks. `resona profiles push profiles/` uploads them in include order, blocks first; the hub flattens them at admission. LLM steps name a model role (`@polish`, `@cleanup`), never an endpoint id.
 
-`profiles/transcript-markdown-de.json` (`transcript-markdown-de`) is one `replacements` step with the rules of `dictation-medical-de` without its name corrections, inline because hosted profiles reject `source`; a test keeps them equal to the tail of `dictation-medical-de`. No LLM, runs on any worker.
+`profiles/dictation-medical-de.json` (`dictation-medical-de`) includes, in the order the bundled `default` had the rules up to 0.2.7: `names-medical-de` (name corrections `Monique` → `Monic`, …), `headings-medical-de` (the four medical heading rules (`Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere`, no terminator needed, an immediately spoken `Absatz`/`Punkt`/`Doppelpunkt`/`Komma` is swallowed; they run before the general `Kapitel` rule), then the bundled `dictation-commands-de` (`default_replacements.json`). A test keeps its flattened rules equal to the pre-split rule list. The reference app selects it as its default profile.
 
-`profiles/transcript-polish-de.json` (`transcript-polish-de`) runs the same rules, then a chunked `llm` step on endpoint `local-llm`. Its German prompt allows only changes to capitalization (sentence starts, after headings, list items, nouns), punctuation and whitespace; it forbids changing, adding or removing any word, even one that looks misrecognized, and names numbers, units, doses, drug names, diagnoses, codes and proper names as untouchable. Settings: `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.1, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. `preserve_markup` (`markup_signature`) compares only HTML comments, the heading-level sequence, per-row table cell counts and the ordered speaker labels of a diarized transcript (`**Sprecher N:** ` at a line start); merged paragraphs, joined list items, changed heading text or a changed word or number pass it and are only bounded by the length guard. The endpoint registration is the same as for `document-polish-de` below.
+`profiles/transcript-markdown-de.json` (`transcript-markdown-de`) includes `headings-medical-de` and `dictation-commands-de`: the rules of `dictation-medical-de` without its name corrections; a test keeps the flattened rules equal to the tail of `dictation-medical-de`. No LLM, runs on any worker.
+
+`profiles/transcript-polish-de.json` (`transcript-polish-de`) includes `transcript-markdown-de`, then the block `polish-punctuation-de`: a chunked `llm` step on the model role `@polish`. Its German prompt allows only changes to capitalization (sentence starts, after headings, list items, nouns), punctuation and whitespace; it forbids changing, adding or removing any word, even one that looks misrecognized, and names numbers, units, doses, drug names, diagnoses, codes and proper names as untouchable. Settings: `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.1, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. `preserve_markup` (`markup_signature`) compares only HTML comments, the heading-level sequence, per-row table cell counts and the ordered speaker labels of a diarized transcript (`**Sprecher N:** ` at a line start); merged paragraphs, joined list items, changed heading text or a changed word or number pass it and are only bounded by the length guard. The endpoint registration is the same as for `document-polish-de` below.
+
+`profiles/dictation-clean-de.json` (`dictation-clean-de`) includes the bundled `filler-words-de` first (it works on the raw transcript, before the dictation commands turn `Komma`/`Punkt` into marks), then the blocks of `dictation-medical-de`, then `self-correction-de`: a chunked `llm` step on the model role `@cleanup`. Its German prompt, adapted from T3 Code's correction-cue text, resolves a spoken self-correction only where the cue `nein, streich das` or `Korrektur` clearly marks one and returns the text unchanged otherwise (content uses of the cue, contrasts such as `5 mg, nicht 10 mg`, unclear cases). Settings: `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.5 (a correction shortens a short dictation noticeably), `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600.
 
 ## The catalogue document polish profile
 
-`profiles/document-polish-de.json` (`document-polish-de`) is a single chunked `llm` step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay verbatim. Settings: endpoint `local-llm`, `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.3, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. The endpoint id names no host: an org admin registers a `local_llm` endpoint with the id `local-llm` and a loopback `url` on the approved worker. Upload it to the hub as an organization profile (see [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)).
+`profiles/document-polish-de.json` (`document-polish-de`) includes the block `polish-ocr-de`, a single chunked `llm` step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the `<!-- image -->` / `<!-- formula-not-decoded -->` placeholders to stay verbatim. Settings: endpoint `@polish`, `chunk_chars` 12000, `max_attempts` 3, `max_length_deviation` 0.3, `preserve_markup` true, `temperature` 0, `max_tokens` 8192, `timeout` 600. The role names no host: an org admin maps `polish` to an endpoint in the settings' `model_roles`, for example a `local_llm` endpoint with a loopback `url` on the approved worker. Upload it to the hub as an organization profile (see [Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)).
 
 ## Profile resolution
 
-`resolve_profile(ref, profiles_dir)` accepts any of:
-- A `Profile` object — returned as-is
+`resolve_profile(ref, profiles_dir)` returns a flattened profile (includes resolved against `<profiles_dir>/<name>.json`, then the bundled blocks) and accepts any of:
+- A `Profile` object
 - A `dict` — parsed as a profile
 - A string starting with `{` — parsed as inline JSON
 - A string ending with `.json` that exists on disk — loaded from that path
-- A plain name string — looked up as `<profiles_dir>/<name>.json`; falls back to the bundled `default` profile when `name == "default"`
+- A plain name string — looked up as `<profiles_dir>/<name>.json`; falls back to the bundled `default` profile when `name == "default"`, then to a bundled block of that name
 
 ## Where the pipeline runs
 

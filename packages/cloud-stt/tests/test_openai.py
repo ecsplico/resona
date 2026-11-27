@@ -67,3 +67,44 @@ def test_transcribe_raises_provider_http_error_on_401(wav_path):
         openai.transcribe(wav_path, api_key="bad")
     assert exc.value.status_code == 401
     assert exc.value.provider == "openai"
+
+
+def _form_fields(request) -> list[tuple[str, str]]:
+    """(name, value) of every non-file multipart field, in order."""
+    import re
+
+    body = request.content.decode("utf-8", errors="ignore")
+    return re.findall(r'name="([^"]+)"\r\n\r\n(.*?)\r\n', body)
+
+
+@respx.mock
+def test_transcribe_sends_keyterms_as_prompt(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    openai.transcribe(wav_path, api_key="oakey", keyterms=["Monic", " Quetiapin ", "monic", ""])
+    assert ("prompt", "Monic, Quetiapin") in _form_fields(route.calls.last.request)
+
+
+@respx.mock
+def test_keyterm_prompt_is_capped_at_800_chars_on_whole_terms(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    terms = [f"{i:02d}" + "x" * 38 for i in range(100)]  # 40 chars each
+    openai.transcribe(wav_path, api_key="oakey", keyterms=terms)
+    prompt = dict(_form_fields(route.calls.last.request))["prompt"]
+    assert len(prompt) <= 800
+    assert prompt.split(", ") == terms[: len(prompt.split(", "))]
+    assert len(prompt.split(", ")) == 19  # 19 * 40 + 18 * 2 = 796; a 20th term would exceed 800
+
+
+@respx.mock
+def test_explicit_prompt_option_wins_over_keyterms(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    openai.transcribe(wav_path, api_key="oakey", options={"prompt": "Arztbrief"}, keyterms=["Monic"])
+    prompts = [v for k, v in _form_fields(route.calls.last.request) if k == "prompt"]
+    assert prompts == ["Arztbrief"]
+
+
+@respx.mock
+def test_no_keyterms_sends_no_prompt(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    openai.transcribe(wav_path, api_key="oakey")
+    assert "prompt" not in dict(_form_fields(route.calls.last.request))

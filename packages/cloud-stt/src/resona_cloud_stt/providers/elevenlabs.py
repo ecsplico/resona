@@ -3,12 +3,14 @@ import base64
 import json
 import logging
 import mimetypes
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
 
 from ..errors import ProviderHTTPError
+from ..keyterms import normalize_keyterms
 from ..registry import DEFAULT_MODELS
 from ..streaming import StreamTranscript
 from ..types import TranscriptionResult
@@ -22,6 +24,19 @@ _OPTION_KEYS = {"diarize", "num_speakers", "tag_audio_events"}
 
 # Sample rates ElevenLabs accepts as a pcm_<rate> audio_format.
 _PCM_RATES = {8000, 16000, 22050, 24000, 44100, 48000}
+
+# Realtime caps keyterms at 1000 characters in total (batch has no total cap).
+_REALTIME_KEYTERM_CHARS = 1000
+
+
+def _keyterms_for(model: str, keyterms: Sequence[str]) -> list[str]:
+    """Normalized ``keyterms`` for ``model``; none for Scribe v1, which has no keyterm prompting."""
+    if not keyterms:
+        return []
+    if model.startswith("scribe_v1"):
+        log.info("elevenlabs: %s has no keyterm prompting; keyterms not sent", model)
+        return []
+    return normalize_keyterms(keyterms, provider="elevenlabs")
 
 
 def _audio_format(sample_rate: int) -> str:
@@ -52,14 +67,22 @@ def transcribe(
     model: str | None = None,
     language: str | None = None,
     options: dict | None = None,
+    keyterms: Sequence[str] = (),
 ) -> TranscriptionResult:
-    """Transcribe ``audio_path`` via the ElevenLabs REST API."""
+    """Transcribe ``audio_path`` via the ElevenLabs REST API.
+
+    ``keyterms`` go out as repeated ``keyterms`` form fields (Scribe v2 and later;
+    dropped for Scribe v1).
+    """
     audio_path = Path(audio_path)
-    data: dict = {"model_id": model or DEFAULT_MODELS["elevenlabs"]}
+    model = model or DEFAULT_MODELS["elevenlabs"]
+    data: dict = {"model_id": model}
     if language:
         data["language_code"] = language
     for key, value in _filter_options(options).items():
         data[key] = str(value)
+    if terms := _keyterms_for(model, keyterms):
+        data["keyterms"] = terms  # a list → one multipart field per term
 
     content_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
     with open(audio_path, "rb") as fh:
@@ -95,24 +118,37 @@ async def open_stream(
     sample_rate: int = 16000,
     interim_results: bool = False,
     options: dict | None = None,
+    keyterms: Sequence[str] = (),
 ) -> "_ElevenLabsStream":
     """Open an ElevenLabs realtime STT WebSocket and return a normalized session.
 
     Uses ``commit_strategy=vad`` so the server auto-commits speech segments into
     final transcripts (with interim ``partial_transcript`` updates in between),
-    matching the Deepgram-style finals/interims the bridge expects.
+    matching the Deepgram-style finals/interims the bridge expects. ``keyterms``
+    go out as repeated ``keyterms`` query params (Scribe v2 Realtime and later,
+    1000 characters in total).
     """
     import websockets  # lazy: streaming-only dependency
 
+    model = model or DEFAULT_MODELS["elevenlabs"]
     params: dict = {
-        "model_id": model or DEFAULT_MODELS["elevenlabs"],
+        "model_id": model,
         "audio_format": _audio_format(sample_rate),
         "commit_strategy": "vad",
     }
     if language:
         params["language_code"] = language
+    terms: list[str] = []
+    total = 0
+    for term in _keyterms_for(model, keyterms):
+        if total + len(term) > _REALTIME_KEYTERM_CHARS:
+            break
+        terms.append(term)
+        total += len(term)
+    if terms:
+        params["keyterms"] = terms
 
-    url = f"{_WS_URL}?{urlencode(params)}"
+    url = f"{_WS_URL}?{urlencode(params, doseq=True)}"
     ws = await websockets.connect(
         url,
         additional_headers={"xi-api-key": api_key},

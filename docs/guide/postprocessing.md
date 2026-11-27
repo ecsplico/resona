@@ -36,7 +36,7 @@ of pipeline steps that transform the raw transcript into the final output.
 |-------|----------|-------------|
 | `name` | yes | Profile identifier (must match the filename when stored on disk) |
 | `description` | no | Human-readable description |
-| `initial_prompt` | no | List of phrases passed to the ASR engine as vocabulary hints |
+| `initial_prompt` | no | List of phrases used as vocabulary hints. Hub jobs on a cloud ASR candidate send them to the provider as keyterms (Deepgram `keyterm`/`keywords`, ElevenLabs `keyterms` on Scribe v2+, OpenAI `prompt`); at most 100 terms of ≤ 50 characters |
 | `steps` | no | Ordered list of postprocessing step objects |
 
 ---
@@ -74,7 +74,7 @@ Uses [litellm](https://github.com/BerriAI/litellm) — any OpenAI-compatible end
 | `type` | yes | `"llm"` |
 | `name` | no | Human-readable label for this step |
 | `prompt` | yes | System prompt sent to the model |
-| `endpoint` | no | Id of an endpoint in the organization's settings registry; required in hub profiles |
+| `endpoint` | no | Id of an endpoint in the organization's settings registry, or `@<role>` for a [model role](#model-roles); required in hub profiles |
 | `model` | no | litellm model string (overrides `RESONA_LLM_MODEL`; explicit local CLI mode only) |
 | `api_base` | no | Custom API endpoint (overrides `RESONA_LLM_API_BASE`; explicit local CLI mode only) |
 | `timeout` | no | Seconds per model call (default 120) |
@@ -113,6 +113,65 @@ alongside the transcript. The text is not modified.
 `temperature`, `max_tokens` and `timeout` apply as for `llm`.
 
 Extracted data is stored in `job.structured` (server) or `PostprocessResult.data` (local).
+
+### include
+
+Puts the steps of another profile at this position. Small reusable profiles (**blocks**) are
+composed this way instead of copying their rules:
+
+```json
+{
+  "name": "dictation-clean-de",
+  "steps": [
+    {"type": "include", "profile": "filler-words-de"},
+    {"type": "include", "profile": "dictation-commands-de"}
+  ]
+}
+```
+
+- `profile` is a profile name (lowercase letters, digits, `-`, `_`). An optional top-level
+  `"block": true` marks a profile as meant for including; it changes nothing else.
+- Includes are resolved before anything runs (`resona_postprocess.compose.flatten`): the included
+  steps go in at that position, recursively up to 4 levels deep, and `initial_prompt` lists are
+  merged in order without duplicates (the outer profile's first). A `replacements` step that an
+  included profile reads from `source` gets its rules inline.
+- A cycle, a missing profile, deeper nesting, an included profile with `instructions` or `context`
+  (only the outer profile or the job sets them) or two `extract` steps with the same name after flattening
+  are errors. A pipeline refuses a profile that still has include steps.
+- Lookup order in local CLI mode: `<RESONA_PROFILES_DIR>/<name>.json`, then the bundled blocks.
+- On the hub ([ADR 0002](../adr/0002-profile-composition-resolves-at-admission.md)) an include
+  names the organization's stored profile, else a bundled block. Admission (`POST /v1/jobs`,
+  `/v1/audio/transcriptions`, `POST /v1/listen`, `WS /v1/listen`) flattens the profile, so the
+  pinned document is flat and any worker runs it; the snapshot lists `includes: [{name, revision}]`
+  (revision 0 = bundled). `PUT /profiles/{name}` refuses includes that do not resolve or cycles,
+  also when the write would break a stored profile that includes it (422 `invalid_profile`);
+  `DELETE` answers 409 `profile_in_use` while another stored profile includes it.
+  `resona profiles show <name> --resolved` (`GET /profiles/{name}?resolved=true`) prints the flat
+  document a job would pin.
+
+### Model roles
+
+An `llm` or `extract` step may name a **model role** instead of an endpoint id:
+`"endpoint": "@polish"`. The organization settings map each role to one of their endpoints:
+
+```json
+{
+  "endpoints": [{"id": "local-llm", "kind": "local_llm", "model": "openai/qwen", "url": "http://127.0.0.1:9292/v1"}],
+  "model_roles": {"polish": "local-llm", "cleanup": "local-llm", "title": "local-llm"}
+}
+```
+
+- Role names match `^[a-z][a-z0-9-]{0,31}$`; every role must name an endpoint in `endpoints`
+  (`PUT /v1/settings` answers 422 otherwise). The standard roles are `polish`, `cleanup`,
+  `title`, `extract` and `judge`; they are a convention, an organization may add others.
+- The hub resolves roles at admission, after includes: the job's pinned profile carries the
+  endpoint id, so policy checks, worker endpoint assignment and the worker see no role. A role
+  the organization has not assigned is 422 `role_unassigned`, and no job is created. Changing
+  `model_roles` affects new jobs only.
+- `--local` resolves roles from the settings cached by `resona settings pull`; an unassigned role
+  fails before any processing with `role_unassigned`.
+- The admin UI's Settings tab lists `model_roles` read-only; change them with
+  `resona settings set --file`.
 
 ---
 
@@ -195,9 +254,11 @@ dritten Absatz` starts a new paragraph. Dictate around these words, or correct t
     punctuation is merged. This affects every job that uses `profile=default` and every
     organization with `polish` on and `postprocess_profile` `default`.
 
-    The bundled `default` reaches the worker as a reference to `default_replacements.json`, which
-    the worker resolves from its own installed `resona-postprocess`. Until every worker runs the
-    new release, the same job can get old or new output depending on which worker claims it.
+    The bundled `default` includes the block `dictation-commands-de`; resolving it inlines that
+    block's rules, so the job's pinned profile carries the rules themselves. Older hubs sent a
+    reference to `default_replacements.json`, which each worker resolved from its own installed
+    `resona-postprocess`: there, until every worker runs the same release, the same job can get
+    old or new output depending on which worker claims it.
 
     To keep the old rules, store them under another name (the name `default` is reserved) and
     select that profile (`--profile`, or the organization's `postprocess_profile`):
@@ -208,27 +269,56 @@ dritten Absatz` starts a new paragraph. Dictate around these words, or correct t
     resona profiles push dictation-v0-1 dictation-v0-1.json
     ```
 
+### Bundled blocks
+
+The wheel also ships blocks (`resona_postprocess/blocks/*.json`, `"block": true`) for `include`
+steps; a local `resona postprocess --local --profile filler-words-de` runs one directly:
+
+| Block | Does |
+|-------|------|
+| `dictation-commands-de` | the generic German dictation commands of `default` (table above) |
+| `filler-words-de` | removes `äh`, `ähm`, `öh`, `öhm`, `hm`, `hmm`, `mhm` |
+| `filler-words-en` | removes `um`, `uh`, `erm`, `hmm` |
+
+The filler blocks only match a whole word (`Ähmlichkeit`, `umbrella`, `uh-huh`, `Hm-Laut` stay)
+and never remove a line break. A filler takes one adjacent comma with it (`Ja, äh, ich` →
+`Ja, ich`; `Äh, ich` → `ich`; `komme ähm, wenn` → `komme, wenn`); at the end of a sentence or
+line the punctuation stays (`Zeit, äh.` → `Zeit.`). The German block does not touch `um`, a
+German word.
+
 ### Profile catalogue
 
-The `resona-postprocess` wheel bundles one profile, `default`, because it works with no setup.
+The `resona-postprocess` wheel bundles only `default` and the blocks above, because they work with no setup.
 Profiles that need a decision or an endpoint of the organization live in the repository's root
 directory [`profiles/`](https://github.com/ecsplico/resona/tree/main/profiles) and exist on a hub
 only after an org admin pushed them:
 
-| Profile | What it does | Needs |
-|---------|--------------|-------|
-| `dictation-medical-de` | Name corrections, medical section headings, then the generic commands of `default` (rules only; what `default` did up to 0.2.7) | Nothing |
-| `transcript-markdown-de` | Dictation commands → Markdown, rules only | Nothing |
-| `transcript-polish-de` | The same rules, then an LLM pass limited to capitalization, punctuation and whitespace | `local_llm` endpoint `local-llm` |
-| `document-polish-de` | OCR corrections on document Markdown ([Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)) | `local_llm` endpoint `local-llm` |
+| Profile | Includes | What it does | Needs |
+|---------|----------|--------------|-------|
+| `dictation-medical-de` | `names-medical-de`, `headings-medical-de`, `dictation-commands-de` | Name corrections, medical section headings, then the generic commands of `default` (rules only; what `default` did up to 0.2.7) | Nothing |
+| `transcript-markdown-de` | `headings-medical-de`, `dictation-commands-de` | Dictation commands → Markdown, rules only | Nothing |
+| `transcript-polish-de` | `transcript-markdown-de`, `polish-punctuation-de` | The same rules, then an LLM pass limited to capitalization, punctuation and whitespace | Role `polish` |
+| `document-polish-de` | `polish-ocr-de` | OCR corrections on document Markdown ([Linux Worker](../server/linux-worker.md#llm-polish-on-the-worker-host)) | Role `polish` |
+| `dictation-clean-de` | `filler-words-de`, `names-medical-de`, `headings-medical-de`, `dictation-commands-de`, `self-correction-de` | `dictation-medical-de` with filler words removed first and spoken self-corrections resolved last | Role `cleanup` |
+
+The catalogue profiles are compositions: their `include` steps name the blocks in `profiles/blocks/`
+(`names-medical-de`, `headings-medical-de`, `polish-punctuation-de` and `polish-ocr-de` on `@polish`,
+`self-correction-de` on `@cleanup`) and the bundled blocks. Their LLM steps name a model role, which
+the organization settings map to an endpoint (`model_roles`, see [Model roles](#model-roles)). One
+push call uploads the catalogue, blocks before the profiles that include them; an include that is
+neither pushed with it, bundled nor stored on the hub, or a cycle, stops it before any upload:
 
 ```bash
 git clone https://github.com/ecsplico/resona && cd resona   # or download the files of your release tag
-resona profiles push dictation-medical-de profiles/dictation-medical-de.json
-resona profiles push transcript-markdown-de profiles/transcript-markdown-de.json
-resona profiles push transcript-polish-de profiles/transcript-polish-de.json
-resona profiles push document-polish-de profiles/document-polish-de.json
+resona profiles push profiles/
 ```
+
+!!! note "Release note: the catalogue became compositions"
+    Up to the flat catalogue every profile carried its rules inline and its LLM step called the
+    endpoint id `local-llm`. An organization that pushed those files maps the roles to that
+    endpoint (`"model_roles": {"polish": "local-llm", "title": "local-llm", "cleanup": "local-llm"}`)
+    and re-pushes with `resona profiles push profiles/`; it needs hub release 0.2.8 or later. The
+    output is unchanged; see the [catalogue README](https://github.com/ecsplico/resona/tree/main/profiles).
 
 !!! warning "Release note: `default` lost its medical headings and name corrections"
     Up to 0.2.7 the bundled `default` also turned `Kapitel Verlauf`, `Kapitel Medikation`,
@@ -255,9 +345,10 @@ resona profiles push document-polish-de profiles/document-polish-de.json
 
 ### dictation-medical-de
 
-`profiles/dictation-medical-de.json` is one `replacements` step with inline rules, in this order:
-name corrections (`Monique` → `Monic`, `Serafine`/`Serafina` → `Seraphine`, `Lucy` → `Lucie`,
-`Nele`/`Mele` → `Neele`), the medical section headings, then the generic commands of `default`.
+`profiles/dictation-medical-de.json` includes three rule blocks, in this order:
+`names-medical-de` with the name corrections (`Monique` → `Monic`, `Serafine`/`Serafina` → `Seraphine`, `Lucy` → `Lucie`,
+`Nele`/`Mele` → `Neele`), `headings-medical-de` with the medical section headings, then the
+bundled `dictation-commands-de` (the generic commands of `default`).
 The headings `Kapitel Verlauf`, `Kapitel Medikation`, `Kapitel Psychopathologischer Befund` and
 `Kapitel Procedere` (also spoken `Prozedere`) need no terminator; a spoken `Absatz`, `Punkt`,
 `Doppelpunkt` or `Komma` right after them is dropped. They run before the general `Kapitel` rule,
@@ -266,15 +357,15 @@ Its output is what `default` produced up to 0.2.7.
 
 ### transcript-markdown-de and transcript-polish-de
 
-`profiles/transcript-markdown-de.json` holds the rules of `dictation-medical-de` without its name
-corrections and without any LLM step, so it runs on every worker.
-`profiles/transcript-polish-de.json` runs the same rules, then a chunked `llm` step on the endpoint
-id `local-llm`. Its prompt allows the model to change only capitalization (sentence starts, after
+`profiles/transcript-markdown-de.json` includes the rules of `dictation-medical-de` without its
+name corrections (`headings-medical-de`, `dictation-commands-de`) and no LLM step, so it runs on
+every worker. `profiles/transcript-polish-de.json` includes `transcript-markdown-de`, then the block
+`polish-punctuation-de`: a chunked `llm` step on the model role `@polish`. Its prompt allows the model to change only capitalization (sentence starts, after
 headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any
 word, not even a word that looks misrecognized; numbers, units, doses, drug names, diagnoses and
 codes stay exactly as transcribed. Settings: `max_length_deviation` 0.1, `preserve_markup: true`,
-`temperature` 0, `chunk_chars` 12000. Like `document-polish-de`, it needs an org admin to register
-a `local_llm` endpoint `local-llm` on the approved worker.
+`temperature` 0, `chunk_chars` 12000. Like `document-polish-de`, it needs an org admin to assign
+the role `polish` to an endpoint, for example a `local_llm` endpoint on the approved worker.
 
 The guards check less than the prompt asks for. `preserve_markup` compares only HTML comments,
 the sequence of heading levels and the cell count of every table row; it does not notice merged
@@ -282,8 +373,20 @@ paragraphs, joined list items, a rewritten heading text or a changed word or num
 changes such things is kept as long as it stays within the 10 % length guard. Use the polish
 profile only where a reviewer reads the result.
 
-Both carry their rules inline, because hosted profiles reject `source`. Push them from the
+Their blocks carry the rules inline, because hosted profiles reject `source`. Push them from the
 catalogue as shown under [Profile catalogue](#profile-catalogue).
+
+### dictation-clean-de
+
+`profiles/dictation-clean-de.json` is `dictation-medical-de` with two more blocks around it: first
+the bundled `filler-words-de` on the raw transcript (so `Kapitel Verlauf ähm der Patient …` still
+makes the heading), last `self-correction-de`, a chunked `llm` step on the model role `@cleanup`.
+Its prompt (adapted from T3 Code's correction cue) resolves a spoken self-correction only where the
+cue `nein, streich das` or `Korrektur` clearly marks one (`Ramipril 5 mg, nein, streich das, 10 mg
+täglich.` → `Ramipril 10 mg täglich.`) and otherwise returns the text unchanged; a cue that is part
+of the content (`Die Korrektur der Dosis …`) stays. Settings: `chunk_chars` 12000, `max_attempts` 3,
+`max_length_deviation` 0.5 (a correction removes text; a reply further off keeps the chunk as the
+rules left it, warning `polish_chunk_rejected:<n>:length`), `preserve_markup` true, `temperature` 0.
 
 ---
 

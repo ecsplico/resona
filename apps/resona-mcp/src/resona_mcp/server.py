@@ -28,7 +28,7 @@ from resona_client.client import (
     ResonaAPIError,
     ResonaClient,
 )
-from resona_job_core import MAX_INSTRUCTIONS_CHARS  # resona-client's contract package
+from resona_job_core import MAX_INSTRUCTIONS_CHARS, JobContext  # resona-client's contract package
 
 from .paths import PathRejected, looks_like_url, resolve_input_path
 
@@ -98,6 +98,14 @@ UserInstructions = Annotated[
           description="Your instructions for the postprocess profile's LLM steps, e.g. names to keep or "
                       "what to clean up. Sent as the user message; the profile's prompt stays the system "
                       "message. Needs a profile with an LLM step."),
+]
+InsertionContext = Annotated[
+    Optional[JobContext],
+    Field(default=None,
+          description="Text around the spot the result goes: before (text ahead of the insertion point), "
+                      "selection (text the result replaces) and after, each at most 4000 characters. The "
+                      "profile's LLM steps use it for terminology and continuity and never copy it into the "
+                      "result. Needs a profile with an LLM step."),
 ]
 Private = Annotated[
     bool,
@@ -187,6 +195,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         language: Optional[str],
         profile: Optional[str],
         instructions: Optional[str],
+        context: Optional[JobContext],
         private: bool,
         idempotency_key: Optional[str],
     ) -> dict[str, Any]:
@@ -203,6 +212,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
                     language=language,
                     profile=profile,
                     instructions=instructions,
+                    context=context,
                     options=options,
                     private=private,
                     idempotency_key=idempotency_key,
@@ -220,6 +230,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         language: Language = None,
         profile: PostprocessProfile = None,
         instructions: UserInstructions = None,
+        context: InsertionContext = None,
         options: Optional[AudioOptions] = None,
         diarize: Diarize = None,
         private: Private = True,
@@ -235,7 +246,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         return await submit(
             ctx, kind="audio", upload_id=upload_id, path=path, options=options,
             execution_profile=execution_profile, language=language, profile=profile,
-            instructions=instructions, private=private, idempotency_key=idempotency_key,
+            instructions=instructions, context=context, private=private, idempotency_key=idempotency_key,
         )
 
     @server.tool()
@@ -247,6 +258,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         language: Language = None,
         profile: PostprocessProfile = None,
         instructions: UserInstructions = None,
+        context: InsertionContext = None,
         options: Optional[DocumentOptions] = None,
         private: Private = True,
         idempotency_key: IdempotencyKey = None,
@@ -255,7 +267,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         return await submit(
             ctx, kind="document", upload_id=upload_id, path=path, options=options,
             execution_profile=execution_profile, language=language, profile=profile,
-            instructions=instructions, private=private, idempotency_key=idempotency_key,
+            instructions=instructions, context=context, private=private, idempotency_key=idempotency_key,
         )
 
     def read_job_text(client: ResonaClient, job_id: int) -> tuple[str, Optional[str]]:
@@ -290,6 +302,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
         ctx: Context,
         profile: RequiredProfile = None,
         instructions: UserInstructions = None,
+        context: InsertionContext = None,
         upload_id: UploadId = None,
         path: LocalPath = None,
         job_id: SourceJobId = None,
@@ -335,6 +348,7 @@ def build_server(client_for: ClientFactory, inputs: InputPolicy) -> MCPServer:
                     language=lang,
                     profile=profile,
                     instructions=instructions,
+                    context=context,
                     private=private,
                     idempotency_key=idempotency_key,
                 )

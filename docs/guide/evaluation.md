@@ -73,6 +73,7 @@ Scores are numbers only. Reports and hub records never contain transcripts or Ma
 - **DER** is the time-based diarization error rate: missed speech + false alarm + speaker confusion over total reference speech, collar 0, overlapping speech scored, with the error-minimising one-to-one speaker mapping.
 - **Speaker count error** is |hypothesis speakers − reference speakers|. It is reported, not gated.
 - A diarization fixture whose result has no segments, or a segment without `speaker`, scores speaker attribution 0 and DER 1.0.
+- **Speed** (`seconds_per_30s`, audio fixtures): seconds of the result's `asr` stage per 30 s of fixture audio. It is recorded with the fixture's `language` and never gated; promoted baselines feed the engine recommendations of `GET /v1/engines?languages=` (basis `baseline`).
 
 ## The gate
 
@@ -130,6 +131,26 @@ Promotion calls `POST /v1/evaluations/{id}/promote` with the baseline revision t
 - Later baselines must also pass the regression and coverage checks (422 `gate_failed`).
 
 A successful promotion approves the `(execution profile, platform, release)` tuple for production jobs. The CLI then pins the entry in `eval/baselines.json` under `<execution_profile>/<platform>`: corpus hash, release, runtime versions, normalization ids, model revisions and per-fixture metrics. Commit that file.
+
+## Cleanup evaluation
+
+`resona eval cleanup` measures a dictation-cleanup postprocess profile (filler words, spoken self-corrections, insertion into existing text) on the German cases in `eval/cleanup/cases.json`. It runs against the hub only and needs both profiles pushed (`resona profiles push profiles/`) and the model roles they name assigned:
+
+```bash
+resona eval cleanup --profile dictation-clean-de --output-dir /tmp/resona-cleanup
+resona eval cleanup --profile dictation-clean-de --output-dir /tmp/resona-cleanup --case de-korrektur-cue --case de-literal-cue
+```
+
+Each case holds a raw dictation `transcript` (as the profile receives it, before the dictation commands), the text around its insertion point (`before`, `selection`, `after`), a `rubric` and optional `includes`/`excludes`: case-insensitive substrings a usable answer must (not) contain, punctuation counting as a space (`" äh "` matches the whole word only). The cases cover a spoken correction with each cue (`nein, streich das`, `Korrektur`), each cue used as part of the sentence, filler words next to words that start with the same letters, an insertion between two sentences, a replaced selection and doses that must not change. The case shape and four cases come from T3 Code's `evals/voice-cleanup` (MIT).
+
+Per case the command runs two private text jobs:
+
+1. the transcript with `--profile` and the case's `before`/`selection`/`after` as the job `context`; its `markdown` is the output;
+2. a judge job with `--judge-profile` (default `cleanup-judge-de`): a labelled document with rubric, before, selection, after, transcript and output. Its `extract` step `judge` (model role `judge`) answers `{"pass": bool, "reason": str}` in `structured.judge`; cosmetic punctuation differences pass, changed meaning or copied surrounding text fail. Malformed judge output fails the case (`judge output invalid: …`).
+
+Before submitting anything the command reads the organization settings: without `model_roles.judge` it exits `1` and names the role. A hub that refuses a job with 422 `role_unassigned` (for example `@cleanup`) gets the same message for that role. Assign a role as org admin: `resona settings get`, set `model_roles.<role>` to an approved endpoint id in that JSON, `resona settings set --file <file>`.
+
+The run writes `cleanup-report.json` to `--output-dir`: `kind: "cleanup"`, `outcome: "measurement_only"`, the profile and judge profile, `cases_sha256` (the cases file), and per case the output, the judge verdict, `missing_includes`, `present_excludes` and `pass` (judge passed and no substring finding), plus `passed`/`total`. There is no baseline and no gate: the exit code is `0` whatever the pass rate, `1` on hub or setup errors. Read the outputs against the rubrics before trusting a pass rate, and add a case when a real cleanup failure shows a missing behavior.
 
 ## Releases
 

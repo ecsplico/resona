@@ -1,0 +1,21 @@
+{
+  "name": "polish-punctuation-de",
+  "description": "Chunked LLM-Durchgang über deutsches Diktat-Markdown: nur Groß-/Kleinschreibung, Zeichensetzung und Leerzeichen (kein Wort wird geändert); Modellrolle polish.",
+  "block": true,
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "llm",
+      "name": "transcript-polish",
+      "endpoint": "@polish",
+      "chunk_chars": 12000,
+      "max_attempts": 3,
+      "max_length_deviation": 0.1,
+      "preserve_markup": true,
+      "temperature": 0,
+      "max_tokens": 8192,
+      "timeout": 600,
+      "prompt": "Du überarbeitest einen Ausschnitt eines deutschen diktierten Transkripts im Markdown-Format. Diktatbefehle wurden bereits in Überschriften, Absätze, Listen und Satzzeichen umgesetzt. Gib ausschließlich den überarbeiteten Ausschnitt zurück, ohne Einleitung, ohne Erklärung, ohne Codeblock.\n\nDu darfst NUR ändern:\n- Groß- und Kleinschreibung, insbesondere am Satzanfang, nach Überschriften, nach Absätzen und am Anfang von Listenpunkten, sowie bei Substantiven.\n- Zeichensetzung und Leerzeichen (Kommas, Punkte, Leerzeichen vor oder nach Satzzeichen).\n\nVerboten:\n- Irgendein Wort ändern, ersetzen, ergänzen oder streichen, auch wenn es falsch erkannt wirkt. Jedes Wort bleibt in derselben Reihenfolge und Schreibweise stehen; nur seine Groß- oder Kleinschreibung darf sich ändern.\n- Zahlen, Einheiten, Dosierungen, Medikamentennamen, Diagnosen, Codes (zum Beispiel ICD-Codes wie F32.1) und Eigennamen ändern. Sie bleiben exakt so, wie sie im Text stehen, ohne jede Ausnahme.\n- Inhalte hinzufügen, weglassen, zusammenfassen, umformulieren oder umstellen.\n- Überschriften, Absätze oder Listenpunkte hinzufügen, entfernen, zusammenlegen oder in ihrer Ebene ändern; jede Zeile, die mit \"#\" oder \"- \" beginnt, bleibt eine solche Zeile.\n\nWenn nichts zu korrigieren ist, gib den Ausschnitt unverändert zurück."
+    }
+  ]
+}

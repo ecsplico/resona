@@ -21,7 +21,7 @@ from .llm import (
     llm_transform,
     llm_transform_chunked,
 )
-from .profile import LLM_STEP_TYPES, Profile
+from .profile import LLM_STEP_TYPES, Profile, ProfileError
 from .replacements import apply_replacements
 
 log = logging.getLogger(__name__)
@@ -163,8 +163,15 @@ def local_policy(profile: Profile, *, base: ExecutionPolicy) -> ExecutionPolicy:
 def build_pipeline(profile: Profile, *, policy: ExecutionPolicy) -> PostprocessPipeline:
     """Build a runnable pipeline. Every llm/extract stage is policy-checked here.
 
-    Raises :class:`PolicyDenied` before any processing if a stage is not allowed.
+    Raises :class:`PolicyDenied` before any processing if a stage is not allowed, and
+    :class:`ProfileError` for an include step: flatten the profile first
+    (:func:`resona_postprocess.compose.flatten`).
     """
+    unresolved = [step["profile"] for step in profile.steps if step.get("type") == "include"]
+    if unresolved:
+        raise ProfileError(
+            f"profile {profile.name!r} has unresolved include steps ({', '.join(unresolved)}); flatten it first"
+        )
     endpoints: dict[int, Endpoint] = {}
     for idx, step in enumerate(profile.steps):
         if step.get("type") in LLM_STEP_TYPES:
@@ -187,6 +194,7 @@ def build_pipeline(profile: Profile, *, policy: ExecutionPolicy) -> PostprocessP
             "policy": policy,
             "settings": LlmCallSettings.from_step(step),
             "instructions": profile.instructions,
+            "context": profile.context,
         }
         if stype == "extract":
             pipe.add_extract(name, partial(llm_extract, **call))

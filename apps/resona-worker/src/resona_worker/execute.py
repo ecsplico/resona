@@ -514,7 +514,8 @@ def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path:
     environment only; private jobs' subprocess environments drop credential-shaped
     names, but this function itself does not enforce privacy. A provider that diarizes (Deepgram)
     does so in the same call; its word speakers go through the same speaker sections and
-    Markdown as the on-device diarizer.
+    Markdown as the on-device diarizer. The snapshot's ``initial_prompt`` (the postprocess
+    profile's vocabulary, written by the supervisor) goes to the provider as ``keyterms``.
     """
     try:
         from resona_cloud_stt import PROVIDER_ENV_KEYS, get_provider
@@ -537,6 +538,9 @@ def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path:
     if not api_key:
         raise ExecutionFailure(ExitCode.UNSUPPORTED_CAPABILITY, "provider key not configured on this worker")
     request = dict(_CLOUD_OPTIONS.get(candidate.engine, {}))
+    keyterms = snapshot.get("initial_prompt") or []
+    if not isinstance(keyterms, list) or not all(isinstance(term, str) for term in keyterms):
+        raise ExecutionFailure(ExitCode.INVALID_SNAPSHOT, "initial_prompt must be a list of strings")
     if diarize:
         request["diarize"] = True
 
@@ -548,6 +552,7 @@ def _run_cloud_audio(snapshot: dict[str, Any], candidate: Candidate, input_path:
             model=candidate.model,
             language=snapshot.get("language"),
             options=request or None,
+            keyterms=keyterms,
         )
     except ProviderHTTPError as exc:
         if exc.status_code in (401, 403):

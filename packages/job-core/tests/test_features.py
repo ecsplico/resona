@@ -1,4 +1,5 @@
 from resona_job_core.features import (
+    CONTEXT,
     INSTRUCTIONS,
     known_features,
     release_features,
@@ -39,3 +40,10 @@ def test_reported_features_win_over_the_release():
 def test_installed_release_knows_every_legacy_feature():
     assert release_features("0.2.3") <= known_features()
     assert "document.remove_repeated_headers" in known_features()
+
+
+def test_context_is_known_but_in_no_legacy_release():
+    job = required_features("text", {}, context=True)
+    assert job == {CONTEXT}
+    assert CONTEXT in known_features()
+    assert not job <= release_features("9.0.0")

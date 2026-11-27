@@ -59,6 +59,8 @@ class MediaRequest:
     local: bool
     # User instructions for the postprocess profile's llm/extract steps (user message).
     instructions: Optional[str] = None
+    # Text around the spot the result is inserted at ({before, selection, after}), for the same steps.
+    context: Optional[dict[str, str]] = None
     # Name of a registered webhook endpoint the hub notifies when each job ends (hub only).
     webhook: Optional[str] = None
     # Inserted before ``.md``/``.result.json``: ``<stem>.<output_suffix>.md``.
@@ -217,6 +219,7 @@ def _run_hub(req: MediaRequest) -> None:
                 model=req.model,
                 profile=profile,
                 instructions=req.instructions,
+                context=req.context,
                 options=req.options,
                 private=req.private,
                 webhook=req.webhook,
@@ -335,6 +338,7 @@ def _run_local(req: MediaRequest) -> None:
             private=req.private,
             profile=req.profile,
             instructions=req.instructions,
+            context=req.context,
         )
     except PolicyDenied as e:
         typer.echo(f"policy_denied: {e.stage}: {e.reason}", err=True)

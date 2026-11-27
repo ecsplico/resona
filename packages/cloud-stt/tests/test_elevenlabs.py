@@ -70,3 +70,28 @@ def test_transcribe_raises_provider_http_error_on_400(wav_path):
         elevenlabs.transcribe(wav_path, api_key="elkey")
     assert exc.value.status_code == 400
     assert exc.value.provider == "elevenlabs"
+
+
+def _form_fields(request) -> list[tuple[str, str]]:
+    """(name, value) of every non-file multipart field, in order."""
+    import re
+
+    body = request.content.decode("utf-8", errors="ignore")
+    return re.findall(r'name="([^"]+)"\r\n\r\n(.*?)\r\n', body)
+
+
+@respx.mock
+def test_transcribe_sends_keyterms_as_repeated_form_fields(wav_path):
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    elevenlabs.transcribe(wav_path, api_key="elkey", model="scribe_v2", keyterms=["Monic", "Quetiapin", "MONIC"])
+    fields = _form_fields(route.calls.last.request)
+    assert [v for k, v in fields if k == "keyterms"] == ["Monic", "Quetiapin"]
+    assert ("model_id", "scribe_v2") in fields
+
+
+@respx.mock
+def test_scribe_v1_gets_no_keyterms(wav_path):
+    # Scribe v1 has no keyterm prompting; sending the field would be rejected.
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=_OK_BODY))
+    elevenlabs.transcribe(wav_path, api_key="elkey", model="scribe_v1", keyterms=["Monic"])
+    assert "keyterms" not in dict(_form_fields(route.calls.last.request))

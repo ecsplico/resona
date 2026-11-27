@@ -70,6 +70,8 @@ if data == b"DIARIZER_OOM":
     os.kill(os.getpid(), signal.SIGKILL)
 if data == b"ENV":
     text = json.dumps(dict(os.environ))
+elif data == b"SNAPSHOT":
+    text = Path(args.snapshot).read_text()
 elif data.startswith((b"%PDF-", b"PK\x03\x04")):
     text = "suffix=" + Path(args.input).suffix
 else:

@@ -13,11 +13,14 @@ const listListenEngines = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => vi.fn());
 const installPack = vi.hoisted(() => vi.fn());
 const listEngines = vi.hoisted(() => vi.fn());
+const getSettings = vi.hoisted(() => vi.fn());
 const listCalendars = vi.hoisted(() => vi.fn(async () => []));
 
 mockNuxtImport("useHub", () => () => ({
+	hasToken: () => true,
 	listListenEngines,
 	listEngines,
+	getSettings,
 }));
 
 const tokenSync = vi.hoisted(() => ({ enabled: vi.fn(() => true), push: vi.fn(), pull: vi.fn() }));
@@ -59,10 +62,13 @@ describe("SettingsDrawer – Live tab", () => {
 		availability.mockResolvedValue("available");
 		installPack.mockResolvedValue(true);
 		listEngines.mockResolvedValue({ engines: [], default: null });
+		getSettings.mockResolvedValue({ organization_id: "org", revision: 1, settings: {} });
 		const live = useLiveSettings();
 		live.correction = false;
 		live.correctionEngine = "";
 		live.chunkSeconds = 15;
+		live.hubEngine = "";
+		live.cleanup = false;
 	});
 
 	it("loads listen engines only once the Live tab opens and lists them with cloud marked", async () => {
@@ -90,6 +96,42 @@ describe("SettingsDrawer – Live tab", () => {
 		listListenEngines.mockResolvedValue({ engines: [{ name: "x", kind: "local", private: true, models: [] }], default: null });
 		const wrapper = await openLive();
 		expect(wrapper.find("[data-testid=settings-live-engine] option").text()).toBe("Hub-Standard (keiner)");
+	});
+
+	it("shows the organization's live defaults as the inherited choices", async () => {
+		getSettings.mockResolvedValue({
+			organization_id: "org",
+			revision: 3,
+			settings: { live: { engine: "parakeet", correction_execution_profile: "gpu-private", cleanup_profile: "dictation-clean-de" } },
+		});
+		listListenEngines.mockResolvedValue({ engines: [{ name: "parakeet", kind: "local", private: true, models: [] }], default: "parakeet" });
+		useLiveSettings().correction = true;
+		const wrapper = await openLive();
+		expect(wrapper.find("[data-testid=settings-live-engine] option").text()).toBe("Organisation (parakeet)");
+		expect(wrapper.find("[data-testid=settings-live-correction-engine] option").text()).toBe("Organisation (Profil gpu-private)");
+		// Empty device values stay empty: they inherit, they are not copied.
+		expect(useLiveSettings().hubEngine).toBe("");
+		expect(useLiveSettings().correctionEngine).toBe("");
+	});
+
+	it("persists the cleanup toggle and names the profile it runs", async () => {
+		getSettings.mockResolvedValue({ organization_id: "org", revision: 2, settings: { live: { cleanup_profile: "dictation-clean-de" } } });
+		listListenEngines.mockResolvedValue({ engines: [], default: null });
+		const wrapper = await openLive();
+		expect(wrapper.find("[data-testid=settings-live-cleanup-profile]").exists()).toBe(false);
+
+		await wrapper.find("[data-testid=settings-live-cleanup]").trigger("click");
+		await flushPromises();
+		expect(useLiveSettings().cleanup).toBe(true);
+		expect(JSON.parse(window.localStorage.getItem("resona.live.settings")!).cleanup).toBe(true);
+		expect(wrapper.find("[data-testid=settings-live-cleanup-profile]").text()).toBe("Profil der Organisation: dictation-clean-de");
+	});
+
+	it("says so when the organization names no cleanup profile", async () => {
+		listListenEngines.mockResolvedValue({ engines: [], default: null });
+		useLiveSettings().cleanup = true;
+		const wrapper = await openLive();
+		expect(wrapper.find("[data-testid=settings-live-cleanup-profile]").text()).toContain("kein Bereinigungsprofil");
 	});
 
 	it("shows the no-streaming notice instead of the select for an empty list", async () => {
@@ -164,6 +206,23 @@ describe("SettingsDrawer – Live tab", () => {
 
 		await wrapper.find("[data-testid=settings-live-correction-engine]").setValue("openai");
 		expect(useLiveSettings().correctionEngine).toBe("openai");
+	});
+
+	it("shows the hub's recommendation roles as German badges on correction engines", async () => {
+		listListenEngines.mockResolvedValue({ engines: [], default: null });
+		const rec = (role: string) => ({ role, error_percent: 4, seconds_per_30s: 2, basis: "baseline" });
+		listEngines.mockResolvedValue({
+			engines: [
+				{ name: "whisper", kind: "local", job_kind: "audio", private: true, available: true, models: [], candidates: [{ candidate: {}, execution_profiles: [], recommendation: rec("accurate") }] },
+				{ name: "mlx-whisper", kind: "local", job_kind: "audio", private: true, available: true, models: [], candidates: [{ candidate: {}, execution_profiles: [], recommendation: rec("recommended") }, { candidate: {}, execution_profiles: [], recommendation: rec("fast") }] },
+				{ name: "parakeet", kind: "local", job_kind: "audio", private: true, available: true, models: [], candidates: [{ candidate: {}, execution_profiles: [] }] },
+			],
+			default: null,
+		});
+		useLiveSettings().correction = true;
+		const wrapper = await openLive();
+		const options = wrapper.findAll("[data-testid=settings-live-correction-engine] option").map(o => o.text());
+		expect(options).toEqual(["Hub-Standard", "whisper – genau", "mlx-whisper – empfohlen, schnell", "parakeet"]);
 	});
 
 	it("keeps Hub-Standard as the only option when the engine list fails", async () => {

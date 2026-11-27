@@ -13,6 +13,7 @@ resona-api ``WS /v1/listen`` bridge) stay provider-agnostic. OpenAI's realtime
 API is not wired, so only Deepgram and ElevenLabs are streaming-capable.
 """
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .registry import get_provider
@@ -48,11 +49,13 @@ async def open_stream(
     sample_rate: int = 16000,
     interim_results: bool = False,
     options: dict | None = None,
+    keyterms: Sequence[str] = (),
 ):
     """Open a live STT session for ``provider``.
 
     Returns a session object (see module docstring). Raises ``ValueError`` for a
-    provider without a streaming API.
+    provider without a streaming API. ``keyterms`` bias recognition towards those
+    terms (normalized and capped per provider, see ``keyterms.normalize_keyterms``).
     """
     if not supports_streaming(provider):
         raise ValueError(f"provider '{provider}' does not support live streaming")
@@ -64,4 +67,5 @@ async def open_stream(
         sample_rate=sample_rate,
         interim_results=interim_results,
         options=options,
+        keyterms=keyterms,
     )

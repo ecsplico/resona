@@ -8,10 +8,13 @@ from dataclasses import dataclass, field, replace
 from importlib import resources
 from pathlib import Path
 
-from resona_job_core.options import MAX_INSTRUCTIONS_CHARS
+from pydantic import ValidationError
+from resona_job_core.options import MAX_INSTRUCTIONS_CHARS, JobContext
 
-VALID_STEP_TYPES = {"replacements", "llm", "extract"}
+VALID_STEP_TYPES = {"replacements", "llm", "extract", "include"}
 LLM_STEP_TYPES = ("llm", "extract")
+# Same syntax as a hosted profile name (resona-api `PROFILE_NAME_RE`).
+INCLUDE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 class ProfileError(ValueError):
@@ -55,6 +58,13 @@ def _validate_step(step: dict, idx: int, extract_names: set[str]) -> None:
     elif stype == "extract":
         if not step.get("prompt"):
             raise ProfileError(f"Step {idx}: extract step needs a 'prompt'")
+    elif stype == "include":
+        target = step.get("profile")
+        if not isinstance(target, str) or not INCLUDE_NAME_RE.fullmatch(target):
+            raise ProfileError(
+                f"Step {idx}: include step needs 'profile', a profile name "
+                f"(lowercase letters, digits, '-' or '_'), got {target!r}"
+            )
     if stype in LLM_STEP_TYPES and "timeout" in step and not _positive_number(step["timeout"]):
         raise ProfileError(f"Step {idx}: 'timeout' must be a positive number of seconds")
     if stype == "extract":
@@ -105,6 +115,21 @@ def _validate_instructions(value: object) -> str | None:
     return value.strip()
 
 
+def _validate_context(value: object) -> dict[str, str] | None:
+    """A job context (``JobContext``) as its parts with text; ``None`` stays ``None``."""
+    if value is None:
+        return None
+    if isinstance(value, JobContext):
+        return value.parts()
+    if not isinstance(value, dict):
+        raise ProfileError("'context' must be an object with before, selection and/or after")
+    try:
+        return JobContext.model_validate(value).parts()
+    except ValidationError as exc:
+        problems = "; ".join(err["msg"] for err in exc.errors())
+        raise ProfileError(f"'context' is invalid: {problems}") from None
+
+
 @dataclass
 class Profile:
     """A named postprocessing configuration: initial prompt + ordered steps.
@@ -112,6 +137,9 @@ class Profile:
     ``instructions`` are user instructions: every llm/extract step sends them in the
     user message ahead of the text, while the step's ``prompt`` stays the system
     message. A job's instructions replace the profile's (:meth:`with_instructions`).
+    ``context`` (``{before, selection, after}``, only the parts with text) is the text
+    around the spot the result is inserted at; llm/extract steps send it after the text
+    (:meth:`with_context`).
     """
 
     name: str
@@ -120,6 +148,8 @@ class Profile:
     steps: list[dict] = field(default_factory=list)
     base_dir: Path | None = None  # for resolving relative `source` paths
     instructions: str | None = None
+    context: dict[str, str] | None = None
+    block: bool = False  # only marks a profile meant to be included; listings may hide it
 
     @classmethod
     def from_dict(cls, data: dict, *, base_dir: Path | None = None) -> "Profile":
@@ -134,11 +164,14 @@ class Profile:
         extract_names: set[str] = set()
         for idx, step in enumerate(steps):
             _validate_step(step, idx, extract_names)
+        block = data.get("block", False)
+        if not isinstance(block, bool):
+            raise ProfileError("Profile 'block' must be true or false")
         ip = data.get("initial_prompt", [])
         if not isinstance(ip, list):
             raise ProfileError("Profile 'initial_prompt' must be a list of strings")
         # Validated only: the worker rebuilds one single-step profile per step from the
-        # pinned document, so a rules step must keep the job's instructions too.
+        # pinned document, so a rules step must keep the job's instructions and context too.
         return cls(
             name=name,
             description=data.get("description", ""),
@@ -146,6 +179,8 @@ class Profile:
             steps=steps,
             base_dir=base_dir,
             instructions=_validate_instructions(data.get("instructions")),
+            context=_validate_context(data.get("context")),
+            block=block,
         )
 
     @classmethod
@@ -166,6 +201,10 @@ class Profile:
         }
         if self.instructions is not None:
             data["instructions"] = self.instructions
+        if self.context is not None:
+            data["context"] = dict(self.context)
+        if self.block:
+            data["block"] = True
         return data
 
     def has_llm_step(self) -> bool:
@@ -177,57 +216,79 @@ class Profile:
             raise ProfileError(f"profile {self.name!r} has no llm or extract step to take instructions")
         return replace(self, instructions=_validate_instructions(instructions))
 
+    def with_context(self, context: JobContext | dict) -> "Profile":
+        """A copy whose llm/extract steps get ``context``; needs at least one such step."""
+        if not self.has_llm_step():
+            raise ProfileError(f"profile {self.name!r} has no llm or extract step to take context")
+        return replace(self, context=_validate_context(context))
+
     def initial_prompt_string(self) -> str:
         """Return initial-prompt phrases joined for the engine."""
         return ", ".join(self.initial_prompt)
 
 
-def bundled_default() -> "Profile":
-    """Return the `default` profile bundled with resona-postprocess.
-
-    Raises ProfileError if the bundled file is missing or unparseable.
-    """
+def _bundled_default_raw() -> "Profile":
     try:
         ref = resources.files("resona_postprocess").joinpath("profiles/default.json")
         data = json.loads(ref.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         raise ProfileError(f"Cannot load bundled default profile: {e}") from e
-    # base_dir=None: a 'source' of 'default_replacements.json' resolves via the
-    # bundled-resource fallback in pipeline._load_rules.
     return Profile.from_dict(data, base_dir=None)
 
 
+def bundled_default(*, flat: bool = True) -> "Profile":
+    """Return the `default` profile bundled with resona-postprocess, flattened.
+
+    Its include steps resolve against the bundled blocks, so the result has none.
+    With ``flat=False`` the include steps stay, for a caller with its own lookup.
+    Raises ProfileError if the bundled file is missing or unparseable.
+    """
+    from .compose import bundled_lookup, flatten
+
+    raw = _bundled_default_raw()
+    return flatten(raw, bundled_lookup) if flat else raw
+
+
 def resolve_profile(ref: Profile | dict | str, profiles_dir: Path | str) -> "Profile":
-    """Resolve a profile reference to a Profile.
+    """Resolve a profile reference to a flattened Profile (no include steps).
 
     `ref` may be a Profile, a parsed dict, an inline JSON string, a filesystem
-    path to a .json file, or a profile name resolved against `profiles_dir`.
-    A file named `<name>.json` in `profiles_dir` shadows the bundled profile.
+    path to a .json file, or a profile name resolved against `profiles_dir`,
+    then the bundled `default` and bundled blocks. A file named `<name>.json` in
+    `profiles_dir` shadows the bundled profile. Include steps resolve against
+    `profiles_dir` first, then the bundled blocks.
     """
+    from .compose import bundled_block, bundled_lookup, chain_lookups, directory_lookup, flatten
+
     profiles_dir = Path(profiles_dir)
+    lookup = chain_lookups(directory_lookup(profiles_dir), bundled_lookup)
     if isinstance(ref, Profile):
-        return ref
+        return flatten(ref, lookup)
     if isinstance(ref, dict):
-        return Profile.from_dict(ref)
+        return flatten(Profile.from_dict(ref), lookup)
     if not isinstance(ref, str):
         raise ProfileError(f"Cannot resolve profile from {type(ref).__name__}")
 
     text = ref.strip()
     if text.startswith("{"):
         try:
-            return Profile.from_dict(json.loads(text))
+            data = json.loads(text)
         except json.JSONDecodeError as e:
             raise ProfileError(f"Invalid inline profile JSON: {e}") from e
+        return flatten(Profile.from_dict(data), lookup)
 
     path = Path(ref)
     if path.suffix == ".json" and path.exists():
-        return Profile.from_file(path)
+        return flatten(Profile.from_file(path), lookup)
 
     candidate = profiles_dir / f"{ref}.json"
     if candidate.exists():
-        return Profile.from_file(candidate)
+        return flatten(Profile.from_file(candidate), lookup)
     if ref == "default":
-        return bundled_default()
+        return flatten(_bundled_default_raw(), lookup)
+    block = bundled_block(ref)
+    if block is not None:
+        return flatten(block, lookup)
     raise ProfileError(f"Profile not found: {ref}")
 
 

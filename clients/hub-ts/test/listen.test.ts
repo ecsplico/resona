@@ -29,6 +29,12 @@ describe("listenUrl", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ language: "de", interim_results: "true", token: "tok" });
     expect(listenUrl("http://localhost:7000", "t")).toBe("ws://localhost:7000/v1/listen?token=t");
   });
+
+  it("repeats keyterm once per term", () => {
+    const url = new URL(listenUrl("https://hub.example", "tok", { keyterm: ["Olanzapin", "Lithium"], detect_language: true }));
+    expect(url.searchParams.getAll("keyterm")).toEqual(["Olanzapin", "Lithium"]);
+    expect(url.searchParams.get("detect_language")).toBe("true");
+  });
 });
 
 describe("parseListenMessage", () => {

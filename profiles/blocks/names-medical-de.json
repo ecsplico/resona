@@ -1,0 +1,38 @@
+{
+  "name": "names-medical-de",
+  "description": "Namenskorrekturen für medizinische Diktate (Monique → Monic, Serafine/Serafina → Seraphine, Lucy → Lucie, Nele/Mele → Neele), ohne LLM.",
+  "block": true,
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "replacements",
+      "name": "names-medical",
+      "rules": [
+        {
+          "pattern": "\\bMonique\\b",
+          "replacement": "Monic"
+        },
+        {
+          "pattern": "\\bSerafine\\b",
+          "replacement": "Seraphine"
+        },
+        {
+          "pattern": "\\bSerafina\\b",
+          "replacement": "Seraphine"
+        },
+        {
+          "pattern": "\\bLucy\\b",
+          "replacement": "Lucie"
+        },
+        {
+          "pattern": "\\bNele\\b",
+          "replacement": "Neele"
+        },
+        {
+          "pattern": "\\bMele\\b",
+          "replacement": "Neele"
+        }
+      ]
+    }
+  ]
+}

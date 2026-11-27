@@ -3,7 +3,7 @@ import type { ComputedRef, Ref } from "vue";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { PluginListenerHandle } from "@capacitor/core";
 import { CapacitorAudioRecorder, RecordingStatus } from "@capgo/capacitor-audio-recorder";
-import { ForegroundService, Importance, ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
+import { startRecordingService, stopRecordingService } from "~/utils/recordingService";
 import { Filesystem } from "@capacitor/filesystem";
 import type { Recorder } from "./useRecorder";
 import { nativeSessionId } from "~/data/nativeUnfinished";
@@ -45,46 +45,9 @@ const FAILED_TEXT = "Die Aufnahme wurde abgebrochen und lässt sich nicht fortse
 export const NATIVE_RECORDING_FORMAT = "aac";
 export const NATIVE_RECORDING_MIME = "audio/aac";
 
-const NOTIFICATION_ID = 3401;
-const NOTIFICATION_CHANNEL = "recording";
-
 /** True inside the Capacitor app shell, where the native recorder plugin is compiled in. */
 export function hasNativeRecorder(): boolean {
 	return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("CapacitorAudioRecorder");
-}
-
-/**
- * Android only: a foreground service of type `microphone` with a persistent
- * notification. It keeps the process (and the plugin's MediaRecorder) alive
- * and allowed to use the microphone while the screen is locked.
- */
-async function startRecordingService(): Promise<void> {
-	if (Capacitor.getPlatform() !== "android") {
-		return;
-	}
-	// Android 13+ hides the notification without this permission; the service runs anyway.
-	await ForegroundService.requestPermissions().catch(() => undefined);
-	await ForegroundService.createNotificationChannel({
-		id: NOTIFICATION_CHANNEL,
-		name: "Aufnahme",
-		description: "Läuft, solange Resona aufnimmt.",
-		importance: Importance.Low,
-	}).catch(() => undefined);
-	await ForegroundService.startForegroundService({
-		id: NOTIFICATION_ID,
-		title: "Resona nimmt auf",
-		body: "Die Aufnahme läuft auch bei gesperrtem Bildschirm.",
-		smallIcon: "ic_stat_resona",
-		serviceType: ServiceType.Microphone,
-		notificationChannelId: NOTIFICATION_CHANNEL,
-		silent: true,
-	});
-}
-
-async function stopRecordingService(): Promise<void> {
-	if (Capacitor.getPlatform() === "android") {
-		await ForegroundService.stopForegroundService().catch(() => undefined);
-	}
 }
 
 // One native recorder and one service per app: their calls run one at a time, so

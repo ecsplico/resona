@@ -1,20 +1,25 @@
 import { reactive, watch } from "vue";
+import type { OrgLiveDefaults } from "~/composables/useHub";
 
 /**
  * Persisted live-transcription preferences: which source feeds the live view
- * (hub stream or on-device Web Speech), the hub listen engine, and the chunked
- * correction options. Stored in localStorage like `useCalendarSettings` and
- * exposed as a module singleton so the settings drawer and the live page share
- * one reactive object.
+ * (hub stream or on-device Web Speech), the hub listen engine, the chunked
+ * correction options and the cleanup pass. Stored in localStorage like
+ * `useCalendarSettings` and exposed as a module singleton so the settings drawer
+ * and the live page share one reactive object. Empty engine values inherit the
+ * organization's `live` defaults (`effectiveLiveSettings`).
  */
 export interface LiveSettings {
 	source: "hub" | "device";
-	/** Hub listen engine; empty → the hub's default. */
+	/** Hub listen engine; empty → the organization's `live.engine`, else the hub's default. */
 	hubEngine: string;
 	correction: boolean;
+	/** Correction engine; empty → the organization's `live.correction_execution_profile`, else the hub's default. */
 	correctionEngine: string;
 	/** Correction chunk length in seconds, 8–30. */
 	chunkSeconds: number;
+	/** Run the organization's `live.cleanup_profile` on the finished live text. */
+	cleanup: boolean;
 }
 
 const STORAGE_KEY = "resona.live.settings";
@@ -28,7 +33,32 @@ const DEFAULTS: LiveSettings = {
 	correction: false,
 	correctionEngine: "",
 	chunkSeconds: 15,
+	cleanup: false,
 };
+
+/** What a live session uses: device values, empty ones filled from the organization's `live` defaults. */
+export interface EffectiveLiveSettings {
+	/** Listen engine; empty → the hub picks (its default is the org's `live.engine` when streamable). */
+	hubEngine: string;
+	/** True when `hubEngine` comes from the organization, not this device. */
+	hubEngineInherited: boolean;
+	correctionEngine: string;
+	/** Execution profile of correction jobs; set only when no device correction engine is chosen. */
+	correctionExecutionProfile: string;
+	/** Cleanup profile to run; empty when cleanup is off or the organization names none. */
+	cleanupProfile: string;
+}
+
+export function effectiveLiveSettings(device: LiveSettings, org: OrgLiveDefaults | null | undefined): EffectiveLiveSettings {
+	const orgEngine = org?.engine ?? "";
+	return {
+		hubEngine: device.hubEngine || orgEngine,
+		hubEngineInherited: !device.hubEngine && orgEngine !== "",
+		correctionEngine: device.correctionEngine,
+		correctionExecutionProfile: device.correctionEngine ? "" : (org?.correction_execution_profile ?? ""),
+		cleanupProfile: device.cleanup ? (org?.cleanup_profile ?? "") : "",
+	};
+}
 
 export function clampChunkSeconds(value: number): number {
 	if (!Number.isFinite(value)) {
@@ -63,6 +93,9 @@ function load(target: LiveSettings): void {
 		}
 		if (typeof saved.chunkSeconds === "number") {
 			target.chunkSeconds = clampChunkSeconds(saved.chunkSeconds);
+		}
+		if (typeof saved.cleanup === "boolean") {
+			target.cleanup = saved.cleanup;
 		}
 	}
 	catch {

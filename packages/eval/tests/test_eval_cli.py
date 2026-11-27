@@ -10,6 +10,7 @@ from resona_cli import eval_cli
 from resona_cli.main import app
 from resona_client.config import EngineConfig
 from resona_eval import BaselineFileError, EvaluationError, FixtureRun, build_report, promoted_entry
+from resona_eval.evaluation import audio_seconds
 
 HUB = "http://hub.test"
 runner = CliRunner()
@@ -166,8 +167,14 @@ def test_remote_records_metrics_only_and_promote_pins_baseline(corpus, tmp_path,
         assert set(record) == {"profile", "execution_profile", "platform", "release_id", "corpus_sha256",
                                "baseline_revision", "fixtures", "fixture_checks", "gate"}
         assert record["fixture_checks"] == {
-            f.id: {"kind": f.kind, "checks": list(f.checks)} for f in corpus.fixtures
+            f.id: {"kind": f.kind, "checks": list(f.checks), "language": f.language} for f in corpus.fixtures
         }
+        for f in corpus.fixtures:  # measured ASR speed (asr stage 1.0 s), never on documents
+            speed = record["fixtures"][f.id].get("seconds_per_30s")
+            if f.kind == "audio":
+                assert speed == round(30 / audio_seconds(corpus.path(f)), 3)
+            else:
+                assert speed is None
         assert record["platform"] == "cpu" and record["corpus_sha256"] == corpus.sha256
         assert record["gate"] == {"passed": True, "failures": []}
         assert all(isinstance(v, (int, float)) for m in record["fixtures"].values() for v in m.values())

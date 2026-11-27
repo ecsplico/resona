@@ -103,12 +103,14 @@ CORS on Directus and the hub must allow the PWA origin (hub: `CORS_ORIGINS`).
 ### Hub profiles
 
 `profiles/title-de.json` is this app's own postprocess profile (one `extract` step `title` on
-endpoint `local-llm`; `useTitleJob` reads `structured.title.title`). A hub knows it only after
-`just push-profiles` (`scripts/push-profiles.sh`: `resona profiles push` for `profiles/*.json`,
-then the catalogue profiles the app uses: `dictation-medical-de` (the `defaultProfile` of new
-recordings) and those offered under Nachbearbeiten, `transcript-markdown-de` and
-`transcript-polish-de`, from `RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI`
-names the `resona` command; needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
+the model role `@title`, mapped to an endpoint by the hub settings' `model_roles`; `useTitleJob`
+reads `structured.title.title`). A hub knows it only after `just push-profiles`
+(`scripts/push-profiles.sh`: one `resona profiles push` call for `profiles/*.json`, the catalogue
+profiles the app uses: `dictation-medical-de` (the `defaultProfile` of new recordings) and those
+offered under Nachbearbeiten, `transcript-markdown-de` and `transcript-polish-de`, plus the
+catalogue blocks `blocks/*.json` they include, which the CLI pushes first; from
+`RESONA_PROFILE_CATALOGUE`, default `../../profiles`; `RESONA_CLI` names the `resona` command;
+needs an org-admin `RESONA_API_KEY`). `test/titleProfile.spec.ts`
 checks the file against the hub's documented profile format and `titleFromResult`, without
 importing hub code.
 
@@ -230,8 +232,43 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   Live source (Einstellungen → Live, `useLiveSettings().source`): `hub` streams PCM from
   `usePcmCapture()` to `/v1/listen` using an engine from `/v1/listen/engines` discovery
   (`private=false` only for cloud entries; empty list → start disabled); `device` uses
-  on-device Web Speech (`useDeviceSpeech`, `processLocally` always true). Transcript
-  `engine` stamp: `web-speech` / selected hub engine / listen default / `hub-live`.
+  on-device recognition (`useDeviceSpeech`, never cloud). Transcript
+  `engine` stamp: `web-speech` / `android-speech` / `ios-speech` (`deviceSpeechEngine(native)`, by
+  `Capacitor.getPlatform()`) / selected hub engine / listen default / `hub-live`
+  (with correction `<stamp>+<correction engine>`).
+  Device source in the Android and iOS apps (`useDeviceSpeech().native` = `hasResonaSpeech()`): the app-local
+  plugin `ResonaSpeech` (`utils/resonaSpeech.ts` = TS definitions, web fallback answering
+  `unsupported`, `decodePcm`; Java `android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java`
+  + `…/resona/speech/` (`LiveSpeechSession` + pure, JUnit-tested `SpeechTranscript`, `PcmFrames`,
+  `AudioFeed`, `RecognitionRestarts`, `LanguageSupport`), registered in `MainActivity`; Android 13+,
+  older answers `unsupported`). `available`/`install({language})` → `checkRecognitionSupport` /
+  `triggerModelDownload`; `start({language, emitPcm})` captures with its own `AudioRecord` (16 kHz
+  mono) and feeds `createOnDeviceSpeechRecognizer` via `EXTRA_AUDIO_SOURCE` (segmented session;
+  silence/end restart at once, transient errors back off, 5 in a row → non-fatal `error`, PCM goes
+  on); events `update {committed, tentative, revision}` → `final`/`partial` (stale revisions
+  dropped, `onFinal` per new committed text), `pcm {data}` (base64 int16, 250 ms) →
+  `device.pcm` (a `PcmCapture`: `live.vue` passes it to `useLiveCorrection` instead of
+  `usePcmCapture`, no `getUserMedia`, no web recorder) and with `keepAudio` → `recording()` (WAV);
+  `error {fatal}`. `stop()` → `{text}` after the last `pcm`. `useDeviceSpeech` starts the
+  `microphone` foreground service (`utils/recordingService.ts`, shared with `useNativeRecorder`)
+  before the plugin and stops it after, so live runs on with the screen locked. With correction
+  the hub's text is what gets saved; the on-device text is only the preview.
+  iOS (same JS surface, same events and error codes): Swift `ios/App/App/ResonaSpeechPlugin.swift`
+  (Capacitor; registered by `ResonaBridgeViewController.registerPluginInstance`, used in
+  `SceneDelegate` and `Main.storyboard`) + Capacitor-free `ios/App/App/Speech/` (`LiveSpeechSession`:
+  `AVAudioEngine` input tap → `PcmResampler` (16 kHz int16 for `pcm`, `PcmFrames` 250 ms) and the
+  recognizer; `SpeechSupport` + pure `LanguageSupport`: iOS 26+ `SpeechAnalyzer` +
+  `SpeechTranscriber(reportingOptions: [.volatileResults])`, volatile → tentative, finalized →
+  committed, assets via `AssetInventory` (`install` = `downloadAndInstall` in the background,
+  `available` → `downloading`); below iOS 26 `SFSpeechRecognizer` with
+  `requiresOnDeviceRecognition` (no on-device model for the locale → `unavailable`), one task
+  per utterance restarted by `RecognitionRestarts`; `SpeechTranscript` = revision bookkeeping).
+  Audio session `.playAndRecord` + Info.plist `UIBackgroundModes: audio` keep it running when
+  locked (no service; `startRecordingService` is Android-only). Info.plist
+  `NSSpeechRecognitionUsageDescription` (asked only for the `SFSpeechRecognizer` path) and
+  `NSMicrophoneUsageDescription`. Pure files typecheck and run without Xcode: `bun run
+  test:ios-speech` (`ios/App/SpeechTests/run.sh`: `swiftc` against the macOS SDK + `main.swift`
+  checks); the plugin file needs Xcode. Adapted in parts from T3 Code (MIT).
   Settings persist in localStorage `resona.live.settings` (`chunkSeconds` clamped 8–30);
   the drawer shows the device language-pack state (`availability`/`install`), `/debug` too.
   On-device Web Speech exists only in desktop Chrome ≥ 139 (Safari/iOS has no
@@ -244,6 +281,25 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   (`live__block--corrected`/`--pending`), save awaits `finish()` (≤90 s, prompt shows
   `Korrektur läuft… (n Abschnitte)`) and stores `correction.text` stamped
   `<live stamp>+<correction engine | /v1/engines default | hub>` if any block was corrected.
+  The drawer's correction-engine options carry the hub's recommendation roles as German badges
+  (`utils/engineRecommendation.ts`: `recommended`/`fast`/`accurate` → `empfohlen`/`schnell`/`genau`,
+  from `/v1/engines` candidate `recommendation`, org-language default; unmeasured → no badge).
+  Each correction lands through the insertion guard (`utils/insertionGuard.ts`, block =
+  owner `<generation>:<id>`, whole live text selected, `onChange: "drop"`): after a reset or
+  new start it is dropped silently, a block whose live text changed meanwhile stays `failed`.
+  Organization defaults (`useOrgLiveDefaults`: `GET /v1/settings` → `settings.live`, module
+  singleton, null without token/hub): empty device values inherit them via
+  `effectiveLiveSettings(device, org)` — `hubEngine` empty → the hub's listen default (which is
+  the org's `live.engine` when listed), `correctionEngine` empty → correction jobs carry
+  `execution_profile` = `live.correction_execution_profile`. The drawer labels the empty
+  choices with the inherited value (`Organisation (<x>)`, else `Hub-Standard`).
+  Cleanup (`settings.cleanup`, toggle "Text nach dem Diktat bereinigen"): on stop, after the
+  correction finished, `useLiveCleanup().cleanupInto` sends the captured text as a `kind: "text"`
+  job with `live.cleanup_profile` and `context` (`liveCleanupContext(title)` = `# <title>` as
+  `before`), polls ≤60 s, deletes the job, and lands the result through the insertion guard
+  (owner `live-<session>`, whole text selected, `onChange: "drop"`): it replaces the save text
+  only while that is unchanged (stamp `<stamp>+cleanup`); any failure keeps the live text. No
+  `cleanup_profile` in the org → the toggle does nothing and the drawer says so.
   Start checks (`live.vue`, notice `data-testid="live-notice"` + `data-kind`): no hub token,
   401/403 (token rejected), unreachable hub (start re-checks first), other HTTP error, hub
   without live engine, and device source `unsupported|unavailable` (start disabled) or
@@ -271,7 +327,10 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   job, profile `title-de` = `profiles/title-de.json` here, first 4000 chars, reads `structured.title.title`, always deletes the
   job, null on any failure) may replace it ("Titel wird verfeinert…"). Either result replaces
   the shown suggestion and the untouched save field; a typed title, Verwerfen, Speichern, a new
-  start or leaving the page abort both and a late answer is dropped. A title field cleared
+  start or leaving the page abort both and a late answer is dropped. The hub answer also
+  goes through the insertion guard (title field = owner `live-<session>`, revision 1 once
+  typed, `onChange: "drop"`): a field that changed since the request drops it with the notice
+  `data-testid="live-title-notice"`. A title field cleared
   before saving saves under `suggestTitle` again.
   **Opt-in download** of that browser model (Einstellungen → Live → "Titelvorschläge
   (Browser-KI)", `useTitleModel()`, module-level state so a download survives closing the
@@ -419,7 +478,8 @@ of a start is due + 2 h. Runbook: `docs/server/pwa-backups.md`.
   paragraph) as one undo step, never emitting `typed`, and returns `{base, at, inserted}`;
   the page saves only that part on its own (`autosavePart` + `utils/correction.ts`
   `rebaseInsertion` onto the last *saved* text, so unsaved typing is never written along; a
-  part inside unsaved typing stays unsaved). `dirty` counts only typed edits (the editor's
+  part inside unsaved typing stays unsaved; `rebaseOffset` is the insertion guard's
+  `mapPosition` with `bias: "before"`). `dirty` counts only typed edits (the editor's
   `typed` event) and parts whose own save failed, so pure dictation never triggers the leave
   dialog; a dictation or re-dictation still in flight gets a leave `confirm`. `useTranscriptEdit` serializes all
   writes (`enqueue`; `saving` is true from the click, a second click joins the running
@@ -579,10 +639,12 @@ app/
 │   │                                # useHub: the only hub HTTP client (token, engines, jobs)
 │   │                                # useHubSettings: per-device hub token (localStorage)
 │   │                                # useDataStore: picks directusStore | localStore by data mode
-│   │                                # useLiveSettings: live source/engine/correction settings
+│   │                                # useLiveSettings: live source/engine/correction/cleanup settings + effectiveLiveSettings
+│   │                                # useOrgLiveDefaults: org `live` defaults from GET /v1/settings (module singleton)
+│   │                                # useLiveCleanup: cleanup text job (live.cleanup_profile + context) through the insertion guard
 │   │                                # useTitleModel: browser title model state + opt-in download (module-level)
 │   │                                # usePcmCapture: mic → 16 kHz PCM16 frames for /v1/listen
-│   │                                # useDeviceSpeech: on-device Web Speech live source
+│   │                                # useDeviceSpeech: on-device live source (ResonaSpeech plugin in the Android app, else Web Speech)
 │   │                                # useLiveCorrection: re-transcribes live blocks via the hub
 │   │                                # useRedictation: record more parts onto a recording (durable recording_parts, landed at their chip)
 ├── data/
@@ -599,11 +661,14 @@ app/
 │   ├── RecordingsPane               # recordings list: filters, queue, list, capture dock, record flow
 │   └── RecordingListItem, QueuedListItem, SaveSheet, StatusChip   # list row: copy + ⋯ menu (Teilen / Als Markdown exportieren (done only) / Weiter diktieren (done or error) / Löschen)
 ├── utils/pcm.ts                     # float32 → 16 kHz int16 PCM for live streaming
+├── utils/resonaSpeech.ts            # ResonaSpeech plugin definitions + web fallback + decodePcm (Android live dictation)
+├── utils/recordingService.ts        # Android microphone foreground service (native recorder + ResonaSpeech)
 ├── utils/adts.ts                    # scanAdts(): whole ADTS frames + seconds of a cut-off .aac
 ├── utils/audioMerge.ts              # mergeToWav(): decode + concat parts → 16 kHz mono WAV
 ├── utils/audioFile.ts               # uploads/shares: resolveAudioMime/normalizeAudio (playable type + extension), probeDuration (element metadata → decodeAudioData)
 ├── utils/hubTokenSync.ts            # pure per-user hub token sync (pull/push over a remote interface)
 ├── utils/debugProbe.ts             # temporary mobile diagnostics (live + Prompt API) for /debug
+├── utils/insertionGuard.ts          # late results (correction, title, re-dictation anchors): snapshotInsertion/resolveInsertion (map through edits or drop: owner-changed | draft-changed-unmappable), mapPosition, word-boundary spaceInsertion; port of T3 Code's resolveTranscriptCommit
 ├── utils/titleRefinement.ts         # on-device title refinement via the browser Prompt API (available-only, never downloads)
 ├── types/directus.ts                # Recording / Transcript / Schema
 └── assets/css/                      # tokens.css + main.css

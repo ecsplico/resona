@@ -20,6 +20,10 @@ exactly the metrics those checks produce, so an empty metrics object cannot
 pass the absolute checks. Promoting onto a corpus other than the current
 baseline's is refused (``baseline_corpus_mismatch``) unless the admin asks for
 ``rebaseline``; that first baseline of the new corpus passes on absolute checks.
+
+A fixture may also carry ``seconds_per_30s`` (ASR seconds per 30 s of audio; measured,
+optional, never gated) and its checks a ``language``, stored next to its metrics. Both
+feed the engine recommendations of ``GET /v1/engines`` (``recommendations.py``).
 """
 
 from __future__ import annotations
@@ -51,6 +55,8 @@ RATE_METRICS = ("wer", "cer", "der")
 SCORE_METRICS = ("speaker_attribution",)
 # Reported only: must be present when the baseline has it, never compared.
 REPORTED_METRICS = ("speaker_count_error",)
+# Measured only: optional, no check declares them, never compared.
+MEASURED_METRICS = ("seconds_per_30s",)
 METRIC_OF_CHECK = {
     "wer": "wer",
     "cer": "cer",
@@ -83,6 +89,8 @@ class FixtureMetrics(BaseModel):
     speaker_attribution: Optional[float] = Field(default=None, ge=0, le=1)
     der: Optional[float] = Field(default=None, ge=0)
     speaker_count_error: Optional[StrictInt] = Field(default=None, ge=0)
+    # Measured only (ASR seconds per 30 s of audio): optional, never gated; feeds /v1/engines recommendations.
+    seconds_per_30s: Optional[float] = Field(default=None, ge=0)
 
 
 Check = Literal[
@@ -97,6 +105,8 @@ class FixtureChecks(BaseModel):
 
     kind: Literal["audio", "document"]
     checks: list[Check] = Field(min_length=1, max_length=len(METRIC_OF_CHECK))
+    # The fixture's language; stored with its metrics so baselines can be read per language.
+    language: Optional[str] = Field(default=None, pattern=r"^[a-z]{2,3}$")
 
 
 class Gate(BaseModel):
@@ -151,7 +161,7 @@ def completeness_failures(
             failures.append(f"{fixture_id}: {', '.join(invalid)} not a {declared.kind} check")
             continue
         required = {METRIC_OF_CHECK[check] for check in declared.checks}
-        present = set(fixtures[fixture_id])
+        present = set(fixtures[fixture_id]) - set(MEASURED_METRICS)
         for metric in sorted(required - present):
             failures.append(f"{fixture_id}: {metric} missing")
         for metric in sorted(present - required):
@@ -270,6 +280,9 @@ async def create_evaluation(
     incomplete = completeness_failures(fixtures, body.fixture_checks)
     if incomplete:
         raise api_error(422, "incomplete_metrics", "; ".join(incomplete)[:500])
+    for fixture_id, declared in body.fixture_checks.items():
+        if declared.language is not None:
+            fixtures[fixture_id]["language"] = declared.language
     evaluation = Evaluation(
         organization_id=principal.organization_id,
         profile=body.profile,
@@ -402,4 +415,4 @@ async def promote_evaluation(
     }
 
 
-__all__ = ["REGRESSION_LIMIT", "absolute_failures", "completeness_failures", "regression_failures", "router"]
+__all__ = ["MEASURED_METRICS", "REGRESSION_LIMIT", "absolute_failures", "completeness_failures", "regression_failures", "router"]

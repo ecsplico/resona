@@ -293,6 +293,41 @@ def test_metrics_must_be_exactly_what_declared_checks_produce(
     assert (response.status_code, error_code(response)) == (422, "incomplete_metrics")
 
 
+def test_speed_and_language_are_stored_and_never_gated(http, fresh_org, admin_headers, release_id) -> None:
+    admin = admin_headers(fresh_org)
+    first = declared(body(release_id, {"de-short": {"wer": 0.10, "cer": 0.04, "seconds_per_30s": 1.5}}))
+    first["fixture_checks"]["de-short"]["language"] = "de"
+    created = http.post("/v1/evaluations", json=first, headers=admin)
+    assert created.status_code == 201, created.text
+    assert created.json()["fixtures"]["de-short"] == {"wer": 0.10, "cer": 0.04, "seconds_per_30s": 1.5,
+                                                      "language": "de"}
+    assert promote(http, admin, created.json()["evaluation_id"], None).status_code == 200
+
+    # Much slower and without the measurement next time: neither is a regression.
+    slower = declared(body(release_id, {"de-short": {"wer": 0.10, "cer": 0.04, "seconds_per_30s": 30.0}}))
+    assert promote(http, admin, record(http, admin, slower), 1).status_code == 200
+    plain = declared(body(release_id, {"de-short": {"wer": 0.10, "cer": 0.04}}))
+    assert promote(http, admin, record(http, admin, plain), 2).status_code == 200
+
+
+@pytest.mark.parametrize("language", ["DE", "deutsch", ""])
+def test_fixture_language_must_be_a_language_code(http, fresh_org, admin_headers, release_id, language) -> None:
+    payload = declared(body(release_id))
+    payload["fixture_checks"]["de-short"]["language"] = language
+
+    response = http.post("/v1/evaluations", json=payload, headers=admin_headers(fresh_org))
+
+    assert (response.status_code, error_code(response)) == (422, "invalid_request")
+
+
+@pytest.mark.parametrize("speed", [-1.0, "fast"])
+def test_speed_must_be_a_non_negative_number(http, fresh_org, admin_headers, release_id, speed) -> None:
+    payload = body(release_id)
+    payload["fixtures"]["de-short"]["seconds_per_30s"] = speed
+
+    assert post(http, admin_headers(fresh_org), payload).status_code == 422
+
+
 def test_empty_metrics_cannot_pass_the_absolute_checks(http, fresh_org, admin_headers, release_id) -> None:
     payload = declared(body(release_id))
     payload["fixtures"]["table"] = {}

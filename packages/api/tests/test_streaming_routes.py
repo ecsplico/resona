@@ -1,6 +1,11 @@
 """Tests for the Deepgram-compatible WS /v1/listen streaming proxy."""
 import asyncio
+import base64
+import io
 import json
+import shutil
+import subprocess
+import wave
 
 import pytest
 from fastapi import FastAPI
@@ -466,3 +471,259 @@ def test_listen_engines_never_lists_openai(fresh_org, client_headers, store_sett
 def test_listen_engines_requires_auth(listen_catalogue):
     listen_catalogue([_local()])
     assert _listen_client().get("/v1/listen/engines").status_code == 401
+
+
+def test_listen_engines_default_is_live_engine(fresh_org, client_headers, store_settings, listen_catalogue):
+    """``live.engine`` is the advertised default when listed, a cloud engine too."""
+    from resona_job_core import Endpoint
+
+    listen_catalogue([_local(), _cloud("deepgram", "nova-3")])
+    endpoint = Endpoint(id="cloud-asr:deepgram", kind="cloud_asr", model="nova-3")
+    store_settings(fresh_org, cloud_enabled=True, endpoints=[endpoint.model_dump(mode="json")],
+                   live={"engine": "deepgram"})
+    body = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org)).json()
+    assert body["default"] == "deepgram"
+
+
+def test_listen_engines_unlisted_live_engine_falls_back(fresh_org, client_headers, store_settings, listen_catalogue):
+    listen_catalogue([_local()])
+    store_settings(fresh_org, live={"engine": "deepgram"})
+    body = _listen_client().get("/v1/listen/engines", headers=client_headers(fresh_org)).json()
+    assert body["default"] == "faster-whisper"
+
+
+# ── Deepgram compatibility: params, key terms, speech_final, Metadata ────────
+
+def test_results_mark_finals_as_speech_final():
+    assert sr.deepgram_results("a", is_final=True)["speech_final"] is True
+    interim = sr.deepgram_results("a", is_final=False)
+    assert interim["is_final"] is False and interim["speech_final"] is False
+
+
+def test_metadata_names_the_engine():
+    msg = sr.deepgram_metadata("req-1", models=["large-v3"], engine="faster-whisper")
+    assert msg["engine"] == "faster-whisper"
+    assert msg["model_info"] == {"large-v3": {"name": "faster-whisper", "version": "", "arch": "large-v3"}}
+    assert "engine" not in sr.deepgram_metadata("req-1", models=[])
+
+
+def test_merge_keyterms_and_prompt():
+    merged = sr.merge_keyterms([" Olanzapin ", "", "olanzapin", "Quetiapin"], ["Befund", "quetiapin"])
+    assert merged == ["Olanzapin", "Quetiapin", "Befund"]
+    assert sr.keyterm_prompt(merged) == "Olanzapin, Quetiapin, Befund"
+    assert sr.keyterm_prompt([]) is None
+    assert len(sr.keyterm_prompt(["x" * 500, "y" * 500]) or "") == 500  # cut at a term boundary
+
+
+def test_ws_url_carries_auto_language_and_prompt():
+    assert sr._ws_url("http://e:7001", None, "A, B") == "ws://e:7001/ws/live?language=auto&initial_prompt=A%2C+B"
+
+
+@pytest.mark.parametrize("head, container", [
+    (b"\x1a\x45\xdf\xa3\x01\x00", True),
+    (b"OggS\x00\x02", True),
+    (b"RIFF\x24\x00\x00\x00WAVEfmt ", True),
+    (b"\x00\x00\x00\x20ftypisom", True),
+    (b"ID3\x04\x00", True),
+    (b"fLaC\x00\x00", True),
+    (b"\xff\xfb\x90\x00", False),  # bare MPEG sync is also plausible PCM
+    (b"\x00\x01" * 8, False),
+])
+def test_is_container_audio(head, container):
+    assert sr.is_container_audio(head) is container
+
+
+@pytest.fixture
+def local_listen(monkeypatch, client_headers, org_a):
+    """A streaming app over a fake local engine that records the engine URL and resolve calls."""
+    fake_ws = _FakeEngineWS(script=[{"type": "final", "text": "hallo", "delta": "hallo"}])
+    seen = {"urls": [], "resolve": [], "preferred": []}
+
+    def connect(url, **kwargs):
+        seen["urls"].append(url)
+        fake_ws._queue = asyncio.Queue()  # one session per queue: each connection runs on its own loop
+        return _FakeConnect(fake_ws)
+
+    def resolve(name, *args, **kwargs):
+        seen["resolve"].append(name)
+        seen["preferred"].append(kwargs.get("preferred"))
+        return _local()
+
+    monkeypatch.setattr(sr.websockets, "connect", connect)
+    monkeypatch.setattr(reg, "resolve", resolve)
+    monkeypatch.setattr(reg, "get_catalogue", lambda: [_local()])
+    app = FastAPI()
+    app.include_router(sr.router)
+    with TestClient(app) as c:
+        c.headers.update(client_headers(org_a))
+        yield c, fake_ws, seen
+
+
+def _until_metadata(ws) -> list[dict]:
+    messages = []
+    while True:
+        msg = ws.receive_json()
+        messages.append(msg)
+        if msg["type"] in ("Metadata", "Error"):
+            return messages
+
+
+def test_listen_accepts_deepgram_params_and_passes_keyterms(local_listen):
+    client, _, seen = local_listen
+    query = (
+        "encoding=linear16&model=nova-3&smart_format=true&endpointing=300&vad_events=true"
+        "&mip_opt_out=true&punctuate=true&utterances=true&diarize=true&filler_words=true&channels=1"
+        "&detect_language=true&keyterm=Olanzapin&keyterm=Quetiapin"
+    )
+    with client.websocket_connect(f"/v1/listen?{query}") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        messages = _until_metadata(ws)
+
+    assert seen["resolve"] == [None]  # nova-3 names no engine of the org: the default applies
+    url = seen["urls"][0]
+    assert "language=auto" in url
+    assert "initial_prompt=Olanzapin%2C+Quetiapin" in url
+    final = next(m for m in messages if m["type"] == "Results")
+    assert final["is_final"] is True and final["speech_final"] is True
+    assert messages[-1]["type"] == "Metadata" and messages[-1]["engine"] == "faster-whisper"
+
+
+def test_listen_model_selects_an_engine_the_org_can_stream(local_listen):
+    client, _, seen = local_listen
+    with client.websocket_connect("/v1/listen?encoding=linear16&model=faster-whisper") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    assert seen["resolve"] == ["faster-whisper"]
+
+
+def test_listen_engine_param_wins_over_model(local_listen):
+    client, _, seen = local_listen
+    with client.websocket_connect("/v1/listen?encoding=linear16&model=faster-whisper&engine=other") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    assert seen["resolve"] == ["other"]
+
+
+def test_listen_default_engine_comes_from_live_settings(local_listen, org_a, store_settings):
+    """Without ``engine`` (or a ``model`` naming one) the org's ``live.engine`` is the preferred default."""
+    client, _, seen = local_listen
+    with client.websocket_connect("/v1/listen?encoding=linear16") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    store_settings(org_a, live={"engine": "faster-whisper"})
+    with client.websocket_connect("/v1/listen?encoding=linear16") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    assert seen["resolve"] == [None, None]
+    assert seen["preferred"] == [None, "faster-whisper"]
+
+
+def test_listen_engine_param_wins_over_live_settings(local_listen, org_a, store_settings):
+    client, _, seen = local_listen
+    store_settings(org_a, live={"engine": "deepgram"})
+    with client.websocket_connect("/v1/listen?encoding=linear16&engine=faster-whisper") as ws:
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    assert seen["resolve"] == ["faster-whisper"]
+
+
+def test_listen_explicit_linear16_never_decodes(local_listen, monkeypatch):
+    client, fake_ws, _ = local_listen
+    monkeypatch.setattr(sr.shutil, "which", lambda name: pytest.fail("ffmpeg must not be looked up"))
+    frame = b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\x00" * 16
+    with client.websocket_connect("/v1/listen?encoding=linear16") as ws:
+        ws.send_bytes(frame)
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        _until_metadata(ws)
+    audio = [m for m in fake_ws.sent if m["type"] == "audio"]
+    assert [base64.b64decode(m["data"]) for m in audio] == [frame]
+
+
+def test_listen_container_without_ffmpeg_closes_1011(local_listen, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+
+    client, _, _ = local_listen
+    monkeypatch.setattr(sr.shutil, "which", lambda name: None)
+    with client.websocket_connect("/v1/listen") as ws:
+        ws.send_bytes(_wav(b"\x00\x00" * 1600, 16000))
+        msg = ws.receive_json()
+        while msg["type"] != "Error":  # the engine may answer its stop before the abort lands
+            msg = ws.receive_json()
+        assert "ffmpeg" in msg["description"]
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            ws.receive_json()
+    assert excinfo.value.code == 1011
+
+
+def test_listen_cloud_bridge_receives_keyterms(monkeypatch, cloud_org, client_headers):
+    app, _session, captured = _cloud_app(monkeypatch, "deepgram", [])
+    with TestClient(app) as c:
+        c.headers.update(client_headers(cloud_org))
+        with c.websocket_connect(
+            "/v1/listen?engine=deepgram&encoding=linear16&private=false&keyterm=Olanzapin&keyterm=Lithium"
+        ) as ws:
+            ws.send_text(json.dumps({"type": "CloseStream"}))
+            messages = _until_metadata(ws)
+    assert captured["kw"]["keyterms"][:2] == ("Olanzapin", "Lithium")
+    assert messages[-1]["engine"] == "deepgram"
+
+
+# ── Container audio through ffmpeg ───────────────────────────────────────────
+
+def _wav(pcm: bytes, rate: int) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _encode(fmt: list[str]) -> bytes:
+    """Half a second of a 440 Hz tone, encoded by ffmpeg with output args ``fmt``."""
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+         "-i", "sine=frequency=440:duration=0.5:sample_rate=48000", "-ac", "1", *fmt, "pipe:1"],
+        capture_output=True, check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        pytest.skip(f"ffmpeg cannot encode {fmt}: {proc.stderr.decode(errors='replace')[-200:]}")
+    return proc.stdout
+
+
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("fmt", [
+    ["-c:a", "libopus", "-f", "webm"],
+    ["-c:a", "libopus", "-f", "ogg"],
+    ["-c:a", "pcm_s16le", "-f", "wav"],
+], ids=["webm", "ogg", "wav"])
+def test_listen_decodes_container_audio_through_ffmpeg(local_listen, fmt):
+    client, fake_ws, _ = local_listen
+    data = _encode(fmt)
+    with client.websocket_connect("/v1/listen?sample_rate=16000") as ws:
+        for start in range(0, len(data), 1024):
+            ws.send_bytes(data[start:start + 1024])
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        messages = _until_metadata(ws)
+
+    assert messages[-1]["type"] == "Metadata"
+    pcm = b"".join(base64.b64decode(m["data"]) for m in fake_ws.sent if m["type"] == "audio")
+    # 0.5 s of mono 16 kHz linear16 is 16000 bytes; codecs pad or trim a few milliseconds.
+    assert 14000 <= len(pcm) <= 18000 and len(pcm) % 2 == 0
+    assert all(m["sample_rate"] == 16000 for m in fake_ws.sent if m["type"] == "audio")
+    assert fake_ws.sent[-1]["type"] == "stop"  # the stop follows the drained PCM
+
+
+@needs_ffmpeg
+def test_listen_undecodable_container_reports_an_error(local_listen):
+    client, _, _ = local_listen
+    with client.websocket_connect("/v1/listen") as ws:
+        ws.send_bytes(b"OggS" + b"\x00" * 60)  # Ogg magic, garbage after it
+        ws.send_text(json.dumps({"type": "CloseStream"}))
+        messages = _until_metadata(ws)
+    # ffmpeg produces no audio; the stream still ends cleanly with Metadata after the drain.
+    assert messages[-1]["type"] in ("Metadata", "Error")

@@ -7,6 +7,7 @@ import { HubError, type HubEngine, type ListenEngine } from "~/composables/useHu
 import { CHUNK_SECONDS_MAX, CHUNK_SECONDS_MIN, clampChunkSeconds } from "~/composables/useLiveSettings";
 import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 import type { TitleModelAvailability } from "~/utils/titleRefinement";
+import { engineBadge } from "~/utils/engineRecommendation";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -185,6 +186,23 @@ function setChunkSeconds(value: string): void {
 	liveSettings.chunkSeconds = clampChunkSeconds(Number(value));
 }
 
+// ── Live: organization defaults that empty device values inherit ───────────
+const orgLive = useOrgLiveDefaults();
+const hubEngineDefaultLabel = computed(() => {
+	const engine = orgLive.defaults.value?.engine;
+	return engine ? `Organisation (${engine})` : `Hub-Standard (${listenDefault.value || "keiner"})`;
+});
+const correctionDefaultLabel = computed(() => {
+	const profile = orgLive.defaults.value?.correction_execution_profile;
+	return profile ? `Organisation (Profil ${profile})` : "Hub-Standard";
+});
+const cleanupProfileLabel = computed(() => {
+	const profile = orgLive.defaults.value?.cleanup_profile;
+	return profile
+		? `Profil der Organisation: ${profile}`
+		: "Die Organisation hat kein Bereinigungsprofil festgelegt – der Text bleibt unverändert.";
+});
+
 const cal = useCalendar("google");
 const settings = cal.settings;
 
@@ -265,6 +283,7 @@ watch(tab, (value) => {
 		void checkDevice();
 		void titleModel.check();
 		void loadCorrectionEngines();
+		void orgLive.load();
 	}
 });
 </script>
@@ -608,7 +627,7 @@ watch(tab, (value) => {
 						data-testid="settings-live-engine"
 					>
 						<option value="">
-							Hub-Standard ({{ listenDefault || "keiner" }})
+							{{ hubEngineDefaultLabel }}
 						</option>
 						<option
 							v-for="e in listenEngines"
@@ -716,14 +735,14 @@ watch(tab, (value) => {
 							data-testid="settings-live-correction-engine"
 						>
 							<option value="">
-								Hub-Standard
+								{{ correctionDefaultLabel }}
 							</option>
 							<option
 								v-for="e in correctionEngines"
 								:key="e.name"
 								:value="e.name"
 							>
-								{{ e.name }}{{ e.private ? "" : " (Cloud)" }}
+								{{ e.name }}{{ e.private ? "" : " (Cloud)" }}{{ engineBadge(e) ? ` – ${engineBadge(e)}` : "" }}
 							</option>
 						</select>
 					</label>
@@ -741,6 +760,22 @@ watch(tab, (value) => {
 						>
 					</label>
 				</template>
+
+				<div class="drawer__field drawer__field--row">
+					<span class="drawer__label">Text nach dem Diktat bereinigen</span>
+					<HToggle
+						v-model="liveSettings.cleanup"
+						aria-label="Text nach dem Diktat bereinigen"
+						data-testid="settings-live-cleanup"
+					/>
+				</div>
+				<p
+					v-if="liveSettings.cleanup"
+					class="drawer__sub"
+					data-testid="settings-live-cleanup-profile"
+				>
+					{{ cleanupProfileLabel }}
+				</p>
 			</section>
 
 			<footer class="drawer__foot">

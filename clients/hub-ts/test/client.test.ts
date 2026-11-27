@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createHubClient, HubError, type JobView } from "../src/index.js";
+import { createHubClient, HubError, SyncWaitTimeout, type JobView } from "../src/index.js";
 
 type Handler = (request: Request) => Response | Promise<Response>;
 
@@ -93,6 +93,16 @@ describe("submitJob", () => {
     expect(new Uint8Array(await sent.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
     expect(await submit!.json()).toEqual({ kind: "audio", language: "de", upload_id: "up-9" });
   });
+
+  it("sends the insertion context with the job", async () => {
+    const mock = mockFetch(() => json(202, { job_id: 9, status: "pending" }));
+    const context = { before: "Im Befund steht:", after: "Weiter im Text." };
+    await client(mock.fetch).submitJob({ kind: "text", upload_id: "up-9", profile: "cleanup", context });
+
+    expect(await mock.requests[0]!.json()).toEqual({
+      kind: "text", upload_id: "up-9", profile: "cleanup", context,
+    });
+  });
 });
 
 describe("HubError", () => {
@@ -157,5 +167,43 @@ describe("resultMarkdown", () => {
   it("throws the hub error of a job that is not done", async () => {
     const mock = mockFetch(() => json(409, { error: "not_ready", message: "job is processing" }));
     await expect(client(mock.fetch).resultMarkdown(7)).rejects.toMatchObject({ status: 409, code: "not_ready" });
+  });
+});
+
+describe("listenPrerecorded", () => {
+  it("posts the audio as the raw body with Deepgram query params", async () => {
+    const answer = {
+      metadata: { request_id: "7", duration: 1, channels: 1, model_info: { engine: "faster-whisper" } },
+      results: { channels: [{ detected_language: "de", alternatives: [{ transcript: "hallo", words: [] }] }] },
+    };
+    const mock = mockFetch(() => json(200, answer));
+    const audio = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+    const result = await client(mock.fetch).listenPrerecorded(audio, {
+      language: "de", model: "nova-3", private: false, idempotencyKey: "k-1",
+    });
+    expect(result).toEqual(answer);
+    const request = mock.requests[0]!;
+    expect(request.method).toBe("POST");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/v1/listen");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ language: "de", model: "nova-3", private: "false" });
+    expect(request.headers.get("Content-Type")).toBe("audio/webm");
+    expect(request.headers.get("Idempotency-Key")).toBe("k-1");
+    expect(request.headers.get("Authorization")).toBe("Bearer tok");
+    expect(new Uint8Array(await request.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("throws SyncWaitTimeout with the running job on 504", async () => {
+    const mock = mockFetch(() => json(504, { error: "timeout", message: "still running", job_id: 9 }));
+    const error = await client(mock.fetch).listenPrerecorded(new Blob([new Uint8Array([0])])).catch((e) => e);
+    expect(error).toBeInstanceOf(SyncWaitTimeout);
+    expect(error).toMatchObject({ status: 504, code: "timeout", jobId: 9 });
+  });
+
+  it("throws the hub error otherwise", async () => {
+    const mock = mockFetch(() => json(403, { error: "policy_denied", message: "no cloud" }));
+    await expect(client(mock.fetch).listenPrerecorded(new Blob([]))).rejects.toMatchObject({
+      status: 403, code: "policy_denied",
+    });
   });
 });

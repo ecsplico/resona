@@ -2,10 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { NewRecording } from "~/data/types";
 import { HubError, type ListenEngine } from "~/composables/useHub";
-import { DEVICE_SPEECH_HINTS, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
+import { DEVICE_SPEECH_HINTS, deviceSpeechEngine, type DeviceSpeechAvailability } from "~/composables/useDeviceSpeech";
 import { describeClose } from "~/composables/useLive";
 import { LIVE_SUGGESTION_MIN_WORDS, meaningfulWordCount, suggestTitle, TITLE_REFINE_MIN_WORDS } from "~/utils/titleSuggestion";
 import { refineTitle as refineTitleOnDevice } from "~/utils/titleRefinement";
+import { droppedInsertionMessage, resolveInsertion, snapshotInsertion, type InsertionTarget } from "~/utils/insertionGuard";
+import { effectiveLiveSettings } from "~/composables/useLiveSettings";
+import { liveCleanupContext } from "~/composables/useLiveCleanup";
 import { discardUnfinished } from "~/data/unfinishedRecordings";
 
 const cfg = useRuntimeConfig().public;
@@ -31,7 +34,12 @@ const capture = usePcmCapture();
 const hubLive = useLive();
 const device = useDeviceSpeech();
 const settings = useLiveSettings();
+// Empty device values inherit the organization's `live` defaults.
+const orgLive = useOrgLiveDefaults();
+const effective = computed(() => effectiveLiveSettings(settings, orgLive.defaults.value));
 const source = computed(() => (settings.source === "device" ? device : hubLive));
+// The app's `ResonaSpeech` plugin owns the microphone for a device session (screen lock included).
+const nativeDevice = computed(() => settings.source === "device" && device.native);
 
 const listenEngines = ref<ListenEngine[]>([]);
 const listenDefault = ref<string | null>(null);
@@ -196,6 +204,18 @@ const titleJob = useTitleJob();
 const remoteTitle = ref<string | null>(null);
 const titleRefining = ref(false);
 let titleAbort: AbortController | null = null;
+// The insertion guard's view of the title field: owned by one live session; a typed
+// title is another revision, so a late model title never replaces it (even typed back).
+let liveSession = 0;
+const titleNotice = ref<string | null>(null);
+function titleTarget(): InsertionTarget {
+	return {
+		ownerKey: `live-${liveSession}`,
+		text: title.value,
+		selection: { start: 0, end: title.value.length },
+		revision: titleEdited.value ? 1 : 0,
+	};
+}
 const shownSuggestion = computed(() => remoteTitle.value || deviceTitle.value || liveTitleSuggestion.value);
 watch(shownSuggestion, (suggestion) => {
 	if (suggestion && !titleEdited.value) {
@@ -268,9 +288,12 @@ async function refineTitle(): Promise<void> {
 		if (await startDeviceTitle(text) || ctrl.signal.aborted || !hubAllowed) {
 			return;
 		}
+		const snapshot = snapshotInsertion(titleTarget());
 		const remote = await titleJob.suggestTitleRemote(text, { language: cfg.defaultLanguage, signal: ctrl.signal });
-		if (remote && !ctrl.signal.aborted && !titleEdited.value) {
-			remoteTitle.value = remote;
+		if (remote && !ctrl.signal.aborted) {
+			const landed = resolveInsertion(snapshot, titleTarget(), remote, { language: cfg.defaultLanguage, onChange: "drop" });
+			if (landed.kind === "insert") remoteTitle.value = landed.text;
+			else titleNotice.value = droppedInsertionMessage("Der Titelvorschlag", landed.reason);
 		}
 	}
 	catch {
@@ -367,19 +390,44 @@ function startCorrection(language: string): void {
 	}
 	correction.reset();
 	correction.start({
-		capture,
+		capture: nativeDevice.value ? device.pcm : capture,
 		language,
 		engine: settings.correctionEngine,
+		executionProfile: effective.value.correctionExecutionProfile || undefined,
 		chunkSeconds: settings.chunkSeconds,
 	});
 	unsubscribeFinal?.();
 	unsubscribeFinal = source.value.onFinal(t => correction.addFinal(t));
 }
 
+// Cleanup of the finished live text by the org's cleanup profile (text job with `context`).
+// It replaces the captured text only while that is unchanged and owned by the same session.
+const liveCleanup = useLiveCleanup();
+let cleanupAbort: AbortController | null = null;
+function capturedTarget(session: number): InsertionTarget {
+	return { ownerKey: `live-${session}`, text: capturedText.value, selection: { start: 0, end: capturedText.value.length } };
+}
+async function runCleanup(profile: string): Promise<void> {
+	cleanupAbort?.abort();
+	const ctrl = new AbortController();
+	cleanupAbort = ctrl;
+	const session = liveSession;
+	const landed = await liveCleanup.cleanupInto(capturedTarget(session), () => capturedTarget(liveSession), {
+		profile,
+		language: cfg.defaultLanguage,
+		context: liveCleanupContext(title.value),
+		signal: ctrl.signal,
+	});
+	if (landed?.kind === "insert" && !ctrl.signal.aborted) {
+		capturedText.value = landed.text;
+		capturedEngine.value = `${capturedEngine.value}+cleanup`;
+	}
+}
+
 async function startSource(language: string): Promise<void> {
 	if (settings.source === "device") {
 		try {
-			await device.start({ language });
+			await device.start(nativeDevice.value ? { language, keepAudio: true } : { language });
 		}
 		catch (err) {
 			device.error.value = err instanceof Error ? err.message : "Lokale Spracherkennung nicht verfügbar";
@@ -406,6 +454,8 @@ async function startLive(): Promise<void> {
 		}
 	}
 	sessionActive.value = true;
+	liveSession += 1;
+	titleNotice.value = null;
 	sessionWake.acquire();
 	cancelTitleRefinement();
 	deviceRun = null;
@@ -413,6 +463,12 @@ async function startLive(): Promise<void> {
 	remoteTitle.value = null;
 
 	const language = cfg.defaultLanguage;
+
+	if (nativeDevice.value) {
+		startCorrection(language);
+		await startSource(language);
+		return;
+	}
 
 	// Acquire the mic ONCE and share the single stream with both the live
 	// transcriber and the parallel recorder so we don't open the mic twice.
@@ -453,13 +509,20 @@ async function stopLive(): Promise<void> {
 	capturedBlob.value = await recorder.stop();
 	// After stop(): the native recorder names its session (its file) only then.
 	capturedSession = recorder.sessionId.value;
+	if (nativeDevice.value) {
+		// After the last PCM frame, with the trailing hypothesis committed (reaches the correction via onFinal).
+		await device.finish();
+		const audio = device.recording();
+		capturedBlob.value = audio?.blob ?? null;
+		capturedDuration.value = audio ? Math.round(audio.seconds) : 0;
+	}
 	// Snapshot AFTER the recorder.stop() await: yielding to the microtask queue
 	// lets Vue flush any pending reactive updates from WebSocket messages (e.g.
 	// the last partial that arrived just before the user pressed stop).
 	// Snapshot BEFORE source.stop(), which removes the data watcher immediately.
 	capturedText.value = source.value.fullText.value.trim();
 	const liveLabel = settings.source === "device"
-		? "web-speech"
+		? deviceSpeechEngine(device.native)
 		: settings.hubEngine || listenDefault.value || "hub-live";
 	capturedEngine.value = liveLabel;
 	correctionDone = null;
@@ -477,6 +540,11 @@ async function stopLive(): Promise<void> {
 				capturedEngine.value = engineLabel;
 			}
 		});
+	}
+	// Cleanup (Settings → Live): the org's `live.cleanup_profile` on the finished text, after the correction.
+	const cleanupProfile = effective.value.cleanupProfile;
+	if (cleanupProfile) {
+		correctionDone = (correctionDone ?? Promise.resolve()).then(() => runCleanup(cleanupProfile));
 	}
 	source.value.stop();
 	unsubscribeFinal?.();
@@ -514,7 +582,7 @@ async function confirmSave(): Promise<void> {
 			duration_seconds: capturedDuration.value,
 			...(eventLink.calendar_event_id ? eventLink : {}),
 		};
-		const recording = await store.createRecording(input, blob, `${recordingTitle}.webm`);
+		const recording = await store.createRecording(input, blob, `${recordingTitle}.${blob?.type === "audio/wav" ? "wav" : "webm"}`);
 		// The audio is stored with the recording now.
 		dropCapturedSession();
 
@@ -533,6 +601,7 @@ async function confirmSave(): Promise<void> {
 
 function cancelSave(): void {
 	cancelTitleRefinement();
+	cleanupAbort?.abort();
 	showTitlePrompt.value = false;
 	dropCapturedSession();
 	void nav.leaveTo("/");
@@ -540,12 +609,14 @@ function cancelSave(): void {
 
 onBeforeUnmount(() => {
 	cancelTitleRefinement();
+	cleanupAbort?.abort();
 	releaseLiveStream();
 });
 
 onMounted(async () => {
 	await Promise.all([
 		loadListenEngines(),
+		orgLive.load(),
 		settings.correction ? loadCorrectionEngines() : Promise.resolve(),
 		settings.source === "device" ? checkDevice() : Promise.resolve(),
 	]);
@@ -616,6 +687,14 @@ onMounted(async () => {
 					data-testid="live-title-suggestion"
 				>
 					Titelvorschlag: {{ shownSuggestion }}
+				</p>
+				<p
+					v-if="titleNotice && (sessionActive || showTitlePrompt)"
+					class="live__suggestion"
+					data-testid="live-title-notice"
+					role="status"
+				>
+					{{ titleNotice }}
 				</p>
 				<div
 					v-if="rollingText"

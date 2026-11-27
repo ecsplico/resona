@@ -105,6 +105,24 @@ def test_resolve_default_honours_env(monkeypatch):
     assert info.name == "deepgram"
 
 
+def test_resolve_preferred_wins_over_env(monkeypatch):
+    """An organization's ``live.engine`` ranks before RESONA_DEFAULT_ENGINE."""
+    monkeypatch.setenv("RESONA_DEFAULT_ENGINE", "faster-whisper")
+    info = reg.resolve(None, "stt", False, catalogue=_cat(), preferred="deepgram")
+    assert info.name == "deepgram"
+
+
+def test_resolve_ineligible_preferred_falls_back(monkeypatch):
+    """A preferred engine that is unavailable or not private is skipped, never an error."""
+    monkeypatch.delenv("RESONA_DEFAULT_ENGINE", raising=False)
+    assert reg.resolve(None, "stt", True, catalogue=_cat(), preferred="deepgram").name == "faster-whisper"
+    assert reg.resolve(None, "stt", False, catalogue=_cat(), preferred="whisper").name == "faster-whisper"
+
+
+def test_resolve_explicit_engine_ignores_preferred():
+    assert reg.resolve("faster-whisper", "stt", False, catalogue=_cat(), preferred="deepgram").name == "faster-whisper"
+
+
 def test_resolve_no_private_engine_for_tts_raises():
     import pytest
     with pytest.raises(reg.NoEngineError):

@@ -129,3 +129,23 @@ def reset() -> None:
     """Reset the singleton (for testing only)."""
     global _transcriber
     _transcriber = None
+
+
+def transcriber_loaded() -> bool:
+    """Whether the singleton transcriber is currently loaded."""
+    return _transcriber is not None
+
+
+def release_transcriber() -> bool:
+    """Drop the singleton so its model can be garbage-collected.
+
+    Takes the init lock, so it never interleaves with a load in progress. The
+    next `get_transcriber()` call loads the engine again. Callers holding a
+    reference keep a working instance; only the registry forgets it. Returns
+    whether a transcriber was loaded.
+    """
+    global _transcriber
+    with _init_lock:
+        released = _transcriber is not None
+        _transcriber = None
+    return released

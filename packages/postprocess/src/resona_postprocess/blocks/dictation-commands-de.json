@@ -1,0 +1,9 @@
+{
+  "name": "dictation-commands-de",
+  "description": "Generic German dictation commands → Markdown (Komma, Punkt, Absatz, Kapitel, brackets), no LLM.",
+  "block": true,
+  "initial_prompt": [],
+  "steps": [
+    {"type": "replacements", "name": "dictation-commands", "source": "default_replacements.json"}
+  ]
+}

@@ -10,11 +10,13 @@ The hub never transcribes content itself.
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
+from collections.abc import Callable
 
 from decouple import config
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, ValidationError
 from resona_job_core import Candidate, JobResult, PolicyDenied, cloud_asr_endpoint_id
@@ -29,6 +31,7 @@ from .db.models import Job, JobStatus, Organization, Worker
 from .errors import api_error, validation_message
 from .openapi import CLIENT
 from .privacy import admit_speech, cloud_endpoint_allowed
+from .recommendations import recommendations
 from .settings_store import current_settings
 
 log = logging.getLogger(__name__)
@@ -69,7 +72,7 @@ def _policy_denied(exc: PolicyDenied) -> JSONResponse:
     )
 
 
-def _org_engines(session: Session, organization_id: str) -> dict:
+def _org_engines(session: Session, organization_id: str, languages: list[str] | None = None) -> dict:
     """Engines this organization can actually use.
 
     Audio/document engines: candidate tuples of the organization's execution
@@ -79,6 +82,9 @@ def _org_engines(session: Session, organization_id: str) -> dict:
     endpoint, and only on non-private workers. ``available`` means such a worker
     is online now. Synchronous TTS engines of ``/v1/audio/speech`` follow the
     same cloud rule. Nothing is probed over the network.
+
+    Audio candidates the organization has measured for ``languages`` (default: the
+    settings ``language``) carry a ``recommendation`` (``recommendations.py``).
     """
     try:
         _, settings = current_settings(session, organization_id)
@@ -130,6 +136,14 @@ def _org_engines(session: Session, organization_id: str) -> dict:
                     listed = {"candidate": candidate.model_dump(mode="json"), "execution_profiles": []}
                     entry["candidates"].append(listed)
                 listed["execution_profiles"].append(profile_name)
+    audio = [Candidate.model_validate(c["candidate"]) for (_, kind), e in engines.items() if kind == "audio"
+             for c in e["candidates"]]
+    recommended = recommendations(session, organization_id, settings, audio, languages or [settings.language])
+    for (_, kind), entry in engines.items():
+        for listed in entry["candidates"]:
+            recommendation = recommended.get(Candidate.model_validate(listed["candidate"])) if kind == "audio" else None
+            if recommendation is not None:
+                listed["recommendation"] = recommendation
     speech = [
         {
             "name": e.name,
@@ -156,14 +170,36 @@ def _org_engines(session: Session, organization_id: str) -> dict:
     return {"engines": [*engines.values(), *speech], "default": default}
 
 
+_LANGUAGE = re.compile(r"^[a-z]{2,3}$")
+
+
+def _languages(raw: str | None) -> list[str] | None:
+    if raw is None or not raw.strip():
+        return None
+    languages = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    if not languages or len(languages) > 10 or not all(_LANGUAGE.match(lang) for lang in languages):
+        raise api_error(422, "invalid_request", "languages must be up to 10 comma-separated language codes")
+    return languages
+
+
 @router.get(
     "/v1/engines", tags=["Engines"], operation_id="engines_list", response_model=schemas.EngineList,
-    responses=schemas.error_responses(),
+    response_model_exclude_unset=True,
+    responses=schemas.error_responses({422: ["invalid_request"]}),
 )
-def list_engines(principal: Principal = Depends(client_principal)):
-    """Engines the caller's organization can use: tested, approved and policy-filtered."""
+def list_engines(
+    principal: Principal = Depends(client_principal),
+    languages: str | None = Query(
+        default=None,
+        description="Comma-separated language codes for the recommendations (default: the organization language)",
+    ),
+):
+    """Engines the caller's organization can use: tested, approved and policy-filtered.
+
+    Measured audio candidates carry a ``recommendation`` role for ``languages``."""
+    wanted = _languages(languages)
     with Session(db_engine) as session:
-        return _org_engines(session, principal.organization_id)
+        return _org_engines(session, principal.organization_id, wanted)
 
 
 def _form_bool(value: str | None, *, default: bool, name: str = "private") -> bool:
@@ -298,19 +334,46 @@ async def create_transcription(
     with Session(db_engine) as session:
         stored, fields = await jobs_routes.receive_upload(request, session, organization_id)
     upload_id = stored["upload_id"]
+    response_format = "json"
+
+    def build() -> tuple[jobs_routes.JobRequest, dict]:
+        nonlocal response_format
+        req, response_format = _job_request(fields, upload_id)
+        diarize = bool((req.options or {}).get("diarize"))
+        return req, jobs_routes.snapshot_options(jobs_routes.AudioOptions(diarize=diarize))
+
+    job_id = await admit_sync_job(organization_id, upload_id, idempotency_key, build)
+    outcome = await wait_sync_job(job_id)
+    if isinstance(outcome, JSONResponse):
+        return outcome
+    return _openai_response(outcome, response_format)
+
+
+async def admit_sync_job(
+    organization_id: str, upload_id: str, idempotency_key: str | None,
+    build: Callable[[], tuple[jobs_routes.JobRequest, dict]],
+) -> int:
+    """Admit the job of a synchronous adapter route; returns its ID.
+
+    ``build`` maps the route's parameters onto ``(JobRequest, snapshot options)``.
+    Without an ``Idempotency-Key`` a ``sync-<uuid>`` key is generated. Any failure
+    (invalid key or request, admission error) discards the unconsumed upload.
+    """
     key = (idempotency_key or "").strip() or f"sync-{uuid.uuid4().hex}"
     try:
         if len(key) > jobs_routes.MAX_IDEMPOTENCY_KEY_CHARS or not key.isprintable():
             raise api_error(400, "invalid_idempotency_key", "Idempotency-Key is too long or not printable")
-        req, response_format = _job_request(fields, upload_id)
-        diarize = bool((req.options or {}).get("diarize"))
-        options = jobs_routes.snapshot_options(jobs_routes.AudioOptions(diarize=diarize))
+        req, options = build()
         _, body = await run_in_threadpool(jobs_routes._admit, organization_id, key, req, options)
     except BaseException:
         await run_in_threadpool(jobs_routes.discard_upload, organization_id, upload_id)
         raise
-    job_id = int(body["job_id"])
+    return int(body["job_id"])
 
+
+async def wait_sync_job(job_id: int) -> JobResult | JSONResponse:
+    """Wait up to :data:`SYNC_WAIT_SECONDS` for a job: its result, or the error response
+    (504 ``timeout`` with ``Location`` while the job keeps running, else the job's error)."""
     deadline = time.monotonic() + SYNC_WAIT_SECONDS
     while True:
         job = await run_in_threadpool(_load_job, job_id)
@@ -333,8 +396,7 @@ async def create_transcription(
 
     if job.status != JobStatus.COMPLETED:
         return _job_error(job)
-    result = await run_in_threadpool(_read_result, job)
-    return _openai_response(result, response_format)
+    return await run_in_threadpool(_read_result, job)
 
 
 class SpeechRequest(BaseModel):

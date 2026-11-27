@@ -98,6 +98,25 @@ def test_postprocess_writes_profile_named_outputs_next_to_the_input(tmp_path, mo
     assert forced.exit_code == 0, forced.output
 
 
+def test_local_postprocess_resolves_includes_from_the_profiles_dir_then_bundled_blocks(tmp_path, monkeypatch):
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    (profiles_dir / "fix.json").write_text(json.dumps({**RULES, "block": True}), encoding="utf-8")
+    (profiles_dir / "clean.json").write_text(json.dumps({"name": "clean", "steps": [
+        {"type": "include", "profile": "filler-words-de"},
+        {"type": "include", "profile": "fix"},
+    ]}), encoding="utf-8")
+    monkeypatch.setattr("resona_cli.local_run._PROFILES_DIR", profiles_dir)
+    note = tmp_path / "befund.md"
+    note.write_text("Befund äh Komma ok\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["postprocess", str(note), "--local", "--profile", "clean"])
+
+    assert result.exit_code == 0, result.output
+    stored = JobResult.model_validate_json((tmp_path / "befund.clean.result.json").read_text())
+    assert stored.markdown == "Befund, ok\n"
+
+
 @pytest.mark.parametrize(("profile", "label"), [
     ("transcript-markdown-de", "transcript-markdown-de"),
     ("profiles/fix.json", "fix"),

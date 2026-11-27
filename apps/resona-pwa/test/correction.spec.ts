@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { diffEdits, rebaseInsertion, textSplice } from "~/utils/correction";
+import { diffEdits, rebaseInsertion } from "~/utils/correction";
 
 describe("diffEdits", () => {
 	it("reports nothing for an unchanged text", () => {
@@ -36,13 +36,6 @@ describe("diffEdits", () => {
 	it("still reports a paragraph replaced by different text in its place", () => {
 		expect(diffEdits("eins\nalt und falsch\ndrei", "eins\nganz neu geschrieben\ndrei"))
 			.toEqual([{ before: "alt und falsch", after: "ganz neu geschrieben" }]);
-	});
-});
-
-describe("textSplice", () => {
-	it("finds the one changed span", () => {
-		expect(textSplice("Hallo […] Welt", "Hallo diktiert  Welt"))
-			.toEqual({ at: 6, removed: "[…]", inserted: "diktiert " });
 	});
 });
 

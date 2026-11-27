@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { nextTick } from "vue";
+import { effectiveLiveSettings, type LiveSettings } from "~/composables/useLiveSettings";
 
 const KEY = "resona.live.settings";
 
@@ -22,6 +23,7 @@ describe("useLiveSettings", () => {
 			correction: false,
 			correctionEngine: "",
 			chunkSeconds: 15,
+			cleanup: false,
 		});
 	});
 
@@ -60,5 +62,60 @@ describe("useLiveSettings", () => {
 		s.hubEngine = "parakeet";
 		await nextTick();
 		expect(JSON.parse(window.localStorage.getItem(KEY)!)).toMatchObject({ source: "device", hubEngine: "parakeet" });
+	});
+
+	it("loads a saved cleanup toggle and ignores a non-boolean one", async () => {
+		window.localStorage.setItem(KEY, JSON.stringify({ cleanup: true }));
+		expect((await fresh()).cleanup).toBe(true);
+		window.localStorage.setItem(KEY, JSON.stringify({ cleanup: "yes" }));
+		expect((await fresh()).cleanup).toBe(false);
+	});
+});
+
+describe("effectiveLiveSettings", () => {
+	const device = (over: Partial<LiveSettings> = {}): LiveSettings => ({
+		source: "hub",
+		hubEngine: "",
+		correction: true,
+		correctionEngine: "",
+		chunkSeconds: 15,
+		cleanup: false,
+		...over,
+	});
+	const org = { engine: "parakeet", correction_execution_profile: "gpu-private", cleanup_profile: "dictation-clean-de" };
+
+	it("empty device values inherit the organization's live defaults", () => {
+		expect(effectiveLiveSettings(device(), org)).toEqual({
+			hubEngine: "parakeet",
+			hubEngineInherited: true,
+			correctionEngine: "",
+			correctionExecutionProfile: "gpu-private",
+			cleanupProfile: "",
+		});
+	});
+
+	it("device values win over the organization", () => {
+		expect(effectiveLiveSettings(device({ hubEngine: "whisper", correctionEngine: "openai" }), org)).toEqual({
+			hubEngine: "whisper",
+			hubEngineInherited: false,
+			correctionEngine: "openai",
+			correctionExecutionProfile: "",
+			cleanupProfile: "",
+		});
+	});
+
+	it("cleanup runs the org profile only when the device toggle is on", () => {
+		expect(effectiveLiveSettings(device({ cleanup: true }), org).cleanupProfile).toBe("dictation-clean-de");
+		expect(effectiveLiveSettings(device({ cleanup: true }), {}).cleanupProfile).toBe("");
+	});
+
+	it("without org defaults (not loaded, no token) the device values stand alone", () => {
+		expect(effectiveLiveSettings(device({ cleanup: true }), null)).toEqual({
+			hubEngine: "",
+			hubEngineInherited: false,
+			correctionEngine: "",
+			correctionExecutionProfile: "",
+			cleanupProfile: "",
+		});
 	});
 });

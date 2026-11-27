@@ -46,6 +46,7 @@ Supported formats: `wav`, `webm`, `flac`, `mp3`, `m4a`, `ogg`, `aac`.
 | `--model NAME` | (profile) | Model override; must match an approved candidate of the execution profile |
 | `--profile NAME` | (none) | Stored hub postprocess profile name; a JSON file or inline JSON only with `--local` |
 | `--instructions TEXT` / `--instructions-file PATH` | (none) | User instructions for the profile's LLM steps (user message; the profile's prompt stays the system message). Needs a `--profile` with an `llm`/`extract` step. Also on `resona doc` and `resona postprocess` |
+| `--context-file PATH` | (none) | JSON object `{"before", "selection", "after"}` (each ≤ 4000 characters): the text around the spot the result is inserted at, used by the profile's LLM steps for terminology and continuity, never copied. Needs a `--profile` with an `llm`/`extract` step; also with `--local`. Also on `resona doc` and `resona postprocess` |
 | `--webhook NAME` | (none) | Registered webhook endpoint (see [`webhooks`](#webhooks)) the hub notifies when each job ends; unknown names fail admission with `unknown_webhook`. Hub only (refused with `--local`). Also on `resona doc` and `resona postprocess` |
 | `--translate` | off | Translate to English |
 | `--word-timestamps` | off | Request word timestamps |
@@ -253,6 +254,7 @@ resona postprocess --job ID --profile NAME [OPTIONS]
 | `--job ID` | | Instead of files: re-run on the result of an earlier job. Input is its `raw_markdown` (the text before its own postprocessing), else its `markdown`; the language defaults to that job's. Outputs are `job-<id>.<profile>.md` + `job-<id>.<profile>.result.json` in `--output-dir` (default: the current directory), because the hub keeps no source file names; `--json` reports the input as `job:<id>` |
 | `--profile NAME` | (required) | Stored postprocess profile name; a file or inline JSON only with `--local` |
 | `--instructions TEXT` / `--instructions-file PATH` | (none) | User instructions for the profile's LLM steps, see [`transcribe`](#transcribe) |
+| `--context-file PATH` | (none) | Text around the insertion point for the profile's LLM steps, see [`transcribe`](#transcribe) |
 | `--webhook NAME` | (none) | Webhook endpoint notified when each job ends, see [`transcribe`](#transcribe) |
 
 Outputs carry the profile in their name and sit next to the input unless `--output-dir` is
@@ -569,9 +571,12 @@ their capabilities, and their status. Requires a running gateway.
 
 ```bash
 resona engines status
+resona engines status --languages de,en
 ```
 
-Output columns: `Name`, `Kind`, `Capabilities`, `Available`, `Models`.
+Output columns: `Name`, `Kind`, `Capabilities`, `Available`, `Models`, `Role`. `Role` lists the hub's
+recommendation per measured candidate (`recommended`, `fast` or `accurate` with WER and seconds per
+30 s of audio) for `--languages` (default: the organization language).
 
 ---
 
@@ -605,14 +610,18 @@ resona profiles show my-profile
 
 ### profiles push
 
-Upload a local profile JSON file to the server.
+Upload local profile JSON files to the server, blocks before the profiles that include them.
 
 ```bash
-resona profiles push my-profile.json
+resona profiles push my-profile my-profile.json       # one file under the name my-profile
+resona profiles push my-profile.json my-block.json    # each file under its file name
+resona profiles push profiles/                        # a directory: its *.json and blocks/*.json
 ```
 
-The profile's `name` field determines the server-side name. If a profile with the same name
-already exists it is replaced.
+Each file is stored under its file name without `.json` (or under `NAME` in the `NAME FILE` form)
+as a new revision. The push order follows the `include` steps. An include must name a profile pushed
+in the same call, a bundled block or a profile already stored on the hub; a missing include, a
+cycle or an invalid file exits 1 before anything is uploaded.
 
 ### profiles pull
 

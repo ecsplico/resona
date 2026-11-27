@@ -318,14 +318,14 @@ _DEEPGRAM_BODY = {
 
 
 def _deepgram_run(
-    tmp_path: Path, monkeypatch, options: dict, body: dict = _DEEPGRAM_BODY
+    tmp_path: Path, monkeypatch, options: dict, body: dict = _DEEPGRAM_BODY, **extra: object
 ) -> tuple[int, Path, object]:
     import httpx
     import respx
 
     monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
     snapshot = tmp_path / "snapshot.json"
-    snapshot.write_text(json.dumps({"kind": "audio", "language": "de", "options": options,
+    snapshot.write_text(json.dumps({"kind": "audio", "language": "de", "options": options, **extra,
                                     "candidate": {"engine": "deepgram", "model": "nova-3", "accelerator": "external"}}))
     out = tmp_path / "out.json"
     with respx.mock:
@@ -387,6 +387,27 @@ def test_deepgram_without_diarize_keeps_utterances_as_segments(tmp_path: Path, m
     assert [s.text for s in result.segments] == ["Guten Morgen.", "Hallo."]
     assert all(s.speaker is None for s in result.segments)
     assert result.raw_text == "Guten Morgen. Hallo."
+
+
+def test_cloud_asr_sends_the_profile_initial_prompt_as_keyterms(tmp_path: Path, monkeypatch) -> None:
+    code, _, route = _deepgram_run(tmp_path, monkeypatch, {}, initial_prompt=["Monic", "Quetiapin"])
+
+    assert code == ExitCode.OK
+    assert route.calls.last.request.url.params.get_list("keyterm") == ["Monic", "Quetiapin"]
+
+
+def test_cloud_asr_without_initial_prompt_sends_no_keyterms(tmp_path: Path, monkeypatch) -> None:
+    code, _, route = _deepgram_run(tmp_path, monkeypatch, {})
+
+    assert code == ExitCode.OK
+    assert "keyterm" not in route.calls.last.request.url.params
+
+
+def test_cloud_asr_rejects_a_malformed_initial_prompt(tmp_path: Path, monkeypatch) -> None:
+    code, out, route = _deepgram_run(tmp_path, monkeypatch, {}, initial_prompt="Monic")
+
+    assert code == ExitCode.INVALID_SNAPSHOT
+    assert not route.called and not out.exists()
 
 
 def test_cloud_candidate_without_provider_key_is_an_unsupported_capability(tmp_path: Path, monkeypatch) -> None:

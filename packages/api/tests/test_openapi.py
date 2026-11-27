@@ -27,6 +27,7 @@ CLIENT_OPERATIONS = {
     ("post", "/v1/audio/speech"): "audio_speech_create",
     ("get", "/v1/engines"): "engines_list",
     ("get", "/v1/listen/engines"): "listen_engines_list",
+    ("post", "/v1/listen"): "listen_transcribe",
     ("get", "/profiles"): "profiles_list",
     ("get", "/profiles/{name}"): "profiles_get",
     ("put", "/profiles/{name}"): "profiles_put",

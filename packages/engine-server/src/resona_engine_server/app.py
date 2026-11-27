@@ -6,10 +6,13 @@ Endpoints:
   POST /transcribe
   WS   /ws/transcribe
   WS   /ws/live
+
+`RESONA_ENGINE_UNLOAD_AFTER` (see idle.py) frees the model after idle time.
 """
 import asyncio
 import logging
 import math
+import contextlib
 import threading
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -20,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import verify_api_key
 from resona_asr_core.registry import get_transcriber, recommended_engine
+from .idle import IdleUnloader, parse_unload_after
 from resona_asr_core.audio import load_audio, load_audio_path, SAMPLE_RATE
 from .ws_transcribe import transcribe_websocket
 from .ws_live import live_transcribe_websocket
@@ -27,6 +31,10 @@ from .ws_live import live_transcribe_websocket
 log = logging.getLogger(__name__)
 
 _model_lock = threading.Lock()
+
+unloader = IdleUnloader(
+    parse_unload_after(config("RESONA_ENGINE_UNLOAD_AFTER", default="never"))
+)
 
 
 def _sanitize_nan(obj):
@@ -62,15 +70,24 @@ def _run_asr(file, task: str = "transcribe", language: str = "de", **asr_options
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Pre-load the ASR model before accepting requests."""
-    log.info("Pre-loading ASR model at startup...")
-    loop = asyncio.get_event_loop()
+    """Pre-load the ASR model before accepting requests; run the idle unloader."""
+    if unloader.unload_after == 0:
+        log.info("RESONA_ENGINE_UNLOAD_AFTER=immediately: model loads per request.")
+    else:
+        log.info("Pre-loading ASR model at startup...")
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, get_transcriber)
+            log.info("ASR model loaded and ready.")
+        except Exception as e:
+            log.warning(f"Model pre-load failed ({e}) — will load on first request.")
+    idle_task = asyncio.create_task(unloader.run())
     try:
-        await loop.run_in_executor(None, get_transcriber)
-        log.info("ASR model loaded and ready.")
-    except Exception as e:
-        log.warning(f"Model pre-load failed ({e}) — will load on first request.")
-    yield
+        yield
+    finally:
+        idle_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await idle_task
 
 
 app = FastAPI(
@@ -109,7 +126,12 @@ async def health():
         engine_name, ("DEFAULT_FASTWHISPER_MODEL", "large-v3")
     )
     model = config(env_key, default=default_model)
-    return {"status": "ok", "engine": engine_name, "models": [model]}
+    return {
+        "status": "ok",
+        "engine": engine_name,
+        "models": [model],
+        "loaded": unloader.loaded(),
+    }
 
 
 @app.post("/transcribe")
@@ -133,7 +155,8 @@ async def transcribe(
     if initial_prompt:
         asr_options["initial_prompt"] = initial_prompt
 
-    result = _run_asr(audio_file.file, task=task, language=language, **asr_options)
+    with unloader.use():
+        result = _run_asr(audio_file.file, task=task, language=language, **asr_options)
 
     raw_segments = result.get("segments", [])
     serializable_segments = []
@@ -162,7 +185,8 @@ async def transcribe(
 @app.websocket("/ws/transcribe")
 async def websocket_transcribe_endpoint(websocket: WebSocket):
     try:
-        await transcribe_websocket(websocket)
+        with unloader.use():
+            await transcribe_websocket(websocket)
     except Exception as e:
         log.error(f"WebSocket error: {e}", exc_info=True)
         raise
@@ -171,7 +195,8 @@ async def websocket_transcribe_endpoint(websocket: WebSocket):
 @app.websocket("/ws/live")
 async def websocket_live_endpoint(websocket: WebSocket):
     try:
-        await live_transcribe_websocket(websocket)
+        with unloader.use():
+            await live_transcribe_websocket(websocket)
     except Exception as e:
         log.error(f"Live WebSocket error: {e}", exc_info=True)
         raise

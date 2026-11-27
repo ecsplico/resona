@@ -460,6 +460,30 @@ def test_settings_show_the_current_revision(anon_client, admin_headers, fresh_or
     assert resp.json()["settings"]["language"] == "fr"
 
 
+def test_settings_show_live_defaults(anon_client, admin_headers, fresh_org, store_settings):
+    """The admin UI's read-only settings view lists ``live`` (rendered as its key/value pairs)."""
+    store_settings(fresh_org, live={"engine": "faster-whisper", "cleanup_profile": "dictation-clean-de"})
+
+    resp = anon_client.get(org_path(fresh_org, "settings"), headers=admin_headers(fresh_org))
+
+    assert resp.json()["settings"]["live"] == {"engine": "faster-whisper", "cleanup_profile": "dictation-clean-de"}
+
+
+def test_settings_show_model_roles(anon_client, admin_headers, fresh_org, store_settings):
+    """The admin UI's read-only settings view lists ``model_roles`` (role: endpoint id)."""
+    endpoint = {"id": "local-llm", "kind": "local_llm", "model": "qwen", "url": "http://127.0.0.1:9292/v1"}
+    store_settings(fresh_org, endpoints=[endpoint], model_roles={"polish": "local-llm", "title": "local-llm"})
+
+    resp = anon_client.get(org_path(fresh_org, "settings"), headers=admin_headers(fresh_org))
+
+    assert resp.json()["settings"]["model_roles"] == {"polish": "local-llm", "title": "local-llm"}
+
+
+def test_admin_ui_lists_model_roles_even_when_none_is_assigned(anon_client):
+    script = anon_client.get("/admin/admin.js").text
+    assert "No roles assigned" in script and "model_roles" in script
+
+
 def evaluation_body(release_id: str) -> dict:
     """A passing cpu-private evaluation summary with its declared fixture checks."""
     return {

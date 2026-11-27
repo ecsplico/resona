@@ -22,7 +22,7 @@ from typing import Any, Literal, Mapping, NoReturn, Optional, Union
 import httpx
 from pydantic import BaseModel, ValidationError
 from resona_job_core import JobResult
-from resona_job_core.options import AudioOptions, DocumentOptions, TextOptions
+from resona_job_core.options import AudioOptions, DocumentOptions, JobContext, TextOptions
 
 log = logging.getLogger(__name__)
 
@@ -307,6 +307,17 @@ def _checked_options(
     return dumped
 
 
+def _context_body(context: Union[JobContext, Mapping[str, str], None]) -> Optional[dict]:
+    """A job ``context`` as sent: validated, only the parts with text; ``None`` when unset."""
+    if context is None:
+        return None
+    try:
+        checked = context if isinstance(context, JobContext) else JobContext.model_validate(dict(context))
+    except ValidationError as exc:
+        raise ValueError(f"invalid context: {exc}") from exc
+    return checked.parts()
+
+
 class ResonaClient:
     """HTTP client for the Resona hub."""
 
@@ -439,6 +450,7 @@ class ResonaClient:
         purpose: JobPurpose = "production",
         release_id: Optional[str] = None,
         webhook: Optional[str] = None,
+        context: Union[JobContext, Mapping[str, str], None] = None,
     ) -> JobRef:
         """Upload a file and create a job for it. POST /v1/uploads, then POST /v1/jobs.
 
@@ -450,6 +462,8 @@ class ResonaClient:
         ``profile`` (required by the hub) on it; no execution profile, engine or model.
         ``instructions`` go to the profile's llm/extract steps as the user message.
         ``webhook`` names a registered webhook endpoint notified when the job ends.
+        ``context`` (``before``/``selection``/``after``) is the text around the spot the
+        result is inserted at, for the profile's llm/extract steps.
         """
         _checked_options(kind, options)
         upload = self.upload(filepath)
@@ -469,6 +483,7 @@ class ResonaClient:
             purpose=purpose,
             release_id=release_id,
             webhook=webhook,
+            context=context,
         )
 
     def submit_upload(
@@ -489,6 +504,7 @@ class ResonaClient:
         purpose: JobPurpose = "production",
         release_id: Optional[str] = None,
         webhook: Optional[str] = None,
+        context: Union[JobContext, Mapping[str, str], None] = None,
     ) -> JobRef:
         """Create a job for an existing upload. POST /v1/jobs
 
@@ -500,6 +516,8 @@ class ResonaClient:
         ``profile`` with such a step, else the hub answers 422 ``invalid_instructions``.
         ``webhook`` (sent only when set) names an active webhook endpoint of the
         organization (``create_webhook``); the hub answers 422 ``unknown_webhook`` otherwise.
+        ``context`` (sent only when set; each part ≤ 4000 characters) needs a ``profile``
+        with an llm/extract step, else the hub answers 422 ``invalid_context``.
         """
         checked = _checked_options(kind, options)
         key = idempotency_key or str(uuid.uuid4())
@@ -520,6 +538,7 @@ class ResonaClient:
             "purpose": purpose if purpose != "production" else None,
             "release_id": release_id,
             "webhook": webhook,
+            "context": _context_body(context),
         }
         body.update({k: v for k, v in optional.items() if v is not None})
 
@@ -814,9 +833,15 @@ class ResonaClient:
 
     # ── v1 Audio & Engine routes ──────────────────────────────────────
 
-    def list_engines(self) -> dict:
-        """List every engine the gateway exposes, with capabilities and status. GET /v1/engines"""
-        return self._send("GET", "/v1/engines").json()
+    def list_engines(self, languages: Optional[list[str]] = None) -> dict:
+        """List every engine the gateway exposes, with capabilities and status. GET /v1/engines
+
+        Measured audio candidates carry ``recommendation`` (``role`` recommended|fast|accurate,
+        ``error_percent``, ``seconds_per_30s``, ``basis``) for ``languages`` (default: the
+        organization language); unmeasured candidates have no such key.
+        """
+        params = {"languages": ",".join(languages)} if languages else None
+        return self._send("GET", "/v1/engines", params=params).json()
 
     def list_listen_engines(self) -> dict:
         """List the engines this organization can stream live via ``WS /v1/listen``. GET /v1/listen/engines
@@ -894,6 +919,48 @@ class ResonaClient:
             return {"text": resp.text}
         return resp.json()
 
+    def listen(
+        self,
+        audio_path: "Path | str",
+        *,
+        language: Optional[str] = None,
+        engine: Optional[str] = None,
+        profile: Optional[str] = None,
+        private: bool = True,
+        idempotency_key: Optional[str] = None,
+    ) -> dict:
+        """Transcribe audio through the Deepgram-compatible prerecorded adapter. POST /v1/listen
+
+        The file is the raw request body (any container the workers decode). Like
+        ``create_transcription`` the hub queues a normal audio job and waits a bounded
+        time; ``idempotency_key`` (sent only when set) makes a retry return the same job.
+
+        Returns:
+            Deepgram's prerecorded shape: ``metadata`` (``request_id`` = job ID,
+            ``model_info.engine``) and ``results.channels[0].alternatives[0].transcript``.
+
+        Raises SyncWaitTimeout (504) when no worker finished in time; the job keeps
+        running and ``job_id`` identifies it for ``wait_for_job``/``get_result``.
+        """
+        audio_path = Path(audio_path)
+        params = {"private": str(private).lower()}
+        params.update({k: v for k, v in {"language": language, "engine": engine, "profile": profile}.items() if v})
+        headers = {"Content-Type": mimetypes.guess_type(audio_path.name)[0] or "application/octet-stream"}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        with open(audio_path, "rb") as f:
+            resp = self._client.post(
+                f"{self.base_url}/v1/listen", params=params, content=f.read(), headers=headers,
+            )
+        if resp.status_code == 504:
+            code, message = _parse_error_body(resp)
+            job_id = _json_field(resp, "job_id")
+            if code == "timeout" and isinstance(job_id, int):
+                raise SyncWaitTimeout(resp.status_code, code, message, job_id=job_id)
+        if resp.is_error:
+            _raise_for(resp)
+        return resp.json()
+
     def create_speech(
         self,
         text: str,
@@ -928,9 +995,14 @@ class ResonaClient:
         """List stored profiles. GET /profiles"""
         return self._send("GET", "/profiles").json()["profiles"]
 
-    def get_profile(self, name: str) -> dict:
-        """Fetch one profile. GET /profiles/{name}"""
-        return self._send("GET", f"/profiles/{name}").json()
+    def get_profile(self, name: str, *, resolved: bool = False) -> dict:
+        """Fetch one profile. GET /profiles/{name}
+
+        ``resolved=True`` returns the flattened profile (include steps replaced by the
+        steps they name) plus ``includes: [{name, revision}]``.
+        """
+        params = {"resolved": "true"} if resolved else None
+        return self._send("GET", f"/profiles/{name}", params=params).json()
 
     def put_profile(self, name: str, profile: dict) -> dict:
         """Create or replace a profile. PUT /profiles/{name}"""

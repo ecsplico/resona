@@ -1,0 +1,19 @@
+{
+  "name": "filler-words-de",
+  "description": "Removes German filler words (äh, ähm, öh, öhm, hm, hmm, mhm) with one adjacent comma, never inside words or across lines.",
+  "block": true,
+  "initial_prompt": [],
+  "steps": [
+    {
+      "type": "replacements",
+      "name": "filler-words-de",
+      "rules": [
+        {"pattern": "(?<=[^\\s.!?;:,])(?:[ \\t]*,?[ \\t]*(?<![\\w-])(?:ä+h+m*|ö+h+m*|h+m+|m+h+m+)(?![\\w-]))+(?=[.!?;:]|[ \\t]*(?:\\n|\\Z))", "replacement": ""},
+        {"pattern": "(?<=[.!?;:])[ \\t]+(?<![\\w-])(?:ä+h+m*|ö+h+m*|h+m+|m+h+m+)(?![\\w-])[ \\t]*[.!?;:]+|(?<![^\\n])(?<![\\w-])(?:ä+h+m*|ö+h+m*|h+m+|m+h+m+)(?![\\w-])[ \\t]*[.!?;:]+[ \\t]*", "replacement": ""},
+        {"pattern": "(?<=,)[ \\t]*(?<![\\w-])(?:ä+h+m*|ö+h+m*|h+m+|m+h+m+)(?![\\w-])[ \\t]*,", "replacement": ""},
+        {"pattern": "(?<=\\S)[ \\t]+(?<![\\w-])(?:ä+h+m*|ö+h+m*|h+m+|m+h+m+)(?![\\w-])[ \\t]*(?=,)", "replacement": ""},
+        {"pattern": "(?<!\\S)(?<![\\w-])(?:ä+h+m*|ö+h+m*|h+m+|m+h+m+)(?![\\w-])[ \\t]*,?[ \\t]*", "replacement": ""}
+      ]
+    }
+  ]
+}

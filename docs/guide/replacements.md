@@ -28,12 +28,13 @@ generic commands.
 The German medical section headings (`Kapitel Verlauf`, `Kapitel Medikation`,
 `Kapitel Psychopathologischer Befund`, `Kapitel Procedere`, no terminator needed) and the name
 corrections (`Monique` → `Monic`, …) live in the catalogue profile `dictation-medical-de`
-(`profiles/dictation-medical-de.json` in the repository): name corrections first, then the
-headings, then the generic rules of `default` inline, in that order. An org admin pushes it once
-and selects it per job or as the organization's `postprocess_profile`:
+(`profiles/dictation-medical-de.json` in the repository), a composition of the blocks
+`names-medical-de` (name corrections), `headings-medical-de` (the headings) and the bundled
+`dictation-commands-de` (the generic rules of `default`), in that order. An org admin pushes it
+with its blocks once and selects it per job or as the organization's `postprocess_profile`:
 
 ```bash
-resona profiles push dictation-medical-de profiles/dictation-medical-de.json
+resona profiles push profiles/dictation-medical-de.json profiles/blocks/names-medical-de.json profiles/blocks/headings-medical-de.json
 resona transcribe dictation.mp3 --profile dictation-medical-de
 ```
 

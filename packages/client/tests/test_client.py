@@ -493,6 +493,22 @@ def test_put_profile():
     assert route.called
 
 
+@respx.mock
+def test_get_profile_resolved_sends_the_query_flag():
+    route = respx.get("http://t/profiles/a", params={"resolved": "true"}).mock(
+        return_value=httpx.Response(200, json={"name": "a", "revision": 1, "profile": {}, "includes": []}))
+    assert ResonaClient(base_url="http://t").get_profile("a", resolved=True)["includes"] == []
+    assert route.called
+
+
+@respx.mock
+def test_profile_in_use_surfaces_as_api_error():
+    respx.delete("http://t/profiles/a").mock(return_value=httpx.Response(
+        409, json={"error": "profile_in_use", "message": "included by b"}))
+    with pytest.raises(ResonaAPIError) as exc:
+        ResonaClient(base_url="http://t").delete_profile("a")
+    assert exc.value.code == "profile_in_use"
+
 
 
 # ── Context manager ───────────────────────────────────────────────────────────
@@ -517,6 +533,20 @@ def test_list_engines(client):
         result = client.list_engines()
     assert "engines" in result
     assert result["engines"][0]["name"] == "faster-whisper"
+
+
+def test_list_engines_asks_for_recommendations_per_language(client):
+    rec = {"role": "recommended", "error_percent": 4.0, "seconds_per_30s": 2.0, "basis": "baseline"}
+    with respx.mock:
+        route = respx.get(f"{BASE}/v1/engines").mock(return_value=httpx.Response(200, json={
+            "engines": [{"name": "mlx-whisper", "candidates": [{"candidate": {}, "recommendation": rec}]}],
+            "default": None,
+        }))
+        result = client.list_engines(languages=["de", "en"])
+        client.list_engines()
+    assert route.calls[0].request.url.params["languages"] == "de,en"
+    assert "languages" not in route.calls[1].request.url.params
+    assert result["engines"][0]["candidates"][0]["recommendation"] == rec
 
 
 def test_list_listen_engines(client):
@@ -591,6 +621,33 @@ def test_create_transcription_text_format_returns_text(client, audio_file):
         respx.post(f"{BASE}/v1/audio/transcriptions").mock(
             return_value=httpx.Response(200, text="nur text"))
         assert client.create_transcription(audio_file, response_format="text") == {"text": "nur text"}
+
+
+def test_listen_posts_raw_audio_with_query_params(client, audio_file):
+    body = {"metadata": {"request_id": "5", "model_info": {"engine": "faster-whisper"}},
+            "results": {"channels": [{"detected_language": "de",
+                                      "alternatives": [{"transcript": "hallo", "words": []}]}]}}
+    with respx.mock:
+        route = respx.post(f"{BASE}/v1/listen").mock(return_value=httpx.Response(200, json=body))
+        result = client.listen(audio_file, language="de", engine="faster-whisper", idempotency_key="k-1")
+        client.listen(audio_file, private=False)
+    first, second = (call.request for call in route.calls)
+    assert result == body
+    assert first.content == Path(audio_file).read_bytes()
+    assert first.url.params["language"] == "de" and first.url.params["engine"] == "faster-whisper"
+    assert first.url.params["private"] == "true" and "profile" not in first.url.params
+    assert first.headers["Idempotency-Key"] == "k-1"
+    assert second.url.params["private"] == "false" and "Idempotency-Key" not in second.headers
+
+
+def test_listen_timeout_carries_job_id(client, audio_file):
+    with respx.mock:
+        respx.post(f"{BASE}/v1/listen").mock(return_value=httpx.Response(
+            504, json={"error": "timeout", "message": "still running", "job_id": 9},
+            headers={"Location": "/v1/jobs/9"}))
+        with pytest.raises(SyncWaitTimeout) as exc:
+            client.listen(audio_file)
+    assert exc.value.job_id == 9
 
 
 # ── Testbench ─────────────────────────────────────────────────────────────────

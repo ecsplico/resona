@@ -3,6 +3,6 @@
   "description": "Generic German dictation commands → Markdown (Komma, Punkt, Absatz, Kapitel, brackets), no LLM.",
   "initial_prompt": [],
   "steps": [
-    {"type": "replacements", "name": "house-defaults", "source": "default_replacements.json"}
+    {"type": "include", "profile": "dictation-commands-de"}
   ]
 }
