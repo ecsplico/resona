@@ -1496,6 +1496,8 @@
       
         
       
+        
+      
     
     
     
@@ -1587,6 +1589,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2748,15 +2778,15 @@
 <td>Upload a tiny file inline (at most 8 MiB decoded) → <code>{upload_id, sha256, size}</code>. <code>sha256</code> is the hex digest of the original file; if the decoded content does not match it, nothing is uploaded. Models copy long base64 strings unreliably, so prefer <code>create_upload_url</code> for anything but a few KB.</td>
 </tr>
 <tr>
-<td><code>transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, instructions?, options?, diarize?, private=true, idempotency_key?)</code></td>
-<td>Submit an audio job → <code>{job_id, status, private}</code> immediately. <code>options</code>: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>, <code>diarize</code>. <code>diarize=true</code> (same as <code>options.diarize</code>) labels who spoke when: the result's segments carry a 1-based <code>speaker</code> number and the Markdown starts each speaker section with <code>**Sprecher N:**</code> (language <code>de</code>) or <code>**Speaker N:**</code>; only a worker with a verified diarizer takes the job, until then it stays <code>pending</code> (<code>no_capable_worker</code>). Omitted, the execution profile's <code>diarize</code> setting applies (default off); <code>diarize=false</code> turns it off. <code>instructions</code> (also on <code>convert_document</code> and <code>postprocess_text</code>): user instructions for the profile's LLM steps, sent as the user message while the profile prompt stays the system message; needs a profile with an <code>llm</code>/<code>extract</code> step (else hub <code>422 invalid_instructions</code>).</td>
+<td><code>transcribe_audio(upload_id \| path, execution_profile?, language?, profile?, instructions?, context?, options?, diarize?, private=true, idempotency_key?)</code></td>
+<td>Submit an audio job → <code>{job_id, status, private}</code> immediately. <code>options</code>: <code>translate</code>, <code>word_timestamps</code>, <code>vad_filter</code>, <code>diarize</code>. <code>diarize=true</code> (same as <code>options.diarize</code>) labels who spoke when: the result's segments carry a 1-based <code>speaker</code> number and the Markdown starts each speaker section with <code>**Sprecher N:**</code> (language <code>de</code>) or <code>**Speaker N:**</code>; only a worker with a verified diarizer takes the job, until then it stays <code>pending</code> (<code>no_capable_worker</code>). Omitted, the execution profile's <code>diarize</code> setting applies (default off); <code>diarize=false</code> turns it off. <code>instructions</code> (also on <code>convert_document</code> and <code>postprocess_text</code>): user instructions for the profile's LLM steps, sent as the user message while the profile prompt stays the system message; needs a profile with an <code>llm</code>/<code>extract</code> step (else hub <code>422 invalid_instructions</code>). <code>context</code> (same tools): <code>{before?, selection?, after?}</code> (each ≤ 4000 characters), the text around the spot the result is inserted at; the LLM steps use it for terminology and continuity and never copy it; needs such a profile too (else hub <code>422 invalid_context</code>).</td>
 </tr>
 <tr>
 <td><code>convert_document(upload_id \| path, …, options?)</code></td>
 <td>Submit a PDF/image/Word DOCX → Markdown job → <code>{job_id, status, private}</code>. <code>options</code>: <code>languages</code> (<code>de</code>, <code>en</code>, <code>fr</code>, <code>it</code>, <code>es</code>, <code>ko</code>), <code>ocr</code>, <code>ocr_engine</code>, <code>page_start</code>, <code>page_end</code>, <code>pipeline</code>, <code>image_scale</code> (1.0–4.0, OCR raster multiplier), <code>ocr_min_confidence</code> (0–1, <code>rapidocr</code> only), <code>remove_repeated_headers</code> (drop letterheads and footers repeated on most pages); a DOCX takes none of the OCR/page options; see the <a href="../../reference/api/#document-options">API reference</a>.</td>
 </tr>
 <tr>
-<td><code>postprocess_text(upload_id \| path \| job_id, profile, instructions?, language?, private=true, idempotency_key?)</code></td>
+<td><code>postprocess_text(upload_id \| path \| job_id, profile, instructions?, context?, language?, private=true, idempotency_key?)</code></td>
 <td>Run a stored postprocess profile on text, no engine (a <code>text</code> job) → <code>{job_id, status, private}</code> immediately. <code>profile</code> is required (missing → tool error <code>profile_required</code>, nothing is sent). <code>upload_id</code>/<code>path</code> name a UTF-8 text or Markdown file (hub text cap <code>RESONA_MAX_TEXT_UPLOAD_BYTES</code>, default 2 MiB). <code>job_id</code> re-runs a profile on an earlier completed job's result without re-transcribing: the tool reads that result in hub range reads of at most 32 768 characters (<code>GET /v1/jobs/{id}/result/markdown?source=raw</code>, so the unpolished <code>raw_markdown</code> when the result has one, else <code>markdown</code>), uploads it as text and submits the job; <code>language</code> defaults to the earlier job's. A result over 2 MiB (the hub's default text cap) fails as soon as <code>total_chars</code> or the bytes read exceed it; hub errors on the source job (<code>404 not_found</code>, <code>409 not_ready</code>, <code>410 result_expired</code>) become tool errors and nothing is uploaded; a hub without <code>source=raw</code> support is refused rather than re-polishing the polished text. With <code>job_id</code>, <code>private=false</code> is refused when the source job is private, so a private transcript never reaches non-private processing through this tool. Read the output with <code>get_job</code> / <code>get_result</code> as for any job.</td>
 </tr>
 <tr>

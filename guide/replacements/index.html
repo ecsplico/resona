@@ -1529,6 +1529,8 @@
       
         
       
+        
+      
     
     
     
@@ -1620,6 +1622,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2817,10 +2847,11 @@ generic commands.</p>
 <p>The German medical section headings (<code>Kapitel Verlauf</code>, <code>Kapitel Medikation</code>,
 <code>Kapitel Psychopathologischer Befund</code>, <code>Kapitel Procedere</code>, no terminator needed) and the name
 corrections (<code>Monique</code> → <code>Monic</code>, …) live in the catalogue profile <code>dictation-medical-de</code>
-(<code>profiles/dictation-medical-de.json</code> in the repository): name corrections first, then the
-headings, then the generic rules of <code>default</code> inline, in that order. An org admin pushes it once
-and selects it per job or as the organization's <code>postprocess_profile</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>dictation-medical-de<span class="w"> </span>profiles/dictation-medical-de.json
+(<code>profiles/dictation-medical-de.json</code> in the repository), a composition of the blocks
+<code>names-medical-de</code> (name corrections), <code>headings-medical-de</code> (the headings) and the bundled
+<code>dictation-commands-de</code> (the generic rules of <code>default</code>), in that order. An org admin pushes it
+with its blocks once and selects it per job or as the organization's <code>postprocess_profile</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>profiles/dictation-medical-de.json<span class="w"> </span>profiles/blocks/names-medical-de.json<span class="w"> </span>profiles/blocks/headings-medical-de.json
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span>dictation-medical-de
 </code></pre></div>
 <div class="admonition warning">

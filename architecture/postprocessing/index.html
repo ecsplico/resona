@@ -1416,6 +1416,8 @@
       
         
       
+        
+      
     
     
     
@@ -1507,6 +1509,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -1715,6 +1745,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#include" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        include
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1736,6 +1777,17 @@
     <span class="md-ellipsis">
       
         The bundled default profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-bundled-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bundled blocks
       
     </span>
   </a>
@@ -2862,6 +2914,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#include" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        include
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2883,6 +2946,17 @@
     <span class="md-ellipsis">
       
         The bundled default profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-bundled-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bundled blocks
       
     </span>
   </a>
@@ -3126,6 +3200,8 @@
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">}</span>
 </code></pre></div>
 <p><code>temperature</code>, <code>max_tokens</code> and <code>timeout</code> apply as for <code>llm</code>; the call is made in JSON mode.</p>
+<h3 id="include">include<a class="headerlink" href="#include" title="Permanent link">&para;</a></h3>
+<p><code>{"type": "include", "profile": "&lt;name&gt;"}</code> stands for the steps of another profile (a <strong>block</strong>; an optional top-level <code>"block": true</code> marks one for listings only). <code>resona_postprocess.compose.flatten(profile, lookup)</code> replaces every include by the included profile's steps at that position, recursively (at most <code>MAX_INCLUDE_DEPTH</code> = 4 levels), merges <code>initial_prompt</code> lists in order without duplicates (outer first, then included in step order) and inlines the rules of an included <code>replacements</code> step that reads <code>source</code>. <code>flatten_with_includes</code> also returns the included profile names in first-use order (for provenance). A cycle (the error names the chain), a missing include, deeper nesting, an included profile carrying <code>instructions</code> or <code>context</code>, or duplicate extract names after flattening raise <code>ProfileError</code>. <code>build_pipeline</code> refuses a profile with include steps, so callers flatten first; <code>bundled_default()</code> and <code>resolve_profile()</code> already return flat profiles. Lookups: <code>bundled_lookup</code> (bundled blocks), <code>directory_lookup(dir)</code> (<code>&lt;dir&gt;/&lt;name&gt;.json</code>), <code>chain_lookups(...)</code> (first hit wins).</p>
 <h2 id="postprocessresult">PostprocessResult<a class="headerlink" href="#postprocessresult" title="Permanent link">&para;</a></h2>
 <p><code>build_pipeline(profile, policy=policy).run(text)</code> returns a <code>PostprocessResult</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@dataclass</span>
@@ -3136,7 +3212,7 @@
 </code></pre></div>
 <p>A text step may return a <code>StepOutput(text, warnings)</code> instead of a string; chunked <code>llm</code> steps do.</p>
 <h2 id="the-bundled-default-profile">The bundled default profile<a class="headerlink" href="#the-bundled-default-profile" title="Permanent link">&para;</a></h2>
-<p><code>resona-postprocess</code> ships a <code>profiles/default.json</code> (rules in <code>default_replacements.json</code>) that turns German dictation commands into Markdown. It is used automatically when no profile is specified.</p>
+<p><code>resona-postprocess</code> ships a <code>profiles/default.json</code> that turns German dictation commands into Markdown. It is a single include of the bundled block <code>dictation-commands-de</code> (<code>blocks/dictation-commands-de.json</code>, rules in <code>default_replacements.json</code>); <code>bundled_default()</code> returns it flattened, with the rules inline. It is used automatically when no profile is specified.</p>
 <table>
 <thead>
 <tr>
@@ -3185,21 +3261,25 @@
 </table>
 <p>Every command pattern has word boundaries (<code>\b</code>); rules run case-insensitively, so without them <code>Zeitpunkt</code> became <code>Zeit.</code>. Order matters: the general <code>Kapitel</code> rule runs first, then brackets, then <code>Doppelpunkt</code> before <code>Punkt</code>, then <code>Absatz</code>. Three cleanup rules close the list: trailing spaces before a newline, runs of 3+ newlines → one blank line, leading/trailing whitespace of the whole text removed. <code>default</code> holds only these generic commands; the medical headings and name corrections are in the catalogue profile <code>dictation-medical-de</code> (below). A golden test (<code>tests/test_default_profile_golden.py</code>) keeps <code>default</code>'s output for generic-only text byte-identical to the pre-split rule list (<code>tests/fixtures/pre_split_default_replacements.json</code>).</p>
 <p>The general <code>Kapitel</code> rule fires only for a title of one to five words (characters other than whitespace and <code>.,;:!?()[]</code>; a <code>.</code> or <code>,</code> between digits is allowed, so <code>F32.1</code> stays whole; command words like <code>Komma</code> are excluded) followed by an optional comma and a terminator: <code>Absatz</code>, <code>Punkt</code>, <code>Doppelpunkt</code>, <code>Fragezeichen</code>, <code>Ausrufezeichen</code>, <code>!</code>, <code>?</code>, <code>:</code>, or a <code>.</code> with no digit on either side (<code>3. Mai</code> is no terminator). Negative lookbehinds skip <code>Kapitel</code> after articles, prepositions and ordinals (<code>im</code>, <code>das</code>, <code>dem</code>, <code>vom</code>, <code>zum</code>, <code>letzten</code>, …), so prose such as <code>wie im Kapitel zuvor beschrieben.</code> is untouched. Without a match the text stays as spoken. The punctuation commands absorb one adjacent punctuation mark on each side (<code>, Komma,</code> → <code>,</code>, <code>. Punkt.</code> → <code>.</code>), so Whisper's own punctuation is not doubled. Rules that consume leading whitespace use <code>(?&lt;![ \t])[ \t]*</code> instead of <code>\s*</code>: they never cross a newline (only <code>Absatz</code> and the heading rules produce line breaks) and stay linear on long space runs. Whole-word commands still hit ordinary words (<code>der wichtigste Punkt</code>, <code>im dritten Absatz</code>); rules cannot avoid that.</p>
-<p>This is a behaviour change for every organization using the bundled <code>default</code> (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). The bundled profile reaches workers as <code>source: default_replacements.json</code> and is resolved from each worker's installed <code>resona-postprocess</code>, so the snapshot hash does not cover the rule content and a mixed-release fleet can give different output for the same snapshot.</p>
+<p>This is a behaviour change for every organization using the bundled <code>default</code> (see the guide's "Behaviour change" note, which also shows how to keep the v0.1.0 rules as a stored profile). Older hubs sent the bundled profile to workers as <code>source: default_replacements.json</code>, resolved from each worker's installed <code>resona-postprocess</code>; since <code>default</code> became an include, the flattened profile carries the rules inline, so the snapshot hash covers them.</p>
+<h2 id="the-bundled-blocks">The bundled blocks<a class="headerlink" href="#the-bundled-blocks" title="Permanent link">&para;</a></h2>
+<p><code>blocks/*.json</code> ship in the wheel next to <code>default</code> (<code>list_bundled_blocks()</code>, <code>bundled_block(name)</code>): <code>dictation-commands-de</code> (the generic commands above), <code>filler-words-de</code> (<code>äh</code>, <code>ähm</code>, <code>öh</code>, <code>öhm</code>, <code>hm</code>, <code>hmm</code>, <code>mhm</code>) and <code>filler-words-en</code> (<code>um</code>, <code>uh</code>, <code>erm</code>, <code>hmm</code>). The filler rules match whole words only (<code>(?&lt;![\w-])…(?![\w-])</code>, Unicode-aware, so <code>Ähmlichkeit</code>, <code>umbrella</code>, <code>uh-huh</code> stay), use only horizontal whitespace (never a newline), take one adjacent comma with the filler and leave sentence-end punctuation in place.</p>
 <h2 id="the-catalogue-transcript-profiles">The catalogue transcript profiles<a class="headerlink" href="#the-catalogue-transcript-profiles" title="Permanent link">&para;</a></h2>
-<p>The wheel bundles only <code>default</code>: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root <a href="https://github.com/ecsplico/resona/tree/main/profiles"><code>profiles/</code></a> catalogue and reach a hub with <code>resona profiles push</code>; none of them is resolved by name from the package.</p>
-<p><code>profiles/dictation-medical-de.json</code> (<code>dictation-medical-de</code>) is one <code>replacements</code> step with inline rules, in the order the bundled <code>default</code> had them up to 0.2.7: name corrections (<code>Monique</code> → <code>Monic</code>, …), the four medical heading rules (<code>Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere</code>, no terminator needed, an immediately spoken <code>Absatz</code>/<code>Punkt</code>/<code>Doppelpunkt</code>/<code>Komma</code> is swallowed; they run before the general <code>Kapitel</code> rule), then the generic rules of <code>default_replacements.json</code>. A test keeps it equal to the pre-split rule list. The reference app selects it as its default profile.</p>
-<p><code>profiles/transcript-markdown-de.json</code> (<code>transcript-markdown-de</code>) is one <code>replacements</code> step with the rules of <code>dictation-medical-de</code> without its name corrections, inline because hosted profiles reject <code>source</code>; a test keeps them equal to the tail of <code>dictation-medical-de</code>. No LLM, runs on any worker.</p>
-<p><code>profiles/transcript-polish-de.json</code> (<code>transcript-polish-de</code>) runs the same rules, then a chunked <code>llm</code> step on endpoint <code>local-llm</code>. Its German prompt allows only changes to capitalization (sentence starts, after headings, list items, nouns), punctuation and whitespace; it forbids changing, adding or removing any word, even one that looks misrecognized, and names numbers, units, doses, drug names, diagnoses, codes and proper names as untouchable. Settings: <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.1, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. <code>preserve_markup</code> (<code>markup_signature</code>) compares only HTML comments, the heading-level sequence, per-row table cell counts and the ordered speaker labels of a diarized transcript (<code>**Sprecher N:**</code> at a line start); merged paragraphs, joined list items, changed heading text or a changed word or number pass it and are only bounded by the length guard. The endpoint registration is the same as for <code>document-polish-de</code> below.</p>
+<p>The wheel bundles only <code>default</code> and the blocks: a bundled profile must work with no setup. Profiles that need an organization's decision or an endpoint live in the repository's root <a href="https://github.com/ecsplico/resona/tree/main/profiles"><code>profiles/</code></a> catalogue and reach a hub with <code>resona profiles push</code>; none of them is resolved by name from the package.</p>
+<p>The catalogue profiles are compositions: <code>include</code> steps over the catalogue blocks in <code>profiles/blocks/</code> (<code>"block": true</code>) and the bundled blocks. <code>resona profiles push profiles/</code> uploads them in include order, blocks first; the hub flattens them at admission. LLM steps name a model role (<code>@polish</code>, <code>@cleanup</code>), never an endpoint id.</p>
+<p><code>profiles/dictation-medical-de.json</code> (<code>dictation-medical-de</code>) includes, in the order the bundled <code>default</code> had the rules up to 0.2.7: <code>names-medical-de</code> (name corrections <code>Monique</code> → <code>Monic</code>, …), <code>headings-medical-de</code> (the four medical heading rules (<code>Kapitel Verlauf|Medikation|Psychopathologischer Befund|Pro[cz]edere</code>, no terminator needed, an immediately spoken <code>Absatz</code>/<code>Punkt</code>/<code>Doppelpunkt</code>/<code>Komma</code> is swallowed; they run before the general <code>Kapitel</code> rule), then the bundled <code>dictation-commands-de</code> (<code>default_replacements.json</code>). A test keeps its flattened rules equal to the pre-split rule list. The reference app selects it as its default profile.</p>
+<p><code>profiles/transcript-markdown-de.json</code> (<code>transcript-markdown-de</code>) includes <code>headings-medical-de</code> and <code>dictation-commands-de</code>: the rules of <code>dictation-medical-de</code> without its name corrections; a test keeps the flattened rules equal to the tail of <code>dictation-medical-de</code>. No LLM, runs on any worker.</p>
+<p><code>profiles/transcript-polish-de.json</code> (<code>transcript-polish-de</code>) includes <code>transcript-markdown-de</code>, then the block <code>polish-punctuation-de</code>: a chunked <code>llm</code> step on the model role <code>@polish</code>. Its German prompt allows only changes to capitalization (sentence starts, after headings, list items, nouns), punctuation and whitespace; it forbids changing, adding or removing any word, even one that looks misrecognized, and names numbers, units, doses, drug names, diagnoses, codes and proper names as untouchable. Settings: <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.1, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. <code>preserve_markup</code> (<code>markup_signature</code>) compares only HTML comments, the heading-level sequence, per-row table cell counts and the ordered speaker labels of a diarized transcript (<code>**Sprecher N:**</code> at a line start); merged paragraphs, joined list items, changed heading text or a changed word or number pass it and are only bounded by the length guard. The endpoint registration is the same as for <code>document-polish-de</code> below.</p>
+<p><code>profiles/dictation-clean-de.json</code> (<code>dictation-clean-de</code>) includes the bundled <code>filler-words-de</code> first (it works on the raw transcript, before the dictation commands turn <code>Komma</code>/<code>Punkt</code> into marks), then the blocks of <code>dictation-medical-de</code>, then <code>self-correction-de</code>: a chunked <code>llm</code> step on the model role <code>@cleanup</code>. Its German prompt, adapted from T3 Code's correction-cue text, resolves a spoken self-correction only where the cue <code>nein, streich das</code> or <code>Korrektur</code> clearly marks one and returns the text unchanged otherwise (content uses of the cue, contrasts such as <code>5 mg, nicht 10 mg</code>, unclear cases). Settings: <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.5 (a correction shortens a short dictation noticeably), <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600.</p>
 <h2 id="the-catalogue-document-polish-profile">The catalogue document polish profile<a class="headerlink" href="#the-catalogue-document-polish-profile" title="Permanent link">&para;</a></h2>
-<p><code>profiles/document-polish-de.json</code> (<code>document-polish-de</code>) is a single chunked <code>llm</code> step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay verbatim. Settings: endpoint <code>local-llm</code>, <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.3, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. The endpoint id names no host: an org admin registers a <code>local_llm</code> endpoint with the id <code>local-llm</code> and a loopback <code>url</code> on the approved worker. Upload it to the hub as an organization profile (see <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>).</p>
+<p><code>profiles/document-polish-de.json</code> (<code>document-polish-de</code>) includes the block <code>polish-ocr-de</code>, a single chunked <code>llm</code> step for Docling Markdown of German documents. Its German prompt allows only OCR fixes: hyphenation across line breaks, misrecognized umlauts/ß, confused or stray characters, merged/split words. It forbids adding, removing, summarizing or rephrasing content and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay verbatim. Settings: endpoint <code>@polish</code>, <code>chunk_chars</code> 12000, <code>max_attempts</code> 3, <code>max_length_deviation</code> 0.3, <code>preserve_markup</code> true, <code>temperature</code> 0, <code>max_tokens</code> 8192, <code>timeout</code> 600. The role names no host: an org admin maps <code>polish</code> to an endpoint in the settings' <code>model_roles</code>, for example a <code>local_llm</code> endpoint with a loopback <code>url</code> on the approved worker. Upload it to the hub as an organization profile (see <a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>).</p>
 <h2 id="profile-resolution">Profile resolution<a class="headerlink" href="#profile-resolution" title="Permanent link">&para;</a></h2>
-<p><code>resolve_profile(ref, profiles_dir)</code> accepts any of:
-- A <code>Profile</code> object — returned as-is
+<p><code>resolve_profile(ref, profiles_dir)</code> returns a flattened profile (includes resolved against <code>&lt;profiles_dir&gt;/&lt;name&gt;.json</code>, then the bundled blocks) and accepts any of:
+- A <code>Profile</code> object
 - A <code>dict</code> — parsed as a profile
 - A string starting with <code>{</code> — parsed as inline JSON
 - A string ending with <code>.json</code> that exists on disk — loaded from that path
-- A plain name string — looked up as <code>&lt;profiles_dir&gt;/&lt;name&gt;.json</code>; falls back to the bundled <code>default</code> profile when <code>name == "default"</code></p>
+- A plain name string — looked up as <code>&lt;profiles_dir&gt;/&lt;name&gt;.json</code>; falls back to the bundled <code>default</code> profile when <code>name == "default"</code>, then to a bundled block of that name</p>
 <h2 id="where-the-pipeline-runs">Where the pipeline runs<a class="headerlink" href="#where-the-pipeline-runs" title="Permanent link">&para;</a></h2>
 <h3 id="hub-mode-resona-worker">Hub mode (resona-worker)<a class="headerlink" href="#hub-mode-resona-worker" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>engine returns {text, language, segments}

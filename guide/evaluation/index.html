@@ -1103,6 +1103,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cleanup-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleanup evaluation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1607,6 +1618,8 @@
       
         
       
+        
+      
     
     
     
@@ -1698,6 +1711,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2895,6 +2936,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cleanup-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleanup evaluation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3059,6 +3111,7 @@
 <li><strong>DER</strong> is the time-based diarization error rate: missed speech + false alarm + speaker confusion over total reference speech, collar 0, overlapping speech scored, with the error-minimising one-to-one speaker mapping.</li>
 <li><strong>Speaker count error</strong> is |hypothesis speakers − reference speakers|. It is reported, not gated.</li>
 <li>A diarization fixture whose result has no segments, or a segment without <code>speaker</code>, scores speaker attribution 0 and DER 1.0.</li>
+<li><strong>Speed</strong> (<code>seconds_per_30s</code>, audio fixtures): seconds of the result's <code>asr</code> stage per 30 s of fixture audio. It is recorded with the fixture's <code>language</code> and never gated; promoted baselines feed the engine recommendations of <code>GET /v1/engines?languages=</code> (basis <code>baseline</code>).</li>
 </ul>
 <h2 id="the-gate">The gate<a class="headerlink" href="#the-gate" title="Permanent link">&para;</a></h2>
 <table>
@@ -3111,9 +3164,22 @@
 <li>Later baselines must also pass the regression and coverage checks (422 <code>gate_failed</code>).</li>
 </ul>
 <p>A successful promotion approves the <code>(execution profile, platform, release)</code> tuple for production jobs. The CLI then pins the entry in <code>eval/baselines.json</code> under <code>&lt;execution_profile&gt;/&lt;platform&gt;</code>: corpus hash, release, runtime versions, normalization ids, model revisions and per-fixture metrics. Commit that file.</p>
+<h2 id="cleanup-evaluation">Cleanup evaluation<a class="headerlink" href="#cleanup-evaluation" title="Permanent link">&para;</a></h2>
+<p><code>resona eval cleanup</code> measures a dictation-cleanup postprocess profile (filler words, spoken self-corrections, insertion into existing text) on the German cases in <code>eval/cleanup/cases.json</code>. It runs against the hub only and needs both profiles pushed (<code>resona profiles push profiles/</code>) and the model roles they name assigned:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>cleanup<span class="w"> </span>--profile<span class="w"> </span>dictation-clean-de<span class="w"> </span>--output-dir<span class="w"> </span>/tmp/resona-cleanup
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>resona<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>cleanup<span class="w"> </span>--profile<span class="w"> </span>dictation-clean-de<span class="w"> </span>--output-dir<span class="w"> </span>/tmp/resona-cleanup<span class="w"> </span>--case<span class="w"> </span>de-korrektur-cue<span class="w"> </span>--case<span class="w"> </span>de-literal-cue
+</code></pre></div>
+<p>Each case holds a raw dictation <code>transcript</code> (as the profile receives it, before the dictation commands), the text around its insertion point (<code>before</code>, <code>selection</code>, <code>after</code>), a <code>rubric</code> and optional <code>includes</code>/<code>excludes</code>: case-insensitive substrings a usable answer must (not) contain, punctuation counting as a space (<code>" äh "</code> matches the whole word only). The cases cover a spoken correction with each cue (<code>nein, streich das</code>, <code>Korrektur</code>), each cue used as part of the sentence, filler words next to words that start with the same letters, an insertion between two sentences, a replaced selection and doses that must not change. The case shape and four cases come from T3 Code's <code>evals/voice-cleanup</code> (MIT).</p>
+<p>Per case the command runs two private text jobs:</p>
+<ol>
+<li>the transcript with <code>--profile</code> and the case's <code>before</code>/<code>selection</code>/<code>after</code> as the job <code>context</code>; its <code>markdown</code> is the output;</li>
+<li>a judge job with <code>--judge-profile</code> (default <code>cleanup-judge-de</code>): a labelled document with rubric, before, selection, after, transcript and output. Its <code>extract</code> step <code>judge</code> (model role <code>judge</code>) answers <code>{"pass": bool, "reason": str}</code> in <code>structured.judge</code>; cosmetic punctuation differences pass, changed meaning or copied surrounding text fail. Malformed judge output fails the case (<code>judge output invalid: …</code>).</li>
+</ol>
+<p>Before submitting anything the command reads the organization settings: without <code>model_roles.judge</code> it exits <code>1</code> and names the role. A hub that refuses a job with 422 <code>role_unassigned</code> (for example <code>@cleanup</code>) gets the same message for that role. Assign a role as org admin: <code>resona settings get</code>, set <code>model_roles.&lt;role&gt;</code> to an approved endpoint id in that JSON, <code>resona settings set --file &lt;file&gt;</code>.</p>
+<p>The run writes <code>cleanup-report.json</code> to <code>--output-dir</code>: <code>kind: "cleanup"</code>, <code>outcome: "measurement_only"</code>, the profile and judge profile, <code>cases_sha256</code> (the cases file), and per case the output, the judge verdict, <code>missing_includes</code>, <code>present_excludes</code> and <code>pass</code> (judge passed and no substring finding), plus <code>passed</code>/<code>total</code>. There is no baseline and no gate: the exit code is <code>0</code> whatever the pass rate, <code>1</code> on hub or setup errors. Read the outputs against the rubrics before trusting a pass rate, and add a case when a real cleanup failure shows a missing behavior.</p>
 <h2 id="releases">Releases<a class="headerlink" href="#releases" title="Permanent link">&para;</a></h2>
 <p>A worker's release is its installed <code>resona-worker</code> version, reported in its heartbeat. The hub's own release (<code>RESONA_RELEASE_ID</code>, else the <code>resona-api</code> version) is known without staging, but like every release it runs production jobs for a tuple only after an evaluation of that tuple has been promoted; a fresh hub therefore queues production jobs (<code>queue_reason: release_not_approved</code>) until its first promotion. Any other release must first be staged on the hub:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>resona-admin<span class="w"> </span>release<span class="w"> </span>stage<span class="w"> </span>--manifest<span class="w"> </span>release-manifest.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>resona-admin<span class="w"> </span>release<span class="w"> </span>stage<span class="w"> </span>--manifest<span class="w"> </span>release-manifest.json
 </code></pre></div>
 <p>A staged release runs evaluation jobs only. It runs production jobs for a tuple after an evaluation of it has been promoted.</p>
 <p>To compare engines on your own recordings and scans instead of the shared corpus, see the <a href="../testbench/">Testbench</a>.</p>

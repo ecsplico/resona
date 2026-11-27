@@ -1756,6 +1756,8 @@
       
         
       
+        
+      
     
     
     
@@ -1847,6 +1849,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -3343,6 +3373,11 @@ time.</p>
 <td>User instructions for the profile's LLM steps (user message; the profile's prompt stays the system message). Needs a <code>--profile</code> with an <code>llm</code>/<code>extract</code> step. Also on <code>resona doc</code> and <code>resona postprocess</code></td>
 </tr>
 <tr>
+<td><code>--context-file PATH</code></td>
+<td>(none)</td>
+<td>JSON object <code>{"before", "selection", "after"}</code> (each ≤ 4000 characters): the text around the spot the result is inserted at, used by the profile's LLM steps for terminology and continuity, never copied. Needs a <code>--profile</code> with an <code>llm</code>/<code>extract</code> step; also with <code>--local</code>. Also on <code>resona doc</code> and <code>resona postprocess</code></td>
+</tr>
+<tr>
 <td><code>--webhook NAME</code></td>
 <td>(none)</td>
 <td>Registered webhook endpoint (see <a href="#webhooks"><code>webhooks</code></a>) the hub notifies when each job ends; unknown names fail admission with <code>unknown_webhook</code>. Hub only (refused with <code>--local</code>). Also on <code>resona doc</code> and <code>resona postprocess</code></td>
@@ -3659,6 +3694,11 @@ codes and the shared flags (<code>--recursive</code>, <code>--output-dir</code>,
 <td><code>--instructions TEXT</code> / <code>--instructions-file PATH</code></td>
 <td>(none)</td>
 <td>User instructions for the profile's LLM steps, see <a href="#transcribe"><code>transcribe</code></a></td>
+</tr>
+<tr>
+<td><code>--context-file PATH</code></td>
+<td>(none)</td>
+<td>Text around the insertion point for the profile's LLM steps, see <a href="#transcribe"><code>transcribe</code></a></td>
 </tr>
 <tr>
 <td><code>--webhook NAME</code></td>
@@ -4021,8 +4061,11 @@ reachable, 1 otherwise.</p>
 <p>Query the live resona-api gateway catalogue and show which engines are currently available,
 their capabilities, and their status. Requires a running gateway.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>resona<span class="w"> </span>engines<span class="w"> </span>status
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>resona<span class="w"> </span>engines<span class="w"> </span>status<span class="w"> </span>--languages<span class="w"> </span>de,en
 </code></pre></div>
-<p>Output columns: <code>Name</code>, <code>Kind</code>, <code>Capabilities</code>, <code>Available</code>, <code>Models</code>.</p>
+<p>Output columns: <code>Name</code>, <code>Kind</code>, <code>Capabilities</code>, <code>Available</code>, <code>Models</code>, <code>Role</code>. <code>Role</code> lists the hub's
+recommendation per measured candidate (<code>recommended</code>, <code>fast</code> or <code>accurate</code> with WER and seconds per
+30 s of audio) for <code>--languages</code> (default: the organization language).</p>
 <hr />
 <h2 id="profiles">profiles<a class="headerlink" href="#profiles" title="Permanent link">&para;</a></h2>
 <p>Manage postprocessing profiles stored on the resona-api server. A profile is a JSON file that
@@ -4043,11 +4086,15 @@ files in <code>~/.resona/profiles/</code> and reference them with <code>--profil
 <div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
 </code></pre></div>
 <h3 id="profiles-push">profiles push<a class="headerlink" href="#profiles-push" title="Permanent link">&para;</a></h3>
-<p>Upload a local profile JSON file to the server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile.json
+<p>Upload local profile JSON files to the server, blocks before the profiles that include them.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json<span class="w">       </span><span class="c1"># one file under the name my-profile</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile.json<span class="w"> </span>my-block.json<span class="w">    </span><span class="c1"># each file under its file name</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>profiles/<span class="w">                        </span><span class="c1"># a directory: its *.json and blocks/*.json</span>
 </code></pre></div>
-<p>The profile's <code>name</code> field determines the server-side name. If a profile with the same name
-already exists it is replaced.</p>
+<p>Each file is stored under its file name without <code>.json</code> (or under <code>NAME</code> in the <code>NAME FILE</code> form)
+as a new revision. The push order follows the <code>include</code> steps. An include must name a profile pushed
+in the same call, a bundled block or a profile already stored on the hub; a missing include, a
+cycle or an invalid file exits 1 before anything is uploaded.</p>
 <h3 id="profiles-pull">profiles pull<a class="headerlink" href="#profiles-pull" title="Permanent link">&para;</a></h3>
 <p>Download a profile from the server and save it to a local file.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w">               </span><span class="c1"># saves to my-profile.json</span>

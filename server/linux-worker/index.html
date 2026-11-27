@@ -1634,6 +1634,8 @@
       
         
       
+        
+      
     
     
     
@@ -1725,6 +1727,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -3106,7 +3136,7 @@
 </code></pre></div>
 <p>Each job runs in its own subprocess. The model is loaded for that job and is released when the subprocess exits, so the GPU is free between jobs.</p>
 <h2 id="llm-polish-on-the-worker-host">LLM polish on the worker host<a class="headerlink" href="#llm-polish-on-the-worker-host" title="Permanent link">&para;</a></h2>
-<p>Document jobs can get an OCR-correction pass from a local model on the worker host. The catalogue profile <code>document-polish-de</code> (<code>profiles/document-polish-de.json</code> in the repository, see <a href="../../guide/postprocessing/#profile-catalogue">Profile catalogue</a>) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint <code>local-llm</code>. The profile names no host: an org admin registers a <code>local_llm</code> endpoint with the id <code>local-llm</code>, a loopback <code>url</code> and the approved worker's <code>worker_id</code> (see <a href="#enable-it">Enable it</a>). Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning <code>polish_chunk_rejected:&lt;n&gt;:&lt;length|markup&gt;</code>. A chunk that fails 3 calls fails the job (<code>postprocess_failed</code>, retryable); the polish is never skipped silently. <code>markdown</code> is the polished text. The converter's Markdown before polish, tables included, stays in the result's <code>raw_markdown</code> (set whenever a postprocess step changed the Markdown); <code>raw_text</code> is the converter's plain text, which has no tables. See <a href="../../architecture/postprocessing/#chunked-mode-long-markdown">Postprocessing Pipeline</a>.</p>
+<p>Document jobs can get an OCR-correction pass from a local model on the worker host. The catalogue profile <code>document-polish-de</code> (<code>profiles/document-polish-de.json</code> in the repository, see <a href="../../guide/postprocessing/#profile-catalogue">Profile catalogue</a>) sends the Docling Markdown in chunks of about 12000 characters, split on block boundaries and never inside a table, to the endpoint the organization assigns to the model role <code>polish</code> (block <code>polish-ocr-de</code>, <code>"endpoint": "@polish"</code>). The profile names no host: an org admin registers a <code>local_llm</code> endpoint, here with the id <code>local-llm</code>, a loopback <code>url</code> and the approved worker's <code>worker_id</code>, and maps the role to it (see <a href="#enable-it">Enable it</a>). Its prompt allows only OCR fixes (hyphenation, umlauts/ß, stray characters, merged/split words) and requires headings, tables, page markers and the <code>&lt;!-- image --&gt;</code> / <code>&lt;!-- formula-not-decoded --&gt;</code> placeholders to stay unchanged. A chunk reply that differs from the chunk by more than 30 % in length, or that changes placeholders, heading levels or table shape, is discarded: the raw chunk is kept and the result gets the warning <code>polish_chunk_rejected:&lt;n&gt;:&lt;length|markup&gt;</code>. A chunk that fails 3 calls fails the job (<code>postprocess_failed</code>, retryable); the polish is never skipped silently. <code>markdown</code> is the polished text. The converter's Markdown before polish, tables included, stays in the result's <code>raw_markdown</code> (set whenever a postprocess step changed the Markdown); <code>raw_text</code> is the converter's plain text, which has no tables. See <a href="../../architecture/postprocessing/#chunked-mode-long-markdown">Postprocessing Pipeline</a>.</p>
 <h3 id="privacy">Privacy<a class="headerlink" href="#privacy" title="Permanent link">&para;</a></h3>
 <p>The endpoint is a <code>local_llm</code> endpoint. The execution policy admits it for private jobs only with a loopback <code>url</code>, and the hub hands the job only to the worker the endpoint is assigned to (<code>worker_id</code>). The text therefore goes from the worker process to a model server on the same host and nowhere else. A job whose profile uses a <code>local_llm</code> endpoint with a non-loopback <code>url</code> is refused at submission (<code>policy_denied</code>), and the policy is checked again before every chunk. A non-loopback <code>unload_url</code> is already refused when the settings are saved. Before each LLM stage the worker asks the hub for a fresh policy decision; when the hub is unreachable the stage does not start. Calls to <code>local_llm</code> endpoints carry a fixed placeholder API key, never an <code>OPENAI_API_KEY</code> from the environment, and litellm uses its bundled model price map instead of fetching it.</p>
 <h3 id="reaching-a-model-server-on-the-hosts-loopback">Reaching a model server on the host's loopback<a class="headerlink" href="#reaching-a-model-server-on-the-hosts-loopback" title="Permanent link">&para;</a></h3>
@@ -3124,7 +3154,7 @@
 <li>Deploy a release that contains this feature to the hub <strong>and</strong> to every worker first. An older hub rejects <code>unload_url</code> in the settings (<code>422</code>); an older worker fails postprocess jobs whose snapshot contains it (<code>invalid_snapshot</code>).</li>
 <li>Start the worker with the override (above).</li>
 <li>
-<p>As org admin, add the endpoint to the organization settings. The catalogue profile calls the endpoint id <code>local-llm</code>, so register it under that id (or change the profile's <code>endpoint</code> before uploading it). <code>url</code> and <code>unload_url</code> point to the model server on the worker host's loopback; <code>worker_id</code> is the id that <code>resona-admin worker enroll</code> printed for the Linux worker:</p>
+<p>As org admin, add the endpoint to the organization settings. The catalogue profile calls the model role <code>@polish</code>; the example registers the endpoint as <code>local-llm</code> and maps the roles to it. <code>url</code> and <code>unload_url</code> point to the model server on the worker host's loopback; <code>worker_id</code> is the id that <code>resona-admin worker enroll</code> printed for the Linux worker:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local-llm&quot;</span><span class="p">,</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local_llm&quot;</span><span class="p">,</span>
@@ -3135,14 +3165,15 @@
 <a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p">}</span>
 </code></pre></div>
 <p>The <code>openai/</code> prefix makes litellm speak the OpenAI chat API to <code>url</code>; llama-swap receives the model name <code>qwen3.6-27b</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.settings | .endpoints = ([.endpoints[] | select(.id != &quot;local-llm&quot;)] + [input])&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span>-<span class="w"> </span>local-llm.json<span class="w"> </span>&gt;<span class="w"> </span>settings.json
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>resona<span class="w"> </span>settings<span class="w"> </span>get<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.settings | .endpoints = ([.endpoints[] | select(.id != &quot;local-llm&quot;)] + [input])</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="s1">  | .model_roles = ((.model_roles // {}) + {polish: &quot;local-llm&quot;, cleanup: &quot;local-llm&quot;, title: &quot;local-llm&quot;})&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span>-<span class="w"> </span>local-llm.json<span class="w"> </span>&gt;<span class="w"> </span>settings.json
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>resona<span class="w"> </span>settings<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--file<span class="w"> </span>settings.json
 </code></pre></div>
 </li>
 <li>
 <p>Upload the profile from the repository's <code>profiles/</code> catalogue as an organization profile (org admin). It is not part of any wheel, so take it from a checkout or download the file of your release tag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>document-polish-de<span class="w"> </span>profiles/document-polish-de.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>profiles/document-polish-de.json<span class="w"> </span>profiles/blocks/polish-ocr-de.json
 </code></pre></div>
 </li>
 <li>

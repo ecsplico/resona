@@ -885,6 +885,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#include" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        include
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model roles
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -925,6 +947,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#bundled-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundled blocks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#profile-catalogue" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -951,6 +984,17 @@
     <span class="md-ellipsis">
       
         transcript-markdown-de and transcript-polish-de
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dictation-clean-de" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        dictation-clean-de
       
     </span>
   </a>
@@ -1707,6 +1751,8 @@
       
         
       
+        
+      
     
     
     
@@ -1798,6 +1844,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2917,6 +2991,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#include" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        include
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model roles
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2957,6 +3053,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#bundled-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundled blocks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#profile-catalogue" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2983,6 +3090,17 @@
     <span class="md-ellipsis">
       
         transcript-markdown-de and transcript-polish-de
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dictation-clean-de" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        dictation-clean-de
       
     </span>
   </a>
@@ -3175,7 +3293,7 @@ of pipeline steps that transform the raw transcript into the final output.</p>
 <tr>
 <td><code>initial_prompt</code></td>
 <td>no</td>
-<td>List of phrases passed to the ASR engine as vocabulary hints</td>
+<td>List of phrases used as vocabulary hints. Hub jobs on a cloud ASR candidate send them to the provider as keyterms (Deepgram <code>keyterm</code>/<code>keywords</code>, ElevenLabs <code>keyterms</code> on Scribe v2+, OpenAI <code>prompt</code>); at most 100 terms of ≤ 50 characters</td>
 </tr>
 <tr>
 <td><code>steps</code></td>
@@ -3242,7 +3360,7 @@ Uses <a href="https://github.com/BerriAI/litellm">litellm</a> — any OpenAI-com
 <tr>
 <td><code>endpoint</code></td>
 <td>no</td>
-<td>Id of an endpoint in the organization's settings registry; required in hub profiles</td>
+<td>Id of an endpoint in the organization's settings registry, or <code>@&lt;role&gt;</code> for a <a href="#model-roles">model role</a>; required in hub profiles</td>
 </tr>
 <tr>
 <td><code>model</code></td>
@@ -3289,6 +3407,59 @@ alongside the transcript. The text is not modified.</p>
 </code></pre></div>
 <p><code>temperature</code>, <code>max_tokens</code> and <code>timeout</code> apply as for <code>llm</code>.</p>
 <p>Extracted data is stored in <code>job.structured</code> (server) or <code>PostprocessResult.data</code> (local).</p>
+<h3 id="include">include<a class="headerlink" href="#include" title="Permanent link">&para;</a></h3>
+<p>Puts the steps of another profile at this position. Small reusable profiles (<strong>blocks</strong>) are
+composed this way instead of copying their rules:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dictation-clean-de&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;include&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;profile&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filler-words-de&quot;</span><span class="p">},</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;include&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;profile&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dictation-commands-de&quot;</span><span class="p">}</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>profile</code> is a profile name (lowercase letters, digits, <code>-</code>, <code>_</code>). An optional top-level
+  <code>"block": true</code> marks a profile as meant for including; it changes nothing else.</li>
+<li>Includes are resolved before anything runs (<code>resona_postprocess.compose.flatten</code>): the included
+  steps go in at that position, recursively up to 4 levels deep, and <code>initial_prompt</code> lists are
+  merged in order without duplicates (the outer profile's first). A <code>replacements</code> step that an
+  included profile reads from <code>source</code> gets its rules inline.</li>
+<li>A cycle, a missing profile, deeper nesting, an included profile with <code>instructions</code> or <code>context</code>
+  (only the outer profile or the job sets them) or two <code>extract</code> steps with the same name after flattening
+  are errors. A pipeline refuses a profile that still has include steps.</li>
+<li>Lookup order in local CLI mode: <code>&lt;RESONA_PROFILES_DIR&gt;/&lt;name&gt;.json</code>, then the bundled blocks.</li>
+<li>On the hub (<a href="../../adr/0002-profile-composition-resolves-at-admission/">ADR 0002</a>) an include
+  names the organization's stored profile, else a bundled block. Admission (<code>POST /v1/jobs</code>,
+  <code>/v1/audio/transcriptions</code>, <code>POST /v1/listen</code>, <code>WS /v1/listen</code>) flattens the profile, so the
+  pinned document is flat and any worker runs it; the snapshot lists <code>includes: [{name, revision}]</code>
+  (revision 0 = bundled). <code>PUT /profiles/{name}</code> refuses includes that do not resolve or cycles,
+  also when the write would break a stored profile that includes it (422 <code>invalid_profile</code>);
+  <code>DELETE</code> answers 409 <code>profile_in_use</code> while another stored profile includes it.
+  <code>resona profiles show &lt;name&gt; --resolved</code> (<code>GET /profiles/{name}?resolved=true</code>) prints the flat
+  document a job would pin.</li>
+</ul>
+<h3 id="model-roles">Model roles<a class="headerlink" href="#model-roles" title="Permanent link">&para;</a></h3>
+<p>An <code>llm</code> or <code>extract</code> step may name a <strong>model role</strong> instead of an endpoint id:
+<code>"endpoint": "@polish"</code>. The organization settings map each role to one of their endpoints:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;endpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local-llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local_llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai/qwen&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:9292/v1&quot;</span><span class="p">}],</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;model_roles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;polish&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local-llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cleanup&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local-llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local-llm&quot;</span><span class="p">}</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>Role names match <code>^[a-z][a-z0-9-]{0,31}$</code>; every role must name an endpoint in <code>endpoints</code>
+  (<code>PUT /v1/settings</code> answers 422 otherwise). The standard roles are <code>polish</code>, <code>cleanup</code>,
+  <code>title</code>, <code>extract</code> and <code>judge</code>; they are a convention, an organization may add others.</li>
+<li>The hub resolves roles at admission, after includes: the job's pinned profile carries the
+  endpoint id, so policy checks, worker endpoint assignment and the worker see no role. A role
+  the organization has not assigned is 422 <code>role_unassigned</code>, and no job is created. Changing
+  <code>model_roles</code> affects new jobs only.</li>
+<li><code>--local</code> resolves roles from the settings cached by <code>resona settings pull</code>; an unassigned role
+  fails before any processing with <code>role_unassigned</code>.</li>
+<li>The admin UI's Settings tab lists <code>model_roles</code> read-only; change them with
+  <code>resona settings set --file</code>.</li>
+</ul>
 <hr />
 <h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
 <table>
@@ -3389,14 +3560,14 @@ Schmerzen Punkt</code> becomes <code>Kapitel Anamnese der Patient berichtet, er 
 heading. Leading and trailing blank lines are removed. <code>default</code> holds only these generic
 commands; the medical section headings and name corrections are in the catalogue profile
 <a href="#dictation-medical-de"><code>dictation-medical-de</code></a>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Zum Zeitpunkt der Aufnahme Kapitel Anamnese Absatz der Patient berichtet Komma er habe Schmerzen Punkt
 </code></pre></div>
 <p>becomes</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Zum Zeitpunkt der Aufnahme
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="gu">## Anamnese</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>der Patient berichtet, er habe Schmerzen.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Zum Zeitpunkt der Aufnahme
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="gu">## Anamnese</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>der Patient berichtet, er habe Schmerzen.
 </code></pre></div>
 <p>Rules cannot tell a command from the same word used in a sentence. <code>der wichtigste Punkt der
 Untersuchung</code> becomes <code>der wichtigste. der Untersuchung</code>, <code>Punkt eins</code> becomes <code>. eins</code>, and <code>im
@@ -3410,18 +3581,50 @@ Markdown paragraph); <code>Kapitel</code> was <code>#</code> up to the end of th
 <code>Zeitpunkt</code> became <code>Zeit.</code>); <code>Doppelpunkt</code>, <code>Anstrich</code> and <code>Eckige Klammer</code> are new; doubled
 punctuation is merged. This affects every job that uses <code>profile=default</code> and every
 organization with <code>polish</code> on and <code>postprocess_profile</code> <code>default</code>.</p>
-<p>The bundled <code>default</code> reaches the worker as a reference to <code>default_replacements.json</code>, which
-the worker resolves from its own installed <code>resona-postprocess</code>. Until every worker runs the
-new release, the same job can get old or new output depending on which worker claims it.</p>
+<p>The bundled <code>default</code> includes the block <code>dictation-commands-de</code>; resolving it inlines that
+block's rules, so the job's pinned profile carries the rules themselves. Older hubs sent a
+reference to <code>default_replacements.json</code>, which each worker resolved from its own installed
+<code>resona-postprocess</code>: there, until every worker runs the same release, the same job can get
+old or new output depending on which worker claims it.</p>
 <p>To keep the old rules, store them under another name (the name <code>default</code> is reserved) and
 select that profile (<code>--profile</code>, or the organization's <code>postprocess_profile</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>git<span class="w"> </span>show<span class="w"> </span>v0.1.0:packages/postprocess/src/resona_postprocess/default_replacements.json<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;{name: &quot;dictation-v0-1&quot;, steps: [{type: &quot;replacements&quot;, rules: .}]}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>dictation-v0-1.json
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>dictation-v0-1<span class="w"> </span>dictation-v0-1.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>git<span class="w"> </span>show<span class="w"> </span>v0.1.0:packages/postprocess/src/resona_postprocess/default_replacements.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;{name: &quot;dictation-v0-1&quot;, steps: [{type: &quot;replacements&quot;, rules: .}]}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>dictation-v0-1.json
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>dictation-v0-1<span class="w"> </span>dictation-v0-1.json
 </code></pre></div>
 </div>
+<h3 id="bundled-blocks">Bundled blocks<a class="headerlink" href="#bundled-blocks" title="Permanent link">&para;</a></h3>
+<p>The wheel also ships blocks (<code>resona_postprocess/blocks/*.json</code>, <code>"block": true</code>) for <code>include</code>
+steps; a local <code>resona postprocess --local --profile filler-words-de</code> runs one directly:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dictation-commands-de</code></td>
+<td>the generic German dictation commands of <code>default</code> (table above)</td>
+</tr>
+<tr>
+<td><code>filler-words-de</code></td>
+<td>removes <code>äh</code>, <code>ähm</code>, <code>öh</code>, <code>öhm</code>, <code>hm</code>, <code>hmm</code>, <code>mhm</code></td>
+</tr>
+<tr>
+<td><code>filler-words-en</code></td>
+<td>removes <code>um</code>, <code>uh</code>, <code>erm</code>, <code>hmm</code></td>
+</tr>
+</tbody>
+</table>
+<p>The filler blocks only match a whole word (<code>Ähmlichkeit</code>, <code>umbrella</code>, <code>uh-huh</code>, <code>Hm-Laut</code> stay)
+and never remove a line break. A filler takes one adjacent comma with it (<code>Ja, äh, ich</code> →
+<code>Ja, ich</code>; <code>Äh, ich</code> → <code>ich</code>; <code>komme ähm, wenn</code> → <code>komme, wenn</code>); at the end of a sentence or
+line the punctuation stays (<code>Zeit, äh.</code> → <code>Zeit.</code>). The German block does not touch <code>um</code>, a
+German word.</p>
 <h3 id="profile-catalogue">Profile catalogue<a class="headerlink" href="#profile-catalogue" title="Permanent link">&para;</a></h3>
-<p>The <code>resona-postprocess</code> wheel bundles one profile, <code>default</code>, because it works with no setup.
+<p>The <code>resona-postprocess</code> wheel bundles only <code>default</code> and the blocks above, because they work with no setup.
 Profiles that need a decision or an endpoint of the organization live in the repository's root
 directory <a href="https://github.com/ecsplico/resona/tree/main/profiles"><code>profiles/</code></a> and exist on a hub
 only after an org admin pushed them:</p>
@@ -3429,6 +3632,7 @@ only after an org admin pushed them:</p>
 <thead>
 <tr>
 <th>Profile</th>
+<th>Includes</th>
 <th>What it does</th>
 <th>Needs</th>
 </tr>
@@ -3436,32 +3640,53 @@ only after an org admin pushed them:</p>
 <tbody>
 <tr>
 <td><code>dictation-medical-de</code></td>
+<td><code>names-medical-de</code>, <code>headings-medical-de</code>, <code>dictation-commands-de</code></td>
 <td>Name corrections, medical section headings, then the generic commands of <code>default</code> (rules only; what <code>default</code> did up to 0.2.7)</td>
 <td>Nothing</td>
 </tr>
 <tr>
 <td><code>transcript-markdown-de</code></td>
+<td><code>headings-medical-de</code>, <code>dictation-commands-de</code></td>
 <td>Dictation commands → Markdown, rules only</td>
 <td>Nothing</td>
 </tr>
 <tr>
 <td><code>transcript-polish-de</code></td>
+<td><code>transcript-markdown-de</code>, <code>polish-punctuation-de</code></td>
 <td>The same rules, then an LLM pass limited to capitalization, punctuation and whitespace</td>
-<td><code>local_llm</code> endpoint <code>local-llm</code></td>
+<td>Role <code>polish</code></td>
 </tr>
 <tr>
 <td><code>document-polish-de</code></td>
+<td><code>polish-ocr-de</code></td>
 <td>OCR corrections on document Markdown (<a href="../../server/linux-worker/#llm-polish-on-the-worker-host">Linux Worker</a>)</td>
-<td><code>local_llm</code> endpoint <code>local-llm</code></td>
+<td>Role <code>polish</code></td>
+</tr>
+<tr>
+<td><code>dictation-clean-de</code></td>
+<td><code>filler-words-de</code>, <code>names-medical-de</code>, <code>headings-medical-de</code>, <code>dictation-commands-de</code>, <code>self-correction-de</code></td>
+<td><code>dictation-medical-de</code> with filler words removed first and spoken self-corrections resolved last</td>
+<td>Role <code>cleanup</code></td>
 </tr>
 </tbody>
 </table>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/ecsplico/resona<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>resona<span class="w">   </span><span class="c1"># or download the files of your release tag</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>dictation-medical-de<span class="w"> </span>profiles/dictation-medical-de.json
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-markdown-de<span class="w"> </span>profiles/transcript-markdown-de.json
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>transcript-polish-de<span class="w"> </span>profiles/transcript-polish-de.json
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>document-polish-de<span class="w"> </span>profiles/document-polish-de.json
+<p>The catalogue profiles are compositions: their <code>include</code> steps name the blocks in <code>profiles/blocks/</code>
+(<code>names-medical-de</code>, <code>headings-medical-de</code>, <code>polish-punctuation-de</code> and <code>polish-ocr-de</code> on <code>@polish</code>,
+<code>self-correction-de</code> on <code>@cleanup</code>) and the bundled blocks. Their LLM steps name a model role, which
+the organization settings map to an endpoint (<code>model_roles</code>, see <a href="#model-roles">Model roles</a>). One
+push call uploads the catalogue, blocks before the profiles that include them; an include that is
+neither pushed with it, bundled nor stored on the hub, or a cycle, stops it before any upload:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/ecsplico/resona<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>resona<span class="w">   </span><span class="c1"># or download the files of your release tag</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>profiles/
 </code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Release note: the catalogue became compositions</p>
+<p>Up to the flat catalogue every profile carried its rules inline and its LLM step called the
+endpoint id <code>local-llm</code>. An organization that pushed those files maps the roles to that
+endpoint (<code>"model_roles": {"polish": "local-llm", "title": "local-llm", "cleanup": "local-llm"}</code>)
+and re-pushes with <code>resona profiles push profiles/</code>; it needs hub release 0.2.8 or later. The
+output is unchanged; see the <a href="https://github.com/ecsplico/resona/tree/main/profiles">catalogue README</a>.</p>
+</div>
 <div class="admonition warning">
 <p class="admonition-title">Release note: <code>default</code> lost its medical headings and name corrections</p>
 <p>Up to 0.2.7 the bundled <code>default</code> also turned <code>Kapitel Verlauf</code>, <code>Kapitel Medikation</code>,
@@ -3488,91 +3713,102 @@ them from <code>resona_postprocess/profiles/</code> must read the catalogue inst
 pushed them has to push them once.</p>
 </div>
 <h3 id="dictation-medical-de">dictation-medical-de<a class="headerlink" href="#dictation-medical-de" title="Permanent link">&para;</a></h3>
-<p><code>profiles/dictation-medical-de.json</code> is one <code>replacements</code> step with inline rules, in this order:
-name corrections (<code>Monique</code> → <code>Monic</code>, <code>Serafine</code>/<code>Serafina</code> → <code>Seraphine</code>, <code>Lucy</code> → <code>Lucie</code>,
-<code>Nele</code>/<code>Mele</code> → <code>Neele</code>), the medical section headings, then the generic commands of <code>default</code>.
+<p><code>profiles/dictation-medical-de.json</code> includes three rule blocks, in this order:
+<code>names-medical-de</code> with the name corrections (<code>Monique</code> → <code>Monic</code>, <code>Serafine</code>/<code>Serafina</code> → <code>Seraphine</code>, <code>Lucy</code> → <code>Lucie</code>,
+<code>Nele</code>/<code>Mele</code> → <code>Neele</code>), <code>headings-medical-de</code> with the medical section headings, then the
+bundled <code>dictation-commands-de</code> (the generic commands of <code>default</code>).
 The headings <code>Kapitel Verlauf</code>, <code>Kapitel Medikation</code>, <code>Kapitel Psychopathologischer Befund</code> and
 <code>Kapitel Procedere</code> (also spoken <code>Prozedere</code>) need no terminator; a spoken <code>Absatz</code>, <code>Punkt</code>,
 <code>Doppelpunkt</code> or <code>Komma</code> right after them is dropped. They run before the general <code>Kapitel</code> rule,
 so <code>Kapitel Verlauf der Patient ist stabil Punkt</code> gives <code>## Verlauf</code> + <code>der Patient ist stabil.</code>.
 Its output is what <code>default</code> produced up to 0.2.7.</p>
 <h3 id="transcript-markdown-de-and-transcript-polish-de">transcript-markdown-de and transcript-polish-de<a class="headerlink" href="#transcript-markdown-de-and-transcript-polish-de" title="Permanent link">&para;</a></h3>
-<p><code>profiles/transcript-markdown-de.json</code> holds the rules of <code>dictation-medical-de</code> without its name
-corrections and without any LLM step, so it runs on every worker.
-<code>profiles/transcript-polish-de.json</code> runs the same rules, then a chunked <code>llm</code> step on the endpoint
-id <code>local-llm</code>. Its prompt allows the model to change only capitalization (sentence starts, after
+<p><code>profiles/transcript-markdown-de.json</code> includes the rules of <code>dictation-medical-de</code> without its
+name corrections (<code>headings-medical-de</code>, <code>dictation-commands-de</code>) and no LLM step, so it runs on
+every worker. <code>profiles/transcript-polish-de.json</code> includes <code>transcript-markdown-de</code>, then the block
+<code>polish-punctuation-de</code>: a chunked <code>llm</code> step on the model role <code>@polish</code>. Its prompt allows the model to change only capitalization (sentence starts, after
 headings, list items, nouns), punctuation and whitespace. It must not change, add or remove any
 word, not even a word that looks misrecognized; numbers, units, doses, drug names, diagnoses and
 codes stay exactly as transcribed. Settings: <code>max_length_deviation</code> 0.1, <code>preserve_markup: true</code>,
-<code>temperature</code> 0, <code>chunk_chars</code> 12000. Like <code>document-polish-de</code>, it needs an org admin to register
-a <code>local_llm</code> endpoint <code>local-llm</code> on the approved worker.</p>
+<code>temperature</code> 0, <code>chunk_chars</code> 12000. Like <code>document-polish-de</code>, it needs an org admin to assign
+the role <code>polish</code> to an endpoint, for example a <code>local_llm</code> endpoint on the approved worker.</p>
 <p>The guards check less than the prompt asks for. <code>preserve_markup</code> compares only HTML comments,
 the sequence of heading levels and the cell count of every table row; it does not notice merged
 paragraphs, joined list items, a rewritten heading text or a changed word or number. A reply that
 changes such things is kept as long as it stays within the 10 % length guard. Use the polish
 profile only where a reviewer reads the result.</p>
-<p>Both carry their rules inline, because hosted profiles reject <code>source</code>. Push them from the
+<p>Their blocks carry the rules inline, because hosted profiles reject <code>source</code>. Push them from the
 catalogue as shown under <a href="#profile-catalogue">Profile catalogue</a>.</p>
+<h3 id="dictation-clean-de">dictation-clean-de<a class="headerlink" href="#dictation-clean-de" title="Permanent link">&para;</a></h3>
+<p><code>profiles/dictation-clean-de.json</code> is <code>dictation-medical-de</code> with two more blocks around it: first
+the bundled <code>filler-words-de</code> on the raw transcript (so <code>Kapitel Verlauf ähm der Patient …</code> still
+makes the heading), last <code>self-correction-de</code>, a chunked <code>llm</code> step on the model role <code>@cleanup</code>.
+Its prompt (adapted from T3 Code's correction cue) resolves a spoken self-correction only where the
+cue <code>nein, streich das</code> or <code>Korrektur</code> clearly marks one (<code>Ramipril 5 mg, nein, streich das, 10 mg
+täglich.</code> → <code>Ramipril 10 mg täglich.</code>) and otherwise returns the text unchanged; a cue that is part
+of the content (<code>Die Korrektur der Dosis …</code>) stays. Settings: <code>chunk_chars</code> 12000, <code>max_attempts</code> 3,
+<code>max_length_deviation</code> 0.5 (a correction removes text; a reply further off keeps the chunk as the
+rules left it, warning <code>polish_chunk_rejected:&lt;n&gt;:length</code>), <code>preserve_markup</code> true, <code>temperature</code> 0.</p>
 <hr />
 <h2 id="llm-provider-examples">LLM provider examples<a class="headerlink" href="#llm-provider-examples" title="Permanent link">&para;</a></h2>
 <p>Cloud models (any step whose endpoint is not loopback) are denied in private runs. They need the organization setting <code>cloud_enabled=true</code> and a job submitted with <code>--allow-cloud</code> (the same applies to <code>--local</code> runs).</p>
 <h3 id="openai">OpenAI<a class="headerlink" href="#openai" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">}</span>
 </code></pre></div>
 <p>Requires <code>OPENAI_API_KEY</code>.</p>
 <h3 id="anthropic-claude">Anthropic Claude<a class="headerlink" href="#anthropic-claude" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-3-5-haiku-20241022&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-3-5-haiku-20241022&quot;</span><span class="p">}</span>
 </code></pre></div>
 <p>Requires <code>ANTHROPIC_API_KEY</code>.</p>
 <h3 id="local-ollama">Local Ollama<a class="headerlink" href="#local-ollama" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Format this clinical dictation.&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="p">}</span>
 </code></pre></div>
 <p>In local CLI mode you can also set <code>RESONA_LLM_MODEL=ollama/llama3</code> and <code>RESONA_LLM_API_BASE=http://localhost:11434</code> globally.</p>
 <hr />
 <h2 id="using-profiles">Using profiles<a class="headerlink" href="#using-profiles" title="Permanent link">&para;</a></h2>
 <h3 id="server-mode-resona-api">Server mode (resona-api)<a class="headerlink" href="#server-mode-resona-api" title="Permanent link">&para;</a></h3>
 <p>Pass a <code>profile</code> field when submitting a job:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Named profile (loaded from RESONA_PROFILES_DIR)</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;profile=my-profile&quot;</span><span class="w"> </span>http://localhost:7000/jobs
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Inline profile JSON</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s1">&#39;profile={&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span><span class="w"> </span>http://localhost:7000/jobs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Named profile (loaded from RESONA_PROFILES_DIR)</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;profile=my-profile&quot;</span><span class="w"> </span>http://localhost:7000/jobs
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Inline profile JSON</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>curl<span class="w"> </span>-F<span class="w"> </span><span class="s2">&quot;audio_files=@dictation.wav&quot;</span><span class="w"> </span>-F<span class="w"> </span><span class="s1">&#39;profile={&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span><span class="w"> </span>http://localhost:7000/jobs
 </code></pre></div>
 <p>Manage named profiles with <code>resona profiles</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>resona<span class="w"> </span>profiles<span class="w"> </span>list
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>resona<span class="w"> </span>profiles<span class="w"> </span>push<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>resona<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>my-profile
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>resona<span class="w"> </span>profiles<span class="w"> </span>pull<span class="w"> </span>my-profile<span class="w"> </span>my-profile.json
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>resona<span class="w"> </span>profiles<span class="w"> </span>delete<span class="w"> </span>my-profile
 </code></pre></div>
 <h3 id="cli-local-mode">CLI / local mode<a class="headerlink" href="#cli-local-mode" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Named profile</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span>my-profile
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Inline JSON</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="c1"># Default profile (no flag needed)</span>
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Named profile</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span>my-profile
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Inline JSON</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3<span class="w"> </span>--profile<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;:&quot;x&quot;,&quot;steps&quot;:[...]}&#39;</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1"># Default profile (no flag needed)</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>resona<span class="w"> </span>transcribe<span class="w"> </span>dictation.mp3
 </code></pre></div>
 <h3 id="re-run-a-profile">Re-run a profile<a class="headerlink" href="#re-run-a-profile" title="Permanent link">&para;</a></h3>
 <p>Postprocessing normally runs inside an audio or document job, right after the engine. To apply a
 profile to text you already have, without transcribing again, submit a <code>text</code> job: the worker runs
 only the profile. Typical cases: a profile added after the transcript was made, or polishing with a
 local LLM that only its assigned worker can reach (the job is claimable only by that worker).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Re-run on an earlier job&#39;s result (its text before its own postprocessing)</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>--job<span class="w"> </span><span class="m">12</span><span class="w"> </span>--profile<span class="w"> </span>transcript-markdown-de
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Text or Markdown files</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>notes.md<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span>--output-dir<span class="w"> </span>./polished/
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># On this machine, with cached hub settings</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>notes.md<span class="w"> </span>--profile<span class="w"> </span>my-profile.json<span class="w"> </span>--local<span class="w"> </span>--output-dir<span class="w"> </span>./out/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Re-run on an earlier job&#39;s result (its text before its own postprocessing)</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>--job<span class="w"> </span><span class="m">12</span><span class="w"> </span>--profile<span class="w"> </span>transcript-markdown-de
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># Text or Markdown files</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>notes.md<span class="w"> </span>--profile<span class="w"> </span>document-polish-de<span class="w"> </span>--output-dir<span class="w"> </span>./polished/
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># On this machine, with cached hub settings</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>resona<span class="w"> </span>postprocess<span class="w"> </span>notes.md<span class="w"> </span>--profile<span class="w"> </span>my-profile.json<span class="w"> </span>--local<span class="w"> </span>--output-dir<span class="w"> </span>./out/
 </code></pre></div>
 <p>The profile is required and must be stored on the hub (<code>resona profiles push</code>), except with
 <code>--local</code>. The result's <code>raw_text</code> is the input, <code>markdown</code> the profile output and <code>raw_markdown</code>
@@ -3580,24 +3816,24 @@ the input when the profile changed it. Over HTTP: upload the UTF-8 text to <code
 <code>POST /v1/jobs</code> with <code>kind: "text"</code> and <code>profile</code> (see <a href="../../reference/api/#text-jobs">Text jobs</a>).</p>
 <hr />
 <h2 id="full-profile-example">Full profile example<a class="headerlink" href="#full-profile-example" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with replacement + LLM structuring&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">&quot;initial_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Dr. Müller&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Befund&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Diagnose&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Medikation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Procedere&quot;</span><span class="p">],</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;replacements&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">      </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default_replacements.json&quot;</span>
-<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;structure&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">      </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a German medical transcription assistant. Convert the following raw transcript into a structured clinical note with Markdown section headings (Verlauf, Medikation, Procedere). Preserve all clinical content exactly.&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">      </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
-<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with replacement + LLM structuring&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">  </span><span class="nt">&quot;initial_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Dr. Müller&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Befund&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Diagnose&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Medikation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Procedere&quot;</span><span class="p">],</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;replacements&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">      </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default_replacements.json&quot;</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;structure&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">      </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a German medical transcription assistant. Convert the following raw transcript into a structured clinical note with Markdown section headings (Verlauf, Medikation, Procedere). Preserve all clinical content exactly.&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama/llama3&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="w">      </span><span class="nt">&quot;api_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
+<a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="p">}</span>
 </code></pre></div>
 <p>In this profile:</p>
 <ol>

@@ -1395,6 +1395,8 @@
       
         
       
+        
+      
     
     
     
@@ -1483,6 +1485,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2763,6 +2793,44 @@ native recorder, so a recording keeps going while the screen is locked.</p>
   a failure inside the service itself (<code>startForeground</code>) is only logged natively.</li>
 <li>Elapsed time is computed from the wall clock, so the recording sheet shows the
   right length after unlocking (web view timers stall while locked).</li>
+<li>Live dictation with Einstellungen → Live → Quelle "Gerät" uses the app-local Capacitor
+  plugin <code>ResonaSpeech</code> on Android 13+ (<code>android/app/src/main/java/de/ecsplico/resona/ResonaSpeechPlugin.java</code>,
+  pure helpers and their JUnit tests under <code>…/resona/speech/</code>; JS side
+  <code>app/utils/resonaSpeech.ts</code> + <code>useDeviceSpeech</code>). The plugin captures the microphone
+  itself (<code>AudioRecord</code>, 16 kHz mono PCM16) and feeds the on-device recognizer
+  (<code>SpeechRecognizer.createOnDeviceSpeechRecognizer</code>, API 31+) through a pipe
+  (<code>EXTRA_AUDIO_SOURCE</code>, API 33+) in a segmented session; its results arrive as <code>update</code>
+  events <code>{committed, tentative, revision}</code> (the preview), and the same audio arrives as
+  <code>pcm</code> events (base64 int16, 250 ms each). The web app starts the <code>microphone</code> foreground
+  service first (<code>app/utils/recordingService.ts</code>, shared with the native recorder), so the
+  session keeps running with the screen locked. The PCM is the correction's input
+  (<code>useLiveCorrection</code> takes <code>useDeviceSpeech().pcm</code> as its <code>PcmCapture</code>) and is kept as the
+  saved audio (WAV): with Korrektur on, the hub's text is the saved transcript and the
+  on-device text is only the preview (stamp <code>android-speech+&lt;engine&gt;</code>). Silence and
+  recognizer ends restart the recognition at once; transient errors retry with backoff and
+  after five in a row the preview gives up while the audio goes on. <code>available</code>/<code>install</code>
+  map <code>checkRecognitionSupport</code>/<code>triggerModelDownload</code> to the drawer's language-pack states.
+  Below Android 13 the plugin answers <code>unsupported</code> (the drawer says so, start is disabled);
+  in the browser the device source stays on-device Web Speech.
+  Structure ported from T3 Code's Android voice module (pingdotgg/t3code@b70b9e3, MIT).</li>
+<li>On iOS the same plugin (<code>ios/App/App/ResonaSpeechPlugin.swift</code>, registered by
+  <code>ResonaBridgeViewController</code>; Capacitor-free helpers under <code>ios/App/App/Speech/</code>) gives the
+  same JS surface, events and error codes. An <code>AVAudioEngine</code> input tap feeds the recognizer
+  and, resampled with <code>AVAudioConverter</code> to 16 kHz int16, the <code>pcm</code> events (250 ms each).
+  iOS 26+: <code>SpeechAnalyzer</code> with <code>SpeechTranscriber(reportingOptions: [.volatileResults])</code>;
+  volatile results are the tentative text, finalized ones the committed text, and the
+  language assets come from <code>AssetInventory</code> (<code>available</code> = its status, <code>install</code> starts
+  <code>downloadAndInstall</code> in the background). Below iOS 26, or while the SpeechAnalyzer assets
+  are missing: <code>SFSpeechRecognizer</code> with <code>requiresOnDeviceRecognition</code> (on-device models
+  ship with the system's dictation languages; none for the language → <code>unavailable</code>), one
+  task per utterance, restarted at once, transient errors with backoff. Audio session
+  <code>.playAndRecord</code> plus <code>UIBackgroundModes: audio</code> keep it running while locked (no
+  foreground service on iOS; <code>startRecordingService</code> returns at once). Info.plist carries
+  <code>NSMicrophoneUsageDescription</code> and <code>NSSpeechRecognitionUsageDescription</code> (the speech
+  prompt appears only on the <code>SFSpeechRecognizer</code> path). Transcripts are stamped
+  <code>ios-speech</code>. The pure helpers typecheck and run without Xcode (<code>bun run
+  test:ios-speech</code>, <code>swiftc</code> against the macOS SDK); the plugin itself needs an Xcode build.
+  Asset check/install adapted from T3 Code's <code>native/apple-speech</code> (MIT).</li>
 <li>Sharing a file from another app (Android share sheet → Resona) goes through a
   <code>SEND</code> / <code>SEND_MULTIPLE</code> intent filter and <code>@capgo/capacitor-share-target</code> into the same share page as
   the web share target (<code>/share-target</code>); see the Findings row "Share target".</li>
@@ -2882,6 +2950,29 @@ organization's default execution profile (otherwise the job waits in the queue,
    <code>adb shell run-as de.ecsplico.resona ls cache/capacitor-audio-recorder</code> lists no file.</li>
 <li>A normal record → stop → save leaves no file there either.</li>
 </ol>
+<p>Live dictation while locked (Android 13+, needs a human; recognizer quality, language
+packs and vendor audio policies differ per phone):</p>
+<ol>
+<li>Einstellungen → Live: Quelle "Gerät", Korrektur on. If the drawer says the language
+   pack is missing, load it ("Sprachpaket laden") and wait until it says available.</li>
+<li>Open Live. Allow the microphone and notifications; "Resona nimmt auf" appears.</li>
+<li>Speak: the on-device preview grows word by word (tentative text, then committed).</li>
+<li>Lock the screen, keep dictating for 2 minutes with pauses of 10 s or more.</li>
+<li>Unlock: the preview covers the locked part (pauses did not end it), the correction
+   blocks keep landing.</li>
+<li>Stop and save: the recording has a <code>.wav</code> of the full length, the transcript is the
+   hub's correction, stamped <code>android-speech+&lt;engine&gt;</code>.</li>
+<li>Android 12 or older: the drawer shows the device source as unsupported; no crash.</li>
+<li>iPhone with iOS 26 (once an iOS build exists): steps 1–6 with German. The first start
+   asks for the microphone only; "Sprachpaket laden" downloads the SpeechTranscriber assets
+   (the drawer shows "wird noch geladen", then available). Locked dictation needs no
+   notification; the stamp is <code>ios-speech+&lt;engine&gt;</code>. Also check airplane mode (still
+   recognizes: on-device) and a phone call during dictation (the session should report an
+   <code>error</code> and stop, no crash).</li>
+<li>iPhone with iOS 18 or older: Quelle "Gerät" asks for speech recognition on first start
+   (<code>NSSpeechRecognitionUsageDescription</code>); German must be available if it is a keyboard
+   dictation language on the phone, otherwise the drawer says unavailable.</li>
+</ol>
 <p>Directus login over time (data mode <code>directus</code>, build above; needs a human, ≥ 1 h):</p>
 <ol>
 <li>Install the Directus build, open Resona, sign in with e-mail and password (an account
@@ -2960,7 +3051,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 </tr>
 <tr>
 <td>Live dictation</td>
-<td><strong>Foreground only</strong>, as in the browser. It streams PCM from <code>getUserMedia</code> over the <code>/v1/listen</code> WebSocket in the web view, and <code>live.vue</code> keeps <code>useWebRecorder()</code> for the audio of that same stream. Background live would need native PCM capture and a native WebSocket client</td>
+<td>Hub source: <strong>foreground only</strong>, as in the browser. It streams PCM from <code>getUserMedia</code> over the <code>/v1/listen</code> WebSocket in the web view, and <code>live.vue</code> keeps <code>useWebRecorder()</code> for the audio of that same stream. Device source on Android 13+: the <code>ResonaSpeech</code> plugin captures natively under the <code>microphone</code> foreground service, so preview, PCM for the hub correction and the saved WAV continue while locked (#163). JS side unit-tested with the plugin mocked (<code>test/useDeviceSpeech.native.spec.ts</code>), pure Java helpers with JUnit (<code>android/app/src/test/java/de/ecsplico/resona/speech/</code>); the locked run on a real phone (device test above) is still open, including whether Android throttles the web view's correction requests while locked (blocks would then queue and catch up after unlocking)</td>
 </tr>
 <tr>
 <td>Standalone data mode</td>
@@ -2984,7 +3075,7 @@ anyway; if the recording ends early, set Resona to "unrestricted" battery use.</
 </tr>
 <tr>
 <td>iOS</td>
-<td>Project generated (<code>ios/</code>, Swift Package Manager), <code>UIBackgroundModes: audio</code> and <code>NSMicrophoneUsageDescription</code> set. Not built: needs Xcode, an Apple developer account and signing</td>
+<td>Project generated (<code>ios/</code>, Swift Package Manager), <code>UIBackgroundModes: audio</code>, <code>NSMicrophoneUsageDescription</code> and <code>NSSpeechRecognitionUsageDescription</code> set; <code>ResonaSpeech</code> plugin in Swift (#164, see above; pure helpers checked with <code>bun run test:ios-speech</code>). Not built: needs Xcode, an Apple developer account and signing</td>
 </tr>
 </tbody>
 </table>

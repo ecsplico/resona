@@ -1540,6 +1540,8 @@
       
         
       
+        
+      
     
     
     
@@ -1631,6 +1633,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2869,6 +2899,10 @@ for any job. Cloud candidates are out of scope: testbench jobs are always privat
 </tr>
 </tbody>
 </table>
+<p>Bench runs on corrected audio items also feed the engine recommendations of
+<code>GET /v1/engines?languages=</code> (basis <code>testbench</code>, used when no promoted baseline covers the
+candidate): WER per item language and speed as <code>asr</code> stage seconds per 30 s of audio, where the audio
+length is the end of the last transcript segment.</p>
 <p>When the reference changes, all completed runs of the item are re-scored. The word diff aligns the
 normalized words (<code>equal</code>, <code>substitute</code>, <code>insert</code>, <code>delete</code>). See
 <a href="../evaluation/">Evaluation &amp; Baselines</a> for the normalizations.</p>

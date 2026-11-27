@@ -1540,6 +1540,8 @@
       
         
       
+        
+      
     
     
     
@@ -1631,6 +1633,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -2816,6 +2846,11 @@
 <td><code>RESONA_ENGINE_KEY</code></td>
 <td><em>(unset)</em></td>
 <td>Optional API key for the engine; auth is disabled when not set</td>
+</tr>
+<tr>
+<td><code>RESONA_ENGINE_UNLOAD_AFTER</code></td>
+<td><code>never</code></td>
+<td>Free the model's memory after this many idle minutes (<code>0</code>/<code>immediately</code> = as soon as the last request or WebSocket ends). Open requests and sockets block unloading; the next request loads the model again, so it pays the load time. <code>/health</code> reports <code>loaded</code></td>
 </tr>
 <tr>
 <td><code>LOGLEVEL</code></td>

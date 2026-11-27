@@ -1414,6 +1414,8 @@
       
         
       
+        
+      
     
     
     
@@ -1505,6 +1507,34 @@
     
   
     ADR 0001: Hub and App Boundary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-profile-composition-resolves-at-admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR 0002: Profile Composition Resolves at Admission
   
 
     
@@ -1882,6 +1912,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#insertion-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Insertion context
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#document-options" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2041,6 +2082,45 @@
     <span class="md-ellipsis">
       
         Synthesise speech
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deepgram-compatible-listen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deepgram-compatible listen
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deepgram-compatible listen">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#live-ws-v1listen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live: WS /v1/listen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prerecorded-post-v1listen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerecorded: POST /v1/listen
       
     </span>
   </a>
@@ -3081,6 +3161,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#insertion-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Insertion context
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#document-options" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3240,6 +3331,45 @@
     <span class="md-ellipsis">
       
         Synthesise speech
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deepgram-compatible-listen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deepgram-compatible listen
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deepgram-compatible listen">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#live-ws-v1listen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live: WS /v1/listen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prerecorded-post-v1listen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerecorded: POST /v1/listen
       
     </span>
   </a>
@@ -3467,6 +3597,12 @@
 <td>1–8000 characters of user instructions for the profile's <code>llm</code>/<code>extract</code> steps (see <a href="#user-instructions">User instructions</a>). Without a profile that has such a step → <code>422 invalid_instructions</code></td>
 </tr>
 <tr>
+<td><code>context</code></td>
+<td>object</td>
+<td>no</td>
+<td><code>{before?, selection?, after?}</code>, each at most 4000 characters, at least one with text: the text around the spot the result is inserted at (see <a href="#insertion-context">Insertion context</a>). Without a profile that has an <code>llm</code>/<code>extract</code> step → <code>422 invalid_context</code>. Part of the <code>Idempotency-Key</code> match only when set</td>
+</tr>
+<tr>
 <td><code>options</code></td>
 <td>object</td>
 <td>no</td>
@@ -3509,6 +3645,21 @@
 <p>If the model wraps its whole reply in <code>&lt;text&gt;…&lt;/text&gt;</code>, the tags are removed. A job's <code>instructions</code> replace the profile's. Steps without instructions send only the text, as before. The instructions are written into the job's postprocess artifact (the profile document the worker downloads under its lease; its SHA-256 is in the snapshot). They never go into the content-free <code>execution_snapshot</code> and are deleted with the job's other files.</p>
 <p>Guards: only chunked <code>llm</code> steps with <code>max_length_deviation</code> / <code>preserve_markup</code> compare each reply with its chunk. A step without those guards, and every <code>extract</code> step, follows the instructions unchecked; give steps that must not rewrite content these guards.</p>
 <p>Workers must run a release with instruction support. A worker of an older release ignores the unknown <code>instructions</code> key and runs the profile without them, without an error; deploy the release to every worker before sending instructions.</p>
+<h5 id="insertion-context">Insertion context<a class="headerlink" href="#insertion-context" title="Permanent link">&para;</a></h5>
+<p><code>context</code> tells the profile's <code>llm</code>/<code>extract</code> steps where their result goes, e.g. a dictation inserted into a document at the cursor: <code>before</code> (text ahead of the insertion point), <code>selection</code> (text the result replaces) and <code>after</code>. The parts with text follow the text in the user message:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>&lt;text&gt;
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>…chunk…
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>&lt;/text&gt;
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>&lt;context_before&gt;
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>Im Befund steht:
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>&lt;/context_before&gt;
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>&lt;context_after&gt;
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>Weiter im Text.
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>&lt;/context_after&gt;
+</code></pre></div>
+<p>The step's system prompt gets one fixed sentence: the text will be inserted between <code>context_before</code> and <code>context_after</code> (or replace <code>context_selection</code>), the context serves only terminology and continuity, is never copied or repeated, and only the transformed text is returned. A reply wrapped in <code>&lt;text&gt;…&lt;/text&gt;</code> is unwrapped as with instructions. Like instructions, the context lives only in the job's postprocess artifact, never in the <code>execution_snapshot</code>. The job then needs the feature <code>postprocess.context</code>: older workers do not claim it and it waits as <code>worker_outdated</code>.</p>
 <h5 id="document-options">Document options<a class="headerlink" href="#document-options" title="Permanent link">&para;</a></h5>
 <p>All fields are optional; an unset field is resolved by the execution profile and engine. Unknown fields → <code>422</code>.</p>
 <table>
@@ -3595,12 +3746,12 @@ the job language. There is no DOCX-only worker capability: a worker serves DOCX 
 tuples, and <code>resona-worker prepare</code> approves a docling tuple only when it converts both the scanned PDF
 fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <h4 id="list-get-cancel-delete">List, get, cancel, delete<a class="headerlink" href="#list-get-cancel-delete" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>GET    /v1/jobs?cursor=&lt;opaque&gt;&amp;limit=&lt;1..100&gt;   → {items: [JobView], next_cursor}
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>GET    /v1/jobs/{id}                             → JobView
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>GET    /v1/jobs/{id}/result                      → JobResult (409 not_ready, 410 expired)
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>GET    /v1/jobs/{id}/result/markdown?offset=&amp;limit=&amp;source=  → MarkdownChunk (409 not_ready, 410 expired)
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>POST   /v1/jobs/{id}/cancel                      → JobView
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>DELETE /v1/jobs/{id}                             → 204
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>GET    /v1/jobs?cursor=&lt;opaque&gt;&amp;limit=&lt;1..100&gt;   → {items: [JobView], next_cursor}
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>GET    /v1/jobs/{id}                             → JobView
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>GET    /v1/jobs/{id}/result                      → JobResult (409 not_ready, 410 expired)
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>GET    /v1/jobs/{id}/result/markdown?offset=&amp;limit=&amp;source=  → MarkdownChunk (409 not_ready, 410 expired)
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>POST   /v1/jobs/{id}/cancel                      → JobView
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>DELETE /v1/jobs/{id}                             → 204
 </code></pre></div>
 <p>JobView fields: <code>job_id</code>, <code>kind</code>, <code>status</code>, <code>queue_reason</code> (null unless <code>pending</code>), <code>private</code>, <code>execution_profile</code>, <code>candidate</code>, <code>attempt</code>, <code>error</code> (<code>{code, message}</code> or null), <code>result_available</code>, <code>created_at</code>, <code>updated_at</code>, <code>deadline_at</code>, <code>webhook</code> (endpoint name or null; a later revoked endpoint keeps its name here).</p>
 <p><code>queue_reason</code> of a pending job:</p>
@@ -3622,7 +3773,7 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 </tr>
 <tr>
 <td><code>worker_outdated</code></td>
-<td>Such a worker runs an approved release, but that release does not know an option the job sets (e.g. <code>remove_repeated_headers</code> on a 0.1.0 worker) or the instructions of its postprocess profile: update a worker, or submit without the option</td>
+<td>Such a worker runs an approved release, but that release does not know an option the job sets (e.g. <code>remove_repeated_headers</code> on a 0.1.0 worker) or the instructions or context of its postprocess profile: update a worker, or submit without the option</td>
 </tr>
 <tr>
 <td><code>waiting_capacity</code></td>
@@ -3634,45 +3785,68 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <p><code>DELETE /v1/jobs/{id}</code> works in every state. On a pending or processing job it also cancels the job: the lease is fenced, so the worker's next lease call returns <code>409 stale_lease</code> and its result is rejected. The job, its idempotency keys, input and result files are gone at once; every later client read (<code>GET</code>, result, cancel, list, delete) answers <code>404</code>. The hub keeps an invisible tombstone of a deleted processing job only until its lease would have expired, to fence the worker.</p>
 <p>JobResult fields: <code>schema_version</code>, <code>kind</code>, <code>raw_text</code>, <code>markdown</code>, <code>raw_markdown</code>, <code>language</code>, <code>segments</code>, <code>pages</code>, <code>warnings</code>, <code>structured</code>, <code>provenance</code>. <code>markdown</code> is the final text. <code>raw_markdown</code> is optional (<code>null</code> or absent): it holds the engine's Markdown before postprocessing and is set only when a postprocess step changed it. For documents <code>raw_text</code> is the converter's plain text without tables, so <code>raw_markdown</code> is the unpolished reference. For audio <code>raw_text</code> is the engine's plain transcript; the worker builds <code>markdown</code> from <code>segments</code>: segment texts joined with spaces, a blank line between paragraphs. A paragraph ends at a pause of 1.5 s or more between one segment's <code>end</code> and the next <code>start</code>, or, once it is 1000 characters long, after the next segment ending a sentence (<code>.</code>, <code>!</code>, <code>?</code>, <code>…</code>, optionally followed by a closing quote or bracket); once it reaches 2000 characters, at the next segment. An engine without segment text yields <code>markdown</code> = <code>raw_text</code>. Postprocess profiles work on this Markdown, so with a profile <code>markdown</code> is the profile's output and <code>raw_markdown</code> the paragraphed transcript. For <code>text</code> jobs <code>raw_text</code> is the uploaded text, <code>markdown</code> the profile output, <code>raw_markdown</code> the uploaded text when the profile changed it, <code>language</code> the job's language; <code>segments</code> and <code>pages</code> stay empty and provenance has no engine stage. Results without the field stay valid; a hub older than this field rejects results that carry it (<code>422 invalid_result</code>), so update the hub before its workers.</p>
 <h4 id="job-state-machine">Job state machine<a class="headerlink" href="#job-state-machine" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pending → processing → completed | failed | cancelled
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pending → processing → completed | failed | cancelled
 </code></pre></div>
 <p>A worker claims a job under a 120-second lease. If the lease expires, the job returns to <code>pending</code>. A job fails after three assignments (<code>attempts_exhausted</code>) or 24 hours (<code>deadline_exceeded</code>). Poll <code>GET /v1/jobs/{id}</code> or use <code>ResonaClient.wait_for_job()</code>.</p>
 <p>Retention: the input is deleted when the job reaches a terminal state, results after 24 hours, job metadata after 7 days.</p>
 <hr />
 <h3 id="worker-routes-role-worker">Worker routes (role <code>worker</code>)<a class="headerlink" href="#worker-routes-role-worker" title="Permanent link">&para;</a></h3>
 <p>Used only by <code>resona-worker</code>. Every call checks the organization, that the worker is approved and not revoked, and the current policy. A worker claims only jobs of its privacy class: private jobs go only to workers approved with <code>--private</code>, <code>private: false</code> (cloud opt-in) jobs only to workers approved with <code>--non-private</code>. A job whose postprocess or cloud ASR endpoint is assigned to a worker (<code>worker_id</code> in the endpoint registry) is claimable only by that worker, and <code>POST …/policy</code> denies (<code>403 policy_denied</code>) an endpoint assigned to another worker. Production jobs need a worker release approved for the job's (execution profile, platform) by a promoted evaluation; no release, including the hub's own, is approved without one. A claim poll never modifies jobs it cannot take; the maintenance sweep fails non-private jobs whose organization has since disabled cloud processing (<code>policy_denied</code>).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>POST /v1/workers/heartbeat
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>POST /v1/workers/claim?wait=&lt;0..25&gt;
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>GET  /v1/workers/jobs/{id}/input        (X-Resona-Lease)
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>POST /v1/workers/jobs/{id}/heartbeat    (X-Resona-Lease)
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>POST /v1/workers/jobs/{id}/policy       (X-Resona-Lease)
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>POST /v1/workers/jobs/{id}/result       (X-Resona-Lease, X-Resona-Result-Sha256)
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>POST /v1/workers/heartbeat
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>POST /v1/workers/claim?wait=&lt;0..25&gt;
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>GET  /v1/workers/jobs/{id}/input        (X-Resona-Lease)
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>POST /v1/workers/jobs/{id}/heartbeat    (X-Resona-Lease)
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>POST /v1/workers/jobs/{id}/policy       (X-Resona-Lease)
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>POST /v1/workers/jobs/{id}/result       (X-Resona-Lease, X-Resona-Result-Sha256)
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>POST /v1/workers/jobs/{id}/fail         (X-Resona-Lease)
 </code></pre></div>
 <p>A call with an expired or replaced lease, or on a cancelled or deleted job, returns <code>409 stale_lease</code>. An incompatible worker protocol returns <code>426</code>. <code>withdraw_capability</code> in a <code>fail</code> body is recorded in the job's error message only: the hub never changes a worker's approved capabilities; the worker itself stops offering the withdrawn tuple until it is prepared again.</p>
 <p>Heartbeat and claim bodies carry <code>text_jobs: true</code> from workers that run <a href="#text-jobs">text jobs</a> (every current <code>resona-worker</code>; no capability tuple is needed, so a worker whose tuples are all unusable still polls for them). A claim without it never receives a text job, so older workers keep working unchanged.</p>
 <p>Likewise <code>diarize: true</code> comes only from workers whose <code>prepare</code> verified the speaker diarizer. An audio job with <code>options.diarize</code> is offered only to a claim carrying it; other claims skip it without touching the job. The hub stores the flag per worker (<code>Worker.diarize</code>, schema migration 7) for <code>queue_reason</code>. A false <code>diarize</code> is left out of the execution snapshot, so workers predating the option still run every other audio job. The heartbeat reply carries <code>diarize: true</code> to say the hub accepts the field in claim bodies; a worker sends it in a claim only after such a reply, because hubs predating diarization reject unknown claim fields (<code>422</code>). A worker whose diarizer stage fails (<code>diarizer_unavailable</code>, or <code>out_of_memory</code> in that stage) fails the attempt retryably without withdrawing its ASR tuple and stops reporting and claiming <code>diarize</code> until it restarts. Diarization <a href="../../guide/cli/#diarization-limits">limits</a>.</p>
-<p>Heartbeats carry <code>features</code>: the job features the worker's release knows, <code>&lt;kind&gt;.&lt;option&gt;</code> for every option field (<code>document.remove_repeated_headers</code>, <code>audio.diarize</code>, …) plus <code>instructions</code> (a postprocess profile with user instructions). A job is offered only to a worker that knows every option key in its execution snapshot's <code>options</code> and, when its profile carries instructions, <code>instructions</code>; other claims skip it without touching the job, and it waits as <code>worker_outdated</code>. The hub stores the list per worker (<code>Worker.features</code>, schema migration 8). Workers predating the field report none and are judged by their release (<code>resona_job_core.features.LEGACY_RELEASE_FEATURES</code>: 0.1.0 knows the first options, 0.2.0 adds <code>instructions</code>, 0.2.1 <code>document.remove_repeated_headers</code>, 0.2.3 <code>audio.diarize</code>; an unparseable release only the 0.1.0 set). The check applies to every job purpose (production, evaluation, testbench). A worker that still receives a snapshot with an option it does not know (from a hub predating the check) fails the attempt retryably as <code>unsupported_options</code> without withdrawing its tuple, instead of <code>invalid_snapshot</code>.</p>
+<p>Heartbeats carry <code>features</code>: the job features the worker's release knows, <code>&lt;kind&gt;.&lt;option&gt;</code> for every option field (<code>document.remove_repeated_headers</code>, <code>audio.diarize</code>, …) plus <code>instructions</code> (a postprocess profile with user instructions) and <code>postprocess.context</code> (one with an insertion context). A job is offered only to a worker that knows every option key in its execution snapshot's <code>options</code> and, when its profile carries instructions, <code>instructions</code>; other claims skip it without touching the job, and it waits as <code>worker_outdated</code>. The hub stores the list per worker (<code>Worker.features</code>, schema migration 8). Workers predating the field report none and are judged by their release (<code>resona_job_core.features.LEGACY_RELEASE_FEATURES</code>: 0.1.0 knows the first options, 0.2.0 adds <code>instructions</code>, 0.2.1 <code>document.remove_repeated_headers</code>, 0.2.3 <code>audio.diarize</code>; an unparseable release only the 0.1.0 set). The check applies to every job purpose (production, evaluation, testbench). A worker that still receives a snapshot with an option it does not know (from a hub predating the check) fails the attempt retryably as <code>unsupported_options</code> without withdrawing its tuple, instead of <code>invalid_snapshot</code>.</p>
 <hr />
 <h3 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>GET /v1/settings      → {organization_id, revision, settings} + ETag
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>PUT /v1/settings      (org_admin, If-Match: &lt;revision&gt;)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>GET /v1/settings      → {organization_id, revision, settings} + ETag
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>PUT /v1/settings      (org_admin, If-Match: &lt;revision&gt;)
 </code></pre></div>
+<p>Optional <code>live</code> (left out of the document while unset, so older releases still read it) holds the organization's defaults for live dictation; each key is optional and a client's own setting wins over it:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine</code></td>
+<td><code>WS /v1/listen</code> engine when the request names none (and no <code>model</code> names one), ranked before <code>RESONA_DEFAULT_ENGINE</code>; <code>GET /v1/listen/engines</code> reports it as <code>default</code> when it is listed. Skipped when not eligible (a cloud engine for a private session)</td>
+</tr>
+<tr>
+<td><code>correction_execution_profile</code></td>
+<td>execution profile for live correction chunks; must be a key of <code>execution_profiles</code> (<code>422</code> otherwise)</td>
+</tr>
+<tr>
+<td><code>cleanup_profile</code></td>
+<td>stored postprocess profile name a client runs on finished live text as a <code>text</code> job with <code>context</code></td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h3 id="webhook-endpoints-role-org_admin">Webhook endpoints (role <code>org_admin</code>)<a class="headerlink" href="#webhook-endpoints-role-org_admin" title="Permanent link">&para;</a></h3>
 <p>An organization registers the URLs the hub may notify when a job finishes. Endpoints are addressed by <code>name</code> (<code>^[a-z0-9][a-z0-9-]{0,62}$</code>, unique among the organization's unrevoked endpoints). Client, worker and hub operator credentials get <code>403</code>; a name of another organization is <code>404 webhook_not_found</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>POST   /v1/webhooks                {name, url}  → 201 {name, url, created_at, secret}
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>GET    /v1/webhooks                             → {items: [{name, url, created_at}]}  (unrevoked, by name)
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>GET    /v1/webhooks/{name}                      → {name, url, created_at}
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>POST   /v1/webhooks/{name}/rotate               → {name, url, created_at, secret}
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>DELETE /v1/webhooks/{name}                      → 204  (revoked; the name is free again)
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>GET    /v1/webhooks/{name}/deliveries?limit=50  → {items: [{id, job_id, event, attempts, last_status, delivered_at, last_error}]}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>POST   /v1/webhooks                {name, url}  → 201 {name, url, created_at, secret}
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>GET    /v1/webhooks                             → {items: [{name, url, created_at}]}  (unrevoked, by name)
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>GET    /v1/webhooks/{name}                      → {name, url, created_at}
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>POST   /v1/webhooks/{name}/rotate               → {name, url, created_at, secret}
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>DELETE /v1/webhooks/{name}                      → 204  (revoked; the name is free again)
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>GET    /v1/webhooks/{name}/deliveries?limit=50  → {items: [{id, job_id, event, attempts, last_status, delivered_at, last_error}]}
 </code></pre></div>
 <p><code>secret</code> is the signing secret (<code>whsec_</code> + 32 random bytes in base64). It appears only in the create and rotate responses: store it then, listings never contain it. Rotation replaces it at once. The hub keeps it in plaintext in its database, because signing needs it.</p>
 <p>URL rules (<code>422 invalid_webhook_url</code>): scheme <code>https</code>, no user or password, at most 2048 characters, and the host must resolve and must not resolve to a loopback, private (RFC 1918 and similar), link-local or unspecified address. When the hub operator sets <code>RESONA_WEBHOOK_ALLOW_PRIVATE=true</code>, such internal hosts are accepted, and for them also <code>http</code>; <code>http</code> to a public host is never accepted.</p>
 <p>Other errors: <code>422 invalid_webhook_name</code>, <code>409 webhook_exists</code> (an unrevoked endpoint has that name), <code>404 webhook_not_found</code> (unknown or revoked). <code>resona-admin restore</code> revokes every restored endpoint; register them again afterwards.</p>
 <p>Job events: a production job created with <code>webhook</code> (<code>POST /v1/jobs</code>, or the <code>webhook</code> form field of <code>/v1/audio/transcriptions</code>) gets one outbox row (<code>WebhookDelivery</code>) in the same transaction that makes it <code>completed</code>, <code>failed</code> or <code>cancelled</code>, deleting a pending or processing job included (<code>cancelled</code>, <code>error_code: deleted</code>); the later purge of a deleted job's tombstone writes none, nor do retries that requeue the job. An endpoint revoked before the job ends gets no event. Evaluation and testbench jobs never notify. The payload (<code>resona_job_core.webhooks.JobEvent</code>) carries identifiers only, never content or error messages:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;job.completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;error_code&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;finished_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-11-20T12:00:00Z&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;job.completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;error_code&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;finished_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-11-20T12:00:00Z&quot;</span><span class="p">}</span>
 </code></pre></div>
 <p><code>type</code> is <code>job.completed</code>, <code>job.failed</code> or <code>job.cancelled</code>; <code>error_code</code> is the job's error code (null when completed).</p>
 <p>Delivery: the hub POSTs the payload to the endpoint URL within about a second of the job ending, with the <a href="https://www.standardwebhooks.com/">Standard Webhooks</a> headers</p>
@@ -3712,18 +3886,18 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <hr />
 <h3 id="management-v1admin-roles-org_admin-hub_operator">Management (<code>/v1/admin</code>, roles <code>org_admin</code>, <code>hub_operator</code>)<a class="headerlink" href="#management-v1admin-roles-org_admin-hub_operator" title="Permanent link">&para;</a></h3>
 <p>An org admin manages only its own organization: any other <code>{org}</code> returns <code>404 organization_not_found</code>. A hub operator manages every organization. Worker and credential IDs of another organization return <code>404</code> (<code>worker_not_found</code>, <code>credential_not_found</code>), never <code>403</code>. Other roles get <code>403</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>GET  /v1/admin/me                                        → {role, organization_id, credential_id}
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>GET  /v1/admin/organizations                             → {items: [{id, created_at}]}  (org admin: own only)
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>POST /v1/admin/organizations          {id}               → 201 {id, created_at}  (hub_operator only; 409 conflict if it exists)
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>GET  /v1/admin/organizations/{org}/workers              → {items: [Worker]}  (active first, then by name)
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>POST /v1/admin/organizations/{org}/workers/{id}/approve {private: bool} → Worker
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>POST /v1/admin/organizations/{org}/workers/{id}/revoke  → Worker  (idempotent)
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>GET  /v1/admin/organizations/{org}/credentials          → {items: [{id, role, worker_id, created_at, revoked_at}]}  (newest first)
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>POST /v1/admin/organizations/{org}/credentials  {role: &quot;client&quot;|&quot;org_admin&quot;} → 201 {id, role, token}
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>POST /v1/admin/organizations/{org}/credentials/{id}/revoke → credential item
-<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>GET  /v1/admin/organizations/{org}/jobs?cursor=&amp;limit=  → same page as GET /v1/jobs (metadata only)
-<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>GET  /v1/admin/organizations/{org}/settings             → {revision, settings}  (read-only)
-<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>GET  /v1/admin/organizations/{org}/baselines            → {items: [...], approved_releases: [...]}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>GET  /v1/admin/me                                        → {role, organization_id, credential_id}
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>GET  /v1/admin/organizations                             → {items: [{id, created_at}]}  (org admin: own only)
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>POST /v1/admin/organizations          {id}               → 201 {id, created_at}  (hub_operator only; 409 conflict if it exists)
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>GET  /v1/admin/organizations/{org}/workers              → {items: [Worker]}  (active first, then by name)
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>POST /v1/admin/organizations/{org}/workers/{id}/approve {private: bool} → Worker
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>POST /v1/admin/organizations/{org}/workers/{id}/revoke  → Worker  (idempotent)
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>GET  /v1/admin/organizations/{org}/credentials          → {items: [{id, role, worker_id, created_at, revoked_at}]}  (newest first)
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>POST /v1/admin/organizations/{org}/credentials  {role: &quot;client&quot;|&quot;org_admin&quot;} → 201 {id, role, token}
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>POST /v1/admin/organizations/{org}/credentials/{id}/revoke → credential item
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>GET  /v1/admin/organizations/{org}/jobs?cursor=&amp;limit=  → same page as GET /v1/jobs (metadata only)
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>GET  /v1/admin/organizations/{org}/settings             → {revision, settings}  (read-only)
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>GET  /v1/admin/organizations/{org}/baselines            → {items: [...], approved_releases: [...]}
 </code></pre></div>
 <p>Worker fields: <code>id</code>, <code>name</code>, <code>approved</code>, <code>approved_private</code>, <code>online</code> (seen within 90 s and not revoked), <code>last_seen</code>, <code>runtime_version</code>, <code>revoked</code>, <code>reported_capabilities</code>, <code>approved_capabilities</code>. Approval grants exactly the worker's reported capabilities: none reported → <code>409 no_reported_capabilities</code> (run the worker once after <code>resona-worker prepare</code>); a revoked worker → <code>409 conflict</code>. Partial approval stays with <code>resona-admin worker approve --capabilities-file</code>.</p>
 <p>An issued token appears only in the <code>201</code> response; listings never contain tokens or hashes. Any other role in the body (including <code>hub_operator</code>) → <code>422</code>. Revoking your own credential → <code>409 cannot_revoke_self</code>; a worker credential → <code>409 use_worker_revoke</code> (revoke the worker instead).</p>
@@ -3734,31 +3908,31 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 <hr />
 <h3 id="engine-catalogue">Engine catalogue<a class="headerlink" href="#engine-catalogue" title="Permanent link">&para;</a></h3>
 <h4 id="list-engines">List engines<a class="headerlink" href="#list-engines" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>GET /v1/engines
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>GET /v1/engines
 </code></pre></div>
 <p>Returns the engines the caller's organization can use. Nothing is probed over the network. An audio/document engine appears when a candidate tuple of one of the organization's execution profiles is both approved for and reported as tested (prepared) by at least one approved, unrevoked worker of the organization. Cloud ASR candidates (deepgram, openai, elevenlabs) appear only when the organization has <code>cloud_enabled=true</code> and an approved <code>cloud-asr:&lt;provider&gt;</code> endpoint, and only through a non-private worker. Synchronous TTS engines of <code>POST /v1/audio/speech</code> follow the same cloud rule.</p>
 <p>Response:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">      </span><span class="nt">&quot;job_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">],</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">],</span>
-<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">      </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="w">        </span><span class="p">{</span>
-<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">          </span><span class="nt">&quot;candidate&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="w">                        </span><span class="nt">&quot;model_revision&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;accelerator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ocr_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">},</span>
-<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">          </span><span class="nt">&quot;execution_profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mac-private&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;private-auto&quot;</span><span class="p">]</span>
-<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="w">        </span><span class="p">}</span>
-<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">      </span><span class="p">]</span>
-<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a><span class="w">  </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span>
-<a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">&quot;engines&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">      </span><span class="nt">&quot;job_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;audio&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">      </span><span class="nt">&quot;capabilities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;stt&quot;</span><span class="p">],</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">      </span><span class="nt">&quot;private&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">],</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">      </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="w">          </span><span class="nt">&quot;candidate&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-community/whisper-large-v3-mlx&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="w">                        </span><span class="nt">&quot;model_revision&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;accelerator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ocr_engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">},</span>
+<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="w">          </span><span class="nt">&quot;execution_profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mac-private&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;private-auto&quot;</span><span class="p">]</span>
+<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a><span class="w">      </span><span class="p">]</span>
+<a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a><span class="w">  </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mlx-whisper&quot;</span>
+<a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a><span class="p">}</span>
 </code></pre></div>
 <table>
 <thead>
@@ -3812,11 +3986,41 @@ fixture (with OCR, so orientation detection is needed) and a Word fixture.</p>
 </tbody>
 </table>
 <p><code>default</code> is the engine of the first listed audio candidate of the organization's default execution profile, or <code>null</code>.</p>
+<p><strong>Recommendations.</strong> <code>GET /v1/engines?languages=de,en</code> (optional, up to 10 codes; default: the organization's <code>language</code>; an invalid list is <code>422 invalid_request</code>) adds <code>recommendation</code> to each audio candidate the organization has measured:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nt">&quot;recommendation&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;recommended&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;error_percent&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;seconds_per_30s&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.8</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;basis&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;baseline&quot;</span><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>role</code></td>
+<td><code>recommended</code> (lowest error + wait penalty), <code>fast</code> (quicker than the recommended one), <code>accurate</code> (lower error than the recommended one); each candidate has at most one role</td>
+</tr>
+<tr>
+<td><code>error_percent</code></td>
+<td>Word error rate in percent, geometric mean over the wanted languages</td>
+</tr>
+<tr>
+<td><code>seconds_per_30s</code></td>
+<td>Seconds of ASR per 30 s of audio</td>
+</tr>
+<tr>
+<td><code>basis</code></td>
+<td><code>baseline</code> (the current promoted evaluation baseline of an execution profile with exactly this audio candidate on its platform) or <code>testbench</code> (latest bench runs on corrected testbench items)</td>
+</tr>
+</tbody>
+</table>
+<p>Only the organization's own measurements count; a candidate without a WER for every wanted language or without a speed has no <code>recommendation</code>. The policy is T3 Code's <code>recommendSpeechModels</code> (<code>resona_job_core.recommend</code>).</p>
 <hr />
 <h3 id="audio-v1-openai-compatible">Audio (v1 — OpenAI-compatible)<a class="headerlink" href="#audio-v1-openai-compatible" title="Permanent link">&para;</a></h3>
 <h4 id="transcribe">Transcribe<a class="headerlink" href="#transcribe" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>POST /v1/audio/transcriptions
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>Content-Type: multipart/form-data
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>POST /v1/audio/transcriptions
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>Content-Type: multipart/form-data
 </code></pre></div>
 <p>OpenAI-compatible speech-to-text, implemented as an adapter onto the job path. The hub never runs
 STT itself: it creates an audio job with the same admission and policy checks as <code>POST /v1/jobs</code>,
@@ -3913,39 +4117,39 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 <li>Timeout: <code>504</code> with <code>Location: /v1/jobs/&lt;job_id&gt;</code>; the job keeps running and its result can be
   fetched from the job routes.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;timeout&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="p">{</span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;timeout&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">}</span>
 </code></pre></div>
 <p>With the Python client, <code>ResonaClient.create_transcription(...)</code> raises <code>SyncWaitTimeout</code> (with
 <code>.job_id</code>) on <code>504</code>.</p>
 <p><code>response_format</code> responses:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1">// json (default)</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}</span>
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1">// text</span>
-<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="err">Das</span><span class="w"> </span><span class="err">is</span><span class="kc">t</span><span class="w"> </span><span class="err">ei</span><span class="kc">n</span><span class="w"> </span><span class="err">Tes</span><span class="kc">t</span><span class="err">.</span>
-<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
-<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1">// verbose_json</span>
-<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="p">{</span>
-<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">,</span>
-<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
-<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span>
-<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}]</span>
-<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="p">}</span>
-<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>
-<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a><span class="c1">// verbose_json with diarize=true: each segment is one speaker section</span>
-<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="p">{</span>
-<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;**Sprecher 1:** Guten Tag.\n\n**Sprecher 2:** Hallo.&quot;</span><span class="p">,</span>
-<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
-<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span>
-<a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Guten Tag.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
-<a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hallo.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
-<a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-19-24" name="__codelineno-19-24" href="#__codelineno-19-24"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1">// json (default)</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1">// text</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="err">Das</span><span class="w"> </span><span class="err">is</span><span class="kc">t</span><span class="w"> </span><span class="err">ei</span><span class="kc">n</span><span class="w"> </span><span class="err">Tes</span><span class="kc">t</span><span class="err">.</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="c1">// verbose_json</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="p">{</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span>
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">}]</span>
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="p">}</span>
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a>
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a><span class="c1">// verbose_json with diarize=true: each segment is one speaker section</span>
+<a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a><span class="p">{</span>
+<a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a><span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;**Sprecher 1:** Guten Tag.\n\n**Sprecher 2:** Hallo.&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a><span class="w">  </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span>
+<a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a><span class="w">  </span><span class="nt">&quot;segments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Guten Tag.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hallo.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;speaker&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
+<a id="__codelineno-21-23" name="__codelineno-21-23" href="#__codelineno-21-23"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-21-24" name="__codelineno-21-24" href="#__codelineno-21-24"></a><span class="p">}</span>
 </code></pre></div>
 <h4 id="synthesise-speech">Synthesise speech<a class="headerlink" href="#synthesise-speech" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>POST /v1/audio/speech
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>Content-Type: application/json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>POST /v1/audio/speech
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>Content-Type: application/json
 </code></pre></div>
 <p>OpenAI-compatible text-to-speech. Only cloud engines support TTS; requesting a local-only engine returns <code>400</code>.</p>
 <table>
@@ -4004,6 +4208,83 @@ then waits up to <code>RESONA_SYNC_WAIT_SECONDS</code> (default <code>60</code>)
 </table>
 <p>Returns raw audio bytes with the appropriate <code>Content-Type</code> header.</p>
 <hr />
+<h3 id="deepgram-compatible-listen">Deepgram-compatible listen<a class="headerlink" href="#deepgram-compatible-listen" title="Permanent link">&para;</a></h3>
+<h4 id="live-ws-v1listen">Live: <code>WS /v1/listen</code><a class="headerlink" href="#live-ws-v1listen" title="Permanent link">&para;</a></h4>
+<p>Deepgram's live streaming protocol; the Deepgram SDKs work against it with the hub URL and
+<code>Authorization: Token &lt;org credential&gt;</code> (also <code>Bearer</code>, <code>X-API-Key</code>, <code>?token=</code>/<code>?api_key=</code>).
+<code>GET /v1/listen/engines</code> lists the engines the organization can stream.</p>
+<table>
+<thead>
+<tr>
+<th>Query param</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine</code></td>
+<td>Resona: the engine to stream with (local engine-server name or a cloud provider with a realtime API); wins over <code>model</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Selects an engine only when it names one the organization can stream; other values (<code>nova-3</code>) mean the organization default</td>
+</tr>
+<tr>
+<td><code>language</code> / <code>detect_language=true</code></td>
+<td>Language; <code>detect_language=true</code> lets the engine detect it</td>
+</tr>
+<tr>
+<td><code>encoding</code>, <code>sample_rate</code>, <code>channels</code></td>
+<td><code>encoding=linear16</code> (or <code>pcm_s16le</code>/<code>s16le</code>): raw PCM frames. No <code>encoding</code>: the first binary frame is sniffed; container audio (WebM, Ogg, WAV, MP4/M4A, FLAC, MP3 with ID3) is decoded by <code>ffmpeg</code> on the hub into mono linear16 at <code>sample_rate</code> (default 16000); without <code>ffmpeg</code> the hub sends an <code>Error</code> frame and closes with <code>1011</code></td>
+</tr>
+<tr>
+<td><code>keyterm</code> (repeatable)</td>
+<td>Vocabulary hints, merged with the postprocess profile's <code>initial_prompt</code>: local engines get them as the Whisper <code>initial_prompt</code>, cloud providers as <code>keyterms</code></td>
+</tr>
+<tr>
+<td><code>interim_results</code></td>
+<td>Interim <code>Results</code> (<code>is_final: false</code>)</td>
+</tr>
+<tr>
+<td><code>profile</code>, <code>private</code></td>
+<td>Resona: postprocess profile for final transcripts; <code>private=false</code> allows cloud providers (needs <code>cloud_enabled</code>)</td>
+</tr>
+<tr>
+<td><code>smart_format</code>, <code>punctuate</code>, <code>endpointing</code>, <code>vad_events</code>, <code>utterances</code>, <code>diarize</code>, <code>filler_words</code>, <code>mip_opt_out</code></td>
+<td>Accepted and ignored</td>
+</tr>
+</tbody>
+</table>
+<p>Final <code>Results</code> carry <code>is_final: true</code> and <code>speech_final: true</code>, interim ones both <code>false</code>.
+<code>CloseStream</code> (or <code>Finalize</code>) flushes the engine (after <code>ffmpeg</code> drained); the closing <code>Metadata</code>
+names the engine in <code>engine</code> and <code>model_info</code>.</p>
+<h4 id="prerecorded-post-v1listen">Prerecorded: <code>POST /v1/listen</code><a class="headerlink" href="#prerecorded-post-v1listen" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>POST /v1/listen?language=de
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>Content-Type: audio/webm
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>&lt;audio bytes&gt;
+</code></pre></div>
+<p>Deepgram's prerecorded API as an adapter onto the job path, exactly like
+<code>POST /v1/audio/transcriptions</code>: same admission, sync wait (<code>RESONA_SYNC_WAIT_SECONDS</code>), optional
+<code>Idempotency-Key</code>, <code>504 timeout</code> with <code>job_id</code> and <code>Location</code>, error mapping. The raw body is the
+audio (any container), or headerless PCM with <code>encoding=linear16&amp;sample_rate=N&amp;channels=N</code>, which
+the hub wraps into WAV. Query params: <code>language</code>, <code>model</code>/<code>engine</code> (same rule as live), <code>profile</code>,
+<code>private</code> (default <code>true</code>), <code>diarize</code>; <code>detect_language</code>, <code>keyterm</code> (batch jobs take vocabulary
+from the profile's <code>initial_prompt</code>) and the other Deepgram flags are accepted and ignored.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="p">{</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;42&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;channels&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">               </span><span class="nt">&quot;model_info&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;faster-whisper&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;large-v3&quot;</span><span class="p">}},</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="w">  </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a><span class="w">    </span><span class="nt">&quot;channels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;detected_language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;de&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a><span class="w">                  </span><span class="nt">&quot;alternatives&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;transcript&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;confidence&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;words&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]}]}],</span>
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="w">    </span><span class="nt">&quot;utterances&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;transcript&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Das ist ein Test.&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">}]</span>
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>request_id</code> is the job ID; <code>transcript</code> is the job's Markdown; <code>words</code> stays empty (job results
+carry segment timestamps only); diarized utterances carry a 0-based <code>speaker</code>. Clients:
+<code>ResonaClient.listen(path, ...)</code> (Python, <code>SyncWaitTimeout</code> on 504) and
+<code>listenPrerecorded(blob, params)</code> (<code>@ecsplico/resona-hub-client</code>, <code>SyncWaitTimeout</code> with <code>jobId</code>).</p>
+<hr />
 <h3 id="profiles">Profiles<a class="headerlink" href="#profiles" title="Permanent link">&para;</a></h3>
 <p>Postprocessing profiles are JSON files that bundle an <code>initial_prompt</code> list and an ordered pipeline
 of steps (replacements, LLM formatting, structured extraction). Named profiles are stored in
@@ -4011,28 +4292,31 @@ of steps (replacements, LLM formatting, structured extraction). Named profiles a
 replacements automatically.</p>
 <p>See <a href="../../guide/postprocessing/">Postprocessing Profiles</a> for the profile file format.</p>
 <h4 id="list-profiles">List profiles<a class="headerlink" href="#list-profiles" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>GET /profiles/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>GET /profiles/
 </code></pre></div>
 <p>Returns an array of profile summaries:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="p">[</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bundled German medical dictation defaults&quot;</span><span class="p">},</span>
-<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with LLM formatting&quot;</span><span class="p">}</span>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="p">[</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bundled German medical dictation defaults&quot;</span><span class="p">},</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="w">  </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medical-de&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;German medical dictation with LLM formatting&quot;</span><span class="p">}</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="p">]</span>
 </code></pre></div>
 <h4 id="get-profile">Get profile<a class="headerlink" href="#get-profile" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>GET /profiles/{name}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>GET /profiles/{name}
 </code></pre></div>
-<p>Returns the full profile JSON. Returns <code>404</code> if not found.</p>
+<p>Returns the full profile JSON as stored, include steps and all. Returns <code>404</code> if not found.</p>
+<p>With <code>?resolved=true</code> the response holds the flat profile a job would pin: every <code>include</code> step replaced by the steps of the profile it names (the organization's stored profile, else the bundled block), plus <code>includes: [{name, revision}]</code> in first-use order (revision <code>0</code> for a bundled block). A stored composition that no longer resolves answers <code>409 stored_profile_invalid</code>. See <a href="../../adr/0002-profile-composition-resolves-at-admission/">ADR 0002</a>.</p>
 <h4 id="create-or-replace-profile">Create or replace profile<a class="headerlink" href="#create-or-replace-profile" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>PUT /profiles/{name}
-<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>Content-Type: application/json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>PUT /profiles/{name}
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>Content-Type: application/json
 </code></pre></div>
 <p>Upload a profile object. The <code>name</code> field in the body must match the URL <code>{name}</code>. Returns the
-stored profile.</p>
+stored profile. A body whose <code>include</code> steps do not resolve, form a cycle or nest deeper than four
+levels, or that would break a stored profile including it, is refused with <code>422 invalid_profile</code>.</p>
 <h4 id="delete-profile">Delete profile<a class="headerlink" href="#delete-profile" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>DELETE /profiles/{name}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>DELETE /profiles/{name}
 </code></pre></div>
-<p>Returns <code>{"ok": true}</code>. Returns <code>404</code> if not found.</p>
+<p>Returns <code>{"ok": true}</code>. Returns <code>404</code> if not found, <code>409 profile_in_use</code> while another stored
+profile includes it.</p>
 <hr />
 <h2 id="testbench">Testbench<a class="headerlink" href="#testbench" title="Permanent link">&para;</a></h2>
 <p>Contributed recordings and scans, references and bench runs. Disabled by default: with <code>testbench_enabled=false</code> every route except <code>/status</code> answers <code>403 testbench_disabled</code>. <code>hub_operator</code> credentials are always rejected. See <a href="../../guide/testbench/">Testbench</a>.</p>
@@ -4145,7 +4429,7 @@ stored profile.</p>
 </tbody>
 </table>
 <p>Error body:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;human-readable message&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;human-readable message&quot;</span><span class="p">}</span>
 </code></pre></div>
 
 
